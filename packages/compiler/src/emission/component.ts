@@ -7,6 +7,7 @@
  */
 
 import type * as t from '../ast/compiler-types';
+import { initialBindingsDeclaration } from './initial-dom';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { isLightweightListedComponent } from '../analysis';
@@ -322,15 +323,8 @@ export function transformComponent(
         );
   const lightweightSingleRoot =
     lightweight && 'jsx' in returns && astFactory.isJSXElement(returns.jsx);
-  if (scope.initialDom) scope.prelude.unshift(astFactory.variableDeclaration('const',[
-    astFactory.variableDeclarator(astFactory.identifier(scope.initialDom.variable),
-      scope.initialDom.adopting ? astFactory.conditionalExpression(scope.initialDom.adopting,
-        astFactory.callExpression(md(ctx,scope.initialDom.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
-          initialRoot!,astFactory.arrayExpression(scope.initialDom.descriptors),
-        ]),astFactory.arrayExpression([])) : astFactory.callExpression(md(ctx,scope.initialDom.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
-        initialRoot ?? astFactory.stringLiteral(scope.initialDom.plan.target),astFactory.arrayExpression(scope.initialDom.descriptors),
-      ])),
-  ]));
+  if (scope.initialDom) scope.prelude.unshift(initialBindingsDeclaration(ctx,scope,
+    initialRoot ?? astFactory.stringLiteral(scope.initialDom.plan.target)));
 
   const serverWriter = lightweightSingleRoot && !scope.initialDom
     ? prepareServerWriter(ctx, scope, rootVar)

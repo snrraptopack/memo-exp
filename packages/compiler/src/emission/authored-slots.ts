@@ -54,6 +54,7 @@ export type AuthoredChildrenSlotBuilder = (
   eventOriginId: t.Expression | undefined,
   inSvg: boolean,
   ownerId: t.Expression,
+  site?: string,
 ) => t.Identifier;
 
 export type AuthoredRenderValueSlotBuilder = (
@@ -86,14 +87,18 @@ export function createAuthoredSlotBuilders(
     eventOriginId,
     inSvg,
     ownerId,
+    site,
   ) => buildChildrenSlot(
     ctx,
     ownerScope,
     ownerId,
     (childScope, parentNode, slotOwner) => {
+      let textIndex = 0;
       emitChildrenIntoParent(childScope, children, parentNode.name, {
-        emitText: (expression) =>
-          emitText(ctx, childScope, expression, slotOwner),
+        emitText: (expression) => {
+          const text = childScope.initialDom?.plan.texts?.[textIndex++];
+          return emitText(ctx, childScope, expression, slotOwner, text?.path, text?.live===false, text?.empty);
+        },
         emitNode: (node) =>
           dependencies.emitNode(
             ctx,
@@ -146,6 +151,8 @@ export function createAuthoredSlotBuilders(
         },
       });
     },
+    ownerScope.initialDom && site ? (ctx.initialDomRoot?.component===componentName
+      ? ctx.initialDomRoot : ctx.initialDomComponents[componentName])?.slots?.[site] : undefined,
   );
 
   const buildAuthoredRenderValueSlot = (

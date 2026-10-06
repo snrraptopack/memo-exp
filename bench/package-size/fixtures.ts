@@ -17,6 +17,13 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
       <button onClick={()=>count++}>Add</button><Shell><p>{count}</p></Shell></main>;}`,
     './Shell.tsx': `export function Shell({children}){return <section>{children}</section>;}`,
   },
+  'composition-live-forwarded-children': {
+    './App.tsx': `import {Counter} from './Counter';export function App(){return <main><Counter start={1}/><Counter start={10}/></main>;}`,
+    './Counter.tsx': `import {Shell} from './Shell';export function Counter({start}){let n=start;function next(){n++;}
+      return <article><Shell><button onClick={next}>{n}</button><p title={'count:'+n}>{n*2}</p></Shell></article>;}`,
+    './Shell.tsx': `import {Frame} from './Frame';export function Shell({children}){return <section><h2>Counter</h2><Frame>{children}</Frame></section>;}`,
+    './Frame.tsx': `export function Frame({children}){return <aside>{children}</aside>;}`,
+  },
   'request-module-option-keys': { './App.tsx': `let search='unused';
     const user=$fetch('/api/user',{query:{search:'fixed'}});
     export function App(){let n=0;return <main><h1>{user?.name}</h1><button onClick={()=>n++}>{n}</button></main>;}` },

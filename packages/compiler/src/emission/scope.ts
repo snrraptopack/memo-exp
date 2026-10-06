@@ -23,7 +23,7 @@ export interface RegionSourcePlans {
 }
 
 export interface EmitScope extends RegionSourcePlans {
-  initialDom: {plan:InitialDomRoot;variable:string;descriptors:t.Expression[];adopting?:t.Identifier} | null;
+  initialDom: {plan:InitialDomRoot;variable:string;descriptors:t.Expression[];adopting?:t.Identifier;offset?:t.Expression} | null;
   /** Repeated row text avoids a DOM read on every content replay. */
   cacheText: boolean;
   slots: string[];

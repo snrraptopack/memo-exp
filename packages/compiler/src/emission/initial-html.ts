@@ -11,10 +11,16 @@ function escape(value: string, attribute = false): string {
 /** null means the HTML parser cannot preserve the planned DOM shape safely. */
 export function emitInitialHtml(plan: InitialRenderPlan): string | null {
   if (plan.kind === 'browser' || plan.kind === 'request') return null;
+  const boundaryText = (node: InitialRenderNode | undefined, last: boolean): boolean =>
+    node?.kind === 'text' ? node.value !== '' : node?.kind === 'slot'
+      ? boundaryText(last ? node.children.at(-1) : node.children[0], last) : false;
   function emit(nodes: readonly InitialRenderNode[], ancestors: string[]): string | null {
+    // HTML merges adjacent text across lexical slot boundaries. Ordinary DOM
+    // creation stays responsible until those owners share one text binding.
+    if (nodes.some((node,index)=>index>0 && boundaryText(nodes[index-1],true) && boundaryText(node,false))) return null;
     let html = '';
     for (const node of nodes) {
-      if (node.kind==='component') {
+      if (node.kind==='component' || node.kind==='slot') {
         const children=emit(node.children,ancestors);
         if (children===null)return null;
         html+=children;continue;

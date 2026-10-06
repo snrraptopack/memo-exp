@@ -2131,9 +2131,10 @@ The complete architecture remains open in these concrete areas:
   placement into lowering. Lazy module sources now also carry their owned inputs
   and lexical binding references into lowering. Other callback transforms and
   TSRX boundary validation are still open.
-- Live callback/child-slot composition and escaping values need broader
-  ownership and lifetime reachability. Closed static slots now stay in HTML;
-  future slot instances and interactive callees retain ordinary slot creation.
+- Structural and recreated child slots, named JSX render props and escaping
+  render values need broader ownership and lifetime reachability. Closed static
+  slots and fixed live authored children now bind their existing HTML; future
+  slot instances retain ordinary slot creation.
   Named effects and unproved ref expressions
   retain ordinary creation rather than acquiring a guessed placement.
 - Multiple unknown list extents, nested regions and component rows need sound
@@ -2183,3 +2184,46 @@ grow HTML without growing these fixtures' browser program; live composition
 and retained creation remain separate open proofs.
 
 These are outstanding requirements, not reasons to mark the architecture closed.
+
+### Live authored child bindings — 2026-10-06
+
+The source render plan now records a transparent slot boundary with the caller's
+module, component and authored site. The DOM backend derives binding addresses
+from those facts. Forwarded content retains its caller's state and callback
+closures while using the callee's host. Repeated mounts use authored interpolation
+keys, so nested creation order cannot select the wrong physical slot. Slots add
+no wrapper element or general hydration marker.
+
+The existing slot builder binds those nodes through the same helper as component
+binding. A proved single mount omits the additional-update Set and mount counter.
+Static content in an interactive callee supplies a no-op slot without an update
+holder or lifetime. General and retained creation use the shared direct-child
+plan; the former duplicate child syntax analysis was removed. No runtime API,
+second region engine, or dependency version change is introduced.
+
+Children after fetched lists use the existing end-relative list binder. Repeated
+prefix/suffix mounts preserve that capability when their shared binding plans
+merge. Tests cover both empty and populated fetched lists. Adjacent text across
+separate lexical slot owners, structural content inside slots and future slot
+creation remain on ordinary creation until their placement is proved.
+
+Production SSR delivery against `8b46d98`, counting every browser chunk:
+
+| Stable fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Live child slot with a counter | 18,330 | 9,925 | 6,564 | 3,955 |
+| Imported forwarded live slots with two independent counters | 19,913 | 11,211 | 7,049 | 4,398 |
+
+Their HTML drops from 342 to 237 B and from 520 to 415 B, respectively; each loses
+the unused 78-byte general-adoption payload. Static, counter, live-prop
+composition, 60 static child cards and inline/routed Group controls are unchanged.
+Static still delivers zero browser JavaScript.
+
+The compiler build, root typecheck and changed-file lint pass. Focused DOM suites
+cover source ownership, callbacks, forwarding, repeated mounts, refs, effects,
+cleanup, later creation and fallback behavior. Production Chrome checks cover
+live forwarding and refs, fetched-list suffixes, routing, Group and mount-handle
+ownership. The local DOM comparison passes all 21 scenarios with retained
+identity and mixed-sequence validation, plus three-sample update/swap timings in
+ABBA order. Those benchmark bundles are byte-identical, so this batch establishes
+delivery savings and composition correctness, not a DOM timing improvement.

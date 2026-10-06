@@ -352,6 +352,7 @@ export function emitComponentCall(
       eventOriginId,
       inSvg,
       ownerId,
+      initialSite(element),
     );
     if (orderedPropObject !== null) {
       orderedPropObject.properties.push(

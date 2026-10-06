@@ -169,7 +169,6 @@ describe('initial content and browser requirements', () => {
 
   it.each([
     `export function App(){let name='Ada';function change(){eval('name="Grace"');}return <main><h1>{name}</h1><Counter action={change}/></main>;}`,
-    `function Card({children}){return <section>{children}</section>;}export function App(){return <main><Card><Counter/></Card></main>;}`,
   ])('does not extract an unproved interaction boundary', source => {
     const result = compile(`import {Counter} from './Counter'; ${source}`, {
       './Counter.tsx': `export function Counter({action}){let n=0;return <button onClick={()=>{n++;action?.();}}>{n}</button>;}`,

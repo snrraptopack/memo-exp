@@ -6,8 +6,9 @@ import type { Ctx } from '../context';
 import * as astFactory from '../ast/factory';
 import type * as t from '../ast/compiler-types';
 import {nodeHasJsx} from '../context/ast';
-import {initialSite} from '../planning/initial-render';
+import {initialSite, initialNodeExtent, initialSlotMountKey} from '../planning/initial-render';
 import type {BaseNode} from '../ast';
+import { md } from '../identifiers';
 
 /** DOM read lowering preserves every region with a proved source placement. */
 export function initialReadPlacement(ctx:Ctx,component:string,expression:BaseNode):{scalar:boolean;structural:boolean} {
@@ -32,6 +33,8 @@ export interface InitialDomRoot {
   /** Fixed siblings following one request list are addressed from the host end. */
   readonly dynamicPaths?: true;
   readonly elements: Readonly<Record<string,InitialDomElement>>;
+  readonly texts?: InitialDomElement['texts'];
+  readonly slots?: Readonly<Record<string, InitialDomSlot>>;
   readonly components: Readonly<Record<string,{readonly path:readonly number[];readonly tag:string;readonly moduleId:string;readonly component:string;readonly static?:boolean}>>;
   readonly factories?: Readonly<Record<string,InitialDomRoot>>;
   readonly conditions: Readonly<Record<string, {readonly branch: number | null; readonly open: readonly number[];
@@ -40,15 +43,24 @@ export interface InitialDomRoot {
     readonly count: number | null; readonly row: InitialDomRoot | null}>>;
 }
 
-export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>, factories: Record<string,InitialDomRoot>={}, top=true): InitialDomRoot | null {
+/** A lexical slot reuses the same binding program at each authored mount site. */
+export interface InitialDomSlot {
+  readonly plan: InitialDomRoot;
+  readonly static?: true;
+  readonly offset: number;
+  readonly mounts: Readonly<Record<string, number>>;
+}
+type SlotOwners = Record<string, Record<string, InitialDomSlot>>;
+
+export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}>, factories: Record<string,InitialDomRoot>={}, top=true,
+  slotOwners: SlotOwners = {}, start = 0): InitialDomRoot | null {
   const elements: Record<string,InitialDomElement>={};
   const components: Record<string,InitialDomRoot['components'][string]>={};
   const conditions: Record<string,InitialDomRoot['conditions'][string]>={};
   const lists: Record<string,InitialDomRoot['lists'][string]>={};
   let valid=true;
-  let dynamicPaths=false;
-  const width=(node:InitialRenderNode):number=>node.kind==='list' ? node.rows.length+2 :
-    node.kind==='conditional' ? (node.branch===null?1:node.children.length)+2 : 1;
+  let dynamicPaths=start<0;
+  const width = initialNodeExtent;
   function positions(nodes:readonly InitialRenderNode[],start:number):number[] {
     const variable=nodes.flatMap((node,index)=>node.kind==='list'&&node.requestRow?[index]:[]);
     if(variable.length>1){valid=false;return [];}
@@ -68,6 +80,22 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
     if(!valid)return;
     nodes.forEach((node,offset)=>{
       const current=addresses[offset]!;
+      if (node.kind === 'slot') {
+        if (!node.mount?.site) {valid=false;return;}
+        const nested=planInitialDom({...plan, nodes:node.children, rootLocal:node.component,
+          rootModuleId:node.moduleId, returnSite:''}, factories, false, slotOwners, current);
+        // Structural slot extents need their own future-creation proof.
+        if (!nested || Object.keys(nested.conditions).length || Object.keys(nested.lists).length) {valid=false;return;}
+        const owner=`${node.moduleId}#${node.component}`;
+        const slots=slotOwners[owner] ??= {};
+        const mount=initialSlotMountKey(node.mount.moduleId,node.mount.component,node.mount.site);
+        const previous=slots[node.site];
+        const merged=previous ? mergeInitialDom(previous.plan,shiftInitialDom(nested,previous.offset-current)) : nested;
+        if (!merged || previous?.mounts[mount] !== undefined && previous.mounts[mount] !== current) {valid=false;return;}
+        slots[node.site]={plan:merged,offset:previous?.offset??current,mounts:{...previous?.mounts,[mount]:current},
+          ...(node.static && (!previous || previous.static) ? {static:true as const} : {})};
+        return;
+      }
       if (node.kind==='component') {
         const host=node.children[0];
         if (components[node.site] || node.children.length!==1 || host?.kind!=='element' || !host.site) {valid=false;return;}
@@ -75,7 +103,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
           components[node.site]={path:[...parent,current],tag:host.tag,moduleId:node.moduleId,component:node.component,static:true};
           return;
         }
-        const nested=planInitialDom({...plan,nodes:node.children,rootLocal:node.component,returnSite:host.site},factories,false);
+        const nested=planInitialDom({...plan,nodes:node.children,rootLocal:node.component,rootModuleId:node.moduleId,returnSite:host.site},factories,false,slotOwners);
         if (!nested) {valid=false;return;}
         const key=`${node.moduleId}#${node.component}`;
         const child={...relativeInitialDom(nested),
@@ -95,7 +123,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
         }
         const first=node.requestRow ?? node.rows[0];
         if (!first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
-        const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site},factories,false);
+        const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site},factories,false,slotOwners);
         if (!containerRow) {valid=false;return;}
         const row=relativeInitialDom(containerRow);
         const suffix=nodes.slice(offset+1).reduce((size,node)=>size+width(node),0);
@@ -111,7 +139,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
           const branches = node.alternatives?.map(nodes => {
             const host=nodes[0];
             if (nodes.length!==1 || host?.kind!=='element' || !host.site) return null;
-            const nested=planInitialDom({...plan,nodes,returnSite:host.site},factories,false);
+            const nested=planInitialDom({...plan,nodes,returnSite:host.site},factories,false,slotOwners);
             return nested ? relativeInitialDom(nested) : null;
           });
           if (!branches?.length || branches.some(branch=>branch===null)) {valid=false;return;}
@@ -139,10 +167,29 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       visit(node.children,path);
     });
   }
-  visit(plan.nodes,[]);
+  visit(plan.nodes,[],start);
+  const rootAddresses=positions(plan.nodes,start);
+  const texts=plan.nodes.flatMap((node,index)=>node.kind==='text'
+    ? [{path:[rootAddresses[index]!],live:node.live!==false,empty:node.value===''}] : []);
+  if (top) for (const [key, factory] of Object.entries(factories)) {
+    if (slotOwners[key]) factories[key]={...factory,slots:slotOwners[key]};
+  }
+  const slots=top?slotOwners[`${plan.rootModuleId}#${plan.rootLocal}`]:undefined;
   return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,components,conditions,lists,
+    ...(texts.length?{texts}:{}), ...(slots?{slots}:{}),
     ...(dynamicPaths?{dynamicPaths:true as const}:{}),
     ...(top?{factories}: {})} : null;
+}
+
+/** Relocate a fixed slot extent within its callee-provided host. */
+function shiftInitialDom(root:InitialDomRoot, offset:number):InitialDomRoot {
+  const shift=(path:readonly number[])=>[path[0]!+offset,...path.slice(1)];
+  return {...root,
+    elements:Object.fromEntries(Object.entries(root.elements).map(([site,element])=>[site,{...element,path:shift(element.path),
+      texts:element.texts.map(text=>({...text,path:shift(text.path)}))}])),
+    components:Object.fromEntries(Object.entries(root.components).map(([site,component])=>[site,{...component,path:shift(component.path)}])),
+    ...(root.texts?{texts:root.texts.map(text=>({...text,path:shift(text.path)}))}:{}),
+  };
 }
 
 function relativeInitialDom(root:InitialDomRoot):InitialDomRoot {
@@ -156,13 +203,15 @@ function relativeInitialDom(root:InitialDomRoot):InitialDomRoot {
 
 /** Repeated factories share shape, but every potentially live slot stays live. */
 function mergeInitialDom(left:InitialDomRoot,right:InitialDomRoot):InitialDomRoot|null {
-  const shape=(root:InitialDomRoot)=>JSON.stringify(root,(key,value)=>['live','empty','staticAttributes','factories'].includes(key)?undefined:value);
+  const shape=(root:InitialDomRoot)=>JSON.stringify(root,(key,value)=>['live','empty','staticAttributes','factories','slots','dynamicPaths'].includes(key)?undefined:value);
   if (shape(left)!==shape(right))return null;
-  return {...left,elements:Object.fromEntries(Object.entries(left.elements).map(([site,element])=>{
+  return {...left,...(left.dynamicPaths||right.dynamicPaths?{dynamicPaths:true as const}:{}),
+    elements:Object.fromEntries(Object.entries(left.elements).map(([site,element])=>{
     const other=right.elements[site]!;
     return [site,{...element,staticAttributes:element.staticAttributes.filter(site=>other.staticAttributes.includes(site)),
       texts:element.texts.map((text,index)=>({...text,live:text.live||other.texts[index]!.live,empty:text.empty||other.texts[index]!.empty}))}];
-  })),conditions:Object.fromEntries(Object.entries(left.conditions).map(([site,condition])=>[site,{
+  })),...(left.texts?{texts:left.texts.map((text,index)=>({...text,live:text.live||right.texts![index]!.live,
+    empty:text.empty||right.texts![index]!.empty}))}:{}),conditions:Object.fromEntries(Object.entries(left.conditions).map(([site,condition])=>[site,{
     ...condition,...(condition.branches ? {branches:condition.branches.map((branch,index)=>
       mergeInitialDom(branch,right.conditions[site]!.branches![index]!)!)} : {}),
   }])),lists:Object.fromEntries(Object.entries(left.lists).map(([site,list])=>[site,{...list,row:list.row?mergeInitialDom(list.row,right.lists[site]!.row!)!:null}]))};
@@ -173,9 +222,19 @@ export function initialNode(scope: EmitScope,path: readonly number[],kind: strin
   const initial=scope.initialDom!;
   const index=initial.descriptors.length;
   initial.descriptors.push(astFactory.arrayExpression([
-    astFactory.arrayExpression(path.map(index=>astFactory.numericLiteral(index))),astFactory.stringLiteral(kind),
+    astFactory.arrayExpression(path.map((index,depth)=>depth===0 && initial.offset
+      ? astFactory.binaryExpression('+',initial.offset,astFactory.numericLiteral(index)) : astFactory.numericLiteral(index))),astFactory.stringLiteral(kind),
   ]));
   return astFactory.memberExpression(astFactory.identifier(initial.variable),astFactory.numericLiteral(index),true);
+}
+
+/** One binding declaration shared by component and lexical slot emission. */
+export function initialBindingsDeclaration(ctx:Ctx,scope:EmitScope,target:t.Expression):t.VariableDeclaration {
+  const initial=scope.initialDom!;
+  const call=astFactory.callExpression(md(ctx,initial.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),
+    [target,astFactory.arrayExpression(initial.descriptors)]);
+  return astFactory.variableDeclaration('const',[astFactory.variableDeclarator(astFactory.identifier(initial.variable),
+    initial.adopting?astFactory.conditionalExpression(initial.adopting,call,astFactory.arrayExpression([])):call)]);
 }
 
 /** Server placement emits the same source anchors that the browser validates. */

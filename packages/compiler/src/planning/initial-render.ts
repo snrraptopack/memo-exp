@@ -20,8 +20,12 @@ export type InitialRenderNode =
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'component'; readonly site: string; readonly moduleId: string; readonly callModuleId: string; readonly component: string;
       readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true;
+      readonly authoredChildren?: true;
       /** Authored content slots are omitted only with an entirely static callee. */
       readonly staticChildren?: true }
+  | { readonly kind: 'slot'; readonly site: string; readonly moduleId: string; readonly component: string;
+      readonly children: readonly InitialRenderNode[]; readonly static?: true;
+      readonly mount?: { readonly moduleId: string; readonly component: string; readonly site: string } }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number | null;
       readonly children: readonly InitialRenderNode[]; readonly alternatives?: readonly (readonly InitialRenderNode[])[] }
   | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[];
@@ -81,6 +85,18 @@ interface ModuleScope extends Scope { readonly exports: Map<string, Value>; read
 /** Authored source identity survives backend AST cloning. */
 export function initialSite(node: BaseNode): string {
   return node.loc ? `${node.loc.start.line}:${node.loc.start.column}` : '';
+}
+
+/** Compiler-private identity of one authored interpolation that mounts a slot. */
+export function initialSlotMountKey(moduleId: string, component: string, site: string): string {
+  return `${moduleId}#${component}#${site}`;
+}
+
+/** Fixed DOM extent; source-owned slot boundaries emit no extra host node. */
+export function initialNodeExtent(node: InitialRenderNode): number {
+  return node.kind === 'slot' ? node.children.reduce((width, child) => width + initialNodeExtent(child), 0) :
+    node.kind === 'list' ? node.rows.length + 2 :
+    node.kind === 'conditional' ? (node.branch === null ? 1 : node.children.length) + 2 : 1;
 }
 
 class NeedsBrowser extends Error {
@@ -551,7 +567,7 @@ export function planInitialRendering(
   function closedContent(nodes:readonly InitialRenderNode[]):boolean {
     return nodes.every(node=>node.kind==='text' ? node.live===false :
       node.kind==='element' ? node.attributes.every(attribute=>attribute.live===false)&&closedContent(node.children) :
-      node.kind==='component' ? node.static===true : false);
+      node.kind==='component' || node.kind==='slot' ? node.static===true : false);
   }
 
   function jsx(node: BaseNode, scope: Scope): readonly InitialRenderNode[] {
@@ -587,7 +603,9 @@ export function planInitialRendering(
           if (value===requestValue) {pending.push(input as t.Expression);continue;}
           if (value !== null && typeof value === 'object' || input && nodeHasJsx(input)) {
             flush();
-            result.push(...content(value, scope));
+            const nodes = content(value, scope);
+            result.push(...nodes.map(node => bindings && node.kind === 'slot' ? {...node,
+              mount: {moduleId:scope.moduleId, component:scope.component!, site:initialSite(input!)}} : node));
           } else { primitive(value,scope); pending.push(input as t.Expression); }
           continue;
         }
@@ -655,13 +673,15 @@ export function planInitialRendering(
       const childEventCount = bindingEventCount;
       const childOwnerCount = ownerSiteCount;
       const nodes = children();
-      const staticChildren = bindings && nodes.length > 0;
-      if (staticChildren && (inStructure || childEventCount !== bindingEventCount ||
-          childOwnerCount !== ownerSiteCount || !closedContent(nodes))) {
-        need(scope,'Live authored children need an ownership placement proof');
-      }
+      const authoredChildren = bindings && nodes.length > 0;
+      const staticChildren = authoredChildren && childEventCount === bindingEventCount &&
+        childOwnerCount === ownerSiteCount && closedContent(nodes);
+      if (authoredChildren && (inStructure || !scope.component)) need(scope,'Structural authored children need a creation placement proof');
       if (mixed && regions.length !== regionCount) need(scope, 'Interactive content slots need a placement proof');
-      if (nodes.length) props.set('children', { kind: 'content', nodes });
+      if (nodes.length) props.set('children', { kind: 'content', nodes: authoredChildren ? [{
+        kind:'slot', moduleId:scope.moduleId, component:scope.component!, site:initialSite(node), children:nodes,
+        ...(staticChildren ? {static:true as const} : {}),
+      }] : nodes });
       try {
         const eventCount=bindingEventCount;
         const children=render(component, props, false, liveProps);
@@ -669,10 +689,10 @@ export function planInitialRendering(
         if (children.length!==1 || children[0]?.kind!=='element') need(scope,'Initial component bindings need one host root');
         const isStatic = !inStructure && !owners.has(`${component.scope.moduleId}#${component.local}`) &&
           eventCount===bindingEventCount && liveProps.size===0 && closedContent(children);
-        if (staticChildren && !isStatic) need(scope,'Authored children need a static callee ownership proof');
         return [{kind:'component',site:initialSite(node),moduleId:component.scope.moduleId,callModuleId:scope.moduleId,component:component.local!,children,
           static:isStatic,
-          ...(staticChildren ? {staticChildren:true as const} : {}),
+          ...(authoredChildren ? {authoredChildren:true as const} : {}),
+          ...(staticChildren && isStatic ? {staticChildren:true as const} : {}),
           ...(inStructure ? {creation:true as const} : {})}];
       }
       catch (error) {
@@ -813,7 +833,9 @@ export function planInitialRendering(
             // A wholly static slot has no browser factory or binding shape.
             // Future creation is checked below before that omission is used.
             if (!node.staticChildren) {
-              const shape=JSON.stringify(node.children,(key,value)=>['value','live','static','creation'].includes(key)?undefined:value);
+              const shape=JSON.stringify(node.children,(key,value)=>value?.kind==='slot'
+                ? {kind:'slot',width:initialNodeExtent(value)}
+                : ['value','live','static','creation'].includes(key)?undefined:value);
               if (shapes.has(key) && shapes.get(key)!==shape) need(rootScope,'Repeated component initial extents need a shared binding shape');
               shapes.set(key,shape);
             }
@@ -854,7 +876,7 @@ export function planInitialRendering(
         return nodes.map(node=>{
           if (node.kind==='component') {
             const creation=creationComponents.has(`${node.moduleId}#${node.component}`);
-            if (creation && node.staticChildren) need(rootScope,'Recreated authored children need their slot ownership program');
+            if (creation && node.authoredChildren) need(rootScope,'Recreated authored children need their slot ownership program');
             return {...node, ...(creation?{static:false}:{}), children:retain(node.children,creation)};
           }
           if (creating && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');

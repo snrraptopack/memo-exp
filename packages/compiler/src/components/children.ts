@@ -14,7 +14,7 @@ import {
   isMemberExpression as isAstMemberExpression,
   type BaseNode,
 } from '../ast';
-import { nodeHasJsx, type Ctx } from '../context';
+import { type Ctx } from '../context';
 import {
   cacheDecl,
   newEmitScope,
@@ -22,8 +22,11 @@ import {
   type EmitScope,
 } from '../emission/scope';
 import { generatedIdentifier, md } from '../identifiers';
-import { matchMapCall, type MapCallExpression } from '../lists';
-import { matchCond } from '../conds';
+import type { MapCallExpression } from '../lists';
+import { planDirectChildren } from '../jsx/children';
+import { materializeDirectChildren } from '../emission/direct-children';
+import { initialBindingsDeclaration, type InitialDomSlot } from '../emission/initial-dom';
+import { initialSite, initialSlotMountKey } from '../planning/initial-render';
 import {
   objectBindingName,
   propNameForBinding,
@@ -111,6 +114,7 @@ export function buildChildrenSlot(
   ownerScope: EmitScope,
   identityOwner: t.Expression,
   emit: EmitChildSlot,
+  initial?: InitialDomSlot,
 ): t.Identifier {
   const childScope = newEmitScope(ctx, true, ownerScope);
   childScope.childCounts = ownerScope.childCounts;
@@ -132,13 +136,40 @@ export function buildChildrenSlot(
   const nextUpdate = generatedIdentifier(ctx, 'childrenNextUpdate');
   const active = generatedIdentifier(ctx, 'childrenActive');
   const dispose = generatedIdentifier(ctx, 'childrenDispose');
+  const singleMount = initial !== undefined && Object.keys(initial.mounts).length === 1;
+  const varyingOffset = initial && Object.values(initial.mounts).some(offset=>offset!==initial.offset);
+  const offset = varyingOffset ? generatedIdentifier(ctx,'childrenOffset') : null;
+  if (initial) childScope.initialDom={plan:initial.plan,variable:generatedIdentifier(ctx,'initialChildrenNodes').name,
+    descriptors:[],...(offset?{offset}: {})};
   emit(childScope, parentNode, slotOwner);
+  if (initial?.static && childScope.updaters.length === 0 && childScope.mounts.length === 0 &&
+      childScope.disposableEntities.length === 0 && childScope.disposableRegions.length === 0 &&
+      childScope.disposableCallbacks.length === 0) {
+    // A static slot in an interactive callee still supplies the existing ABI,
+    // but has neither a browser update nor a lifetime to retain.
+    ownerScope.creation.push(astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(cloneEstreeNode(mount),
+        astFactory.arrowFunctionExpression([], astFactory.nullLiteral())),
+    ]));
+    return mount;
+  }
+  if (initial) {
+    childScope.prelude.unshift(
+      ...(offset ? [astFactory.variableDeclaration('const',[astFactory.variableDeclarator(offset,
+        astFactory.memberExpression(astFactory.objectExpression(Object.entries(initial.mounts).map(([key,value])=>
+          astFactory.objectProperty(astFactory.stringLiteral(key),astFactory.numericLiteral(value-initial.offset)))),
+        cloneEstreeNode(mountKey),true))])] : []),
+      initialBindingsDeclaration(ctx,childScope,cloneEstreeNode(parentNode)),
+    );
+  }
 
   ownerScope.creation.push(
     astFactory.variableDeclaration('let', [
       astFactory.variableDeclarator(cloneEstreeNode(updateHolder), astFactory.nullLiteral()),
-      astFactory.variableDeclarator(cloneEstreeNode(additionalUpdates), astFactory.nullLiteral()),
-      astFactory.variableDeclarator(cloneEstreeNode(mountSequence), astFactory.numericLiteral(0)),
+      ...(!singleMount ? [
+        astFactory.variableDeclarator(cloneEstreeNode(additionalUpdates), astFactory.nullLiteral()),
+        astFactory.variableDeclarator(cloneEstreeNode(mountSequence), astFactory.numericLiteral(0)),
+      ] : []),
     ]),
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
@@ -153,7 +184,7 @@ export function buildChildrenSlot(
             astFactory.variableDeclaration('const', [
               astFactory.variableDeclarator(
                 cloneEstreeNode(slotOwner),
-                astFactory.conditionalExpression(
+                singleMount ? cloneEstreeNode(identityOwner, true) : astFactory.conditionalExpression(
                   astFactory.binaryExpression(
                     '===',
                     cloneEstreeNode(mountSequence),
@@ -176,9 +207,9 @@ export function buildChildrenSlot(
                 ),
               ),
             ]),
-            astFactory.expressionStatement(
+            ...(!singleMount ? [astFactory.expressionStatement(
               astFactory.updateExpression('++', cloneEstreeNode(mountSequence)),
-            ),
+            )] : []),
             astFactory.variableDeclaration('let', [
               astFactory.variableDeclarator(
                 cloneEstreeNode(active),
@@ -203,7 +234,7 @@ export function buildChildrenSlot(
                   astFactory.identifier(childScope.updateVar),
                 ),
               ),
-              astFactory.blockStatement([
+              singleMount ? null : astFactory.blockStatement([
                 astFactory.ifStatement(
                   astFactory.binaryExpression(
                     '===',
@@ -259,7 +290,7 @@ export function buildChildrenSlot(
                           astFactory.nullLiteral(),
                         ),
                       ),
-                      astFactory.ifStatement(
+                      singleMount ? null : astFactory.ifStatement(
                         astFactory.binaryExpression(
                           '!==',
                           cloneEstreeNode(additionalUpdates),
@@ -328,7 +359,7 @@ export function buildChildrenSlot(
         astFactory.binaryExpression('!==', cloneEstreeNode(updateHolder), astFactory.nullLiteral()),
         astFactory.expressionStatement(astFactory.callExpression(cloneEstreeNode(updateHolder), [])),
       ),
-      astFactory.ifStatement(
+      ...(!singleMount ? [astFactory.ifStatement(
         astFactory.binaryExpression(
           '!==',
           cloneEstreeNode(additionalUpdates),
@@ -343,7 +374,7 @@ export function buildChildrenSlot(
             astFactory.callExpression(cloneEstreeNode(nextUpdate), []),
           ),
         ),
-      ),
+      )] : []),
     ]),
   );
   return mount;
@@ -373,7 +404,8 @@ export function emitForwardedSlotMount(
           astFactory.callExpression(cloneEstreeNode(expression, true), [
             astFactory.identifier(parentVar),
             cloneEstreeNode(ownerId, true),
-            astFactory.stringLiteral(String(key)),
+            astFactory.stringLiteral(scope.initialDom
+              ? initialSlotMountKey(ctx.moduleId,scope.initialDom.plan.component,initialSite(expression)) : String(key)),
           ]),
         ),
       ),
@@ -390,6 +422,7 @@ export function emitChildrenIntoParent(
   emitters: ChildContentEmitters,
 ): void {
   const append = (childVar: string): void => {
+    if (scope.initialDom) return;
     scope.creation.push(
       astFactory.expressionStatement(
         astFactory.callExpression(
@@ -403,46 +436,13 @@ export function emitChildrenIntoParent(
     );
   };
 
-  for (const child of children) {
-    if (astFactory.isJSXText(child)) {
-      const value = child.value;
-      if (value !== '') append(emitters.emitText(astFactory.stringLiteral(value)));
-      continue;
-    }
-    if (astFactory.isJSXElement(child) || astFactory.isJSXFragment(child)) {
-      append(emitters.emitNode(child));
-      continue;
-    }
-    if (!astFactory.isJSXExpressionContainer(child)) {
-      emitters.fail('memo-dom: spread children are not supported (L1)');
-    }
-    if (astFactory.isJSXEmptyExpression(child.expression)) continue;
-    if (!astFactory.isExpression(child.expression)) {
-      emitters.fail('memo-dom: unsupported expression in component children');
-    }
-
-    const expression = child.expression;
-    if (
-      astFactory.isNullLiteral(expression) ||
-      astFactory.isBooleanLiteral(expression) ||
-      astFactory.isIdentifier(expression, { name: 'undefined' })
-    ) {
-      continue;
-    }
-    if (emitters.isForwarded(expression)) {
-      emitters.emitForwarded(expression, parentVar);
-      continue;
-    }
-    const mapCall = matchMapCall(expression);
-    if (mapCall !== null) {
-      emitters.emitList(mapCall, parentVar);
-      continue;
-    }
-    const condition = matchCond(expression);
-    if (condition !== null && nodeHasJsx(condition)) {
-      emitters.emitCondition(condition, parentVar);
-      continue;
-    }
-    append(emitters.emitText(cloneEstreeNode(expression)));
+  const operations=materializeDirectChildren(planDirectChildren(children,{
+    isForwarded:emitters.isForwarded,fail:emitters.fail,
+  }),emitters);
+  for (const operation of operations) {
+    if (operation.type==='node') append(operation.variable);
+    else if (operation.type==='slot') emitters.emitForwarded(operation.expression,parentVar);
+    else if (operation.type==='list') emitters.emitList(operation.expression,parentVar);
+    else emitters.emitCondition(operation.expression,parentVar);
   }
 }

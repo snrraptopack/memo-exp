@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { build, type Rollup } from 'vite';
 import puppeteer, { type Page } from 'puppeteer-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { MountedApplication } from '@memoized-dom/runtime';
 import memoizedDom from '../src';
 import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, checkRoutedLifecycles } from './fixtures/routed-lifecycles';
 
@@ -110,6 +111,58 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([0,2])('binds repeated live slots before and after %i fetched rows in Chrome',async(count,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production(`live-slot-list-suffix-${count}`,`import {Shell} from './Shell';
+      export function App(){let n=0;return <main><Shell><button onClick={()=>n++}>{n}</button></Shell></main>;}`,{
+      'src/Shell.tsx':`export function Shell({children}){const user=$fetch('/api/user');
+        return <section><h2>Before</h2>{children}{user?.rows?.map(row=><li key={row.id}>{row.label}</li>)}{children}<footer>After</footer></section>;}`,
+    },{rows:Array.from({length:count},(_,id)=>({id,label:'Row '+id}))});
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).not.toContain('mmd:r:');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForFunction(()=>document.querySelectorAll('button').length===2);
+      await page.click('button');await page.waitForFunction(()=>[...document.querySelectorAll('button')].every(node=>node.textContent==='1'));
+      await page.evaluate(()=>document.querySelectorAll('button')[1]!.click());
+      await page.waitForFunction(()=>[...document.querySelectorAll('button')].every(node=>node.textContent==='2'));
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(Array.from({length:count},(_,id)=>'Row '+id));
+      expect(await page.$('script[type="application/mmd+json"]')).toBeNull();
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {initial:Element[];created:string[]};
+        // The request payload script is consumed by bootstrap; authored DOM is retained.
+        const initial=state.initial.filter(node=>node.localName!=='script');
+        const current=[...document.querySelectorAll('#root *:not(script)')];
+        return {retained:initial.length===current.length&&initial.every((node,index)=>node===current[index]),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({retained:true,created:[]});
+      expect(requests).toEqual([]);
+    });
+  },60_000);
+  it('binds live forwarded children, caller callbacks and refs without recreating nodes in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('live-forwarded-children',`import {Shell} from './Shell';
+      export function App(){let n=0;let input:HTMLInputElement|null=null;
+        function next(){n++;}
+        $effect(()=>{if(input)input.title='count:'+n;});
+        return <main><button id="outer" onClick={next}>Next</button>
+          <Shell><button class="inner" onClick={next}>{n}</button><input ref={input} value={n}/></Shell></main>;}`,{
+      'src/Shell.tsx':`import {Frame} from './Frame';export function Shell({children}){return <section><h2>Prefix</h2><Frame>{children}</Frame><footer>Kept</footer></section>;}`,
+      'src/Frame.tsx':`export function Frame({children}){return <aside>{children}</aside>;}`,
+    });
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).not.toContain('mmd:r:');expect(html).not.toContain('application/mmd+json');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForFunction(()=>document.querySelector('input')?.title==='count:0');
+      await page.click('#outer');await page.waitForFunction(()=>document.querySelector('.inner')?.textContent==='1');
+      await page.click('.inner');await page.waitForFunction(()=>document.querySelector('.inner')?.textContent==='2');
+      expect(await page.$eval('input',node=>({title:node.title,value:node.value}))).toEqual({title:'count:2',value:'2'});
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {initial:Element[];created:string[]};
+        const current=[...document.querySelectorAll('#root *')];
+        return {retained:current.every((node,index)=>state.initial[index]===node),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({retained:true,created:[]});
+      expect(requests).toEqual([]);
+    });
+  },60_000);
   it('captures a mount handle with real DOM nodes and permits remount after unmount in Chrome', async context => {
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production('captured-mount',`export function App(){return <><header>Header</header><main>Ready</main><footer>Footer</footer></>;}`,{
@@ -119,9 +172,9 @@ describe('production initial SSR bootstrap', () => {
     });
     const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
     await browserPage(result,html,executablePath,async page=>{
-      await page.waitForFunction(()=>!!(window as any).rendered);
+      await page.waitForFunction(()=>!!(window as unknown as {rendered?: MountedApplication}).rendered);
       const checks=await page.evaluate(()=>{
-        const {rendered,remount}=window as any;
+        const {rendered,remount}=window as unknown as {rendered:MountedApplication;remount:()=>MountedApplication};
         const json=JSON.parse(JSON.stringify(rendered));
         const nodes=rendered.nodes.every((node:Node)=>node instanceof Node&&node.isConnected);
         const owned=rendered.nodes.every((node:Node,index:number)=>rendered.host.children[index]===node);
