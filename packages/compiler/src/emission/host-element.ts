@@ -29,7 +29,8 @@ import {
 } from '../components/children';
 import { planDirectChildren } from '../jsx/children';
 import { materializeDirectChildren, type DirectChildOperation } from './direct-children';
-import { buildOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
+import { planOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
+import { emitOrderedAttributes } from './ordered-attributes';
 import {
   domAttributeWrite,
   domPropertyName,
@@ -248,7 +249,10 @@ const hasSpread = open.attributes.some((attribute) =>
   astFactory.isJSXSpreadAttribute(attribute),
 );
 if (hasSpread) {
-  const ordered = buildOrderedAttributes(open.attributes, {
+  const attributePlan = planOrderedAttributes(open.attributes, {
+    fail: (message) => { throw componentPath.buildCodeFrameError(message); },
+  });
+  const ordered = emitOrderedAttributes(attributePlan, {
     attributeValue: (name, value) =>
       name === 'ref'
         ? compileRefValue(ctx, componentPath, componentName, value)
@@ -270,9 +274,6 @@ if (hasSpread) {
         ]),
       );
       return binding;
-    },
-    fail: (message) => {
-      throw componentPath.buildCodeFrameError(message);
     },
   });
   const propObject = generatedIdentifier(ctx, `${tag}Props`);

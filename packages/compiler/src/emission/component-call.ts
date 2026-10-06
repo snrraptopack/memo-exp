@@ -17,7 +17,8 @@ import {
   hasComponentChildren,
   isRenderPropReference,
 } from '../components/children';
-import { buildOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
+import { planOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
+import { emitOrderedAttributes } from './ordered-attributes';
 import {
   buildSpreadComponentPropUpdate,
   callPropsFromObject,
@@ -115,14 +116,14 @@ export function emitComponentCall(
   let needsPush = false;
   const dataPropSources = new Set<string>();
   if (componentHasSpread) {
-    const ordered = buildOrderedAttributes(open.attributes, {
+    const attributePlan = planOrderedAttributes(open.attributes, {
+      fail: (message) => { throw componentPath.buildCodeFrameError(message); },
+    });
+    const ordered = emitOrderedAttributes(attributePlan, {
       attributeValue: (name, value) =>
         name === 'ref' || targetPlan?.refProps.includes(name) === true
           ? compileRefValue(ctx, componentPath, componentName, value)
           : value,
-      fail: (message) => {
-        throw componentPath.buildCodeFrameError(message);
-      },
     });
     orderedPropObject = ordered.expression;
     for (const property of orderedPropObject.properties) {

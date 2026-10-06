@@ -25,9 +25,10 @@ import {
   type JsxChild,
 } from '../components/children';
 import {
-  buildOrderedAttributes,
+  planOrderedAttributes,
   jsxAttributeName,
 } from '../jsx/attributes';
+import { emitOrderedAttributes } from './ordered-attributes';
 import {
   callPropsFromObject,
   orderCallProps,
@@ -359,14 +360,14 @@ export function buildComponentRowCreate(
   };
 
   if (hasSpread) {
-    propObjectExpression = buildOrderedAttributes(attributes, {
+    const attributePlan = planOrderedAttributes(attributes, {
+      fail: (message) => { throw componentPath.buildCodeFrameError(message); },
+    });
+    propObjectExpression = emitOrderedAttributes(attributePlan, {
       attributeValue: (name, value) =>
         name === 'ref' || targetPlan?.refProps.includes(name) === true
           ? compileRefValue(ctx, componentPath, componentName, value)
           : value,
-      fail: (message) => {
-        throw componentPath.buildCodeFrameError(message);
-      },
     }).expression;
     for (const property of propObjectExpression.properties) {
       if (

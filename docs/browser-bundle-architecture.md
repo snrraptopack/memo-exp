@@ -1675,3 +1675,18 @@ ordered attribute planning and handler facts that still carry DOM context;
 runtime scheduling/access/lifetime costs remain candidates requiring measured
 whole-application evidence. These three batches remove specific coupling and
 unconditional storage, not all remaining architecture work.
+
+### Ordered attribute semantic boundary
+
+Authored attribute planning now records ordered spreads/values, event kinds and
+the final spread's override boundary. It does not construct props objects or
+call backend instrumentation. One object emitter consumes the plan for hosts,
+component calls and component rows. It clones values before ref/event lowering,
+so backend changes cannot mutate the plan or alter the recorded read sources.
+The old combined attribute builder was removed.
+
+The compiler build and seven suites (86 cases) pass, covering spread semantics,
+refs, render props, private/component rows and initial composition. New tests
+execute the emitted object to check override order and verify plan preservation
+under instrumentation. This batch changes a compiler boundary, not runtime
+algorithms; payload and DOM comparison checks follow with the handler batch.
