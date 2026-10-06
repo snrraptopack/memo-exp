@@ -2015,4 +2015,17 @@ lifetime reachability and mutable backend-state separation remain open.
 - Keep CPU conclusions separate from architecture closure. Current local timing
   remains noisy; a stable-machine comparison is still unavailable here.
 
+#### Closure batch 2: lifetime owners beside retained HTML
+
+Fixed host/composition plans now record refs, inline effects and cleanup as
+browser owner requirements. Lifecycle-only children remain mounted even without
+events or changing text. The normal ref/effect/cleanup engines perform setup,
+reruns and reverse disposal; initial planning does not execute callbacks.
+Shadowed intrinsics and unproved callback setup retain ordinary creation.
+
+Six focused suites pass 120 tests. Counter, composition, fetched-list and fetched
+interactive production bytes are unchanged against `e3ed73a`. This extends the
+placement proof rather than removing required lifecycle JavaScript; generic
+callback, child-slot and structural reachability still need further work.
+
 These are outstanding requirements, not reasons to mark the architecture closed.

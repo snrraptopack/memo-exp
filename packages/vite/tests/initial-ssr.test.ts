@@ -110,6 +110,27 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('binds a composed lifetime owner and reruns its effect in Chrome',async context=>{
+    const result=await production('lifetime-owner',`function Panel(){let n=0;let node=null;
+      $effect(()=>{if(node)node.title='count:'+n;});
+      $cleanup(()=>{document.body.dataset.cleaned='yes';});
+      return <section><input ref={node}/><button onClick={()=>n++}>{n}</button></section>;}
+      export function App(){return <main><h1>Kept</h1><Panel/></main>;}`);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const response=await result.app.fetch(new Request('https://app.test/demo/'));
+    expect(response.status).toBe(200);const html=await response.text();
+    expect(html).not.toContain('mmd:r:');
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    await browserPage(result,html,executablePath,async page=>{
+      expect(await page.$eval('input',node=>node.title)).toBe('count:0');
+      await page.click('button');
+      expect(await page.$eval('input',node=>node.title)).toBe('count:1');
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {initial:Element[];created:string[]};
+        return {retained:state.initial.every(node=>node.isConnected),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({retained:true,created:[]});
+    });
+  },60_000);
   it.each([
     {userName:'Ada',placement:'component'},{userName:'',placement:'component'},
     {userName:'Ada',placement:'module'},{userName:'',placement:'module'},

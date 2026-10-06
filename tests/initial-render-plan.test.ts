@@ -113,8 +113,6 @@ describe('initial content and browser requirements', () => {
   });
 
   it.each([
-    ['ref', `export function App(){ let node=null; return <div ref={node}/>; }`],
-    ['lifecycle', `export function App(){ $effect(() => {}); return <h1>Hello</h1>; }`],
     ['unknown', `export function App(){ return <h1>{Date.now()}</h1>; }`],
     ['unknown', `export function App(){ const value = {get text(){return 'Hi'}}; return <h1>{value.text}</h1>; }`],
   ])('retains browser execution for %s work', (kind, source) => {
@@ -122,6 +120,16 @@ describe('initial content and browser requirements', () => {
     expect(result.initialRender.kind).toBe('browser');
     if (result.initialRender.kind === 'browser') expect(result.initialRender.requirements[0]?.kind).toBe(kind);
     expect(emitInitialHtml(result.initialRender)).toBeNull();
+  });
+
+  it.each([
+    ['ref', `export function App(){let node=null;return <div ref={node}/>;}`, '<div></div>'],
+    ['effect', `export function App(){$effect(()=>{});return <h1>Hello</h1>;}`, '<h1>Hello</h1>'],
+  ])('retains browser %s ownership beside known HTML', (feature, source, html) => {
+    const result=compile(source);
+    expect(result.initialRender).toMatchObject({kind:'bindings',owners:[{component:'App',features:[feature]}]});
+    expect(emitInitialHtml(result.initialRender)).toBe(html);
+    expect(result.output?.['./App.tsx']).toContain(feature==='ref'?'mountRef':'effect');
   });
 
   it('keeps a browser event program beside known initial HTML', () => {

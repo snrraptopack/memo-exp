@@ -21,8 +21,6 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('proves request-onl
 });
 
 it.each([
-  `export function App(){const user=$fetch('/api/user');let node=null;return <h1 ref={node}>{user?.name}</h1>;}`,
-  `export function App(){const user=$fetch('/api/user');$effect(()=>{});return <h1>{user?.name}</h1>;}`,
   `export function App(){const user=$fetch('/api/user');return <h1>{format(user)}</h1>;}`,
   `export function App(){const user=$fetch('/api/user');return <main>{user?.show?<h1>One</h1>:null}</main>;}`,
   `export function App(){const user=$fetch('/api/user',{method:'POST',body:{}});return <h1>{user?.name}</h1>;}`,
@@ -36,6 +34,15 @@ it.each([
     export function App(){return <Card error={Error}/>;}`,
 ])('retains browser work for unproved request behavior: %s',source=>{
   expect(compile(source).initialDelivery).toBeUndefined();
+});
+
+it.each([
+  ['ref', `let node=null;return <h1 ref={node}>{user?.name}</h1>;`],
+  ['effect', `$effect(()=>{});return <h1>{user?.name}</h1>;`],
+])('retains %s ownership in a fetched initial binding', (feature,body)=>{
+  const result=compile(`export function App(){const user=$fetch('/api/user');${body}}`);
+  expect(result.initialRender).toMatchObject({kind:'bindings',request:true,owners:[{component:'App',features:[feature]}]});
+  expect(result.initialDelivery?.browser).toBe('bindings');
 });
 
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed fetched composition and restores data before mounting (%s)',frontend=>{

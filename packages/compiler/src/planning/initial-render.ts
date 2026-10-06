@@ -42,6 +42,12 @@ export interface BrowserRequirement {
   readonly detail: string;
 }
 
+export interface InitialOwnerRequirement {
+  readonly moduleId:string;
+  readonly component:string;
+  readonly features:readonly ('ref'|'effect'|'cleanup')[];
+}
+
 export type InitialRenderPlan =
   | { readonly kind: 'html'; readonly target: string;
       readonly mountModuleId: string; readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
@@ -52,7 +58,8 @@ export type InitialRenderPlan =
   | { readonly kind: 'bindings'; readonly target: string; readonly mountModuleId: string;
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
       readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true;
-      readonly creationComponents?: readonly string[]; readonly request?: true }
+      readonly creationComponents?: readonly string[]; readonly request?: true;
+      readonly owners?:readonly InitialOwnerRequirement[] }
   | { readonly kind: 'request'; readonly target: string; readonly mountModuleId: string;
       readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
@@ -66,7 +73,7 @@ interface ValueArray { readonly kind: 'array'; readonly items: readonly Value[] 
 interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean; readonly live?: ReadonlySet<string> }
 interface Component { readonly kind: 'component'; readonly node: BaseNode; readonly scope: Scope; readonly local?: string }
 interface Content { readonly kind: 'content'; readonly nodes: readonly InitialRenderNode[] }
-interface Scope { readonly moduleId: string; readonly values: Map<string, Value>; readonly unstable: Set<string>; readonly rootRender?: boolean }
+interface Scope { readonly moduleId: string; readonly values: Map<string, Value>; readonly unstable: Set<string>; readonly rootRender?: boolean; readonly component?:string }
 interface ModuleScope extends Scope { readonly exports: Map<string, Value>; readonly unstableExports: Set<string> }
 
 /** Authored source identity survives backend AST cloning. */
@@ -102,6 +109,28 @@ export function planInitialRendering(
   const regions: { id: number; site: string }[] = [];
   let target: string | undefined;
   let inStructure = false;
+  const owners=new Map<string,{moduleId:string;component:string;features:Set<'ref'|'effect'|'cleanup'>}>();
+
+  function retainOwner(scope:Scope,feature:'ref'|'effect'|'cleanup'):void {
+    const key=`${scope.moduleId}#${scope.component}`;
+    const owner=owners.get(key)??{moduleId:scope.moduleId,component:scope.component!,features:new Set()};
+    owner.features.add(feature);owners.set(key,owner);
+  }
+
+  function deferredLifecycle(statement:BaseNode,scope:Scope):boolean {
+    const call=childNode(statement,'expression');
+    if(!bindings || call?.type!=='CallExpression')return false;
+    const name=identifierLikeName(childNode(call,'callee'));
+    if(name!=='$effect' && name!=='$cleanup')return false;
+    const analysis=analyses.get(scope.moduleId)??analyzeScope(programs.get(scope.moduleId)!);
+    analyses.set(scope.moduleId,analysis);
+    const lexicalScope=analysis.nodeToScope.get(call);
+    if(!lexicalScope || lexicalScope.getBinding(name)!==undefined)return false;
+    const args=childNodes(call,'arguments');
+    if(args.length!==1 || !['ArrowFunctionExpression','FunctionExpression'].includes(args[0]!.type))return false;
+    retainOwner(scope,name==='$effect'?'effect':'cleanup');
+    return true;
+  }
 
   function hostsOnly(nodes: readonly InitialRenderNode[]): boolean {
     return nodes.every(node => node.kind === 'text' || node.kind === 'element' && hostsOnly(node.children));
@@ -467,7 +496,7 @@ export function planInitialRendering(
     if (nodeField(component.node, 'async') || nodeField(component.node, 'generator')) need(component.scope, 'Async component');
     rendering.add(component);
     const scope: Scope = { moduleId: component.scope.moduleId, values: new Map(component.scope.values),
-      unstable: new Set(component.scope.unstable), rootRender: rootCall };
+      unstable: new Set(component.scope.unstable), rootRender: rootCall,component:component.local };
     try {
       const params = childNodes(component.node, 'params');
       const shape = analyzeComponentPropShape(params);
@@ -504,6 +533,7 @@ export function planInitialRendering(
             result = content(expression(argument, scope), scope); break;
           }
           else if (statement.type !== 'EmptyStatement') {
+            if(statement.type==='ExpressionStatement' && deferredLifecycle(statement,scope))continue;
             if (statement.type === 'ExpressionStatement') expression(childNode(statement, 'expression'), scope);
             need(scope, 'Component setup needs browser execution');
           }
@@ -583,7 +613,13 @@ export function planInitialRendering(
         bindingEventCount++;
         continue;
       }
-      if (name === 'ref') return need(scope, 'Refs require browser execution', 'ref');
+      if (name === 'ref') {
+        if(!bindings || !host)return need(scope, 'Refs require browser execution', 'ref');
+        const input=childNode(attribute,'value');
+        const value=input?.type==='JSXExpressionContainer'?childNode(input,'expression'):null;
+        if(!value || !['Identifier','ArrowFunctionExpression','FunctionExpression'].includes(value.type))need(scope,'Initial refs need a direct binding or callback','ref');
+        retainOwner(scope,'ref');continue;
+      }
       if (request && !host && ['pending','error'].includes(name)) need(scope,'Request presentation policies need a browser interaction proof');
       if (['route', 'route-to', 'if', 'else-if', 'else', 'innerHTML'].includes(name)) {
         return need(scope, 'Compiler directives need their browser semantics');
@@ -620,7 +656,7 @@ export function planInitialRendering(
             node.kind==='component' ? node.static===true : false);
         }
         return [{kind:'component',site:initialSite(node),moduleId:component.scope.moduleId,callModuleId:scope.moduleId,component:component.local!,children,
-          static:!inStructure && eventCount===bindingEventCount && liveProps.size===0 && closed(children),
+          static:!inStructure && !owners.has(`${component.scope.moduleId}#${component.local}`) && eventCount===bindingEventCount && liveProps.size===0 && closed(children),
           ...(inStructure ? {creation:true as const} : {})}];
       }
       catch (error) {
@@ -734,6 +770,7 @@ export function planInitialRendering(
 
   if (!root) return { kind: 'browser', requirements: [{ moduleId: '', kind: 'unknown', detail: 'No single application root' }] };
   function plan(): InitialRenderPlan {
+    owners.clear();bindingEvents=false;bindingEventCount=0;requestReads=false;
     module(root!.mountModuleId);
     const component = module(root!.moduleId).values.get(root!.local);
     if (!target || component === null || typeof component !== 'object' || component.kind !== 'component') {
@@ -745,7 +782,7 @@ export function planInitialRendering(
       ? { exposedMutableValues: true as const } : {};
     if (request && requestReads && !bindings) return {kind:'request',target,mountModuleId:root!.mountModuleId,nodes,...exposure};
     if (bindings) {
-      if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
+      if ((!bindingEvents && !owners.size) || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
       const calls = new Map<string,Set<string>>();
       const shapes = new Map<string,string>();
       const creationComponents = new Set<string>();
@@ -813,6 +850,7 @@ export function planInitialRendering(
       return {kind:'bindings',target,mountModuleId:root!.mountModuleId,rootModuleId:root!.moduleId,
         rootLocal:root!.local,returnSite,nodes:retain(nodes),...exposure,
         ...(request && requestReads?{request:true}:{}),
+        ...(owners.size?{owners:[...owners.values()].map(owner=>({...owner,features:[...owner.features]}))}:{}),
         ...(creationComponents.size?{creationComponents:[...creationComponents]}:{})};
     }
     if (regions.some(region => region.site === returnSite) || new Set(regions.map(region => region.site)).size !== regions.length) {
