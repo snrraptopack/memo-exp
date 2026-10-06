@@ -1,5 +1,22 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'composition-static-children': {
+    './App.tsx': `import {Shell} from './Shell';export function App(){const name='Ada';let count=0;return <main>
+      <button onClick={()=>count++}>Add</button><p>{count}</p><Shell><h2>Static card</h2><p>{name}</p></Shell></main>;}`,
+    './Shell.tsx': `export function Shell({children}){return <section>{children}</section>;}`,
+  },
+  'composition-static-children-60': {
+    './App.tsx': `import {Shell} from './Shell';export function App(){let count=0;return <main>
+      <button onClick={()=>count++}>Add</button><p>{count}</p>
+      ${Array.from({length:60},(_,index)=>`<Shell><h2>Static card ${index}</h2><p>Ready.</p></Shell>`).join('')}</main>;}`,
+    './Shell.tsx': `import {Frame} from './Frame';export function Shell({children}){return <section><Frame>{children}</Frame></section>;}`,
+    './Frame.tsx': `export function Frame({children}){return <aside>{children}</aside>;}`,
+  },
+  'composition-live-children': {
+    './App.tsx': `import {Shell} from './Shell';export function App(){let count=0;return <main>
+      <button onClick={()=>count++}>Add</button><Shell><p>{count}</p></Shell></main>;}`,
+    './Shell.tsx': `export function Shell({children}){return <section>{children}</section>;}`,
+  },
   'request-module-option-keys': { './App.tsx': `let search='unused';
     const user=$fetch('/api/user',{query:{search:'fixed'}});
     export function App(){let n=0;return <main><h1>{user?.name}</h1><button onClick={()=>n++}>{n}</button></main>;}` },

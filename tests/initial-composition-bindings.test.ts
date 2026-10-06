@@ -31,6 +31,63 @@ async function bind(name:string,source:string,modules:Record<string,string>={}) 
 }
 function click(selector:string) {document.querySelector<HTMLButtonElement>(selector)!.click();}
 
+it.each([false,true])('keeps closed authored children in HTML without a browser slot (imported=%s)',async imported=>{
+  const shell='function Shell({children}){return <section class="shell">{children}</section>;}';
+  const result=await bind(`static-children-${imported}`,`${imported?"import {Shell} from './Shell';":shell}
+    export function App(){const name='Ada';let n=0;return <main><button onClick={()=>n++}>{n}</button>
+      <Shell><h2>Fixed caller content</h2><p title={name}>{name}</p></Shell></main>;}`,
+    imported?{'./Shell.tsx':`export ${shell}`} : {});
+  const section=document.querySelector('section'),content=[...section!.children];
+  click('button');expect(document.querySelector('button')!.textContent).toBe('1');
+  expect(document.querySelector('section')).toBe(section);expect([...section!.children]).toEqual(content);
+  expect(section!.textContent).toBe('Fixed caller contentAda');
+  expect(result.output['./App.tsx'].slice(result.output['./App.tsx'].indexOf('export function App')))
+    .not.toMatch(/childrenMountSequence|Fixed caller content|createElement|materializeMarkup/);
+});
+
+it('keeps repeated static child extents and forwarding in their own HTML positions',async()=>{
+  const result=await bind('static-children-forwarded',`function Frame({children}){return <aside>{children}</aside>;}
+    function Shell({children}){return <section><Frame>{children}</Frame></section>;}
+    export function App(){let n=0;return <main><button onClick={()=>n++}>{n}</button>
+      <Shell><b>One</b></Shell><Shell><h2>Two</h2><p>Extra</p></Shell></main>;}`);
+  const sections=[...document.querySelectorAll('section')],content=[...document.querySelectorAll('aside')];
+  click('button');expect(document.querySelector('button')!.textContent).toBe('1');
+  expect(content.map(node=>node.textContent)).toEqual(['One','TwoExtra']);
+  expect([...document.querySelectorAll('section')]).toEqual(sections);
+  expect([...document.querySelectorAll('aside')]).toEqual(content);
+  expect(result.output['./App.tsx'].slice(result.output['./App.tsx'].indexOf('export function App')))
+    .not.toMatch(/childrenMountSequence|materializeMarkup|createElement/);
+});
+
+it('keeps two mounts of the same closed slot as distinct retained nodes',async()=>{
+  await bind('static-children-two-mounts',`function Shell({children}){return <section><aside>{children}</aside><article>{children}</article></section>;}
+    export function App(){let n=0;return <main><button onClick={()=>n++}>{n}</button><Shell><b>Shared content</b></Shell></main>;}`);
+  const nodes=[...document.querySelectorAll('b')];
+  expect(nodes).toHaveLength(2);expect(nodes[0]).not.toBe(nodes[1]);
+  click('button');expect([...document.querySelectorAll('b')]).toEqual(nodes);
+  expect(nodes.map(node=>node.textContent)).toEqual(['Shared content','Shared content']);
+});
+
+it.each([
+  ['live child', `let n=0;return <main><button onClick={()=>n++}>Next</button><Shell><b>{n}</b></Shell></main>;`],
+  ['child event', `let n=0;return <main><Shell><button onClick={()=>n++}>{n}</button></Shell></main>;`],
+  ['child ref', `let ref=null;let n=0;return <main><button ref={ref} onClick={()=>n++}>{n}</button><Shell><b ref={ref}>Ref</b></Shell></main>;`],
+  ['future slot', `let show=false;return <main><button onClick={()=>show=!show}>Toggle</button><Shell><b>One</b></Shell>{show&&<Shell><b>Two</b></Shell>}</main>;`],
+  ['future ancestor', `let show=false;return <main><button onClick={()=>show=!show}>Toggle</button><Card/>{show&&<Card/>}</main>;`],
+])('retains the ordinary slot program for %s ownership',(_name,body)=>{
+  const result=compile(`function Shell({children}){return <section>{children}</section>;}
+    function Card(){return <article><Shell><b>Later</b></Shell></article>;}
+    export function App(){${body}}`);
+  expect(result.initialContent).toBe(false);
+  expect(result.output['./App.tsx']).toContain('childrenMountSequence');
+});
+
+it('retains the slot program when the callee owns events',()=>{
+  const result=compile(`function Shell({children}){let n=0;return <section><button onClick={()=>n++}>{n}</button>{children}</section>;}
+    export function App(){return <main><Shell><b>Fixed</b></Shell></main>;}`);
+  expect(result.initialRender.kind).not.toBe('bindings');expect(result.output['./App.tsx']).toContain('childrenMountSequence');
+});
+
 it('keeps repeated static/live props and empty text distinct while sharing their factory',async()=>{
   const result=await bind('repeated',`function Label({value='fallback'}){return <strong title={value}>{value}</strong>;}
     export function App(){let n=0;return <main><h1>Static surroundings</h1><button onClick={()=>n++}>Add</button>

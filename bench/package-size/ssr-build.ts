@@ -23,6 +23,9 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'composition-static-children': sizeFixtures['composition-static-children']!,
+  'composition-static-children-60': sizeFixtures['composition-static-children-60']!,
+  'composition-live-children': sizeFixtures['composition-live-children']!,
   'request-module-option-keys': sizeFixtures['request-module-option-keys']!,
   'request-inline-group': sizeFixtures['request-inline-group']!,
   'request-list-siblings': sizeFixtures['request-list-siblings']!,
@@ -100,6 +103,8 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       const response = await app.fetch(new Request('https://app.test/'));
       if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
       const html = await response.text();
+      if(fixture==='composition-static-children' && !html.replace(/<!--[^]*?-->/g,'').includes('<section><h2>Static card</h2><p>Ada</p></section>'))throw new Error('Static child content was lost');
+      if(fixture==='composition-static-children-60' && (html.match(/<section>/g)?.length!==60 || !html.replace(/<!--[^]*?-->/g,'').includes('<aside><h2>Static card 59</h2><p>Ready.</p></aside>')))throw new Error('Repeated forwarded child content was lost');
       if(fixture==='request-inline-group' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Directory:Ada</h1>'))throw new Error('Inline policy data did not settle');
       if (['request-module-option-keys', 'request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
       if (fixture==='request-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li title="one">0:one!</li><li title="two">1:two!</li>')) throw new Error('Fetched rows did not settle');
@@ -115,6 +120,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
         javascript: chunks.reduce((size, file) => size + Buffer.byteLength(file.code), 0),
         gzip: chunks.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), chunks: chunks.length };
       if (fixture === 'static' && version === 'after' && row.javascript !== 0) throw new Error('Static page emitted JavaScript');
+      if(fixture.startsWith('composition-') && row.javascript===0)throw new Error('Composition lost its counter browser program');
       if (['request-data', 'request-composition'].includes(fixture) && version === 'after' && (row.javascript !== 0 || row.payload !== 0 || /<!--/.test(html))) throw new Error('Request-only page retained browser delivery');
       if (['request-module-option-keys', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
       rows.push(row);

@@ -275,7 +275,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts and async provenance, including clone lookups | Extend the contracts to mutation journals |
 | Mutation journals | Shared candidate/path analysis and frozen backend snapshots; one source registry | Move binding allocation and reason publication behind explicit backend contracts |
 | Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
-| Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
+| Props and region identities | Shared analysis plus backend lowering; closed authored slots carry static callee ownership and future-creation guards | Extend composition and publication contracts to live slots and callbacks |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Group policies, read replay operations and lazy module sources have explicit plans before target lowering; other transforms remain mixed | Extend source contracts to remaining callback transforms and TSRX validation |
 | Generated IDs, headers, imports and output buffers | One mutable DOM emission state referenced by `Ctx`; no mirrored facade fields | Replace remaining runtime-producing normalization with explicit target lowering |
@@ -423,6 +423,33 @@ lifetime caused by a noncomputed option key reduces the affected fixture from
 payload are unchanged. Static, counter, inline Group and routed Group controls
 are byte-identical; this is a specific dead-lifetime removal, not closure of the
 remaining callback/composition or runtime capability work.
+
+### Closed authored content ownership — 2026-10-06
+
+The initial rendering contract now identifies static authored child slots only
+after proving their content and callee closed. The existing DOM static-component
+placement consumes this fact; it creates no new runtime path. A separate count
+of ref/lifetime sites avoids confusing a new child ref with a feature already
+retained by the same owner. Live text, child events/refs, callee interaction and
+structural slot creation remain unproved and keep ordinary ownership. Repeated
+static slot extents need no browser binding shape. Their enclosing factories
+still undergo escape and transitive future-creation checks before omission.
+
+The production measurements and supported limits are recorded in the browser
+architecture document. Static slots with one or 60 cards now ship the same
+8,613-byte counter program. Live-slot and routing/Group controls are unchanged.
+This extends initial composition reachability; generic live callback/slot
+binding and retained creation remain open work.
+
+Verification passes 275 focused tests across 21 files, compiler build, workspace
+typecheck, changed-source lint and three production Chrome checks. Chrome proves
+counter updates, exact retained-node identity and no element creation for the
+new static slots, alongside existing routed Group/lifetime behavior. The paired
+DOM comparison against `10d61aa` passes all 21 scenarios and mixed sequences
+with identity checks; its browser artifacts are identical, so no CPU speed gain
+is established. The whole root suite was not repeated. Tests and benchmarks use
+self-contained authored fixtures; numbered docs and dependency versions are
+unchanged.
 
 ## Migration order and gates
 

@@ -19,7 +19,9 @@ export type InitialRenderNode =
   | { readonly kind: 'text'; readonly value: string; readonly live?: boolean }
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'component'; readonly site: string; readonly moduleId: string; readonly callModuleId: string; readonly component: string;
-      readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true }
+      readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true;
+      /** Authored content slots are omitted only with an entirely static callee. */
+      readonly staticChildren?: true }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number | null;
       readonly children: readonly InitialRenderNode[]; readonly alternatives?: readonly (readonly InitialRenderNode[])[] }
   | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[];
@@ -110,8 +112,11 @@ export function planInitialRendering(
   let target: string | undefined;
   let inStructure = false;
   const owners=new Map<string,{moduleId:string;component:string;features:Set<'ref'|'effect'|'cleanup'>}>();
+  // Another ref in the same owner must still disqualify a static content slot.
+  let ownerSiteCount=0;
 
   function retainOwner(scope:Scope,feature:'ref'|'effect'|'cleanup'):void {
+    ownerSiteCount++;
     const key=`${scope.moduleId}#${scope.component}`;
     const owner=owners.get(key)??{moduleId:scope.moduleId,component:scope.component!,features:new Set()};
     owner.features.add(feature);owners.set(key,owner);
@@ -543,6 +548,12 @@ export function planInitialRendering(
     } finally { rendering.delete(component); }
   }
 
+  function closedContent(nodes:readonly InitialRenderNode[]):boolean {
+    return nodes.every(node=>node.kind==='text' ? node.live===false :
+      node.kind==='element' ? node.attributes.every(attribute=>attribute.live===false)&&closedContent(node.children) :
+      node.kind==='component' ? node.static===true : false);
+  }
+
   function jsx(node: BaseNode, scope: Scope): readonly InitialRenderNode[] {
     function children(): InitialRenderNode[] {
       const result: InitialRenderNode[] = [];
@@ -641,8 +652,14 @@ export function planInitialRendering(
         need(scope, 'Captured callbacks and object props need an interaction proof');
       }
       const regionCount = regions.length;
+      const childEventCount = bindingEventCount;
+      const childOwnerCount = ownerSiteCount;
       const nodes = children();
-      if (bindings && nodes.length) need(scope,'Authored children binding needs an ownership placement proof');
+      const staticChildren = bindings && nodes.length > 0;
+      if (staticChildren && (inStructure || childEventCount !== bindingEventCount ||
+          childOwnerCount !== ownerSiteCount || !closedContent(nodes))) {
+        need(scope,'Live authored children need an ownership placement proof');
+      }
       if (mixed && regions.length !== regionCount) need(scope, 'Interactive content slots need a placement proof');
       if (nodes.length) props.set('children', { kind: 'content', nodes });
       try {
@@ -650,13 +667,12 @@ export function planInitialRendering(
         const children=render(component, props, false, liveProps);
         if (!bindings) return children;
         if (children.length!==1 || children[0]?.kind!=='element') need(scope,'Initial component bindings need one host root');
-        function closed(nodes:readonly InitialRenderNode[]):boolean {
-          return nodes.every(node=>node.kind==='text' ? node.live===false :
-            node.kind==='element' ? node.attributes.every(attribute=>attribute.live===false)&&closed(node.children) :
-            node.kind==='component' ? node.static===true : false);
-        }
+        const isStatic = !inStructure && !owners.has(`${component.scope.moduleId}#${component.local}`) &&
+          eventCount===bindingEventCount && liveProps.size===0 && closedContent(children);
+        if (staticChildren && !isStatic) need(scope,'Authored children need a static callee ownership proof');
         return [{kind:'component',site:initialSite(node),moduleId:component.scope.moduleId,callModuleId:scope.moduleId,component:component.local!,children,
-          static:!inStructure && !owners.has(`${component.scope.moduleId}#${component.local}`) && eventCount===bindingEventCount && liveProps.size===0 && closed(children),
+          static:isStatic,
+          ...(staticChildren ? {staticChildren:true as const} : {}),
           ...(inStructure ? {creation:true as const} : {})}];
       }
       catch (error) {
@@ -770,7 +786,7 @@ export function planInitialRendering(
 
   if (!root) return { kind: 'browser', requirements: [{ moduleId: '', kind: 'unknown', detail: 'No single application root' }] };
   function plan(): InitialRenderPlan {
-    owners.clear();bindingEvents=false;bindingEventCount=0;requestReads=false;
+    owners.clear();ownerSiteCount=0;bindingEvents=false;bindingEventCount=0;requestReads=false;
     module(root!.mountModuleId);
     const component = module(root!.moduleId).values.get(root!.local);
     if (!target || component === null || typeof component !== 'object' || component.kind !== 'component') {
@@ -794,9 +810,13 @@ export function planInitialRendering(
             const key=`${node.moduleId}#${node.component}`;
             if (node.creation) creationComponents.add(key);
             if (owner) { const children=descendants.get(owner)??new Set<string>();children.add(key);descendants.set(owner,children); }
-            const shape=JSON.stringify(node.children,(key,value)=>['value','live','static','creation'].includes(key)?undefined:value);
-            if (shapes.has(key) && shapes.get(key)!==shape) need(rootScope,'Repeated component initial extents need a shared binding shape');
-            shapes.set(key,shape);
+            // A wholly static slot has no browser factory or binding shape.
+            // Future creation is checked below before that omission is used.
+            if (!node.staticChildren) {
+              const shape=JSON.stringify(node.children,(key,value)=>['value','live','static','creation'].includes(key)?undefined:value);
+              if (shapes.has(key) && shapes.get(key)!==shape) need(rootScope,'Repeated component initial extents need a shared binding shape');
+              shapes.set(key,shape);
+            }
             const sites=calls.get(key)??new Set<string>(); sites.add(`${node.callModuleId}:${node.site}`);calls.set(key,sites);
             collect(node.children,key);
             continue;
@@ -834,6 +854,7 @@ export function planInitialRendering(
         return nodes.map(node=>{
           if (node.kind==='component') {
             const creation=creationComponents.has(`${node.moduleId}#${node.component}`);
+            if (creation && node.staticChildren) need(rootScope,'Recreated authored children need their slot ownership program');
             return {...node, ...(creation?{static:false}:{}), children:retain(node.children,creation)};
           }
           if (creating && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');

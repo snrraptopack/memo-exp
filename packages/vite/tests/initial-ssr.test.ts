@@ -110,6 +110,31 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('retains static child slots as HTML while binding the counter in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('static-child-slots',`import {Shell} from './Shell';export function App(){let n=0;
+      return <main><button onClick={()=>n++}>{n}</button><Shell><h2>One</h2></Shell>
+        <Shell><p>Two</p><b>Extra</b></Shell></main>;}`,{
+      'src/Shell.tsx': `import {Frame} from './Frame';export function Shell({children}){return <section><Frame>{children}</Frame></section>;}`,
+      'src/Frame.tsx': `export function Frame({children}){return <aside>{children}</aside>;}`,
+    });
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const code=result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n');
+    expect(code).not.toContain('One');expect(code).not.toContain('Extra');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForSelector('button');await page.click('button');
+      await page.waitForFunction(()=>document.querySelector('button')?.textContent==='1');
+      expect(await page.$$eval('aside',nodes=>nodes.map(node=>node.textContent))).toEqual(['One','TwoExtra']);
+      expect(await page.evaluate(()=>{
+        const values=window as unknown as {initial:Element[];created:string[]};
+        return values.initial.length===[...document.querySelectorAll('#root *')].length &&
+          values.initial.every((node,index)=>node===document.querySelectorAll('#root *')[index]) &&
+          values.created.filter(tag=>tag!=='link').length===0;
+      })).toBe(true);
+      expect(requests).toEqual([]);
+    });
+  },60_000);
   it.each([0,2])('retains fixed siblings around %i fetched rows in Chrome',async(count,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const initial=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);

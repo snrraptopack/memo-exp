@@ -40,6 +40,8 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Static page | 0 | 0 |
 | Counter | 8,613 | 3,483 |
 | Counter with 60 static cards | 8,611 | 3,483 |
+| Counter with one static authored child slot | 8,613 | 3,483 |
+| Counter with 60 forwarded static child slots | 8,613 | 3,483 |
 | Interactive composition | 10,300 | 4,074 |
 | Input / list | 17,140 | 6,443 |
 | Noninteractive fetched page | 0 | 0 |
@@ -76,7 +78,9 @@ Callback props, escaping mutable values, hidden reads and unknown initialization
 still require conservative ownership/creation proofs. Supported refs, inline
 effects and cleanup retain their existing lifetime owner beside bound HTML. Fixed-shape
 composed factories now bind initial instances and create later conditional
-instances. Broader composition remains open. Mobile/desktop emission is
+instances. Entirely static authored child slots, including forwarding and
+repeated content, stay in HTML beside interactive owners. Live slots and future
+slot creation retain their ownership program. Broader composition remains open. Mobile/desktop emission is
 not implemented. DOM performance work remains in `performance-work.md`; these
 bundle results do not establish faster CPU timings. A current VM comparison is
 still outstanding.
@@ -2127,8 +2131,10 @@ The complete architecture remains open in these concrete areas:
   placement into lowering. Lazy module sources now also carry their owned inputs
   and lexical binding references into lowering. Other callback transforms and
   TSRX boundary validation are still open.
-- Generic callback/child-slot composition and escaping values need broader
-  ownership and lifetime reachability. Named effects and unproved ref expressions
+- Live callback/child-slot composition and escaping values need broader
+  ownership and lifetime reachability. Closed static slots now stay in HTML;
+  future slot instances and interactive callees retain ordinary slot creation.
+  Named effects and unproved ref expressions
   retain ordinary creation rather than acquiring a guessed placement.
 - Multiple unknown list extents, nested regions and component rows need sound
   address/shape proofs before general adoption can be removed.
@@ -2148,5 +2154,32 @@ Group controls are unchanged. Mounted module promise reads also now rebind from
 their deferred lexical inputs without a false write feedback loop; their real
 callback writes remain reactive. This is a bounded correctness and dead-lifetime
 fix. The DOM artifacts remain identical, so it establishes no DOM timing gain.
+
+### Static authored child ownership — 2026-10-06
+
+The initial render plan now proves closed authored child content and its static
+callee together. The existing static-component omission handles those sites;
+no child-slot runtime or second mounting path was added. Local/imported wrappers,
+forwarding and repeated mounts retain their own HTML nodes. Every child event or
+ref site disqualifies the proof, even when its owner already has the same feature.
+Live content, callee lifetimes and future creation through an ancestor retain
+their slot program. Static slots do not need a shared browser binding shape;
+the existing factory escape and future-creation checks remain in force.
+
+The paired production audit against `10d61aa` holds runtime/data/server fixed
+and counts every emitted browser chunk, including future code:
+
+| Fixture | JS before B | JS after B | Gzip before B | Gzip after B |
+|---|---:|---:|---:|---:|
+| One static child slot with a counter | 18,536 | 8,613 | 6,627 | 3,483 |
+| 60 forwarded static child slots with a counter | 49,924 | 8,613 | 11,322 | 3,483 |
+| Live child slot with a counter | 18,330 | 18,330 | 6,564 | 6,564 |
+
+The static cases also lose the unused 78-byte payload and general adoption
+markers. Their HTML changes from 372 to 267 B and from 4,513 to 4,408 B,
+respectively. Static, counter, live-prop composition and inline/routed Group
+controls are unchanged. This establishes that static child composition can
+grow HTML without growing these fixtures' browser program; live composition
+and retained creation remain separate open proofs.
 
 These are outstanding requirements, not reasons to mark the architecture closed.
