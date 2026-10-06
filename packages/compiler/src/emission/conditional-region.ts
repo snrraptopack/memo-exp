@@ -2,7 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { initialSite } from '../planning/initial-render';
-import { initialNode, initialServerAnchor } from './initial-dom';
+import { initialNode, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
 import {
   type ComponentPath,
   type Ctx,
@@ -158,7 +158,7 @@ export function emitConditionalRegion(
     );
   });
 
-  const serverPlacement=ctx.initialServerComponents[componentName]?.conditions[initialSite(expression)];
+  const serverPlacement=initialStructuralPlacement(ctx.initialServerComponents[componentName],initialSite(expression))?.conditions[initialSite(expression)];
   const serverAnchor=(closing:boolean)=>initialServerAnchor(ctx,scope,parentElementVariable,'when',initialSite(expression),closing);
   if (serverPlacement) scope.creation.push(serverAnchor(false));
 

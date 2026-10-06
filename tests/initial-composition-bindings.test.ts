@@ -172,10 +172,11 @@ it.each([
   expect(result.initialContent).toBe(false);expect(result.output['./App.tsx']).toContain('createTextNode');
 });
 
-it('keeps structural slot creation available',()=>{
+it('retains constructors for conditional children while binding their initial HTML',()=>{
   const result=compile(`function Shell({children}){return <section>{children}</section>;}
     export function App(){let open=true;return <main><button onClick={()=>open=!open}>Toggle</button><Shell>{open&&<b>Visible</b>}</Shell></main>;}`);
-  expect(result.initialContent).toBe(false);expect(result.output['./App.tsx']).toContain('childrenMountSequence');
+  expect(result.initialContent).toBe(true);expect(result.output['./App.tsx']).toContain('createCondRegion');
+  expect(result.output['./App.tsx']).toContain('createElement');
 });
 
 it('keeps repeated static/live props and empty text distinct while sharing their factory',async()=>{

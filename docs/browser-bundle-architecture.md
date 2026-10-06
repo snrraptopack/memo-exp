@@ -2131,9 +2131,10 @@ The complete architecture remains open in these concrete areas:
   placement into lowering. Lazy module sources now also carry their owned inputs
   and lexical binding references into lowering. Other callback transforms and
   TSRX boundary validation are still open.
-- Structural and recreated child slots, named JSX render props and escaping
+- Recreated child slots, named JSX render props and escaping
   render values need broader ownership and lifetime reachability. Closed static
-  slots and fixed live authored children now bind their existing HTML; future
+  slots, fixed live authored children and proved conditional/list content now
+  bind their existing HTML; future
   slot instances retain ordinary slot creation.
   Named effects and unproved ref expressions
   retain ordinary creation rather than acquiring a guessed placement.
@@ -2227,3 +2228,51 @@ ownership. The local DOM comparison passes all 21 scenarios with retained
 identity and mixed-sequence validation, plus three-sample update/swap timings in
 ABBA order. Those benchmark bundles are byte-identical, so this batch establishes
 delivery savings and composition correctness, not a DOM timing improvement.
+
+### Structural authored child bindings — 2026-10-06
+
+Conditional and list content inside fixed authored child slots now uses the
+existing region binding plan. Repeated and forwarded slots relocate the region
+anchors alongside their element and text addresses. Read lowering and server
+anchor emission resolve the same lexical slot placement, so fetched content
+does not acquire an extra region while the server settles its request.
+
+Future-creation analysis traverses transparent slots too. A child component in
+a conditional retains its constructor for later branch creation, while its
+initial instance binds the server nodes. Caller state, module writes from a
+separate component, keyed row identity, refs and effect cleanup retain their
+existing ownership. No runtime implementation or API was added.
+
+Paired production SSR delivery against `dff6ff6`, with the current runtime held
+fixed and every emitted browser chunk counted:
+
+| Stable fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Conditional authored children | 21,726 | 13,230 | 7,644 | 5,081 |
+| Keyed list authored children | 32,952 | 24,402 | 11,583 | 8,872 |
+
+Their HTML drops from 460 to 374 B and from 518 to 380 B, respectively; each
+loses the unused 78-byte general-adoption payload. Live and forwarded live slot,
+static, counter and inline/routed Group controls are byte-identical. Static
+still delivers zero browser JavaScript.
+
+The proof remains bounded. Nested structural regions, recreated callees with
+authored children and unknown-width fetched lists directly in a transparent
+slot retain ordinary creation. Fetched lists inside a fixed authored host can
+bind, including empty lists and repeated mounts with different prefix lengths.
+Broader unknown-width slot adoption needs independent prefix and suffix
+placement facts before it can safely move a callee's fixed siblings.
+
+Verification passes 204 root tests across 14 focused suites and six production
+Chrome cases, including fetched structural slots, request-selected branches,
+lazy route lifecycles and routed Group presentation. Time-limited browser runs
+were repeated separately on this machine; the final isolated cases pass.
+Compiler build, root typecheck and changed-file lint pass. Fixtures are
+self-contained; examples and numbered docs are unchanged.
+
+The paired local DOM comparison against `dff6ff6` validates all 21 scenarios and
+mixed sequences across eight compiled variants plus vanilla, then measures
+update/swap with three samples in ABBA order. It checks retained identity after
+every timed sample. Browser artifacts are byte-identical, so the timings
+establish no DOM speed improvement. Resource/router capability costs, broader
+slot extents and nested structural adoption remain open.

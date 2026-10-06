@@ -27,6 +27,8 @@ const fixtures = {
   'composition-static-children-60': sizeFixtures['composition-static-children-60']!,
   'composition-live-children': sizeFixtures['composition-live-children']!,
   'composition-live-forwarded-children': sizeFixtures['composition-live-forwarded-children']!,
+  'composition-conditional-children': sizeFixtures['composition-conditional-children']!,
+  'composition-list-children': sizeFixtures['composition-list-children']!,
   'request-module-option-keys': sizeFixtures['request-module-option-keys']!,
   'request-inline-group': sizeFixtures['request-inline-group']!,
   'request-list-siblings': sizeFixtures['request-list-siblings']!,

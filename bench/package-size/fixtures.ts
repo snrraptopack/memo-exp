@@ -24,6 +24,19 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
     './Shell.tsx': `import {Frame} from './Frame';export function Shell({children}){return <section><h2>Counter</h2><Frame>{children}</Frame></section>;}`,
     './Frame.tsx': `export function Frame({children}){return <aside>{children}</aside>;}`,
   },
+  'composition-conditional-children': {
+    './App.tsx': `import {Shell} from './Shell';export function App(){let open=true;let n=0;
+      return <main><button onClick={()=>open=!open}>Toggle</button><button onClick={()=>n++}>Next</button>
+        <Shell>{open?<b title={'count:'+n}>{n}</b>:<i>Closed</i>}</Shell><p>{n}</p></main>;}`,
+    './Shell.tsx': `export function Shell({children}){return <section><h2>Before</h2>{children}<footer>After</footer></section>;}`,
+  },
+  'composition-list-children': {
+    './App.tsx': `import {Shell} from './Shell';export function App(){let items=[{id:1,label:'one'},{id:2,label:'two'}];let next=3;
+      return <main><button onClick={()=>items=[...items,{id:next++,label:'new'}]}>Append</button>
+        <button onClick={()=>items=items.toReversed()}>Reverse</button>
+        <Shell>{items.map((item,index)=><li key={item.id}>{index}:{item.label}</li>)}</Shell></main>;}`,
+    './Shell.tsx': `export function Shell({children}){return <section><h2>Rows</h2><ul>{children}</ul><footer>After</footer></section>;}`,
+  },
   'request-module-option-keys': { './App.tsx': `let search='unused';
     const user=$fetch('/api/user',{query:{search:'fixed'}});
     export function App(){let n=0;return <main><h1>{user?.name}</h1><button onClick={()=>n++}>{n}</button></main>;}` },

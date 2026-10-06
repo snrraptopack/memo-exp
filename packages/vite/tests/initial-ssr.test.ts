@@ -111,6 +111,55 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([0,2])('binds fetched lists inside repeated authored children (%i rows) in Chrome',async(count,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production(`structural-child-list-${count}`,`import {Shell} from './Shell';export function App(){
+      const user=$fetch('/api/user');let n=0;return <main><button class="next" onClick={()=>n++}>Next</button><Shell>
+        <ul>{user?.rows?.map((row,index)=><li key={row.id}>{index}:{row.label}:{n}</li>)}</ul><h3>After {n}</h3>
+      </Shell></main>;}`,{
+      'src/Shell.tsx':`import {Frame} from './Frame';export function Shell({children}){return <section><h2>Before</h2>{children}<Frame>{children}</Frame></section>;}`,
+      'src/Frame.tsx':`export function Frame({children}){return <aside><i>Prefix</i><em>Second prefix</em>{children}<footer>After</footer></aside>;}`,
+    },{rows:Array.from({length:count},(_,id)=>({id,label:'row'+id}))});
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();expect(html).not.toContain('mmd:r:');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForFunction(()=>document.querySelectorAll('h3').length===2);
+      await page.click('.next');await page.waitForFunction(()=>[...document.querySelectorAll('h3')].every(node=>node.textContent==='After 1'));
+      expect(await page.$$eval('ul',nodes=>nodes.map(node=>[...node.children].map(row=>row.textContent))))
+        .toEqual([0,1].map(()=>Array.from({length:count},(_,id)=>`${id}:row${id}:1`)));
+      expect(await page.evaluate(()=>{
+        const state=window as unknown as {initial:Element[];created:string[]};
+        const initial=state.initial.filter(node=>node.localName!=='script'),current=[...document.querySelectorAll('#root *:not(script)')];
+        return {retained:initial.length===current.length&&initial.every((node,index)=>node===current[index]),created:state.created.filter(tag=>tag!=='link')};
+      })).toEqual({retained:true,created:[]});expect(requests).toEqual([]);
+    });
+  },60_000);
+
+  it.each(['Ada',''])('binds request-selected conditional children and recreates branches in Chrome (name=%s)',async(name,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production(`structural-child-conditional-${name||'empty'}`,`import {Shell} from './Shell';export function App(){
+      const user=$fetch('/api/user');let open=true;let n=0;return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button>
+        <button class="next" onClick={()=>n++}>Next</button><Shell>
+          {user?.name==='Ada'&&open?<p class="present">Ada:{n}</p>:<i class="empty">Hidden:{n}</i>}
+        </Shell></main>;}`,{
+      'src/Shell.tsx':`export function Shell({children}){return <section><h2>Before</h2>{children}<aside><b>Prefix</b><b>Second prefix</b>{children}</aside></section>;}`,
+    },name);
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();expect(html).not.toContain('mmd:r:');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      const selector=name?'.present':'.empty';await page.waitForSelector(selector);
+      await page.evaluate(selector=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll(selector)];},selector);
+      await page.click('.next');await page.waitForFunction((selector,text)=>[...document.querySelectorAll(selector)].every(node=>node.textContent===text),{},selector,(name?'Ada:':'Hidden:')+'1');
+      expect(await page.$$eval(selector,nodes=>nodes.map(node=>node.textContent))).toEqual([0,1].map(()=>(name?'Ada:':'Hidden:')+'1'));
+      expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept.every(node=>node.isConnected))).toBe(true);
+      if(name){
+        await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('.empty').length===2);
+        await page.click('.next');await page.waitForFunction(()=>[...document.querySelectorAll('.empty')].every(node=>node.textContent==='Hidden:2'));
+        await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('.present').length===2);
+        expect(await page.$$eval('.present',nodes=>nodes.map(node=>node.textContent))).toEqual(['Ada:2','Ada:2']);
+        expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept.every(node=>!node.isConnected))).toBe(true);
+      }
+      expect(requests).toEqual([]);
+    });
+  },60_000);
   it.each([0,2])('binds repeated live slots before and after %i fetched rows in Chrome',async(count,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production(`live-slot-list-suffix-${count}`,`import {Shell} from './Shell';

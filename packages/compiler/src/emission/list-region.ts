@@ -30,7 +30,7 @@ import {
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { preparationRead } from '../data-sources';
 import { initialSite } from '../planning/initial-render';
-import { initialNode, initialServerAnchor } from './initial-dom';
+import { initialNode, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
 
 export function emitListRegion(
   ctx: Ctx,
@@ -51,7 +51,7 @@ export function emitListRegion(
     });
   const site = allocateMapSite(call, plan, componentName, scope.usedPrefixes);
   const initial=scope.initialDom?.plan.lists[initialSite(call)];
-  const serverPlacement=ctx.initialServerComponents[componentName]?.lists[initialSite(call)];
+  const serverPlacement=initialStructuralPlacement(ctx.initialServerComponents[componentName],initialSite(call))?.lists[initialSite(call)];
   if(serverPlacement) scope.creation.push(initialServerAnchor(ctx,scope,parentElementVariable,'list',initialSite(call),false));
   if (scope.initialDom && (!initial || initial.row!==null && site.form!=='inline')) {
     throw new Error('memo-dom: initial list needs a host row placement');

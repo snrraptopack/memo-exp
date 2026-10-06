@@ -10,13 +10,20 @@ import {initialSite, initialNodeExtent, initialSlotMountKey} from '../planning/i
 import type {BaseNode} from '../ast';
 import { md } from '../identifiers';
 
+/** Resolve an authored structural site through its lexical slot placement. */
+export function initialStructuralPlacement(plan:InitialDomRoot|null|undefined,site:string):InitialDomRoot|undefined {
+  if (!plan) return undefined;
+  const structural=(root:InitialDomRoot)=>root.conditions[site]!==undefined || root.lists[site]!==undefined;
+  return structural(plan) ? plan : Object.values(plan.slots??{}).find(slot=>structural(slot.plan))?.plan;
+}
+
 /** DOM read lowering preserves every region with a proved source placement. */
 export function initialReadPlacement(ctx:Ctx,component:string,expression:BaseNode):{scalar:boolean;structural:boolean} {
   const plan=ctx.initialDomRoot?.component===component ? ctx.initialDomRoot :
     ctx.initialDomComponents[component] ?? ctx.initialServerComponents[component];
   const site=initialSite(expression);
   return {scalar:plan!=null&&!nodeHasJsx(expression as unknown as t.Node),
-    structural:plan?.conditions[site]!==undefined || plan?.lists[site]!==undefined};
+    structural:initialStructuralPlacement(plan,site)!==undefined};
 }
 
 export interface InitialDomElement {
@@ -84,8 +91,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
         if (!node.mount?.site) {valid=false;return;}
         const nested=planInitialDom({...plan, nodes:node.children, rootLocal:node.component,
           rootModuleId:node.moduleId, returnSite:''}, factories, false, slotOwners, current);
-        // Structural slot extents need their own future-creation proof.
-        if (!nested || Object.keys(nested.conditions).length || Object.keys(nested.lists).length) {valid=false;return;}
+        if (!nested) {valid=false;return;}
         const owner=`${node.moduleId}#${node.component}`;
         const slots=slotOwners[owner] ??= {};
         const mount=initialSlotMountKey(node.mount.moduleId,node.mount.component,node.mount.site);
@@ -188,6 +194,10 @@ function shiftInitialDom(root:InitialDomRoot, offset:number):InitialDomRoot {
     elements:Object.fromEntries(Object.entries(root.elements).map(([site,element])=>[site,{...element,path:shift(element.path),
       texts:element.texts.map(text=>({...text,path:shift(text.path)}))}])),
     components:Object.fromEntries(Object.entries(root.components).map(([site,component])=>[site,{...component,path:shift(component.path)}])),
+    conditions:Object.fromEntries(Object.entries(root.conditions).map(([site,condition])=>[site,{...condition,
+      open:shift(condition.open),end:shift(condition.end)}])),
+    lists:Object.fromEntries(Object.entries(root.lists).map(([site,list])=>[site,{...list,
+      open:shift(list.open),end:list.end==='last-child'?list.end:shift(list.end)}])),
     ...(root.texts?{texts:root.texts.map(text=>({...text,path:shift(text.path)}))}:{}),
   };
 }

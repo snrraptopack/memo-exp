@@ -884,7 +884,7 @@ export function planInitialRendering(
             attributes:creating?node.attributes.map(attribute=>({...attribute,live:true})):node.attributes,
             children:retain(node.children,creating)};
           if (node.kind==='text') return creating?{...node,live:true}:node;
-          if (node.kind==='conditional') return {...node,children:retain(node.children)};
+          if (node.kind==='conditional' || node.kind==='slot') return {...node,children:retain(node.children)};
           if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row)),
             ...(node.requestRow?{requestRow:retain(node.requestRow)}:{})};
           return node;
