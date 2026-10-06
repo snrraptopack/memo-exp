@@ -9,8 +9,9 @@ import { sizeFixtures } from './fixtures';
 import { hydrationBootstrap, hydrationVirtualId } from '../../packages/vite/src/hydration';
 
 const args = process.argv.slice(2);
-if (args.some(arg => arg !== '--verify' && arg !== '--hydrate' && arg !== '--hydrate-program' && !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --verify, --hydrate, --hydrate-program, --before-ref=<commit> or --fixture=<name>');
+if (args.some(arg => arg !== '--verify' && arg !== '--hydrate' && arg !== '--hydrate-program' && !/^--baseline-hydration=(general|program)$/.test(arg) && !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --verify, --hydrate, --hydrate-program, --baseline-hydration=general|program, --before-ref=<commit> or --fixture=<name>');
 const programHydration = args.includes('--hydrate-program');
+const baselineProgramHydration=!args.includes('--baseline-hydration=general');
 const hydration = args.includes('--hydrate') || programHydration;
 
 const root = resolve(import.meta.dirname, '../..');
@@ -58,7 +59,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         if (programHydration) {
           builder.onResolve({ filter: /^virtual:memoized-dom\/hydration$/ }, () => ({ path: '/hydration.ts', namespace: 'hydration-boot' }));
           builder.onLoad({ filter: /.*/, namespace: 'hydration-boot' }, () => ({
-            contents: graph === 'source-before' ? "import '@memoized-dom/runtime/hydrate';" : hydrationBootstrap(compilation.hydrationCapabilities),
+            contents: graph === 'source-before' && !baselineProgramHydration ? "import '@memoized-dom/runtime/hydrate';" : hydrationBootstrap(compilation.hydrationCapabilities),
             loader: 'ts', resolveDir: root,
           }));
         }
@@ -103,7 +104,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       throw new Error('Path interpolation must not retain pattern matching expressions');
     }
     if (['request-group','request-routed-group','request-data'].includes(fixture) && graph !== 'source-before' &&
-      inputs.some(input => /data\/src\/resource-writes\.ts$/.test(input.path))) {
+      inputs.some(input => input.path.endsWith('/data/src/resource-writes.ts'))) {
       throw new Error('Read-only fetched pages must not retain the optional mutation implementation');
     }
     rows.push(row);
@@ -116,7 +117,7 @@ const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
   `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
-  `Optional hydration included: ${hydration}; compiler-selected capabilities: ${programHydration}. Program baselines use the preceding general hydration entry. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
+  `Optional hydration included: ${hydration}; compiler-selected capabilities: ${programHydration}. Baseline hydration: ${programHydration?(baselineProgramHydration?'same program capabilities':'explicit general entry'):'same entry'}. Use --baseline-hydration=general only to compare older revisions without program hydration. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime, data and router source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
   '| Fixture | Graph | Raw B | Gzip B | Brotli B |', '|---|---|---:|---:|---:|',
   ...rows.map(row => `| ${row.fixture} | ${row.graph} | ${row.raw} | ${row.gzip} | ${row.brotli} |`), ''];
@@ -214,6 +215,6 @@ for (const row of rows.filter(row => row.graph !== 'package')) {
     ...row.inputs.map(input => `| ${input.path} | ${input.bytes} |`), '');
 }
 writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(),
-  revision, status, baseline, hydration, verified: process.argv.includes('--verify'), rows }, null, 2));
+  revision, status, baseline, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n') + '\n');
 console.log(`Report: ${resolve(directory, 'results.md')}`);

@@ -2068,4 +2068,22 @@ and mixed sequences across eight compiled variants plus vanilla, with identity
 checks after every timed sample. Browser artifacts are identical, so timing
 differences are local noise and no CPU improvement is claimed.
 
+#### Closure batch 5: shared request setup and fair runtime comparisons
+
+Paused and active fetches now construct one descriptor, with paused inputs kept
+unevaluated. Identity and descriptor equality share canonical header encoding.
+The duplicated descriptor body and second header encoder were removed without
+adding a second resource engine. Five data suites pass 30 tests, including
+paused getter inputs, equivalent headers, changed headers/URLs under explicit
+keys, transfer, cancellation, writes and settlement.
+
+The source attribution audit now compares the same hydration capabilities by
+default. Its former general-hydration baseline would exaggerate a later runtime
+change. Older revisions can explicitly request `--baseline-hydration=general`.
+Against `b6cf527`, the fair program-hydration source graphs shrink by 263 raw
+bytes for both fetched and routed Group fixtures; gzip changes by 57 and 67
+bytes respectively. Counter and list bytes are identical. All 12 package/source/
+baseline browser graphs pass. This is a small deduplication gain; the dominant
+resource, router and kernel costs remain candidates for further capability work.
+
 These are outstanding requirements, not reasons to mark the architecture closed.

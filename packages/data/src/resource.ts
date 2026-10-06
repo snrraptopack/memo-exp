@@ -33,6 +33,7 @@ import {
   fetchTransferContract,
   fetchTransferIdentity,
   normalizeFetchMethod,
+  normalizedHeaders,
   prepareRequestBody,
   resolveRequestURL,
 } from './request';
@@ -107,18 +108,6 @@ function equalCache(left: FetchCache, right: FetchCache): boolean {
     left.scope === right.scope;
 }
 
-function equalHeaders(
-  left: HeadersInit | undefined,
-  right: HeadersInit | undefined,
-): boolean {
-  const entries = (value: HeadersInit | undefined): string =>
-    [...new Headers(value).entries()]
-      .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
-      .map(([name, value]) => `${name}:${value}`)
-      .join('\n');
-  return entries(left) === entries(right);
-}
-
 function equalDescriptor(
   left: FetchDescriptor,
   right: FetchDescriptor,
@@ -126,7 +115,7 @@ function equalDescriptor(
   return left.identity === right.identity &&
     left.url === right.url &&
     left.method === right.method &&
-    equalHeaders(left.headers, right.headers) &&
+    normalizedHeaders(left.headers) === normalizedHeaders(right.headers) &&
     left.bodyIdentity === right.bodyIdentity &&
     left.transferIdentity === right.transferIdentity &&
     equalCache(left.cache, right.cache) &&
@@ -751,40 +740,20 @@ function fetchDescriptor(
   options: FetchOptions & { readonly validate?: StandardSchemaV1 },
 ): { descriptor: FetchDescriptor; paused: boolean } {
   const method = normalizeFetchMethod(options.method);
-  if (target === null) {
-    return {
-      descriptor: {
-        url: '',
-        method,
-        headers: options.headers,
-        body: undefined,
-        bodyIdentity: 'none',
-        identity: 'paused',
-        transferIdentity: null,
-        cache: normalizedCache(
-          options.cache,
-          method,
-        ),
-        schema: options.validate,
-        signal: options.signal,
-      },
-      paused: true,
-    };
-  }
-
-  if ((method === 'GET' || method === 'HEAD') && options.body !== undefined) {
+  const paused=target===null;
+  if (!paused && (method === 'GET' || method === 'HEAD') && options.body !== undefined) {
     throw new TypeError(`$fetch ${method} requests cannot include a body`);
   }
-  const url = resolveRequestURL(target, options.query, environment.baseURL);
-  const headers = new Headers(options.headers);
-  const preparedBody = prepareRequestBody(options.body, headers);
+  const url = paused?'':resolveRequestURL(target, options.query, environment.baseURL);
+  const headers = paused?options.headers:new Headers(options.headers);
+  const preparedBody = paused?{body:undefined,identity:'none'}:prepareRequestBody(options.body, headers as Headers);
   const descriptor: FetchDescriptor = {
     url,
     method,
     headers,
     body: preparedBody.body,
     bodyIdentity: preparedBody.identity,
-    identity: fetchIdentity(
+    identity: paused?'paused':fetchIdentity(
       url,
       method,
       headers,
@@ -792,11 +761,11 @@ function fetchDescriptor(
       options.key,
       options.validate,
     ),
-    transferIdentity: fetchTransferIdentity(
+    transferIdentity: paused?null:fetchTransferIdentity(
       target,
       url,
       method,
-      headers,
+      headers as Headers,
       preparedBody.identity,
       options.key,
       options.validate,
@@ -805,7 +774,7 @@ function fetchDescriptor(
     schema: options.validate,
     signal: options.signal,
   };
-  return { descriptor, paused: false };
+  return { descriptor, paused };
 }
 
 function resourceObject<T>(

@@ -57,7 +57,7 @@ export function resolveRequestURL(
   return appendQuery(resolved, query);
 }
 
-function normalizedHeaders(headers: HeadersInit | undefined): string {
+export function normalizedHeaders(headers: HeadersInit | undefined): string {
   const normalized = new Headers(headers);
   return [...normalized.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
