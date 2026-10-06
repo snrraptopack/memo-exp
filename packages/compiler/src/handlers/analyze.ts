@@ -11,9 +11,8 @@ import {
   memberRootName,
   variableDeclaratorFor,
   type Ctx,
-  type RowCtx,
 } from '../context';
-import { recordRoutedWrite } from '../handler-commits';
+import { recordRoutedWrite, type RowWriteFacts } from './write-facts';
 import {
   AliasTracker,
   bindingScopeIsProgram,
@@ -93,9 +92,8 @@ export function planHandlerWrites(
   ctx: Ctx,
   rootFn: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration,
   compName: string | null,
-  rowCtx?: RowCtx,
+  rowCtx?: RowWriteFacts,
   eventBoundary = false,
-  eventOriginId?: t.Expression,
   executionAwareRoot = false,
 ): HandlerWritePlan {
   // Capture writes on a deep parser-neutral clone. Emission later instruments
@@ -326,6 +324,7 @@ export function planHandlerWrites(
     rootParamIndex,
     scopes,
     executionSites,
+    mutationSites,
     mutateScope,
     recordInstanceMutation,
     noteReceiverEffect,
@@ -838,6 +837,7 @@ export function planHandlerWrites(
     },
   }, ctx.moduleId);
 
-  return { original: rootFn, copy: clonedFn, scopes, executionSites, listWrites,
-    owner: compName, row: rowCtx, eventBoundary, eventOriginId, executionAwareRoot };
+  return { original: rootFn, copy: clonedFn, scopes, executionSites,
+    mutationSites, listWrites,
+    owner: compName, row: rowCtx, eventBoundary, executionAwareRoot };
 }

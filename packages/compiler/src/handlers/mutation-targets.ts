@@ -5,8 +5,8 @@ import {
   writeTouchesKey,
   type Ctx,
   type KeyedListMutationPlan,
-  type RowCtx,
 } from '../context';
+import type { RowWriteFacts } from './write-facts';
 import { directItemWrite } from '../lists/item-write';
 
 export function directListItemMutationKey(
@@ -49,7 +49,7 @@ function readersOfVar(ctx: Ctx, v: string): Set<string> {
 export function itemFieldVisibleBeyondList(
   ctx: Ctx,
   compName: string | null,
-  rowCtx: RowCtx,
+  rowCtx: RowWriteFacts,
 ): boolean {
   if (rowCtx.sourceLocal) return true;
   const source = rowCtx.sourceKey;

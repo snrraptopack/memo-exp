@@ -6,6 +6,50 @@ import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepar
 import { planHandlerWrites } from '../packages/compiler/src/handlers/analyze';
 import { emitHandlerWrites } from '../packages/compiler/src/emission/handler';
 
+function preparedHandler(source:string) {
+  const program=parseEstreeOrThrow(source,{filename:'./plan.tsx'}).program as unknown as t.Program;
+  const ctx=createCtx();
+  prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
+  ctx.identifiers!.registerComponentId('App','_factoryId');
+  let handler:t.ArrowFunctionExpression|undefined;
+  walkAst(program,{enter(node){
+    if(node.type==='JSXAttribute'&&node.name.type==='JSXIdentifier'&&node.name.name==='onClick')
+      handler=(node.value as t.JSXExpressionContainer).expression as t.ArrowFunctionExpression;
+  }});
+  return {program,ctx,handler:handler!};
+}
+
+it('captures targeted item mutation without inserting a journal during analysis',()=>{
+  const {program,ctx,handler}=preparedHandler(`export function App(){
+    let items=[{id:1,label:'one'}];return <main>
+      <ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>
+      <button onClick={()=>{items[0].label='new';}}/></main>;}`);
+  const authored=JSON.stringify(program), headers=[...ctx.header];
+  const journal=ctx.keyedListMutationSources.get('App')!.get('items')!;
+  const plan=planHandlerWrites(ctx,handler,'App');
+  expect(JSON.stringify(program)).toBe(authored);
+  expect(ctx.header).toEqual(headers);
+  expect(plan.mutationSites).toHaveLength(1);
+  expect(plan.mutationSites[0]!.source).toBe('items');
+  expect(plan.mutationSites[0]!.path.node.type).toBe('AssignmentExpression');
+  expect(JSON.stringify(plan.copy)).not.toContain(journal.keysVariable);
+  ctx.keyedListMutationSources.clear();
+  emitHandlerWrites(ctx,plan,{journals:new Map([['items',journal.keysVariable]])});
+  expect(JSON.stringify(handler)).toContain(journal.keysVariable);
+  expect(JSON.stringify(handler)).toContain('markDirty');
+});
+
+it('keeps authored row facts separate from its backend refresh and owner bindings',()=>{
+  const {ctx,handler}=preparedHandler(`export function App(){const items=[{id:1,label:'one'}];
+    return <ul>{items.map(item=><li key={item.id}><button onClick={()=>{item.label='new';}}/></li>)}</ul>;}`);
+  const facts={itemParam:'item',itemPath:[],keyPath:['id'],sourceKey:'items',localRefresh:true};
+  const plan=planHandlerWrites(ctx,handler,'App',facts);
+  expect(plan.row).toEqual(facts);
+  expect(JSON.stringify(plan)).not.toContain('_rowRefresh');
+  emitHandlerWrites(ctx,plan,{row:{...facts,rowIdVar:'_rowId',refreshVar:'_rowRefresh',ownerIdVar:'_ownerId'}});
+  expect(JSON.stringify(handler)).toContain('_rowRefresh');
+});
+
 it('captures a native-operation write without mutating authored code or emitting runtime calls', () => {
   const program = parseEstreeOrThrow(`export function App(){
     let items=[{id:1,label:'one'},{id:2,label:'two'}];

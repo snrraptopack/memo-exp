@@ -1,12 +1,13 @@
 /**
  * Maps defining-module prop mutations to caller-resolved state boundaries.
  */
-import type { Ctx, RowCtx } from '../context';
+import type { Ctx } from '../context';
+import type { RowWriteFacts } from '../handlers/write-facts';
 import {
   recordInstanceWrite,
   recordRoutedWrite,
   type ScopeWrites,
-} from '../handler-commits';
+} from '../handlers/write-facts';
 import type { ReactiveOrigin } from '../mutation-analysis';
 import {
   objectBindingName,
@@ -61,7 +62,7 @@ export function hasLinkedPropWrites(ctx: Ctx, component: string, origin: Reactiv
 export function applyLinkedPropEffect(
   ctx: Ctx,
   component: string,
-  rowCtx: RowCtx | undefined,
+  rowCtx: RowWriteFacts | undefined,
   origin: ReactiveOrigin,
   scope: ScopeWrites,
 ): boolean {
@@ -77,7 +78,7 @@ export function applyLinkedPropEffect(
   const source =
     ctx.linkedComponentPropSources.get(component)?.get(access.name);
   if (source === undefined) {
-    if (rowCtx?.refreshVar === undefined) {
+    if (rowCtx?.localRefresh !== true) {
       scope.rootFallback = true;
     }
     return true;

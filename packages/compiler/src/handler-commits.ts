@@ -22,70 +22,7 @@ import {
   mdd,
 } from './identifiers';
 
-export interface ScopeWrites {
-  writes: Set<string>;
-  /** Writes proven to affect a rendered collection's structure only. */
-  structuralWrites: Set<string>;
-  /** Writes whose effect on retained row content is not structurally bounded. */
-  contentWrites: Set<string>;
-  /** Static destinations; ordinary writes to the same source dominate. */
-  listItemWrites: Map<string, Set<number>>;
-  rootFallback: boolean;
-  /** This scope writes fields observed by one keyed row. */
-  rowLocal: boolean;
-  /** This scope may affect the instance-owned collection backing the row. */
-  rowOwnerLocal: boolean;
-  /** This scope writes state owned by one component instance. */
-  instanceLocal: boolean;
-  /** Exact instance or prop roots written by this scope. */
-  instanceWrites: Set<string>;
-  /** Safe original writes may use a dedicated cause when no ordinary write overlaps. */
-  instanceStructuralWrites: Set<string>;
-  /** Ordinary writes dominate structural precision within this scope. */
-  instanceContentWrites: Set<string>;
-  /** Component-local colorless payloads mutated in place by authored code. */
-  transparentWrites: Set<string>;
-  /** Scoped event fallback when a handler has no recognized write. */
-  eventOrigin: t.Statement | null;
-}
-
-export function createScopeWrites(): ScopeWrites {
-  return {
-    writes: new Set(),
-    structuralWrites: new Set(),
-    contentWrites: new Set(),
-    listItemWrites: new Map(),
-    rootFallback: false,
-    rowLocal: false,
-    rowOwnerLocal: false,
-    instanceLocal: false,
-    instanceWrites: new Set(),
-    instanceStructuralWrites: new Set(),
-    instanceContentWrites: new Set(),
-    transparentWrites: new Set(),
-    eventOrigin: null,
-  };
-}
-
-export function recordRoutedWrite(
-  scope: ScopeWrites,
-  source: string,
-  structural = false,
-): void {
-  scope.writes.add(source);
-  (structural ? scope.structuralWrites : scope.contentWrites).add(source);
-}
-
-/** Record an exact write to state owned by one component instance. */
-export function recordInstanceWrite(
-  scope: ScopeWrites,
-  source: string,
-  structural = false,
-): void {
-  scope.instanceLocal = true;
-  scope.instanceWrites.add(source);
-  (structural ? scope.instanceStructuralWrites : scope.instanceContentWrites).add(source);
-}
+import type { ScopeWrites } from './handlers/write-facts';
 
 /** Build the static commit form for one analyzed function scope. */
 export function buildScopeCommit(
@@ -93,6 +30,7 @@ export function buildScopeCommit(
   scope: ScopeWrites,
   compName: string | null,
   rowCtx?: RowCtx,
+  eventOriginCommit?: t.Statement,
 ): t.Statement | null {
   const rowCommit =
     scope.rowLocal && rowCtx !== undefined
@@ -161,7 +99,10 @@ export function buildScopeCommit(
         ),
       );
     }
-    if (scope.eventOrigin !== null) parts.push(scope.eventOrigin);
+    if (scope.eventFallback) {
+      if (eventOriginCommit === undefined) throw new Error('memo-dom: missing event-origin lowering');
+      parts.push(eventOriginCommit);
+    }
     if (rowCommit !== null) parts.push(rowCommit);
     if (rowOwnerCommit !== null) parts.push(rowOwnerCommit);
     if (instanceCommit !== null && !scope.rootFallback) parts.push(instanceCommit);

@@ -1690,3 +1690,42 @@ refs, render props, private/component rows and initial composition. New tests
 execute the emitted object to check override order and verify plan preservation
 under instrumentation. This batch changes a compiler boundary, not runtime
 algorithms; payload and DOM comparison checks follow with the handler batch.
+
+### Handler facts and backend instrumentation
+
+Write scopes now contain semantic effects and event-fallback intent, not an
+emitted event-origin statement. Row write facts share one authored shape with
+the DOM row context, while generated row/owner IDs and refresh bindings are
+provided separately to lowering. Guard flags and temporary bindings belong to
+the emission stage. Commit instrumentation moved out of `handlers/` into
+`emission/handler-execution.ts`.
+
+Targeted item mutations are captured as source/key/site facts during analysis.
+Only emission inserts the key-journal operation. The regression test clears
+the mutable journal context after planning and supplies captured target bindings
+to lowering; it also verifies authored source and the analyzed clone contain no
+journal call before emission. No second write analyzer or commit engine was added.
+
+The compiler build and changed-source lint pass. Ten initial handler/reactivity
+suites pass 160 cases. A broad root run passes 2,137 cases and finds 11 obsolete
+code-generation assertions in six files. Baseline `8368dc8` emits identical code
+for their checked sources: unreasoned invalidation uses `invalidateEntity`,
+nonvolatile registration uses `registerEntity`, and positional lists omit key
+selectors. The corrected assertions plus final handler/lifecycle suites pass
+112 cases across 12 suites. Pinned Octane upstream tests are now excluded from
+root Vitest discovery; our authored benchmark tests remain included.
+
+The compiler-only ABBA DOM comparison against `8368dc8` validates all 21 scenarios
+and mixed selection/reorder/removal sequences, then measures update, swap and
+reverse at 10k rows with three samples per cell. All eight state/row variants
+and vanilla pass retained-node checks after every sample. Browser artifacts
+are byte-identical; noisy timing differences cannot represent a compiler speed
+change in this batch.
+
+Paired production SSR delivery against the same compiler/Vite baseline holds
+current runtime/data/server constant. HTML, payload and all browser chunks are
+unchanged for six graphs: static 0/0 B JS raw/gzip, counter 8,716/3,512,
+composition 10,403/4,100, todo 17,142/6,442, interactive request 43,231/14,090
+and routed request/Group 85,473/26,277. These batches establish semantic/backend
+boundaries without increasing delivered browser code. Broader analysis context,
+request-dependent binding and remaining fixed runtime costs are still active.

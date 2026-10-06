@@ -1,15 +1,18 @@
 /** Captured callback writes, consumed separately by target instrumentation. */
 import type * as t from '../ast/compiler-types';
-import type { RowCtx } from '../context';
-import type { ScopeWrites } from '../handler-commits';
+import type { RowWriteFacts, ScopeWrites } from './write-facts';
 import type { CapturedOwnerListWrites } from '../analysis/owner-list-structure';
 import type { HandlerPath } from './traversal';
 
 export interface HandlerExecutionSite {
   path: HandlerPath;
   writes: ScopeWrites;
-  flag?: t.Identifier;
-  temporaries?: t.Identifier[];
+}
+
+export interface HandlerMutationSite {
+  path:HandlerPath;
+  source:string;
+  key:t.Expression;
 }
 
 export interface HandlerWritePlan {
@@ -17,10 +20,10 @@ export interface HandlerWritePlan {
   copy: t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDeclaration;
   scopes: Map<t.Node, ScopeWrites>;
   executionSites: ReadonlyMap<t.Node, HandlerExecutionSite>;
+  mutationSites:readonly HandlerMutationSite[];
   listWrites: CapturedOwnerListWrites;
   owner: string | null;
-  row: RowCtx | undefined;
+  row: RowWriteFacts | undefined;
   eventBoundary: boolean;
-  eventOriginId: t.Expression | undefined;
   executionAwareRoot: boolean;
 }

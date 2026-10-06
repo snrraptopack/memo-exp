@@ -8,14 +8,13 @@ import {
 import {
   appendScopeCommit,
   buildScopeCommit,
-  createScopeWrites,
-  type ScopeWrites,
 } from '../handler-commits';
+import { createScopeWrites, type ScopeWrites } from '../handlers/write-facts';
 import { buildEventOriginCommit } from '../handler-origin';
 import { generatedIdentifier, md } from '../identifiers';
-import { HandlerPath } from './traversal';
-import { isPlainDataAssignment } from './member-assignment';
-import type { HandlerExecutionSite } from './plan';
+import { HandlerPath } from '../handlers/traversal';
+import { isPlainDataAssignment } from '../handlers/member-assignment';
+import type { HandlerExecutionSite } from '../handlers/plan';
 
 export function finalizeHandlerInstrumentation(
   ctx: Ctx,
@@ -31,19 +30,18 @@ export function finalizeHandlerInstrumentation(
   executionAwareRoot: boolean,
 ): void {
   ctx.handlerHasRootCommit.set(rootFn, scopes.has(root));
+  let eventOriginCommit:t.Statement|undefined;
 
   if (eventBoundary && !scopes.has(root)) {
     const eventScope = createScopeWrites();
-    eventScope.eventOrigin = buildEventOriginCommit(
-      ctx,
-      compName,
-      rowCtx,
-      eventOriginId,
-    );
+    eventScope.eventFallback = true;
+    eventOriginCommit=buildEventOriginCommit(ctx,compName,rowCtx,eventOriginId);
     scopes.set(root, eventScope);
   }
 
-  const guardedRootSites: Array<HandlerExecutionSite & { commit: t.Statement }> = [];
+  const guardedRootSites: Array<HandlerExecutionSite & {
+    commit: t.Statement; flag?:t.Identifier; temporaries?:t.Identifier[];
+  }> = [];
   if (executionAwareRoot) {
     for (const site of executionSites.values()) {
       // All authored writes finish before these guarded commits. An earlier
@@ -61,7 +59,7 @@ export function finalizeHandlerInstrumentation(
         // A setter/proxy can mutate state beyond the apparent receiver.
         site.writes.rootFallback = true;
       }
-      const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx);
+      const commit = buildScopeCommit(ctx, site.writes, compName, rowCtx, eventOriginCommit);
       if (commit !== null) guardedRootSites.push({ ...site, commit });
     }
   }
@@ -86,7 +84,7 @@ export function finalizeHandlerInstrumentation(
     const writes = site.writes;
     const mergeableRefresh = (writes.rootFallback || writes.instanceLocal &&
       writes.writes.size === 0 && writes.listItemWrites.size === 0) &&
-      writes.transparentWrites.size === 0 && writes.eventOrigin === null &&
+      writes.transparentWrites.size === 0 && !writes.eventFallback &&
       !writes.rowLocal && !writes.rowOwnerLocal;
     const refreshKey = mergeableRefresh ? JSON.stringify(site.commit) : null;
     if (refreshKey !== null && refreshKey === pendingRefreshKey && pendingRootRefresh !== null) {
@@ -107,9 +105,9 @@ export function finalizeHandlerInstrumentation(
     const commit =
       executionAwareRoot && fn === root
         ? guardedRootSites.length === 0
-          ? buildScopeCommit(ctx, writes, compName, rowCtx)
+          ? buildScopeCommit(ctx, writes, compName, rowCtx, eventOriginCommit)
           : astFactory.blockStatement(guardedCommits)
-        : buildScopeCommit(ctx, writes, compName, rowCtx);
+        : buildScopeCommit(ctx, writes, compName, rowCtx, eventOriginCommit);
     if (commit === null) continue;
     appendScopeCommit(
       ctx,

@@ -10,6 +10,7 @@ import {
 } from '../ast';
 import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
+import type { RowWriteFacts } from '../handlers/write-facts';
 import { canonicalKeyFor } from './state-keys';
 
 /** Rebuild parser-neutral parent and lexical-scope facts after AST mutation. */
@@ -262,14 +263,9 @@ export function memberKey(node: MemberLike): string | null {
 }
 
 /** Reactive list-row context used during event-handler analysis. */
-export interface RowCtx {
-  itemParam: string;
-  itemPath: string[];
+export interface RowCtx extends Omit<RowWriteFacts, 'localRefresh'> {
   rowIdVar: string;
   refreshVar?: string;
-  keyPath: string[] | null;
-  sourceKey: string;
-  sourceLocal?: boolean;
   ownerIdVar?: string;
 }
 

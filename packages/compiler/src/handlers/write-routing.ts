@@ -1,20 +1,19 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   memberKey,
   memberRootName,
   writeTouchesKey,
   type Ctx,
   type KeyedListMutationPlan,
-  type RowCtx,
 } from '../context';
 import {
   createScopeWrites,
   recordInstanceWrite,
   recordRoutedWrite,
   type ScopeWrites,
-} from '../handler-commits';
+  type RowWriteFacts,
+} from './write-facts';
 import {
   callArgumentExpressions,
   type AliasTracker,
@@ -27,7 +26,7 @@ import {
   itemFieldVisibleBeyondList,
 } from './mutation-targets';
 import { HandlerPath, walkHandler, type FunctionNode } from './traversal';
-import type { HandlerExecutionSite } from './plan';
+import type { HandlerExecutionSite, HandlerMutationSite } from './plan';
 import { captureMutationJournals } from '../analysis/list-mutation-journals';
 import { hasKnownAccessor, isPlainDataAssignment } from './member-assignment';
 
@@ -36,6 +35,7 @@ export interface HandlerWriteRouting {
   rootParamIndex: Map<string, number>;
   scopes: Map<t.Node, ScopeWrites>;
   executionSites: Map<t.Node, HandlerExecutionSite>;
+  mutationSites:HandlerMutationSite[];
   mutateScope(path: HandlerPath, mutate: (scope: ScopeWrites) => void): void;
   recordInstanceMutation(
     scope: ScopeWrites,
@@ -76,7 +76,7 @@ export function createHandlerWriteRouting({
   clonedFn: FunctionNode;
   root: t.Node;
   componentName: string | null;
-  rowContext: RowCtx | undefined;
+  rowContext: RowWriteFacts | undefined;
   executionAwareRoot: boolean;
   aliases: AliasTracker;
   instanceVariables: Set<string> | undefined;
@@ -138,19 +138,7 @@ export function createHandlerWriteRouting({
     key: t.Expression,
   ): void => {
     if (!p.isExpression()) return;
-    const original = cloneEstreeNode(p.node, true);
-    p.replaceWith(
-      astFactory.sequenceExpression([
-        astFactory.callExpression(
-          astFactory.memberExpression(
-            astFactory.identifier(plan.keysVariable),
-            astFactory.identifier('add'),
-          ),
-          [key],
-        ),
-        original,
-      ]),
-    );
+    mutationSites.push({path:p,source:plan.source,key});
     p.skip();
   };
 
@@ -208,6 +196,7 @@ export function createHandlerWriteRouting({
 
   // pass B: writes grouped by innermost enclosing function scope
   const scopes = new Map<t.Node, ScopeWrites>();
+  const mutationSites:HandlerMutationSite[] = [];
   const executionSites = new Map<t.Node, HandlerExecutionSite>();
   const scopeOf = (p: HandlerPath): ScopeWrites => {
     const fn = p.getFunctionParent()?.node ?? ROOT;
@@ -672,6 +661,7 @@ export function createHandlerWriteRouting({
     rootParamIndex,
     scopes,
     executionSites,
+    mutationSites,
     mutateScope,
     recordInstanceMutation,
     noteReceiverEffect,

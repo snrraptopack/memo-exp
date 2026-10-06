@@ -34,9 +34,8 @@ import {
 } from './context';
 import {
   buildScopeCommit,
-  createScopeWrites,
-  recordRoutedWrite,
 } from './handler-commits';
+import { createScopeWrites, recordRoutedWrite, type RowWriteFacts } from './handlers/write-facts';
 import {
   buildEventOriginCommit,
   wrapSharedHandlerWithOrigin,
@@ -51,8 +50,18 @@ import { emitHandlerWrites } from './emission/handler';
 import { callsOnlyCommittedLocalHelpers } from './handlers/local-calls';
 
 /** The coordinator owns the transition from captured writes to DOM lowering. */
-function analyzeHandler(...args: Parameters<typeof planHandlerWrites>): void {
-  emitHandlerWrites(args[0], planHandlerWrites(...args));
+function analyzeHandler(
+  ctx:Ctx, target:HandlerFn, owner:string|null, row?:RowCtx,
+  eventBoundary=false, eventOriginId?:t.Expression, executionAwareRoot=false,
+): void {
+  const rowFacts:RowWriteFacts|undefined = row === undefined ? undefined : {
+    itemParam:row.itemParam, itemPath:[...row.itemPath], keyPath:row.keyPath === null ? null : [...row.keyPath],
+    sourceKey:row.sourceKey, sourceLocal:row.sourceLocal, localRefresh:row.refreshVar !== undefined,
+  };
+  const journals = owner === null ? undefined : new Map(
+    [...ctx.keyedListMutationSources.get(owner) ?? []].map(([source,journal])=>[source,journal.keysVariable]),
+  );
+  emitHandlerWrites(ctx, planHandlerWrites(ctx,target,owner,rowFacts,eventBoundary,executionAwareRoot), {row,eventOriginId,journals});
 }
 
 export type HandlerFn =
