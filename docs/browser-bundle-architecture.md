@@ -45,13 +45,17 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
 | Interactive fetched page | 31,761 | 10,619 |
-| Routed fetched page with Group | 85,301 | 26,239 |
+| Interactive fetched page with request-selected host branches | 35,604 | 11,871 |
+| Interactive fetched page with a local conditional | 33,966 | 11,397 |
+| Routed fetched page with Group | 85,319 | 26,246 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Fixed
 interactive fetched layouts now use initial bindings with the shared data
-envelope. Request-dependent structure and routing/Group retain general adoption
-and creation instructions. Their remaining cost needs deeper binding/reachability
+envelope. Request-selected conditionals with one host root per alternative also
+bind their selected nodes. Variable extents, nested regions, request-dependent
+lists and routing/Group retain general adoption and creation instructions.
+Their remaining cost needs deeper binding/reachability
 planning while preserving routing and data presentation.
 
 | Area | Status |
@@ -59,7 +63,7 @@ planning while preserving routing and data presentation.
 | Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
 | Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages and fixed interactive fetched layouts implemented; structural/routed/Group pages retain general adoption |
+| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages, fixed interactive fetched layouts and single-host conditional branches implemented; variable/nested/list/routed/Group shapes retain general adoption |
 | Runtime capabilities | Shared data settlement, optional promise reads/payload/polling, unused cursor removal, lean markup adoption and lazy state-cell storage implemented |
 
 Callback props, escaping mutable values, hidden reads, refs, effects and unknown
@@ -1861,13 +1865,63 @@ against `85ecdb2` preserves every HTML, payload and delivered-JavaScript byte
 count. The checkpoint table above records the current measurements. This removes
 discarded compiler work; it does not establish a runtime timing gain.
 
+### Request-selected conditional binding — 2026-10-06
+
+Request data may now select an initial conditional branch when every alternative
+has one host root and only host/text descendants. The placement proof captures
+each alternative separately. Restored request data selects the branch once;
+the existing conditional engine binds its retained nodes and creates subsequent
+branches through the same factory. Locally selected regions, including an empty
+initial branch, also bind beside request text. Source-read lowering preserves
+proved control flow instead of wrapping it in an unplanned presentation region.
+
+Server source anchors are serialized only for matching initial-binding delivery.
+Ordinary server delivery retains general markers and the existing settlement
+engine. No second browser region engine, mount path or data envelope is added.
+Repeated component factories merge live text, empty-text and attribute facts
+inside every alternative; a regression test first reproduced an incorrect
+static classification across repeated instances.
+
+The paired production audit against compiler/Vite `7f77863`, using the current
+runtime on both sides, measures every browser chunk and an actual server response:
+
+| Fixture | Before JS B / gzip B | After JS B / gzip B | Before / after HTML B | Payload B |
+|---|---:|---:|---:|---:|
+| Request-selected conditional | 46,388 / 14,806 | 35,604 / 11,871 | 785 / 704 | 315 |
+| Locally selected conditional beside request text | 43,413 / 14,152 | 33,966 / 11,397 | 666 / 624 | 315 |
+
+The nine existing controls preserve their paired HTML, payload and JavaScript
+counts. The optional initial-index runtime check separately costs 18 raw bytes /
+7 B gzip in the routed/Group fixture relative to the preceding checkpoint; it
+does not affect fixtures that exclude conditional machinery.
+
+Verification: compiler/runtime/server builds and changed-source lint pass.
+Six compiler/region suites pass 90 cases; three server suites pass 39 cases.
+The production HTML/SSR run passes 42 of 43 cases. Its remaining failure was a
+duplicate generated-fixture path, pairing cached server code with another
+browser build; after correcting that test path, all four affected request
+conditional cases pass together. An earlier Chrome timeout passes on rerun.
+Checks cover retained nodes, later branch creation, empty local regions, repeated
+live props, request restoration without another fetch, keyed-list recovery and
+routing/Group lifecycles. The full root suite was not repeated for this batch.
+
+The paired DOM comparison against `7f77863` validates all 21 scenarios, mixed
+operation sequences and retained identity across eight compiled variants and
+vanilla. The DOM browser artifacts are byte-identical; local timing fluctuations
+do not establish a speed change.
+
+Unknown empty or fragment branches, nested regions, component descendants
+inside request-selected alternatives and request-dependent row counts remain
+on general adoption. This is a bounded placement extension, not architecture
+closure or a CPU speed claim.
+
 ### Remaining completion requirements
 
 - Preserve the newly separated child/attribute/write facts while auditing other
   analysis-to-backend compatibility data and normalization before final backend
   planning. Journal and native-operation bindings now belong to emission.
-- Keep request-dependent structural extents on general adoption until their
-  server placement matches the initial binding proof. Extend that proof with
+- Keep unproved request-dependent structural extents on general adoption until
+  their server placement matches the initial binding proof. Extend that proof with
   the existing region engine when justified; preserve creation, recovery,
   pending/error, retry and lifetime behavior.
 - Review the remaining unconditional scheduler/access/lifetime costs using

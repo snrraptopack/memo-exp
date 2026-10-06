@@ -887,6 +887,10 @@ function compileLinkedModules(
     };
     const initialComponents=Object.fromEntries(Object.entries(initialDom?.factories??{}).flatMap(([key,plan])=>
       key.startsWith(`${entry.id}#`) ? [[key.slice(entry.id.length+1),plan]] : []));
+    if (options.routedEnvironment==='server' && initialDelivery && initialRender.kind==='bindings' && initialRender.request) {
+      compileOptions={...compileOptions,initialServerComponents:{...initialComponents,
+        ...(entry.id===initialRender.rootModuleId ? {[initialRender.rootLocal]:initialDom!} : {})}};
+    }
     if (initialContent && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
         (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId || Object.keys(initialComponents).length>0)) {
       compileOptions = { ...compileOptions,

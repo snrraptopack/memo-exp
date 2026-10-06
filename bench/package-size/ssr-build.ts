@@ -23,6 +23,8 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'request-conditional': sizeFixtures['request-conditional']!,
+  'request-local-conditional': sizeFixtures['request-local-conditional']!,
   static: sizeFixtures.static!,
   counter: sizeFixtures['owner-counter']!,
   composition: sizeFixtures.composition!,
@@ -92,7 +94,9 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       const response = await app.fetch(new Request('https://app.test/'));
       if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
       const html = await response.text();
-      if (['request-data', 'request-interactive', 'request-routed-group'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
+      if (['request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
+      if (fixture === 'request-conditional' && !html.replace(/<!--[^]*?-->/g, '').includes('<section><h2>Ada:0</h2></section>')) throw new Error('Request conditional selected the wrong branch');
+      if (fixture === 'request-local-conditional' && !html.includes('<p>Shown</p>')) throw new Error('Local conditional lost its initial branch');
       if (fixture === 'request-composition' && !html.replace(/<!--[^]*?-->/g, '').includes('Hello Ada')) throw new Error('Composed request data did not settle');
       // All emitted chunks, including shared/imported code and later capabilities.
       const chunks = assets.filter(file => file.type === 'chunk');
@@ -102,7 +106,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
         gzip: chunks.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), chunks: chunks.length };
       if (fixture === 'static' && version === 'after' && row.javascript !== 0) throw new Error('Static page emitted JavaScript');
       if (['request-data', 'request-composition'].includes(fixture) && version === 'after' && (row.javascript !== 0 || row.payload !== 0 || /<!--/.test(html))) throw new Error('Request-only page retained browser delivery');
-      if (['request-interactive', 'request-routed-group'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
+      if (['request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
       rows.push(row);
       await writeFile(resolve(directory, 'response.html'), html);
       console.log(`${fixture} ${version}: HTML ${row.html} B; payload ${row.payload} B; JS ${row.javascript} B / ${row.gzip} B gzip (${row.chunks} chunks)`);

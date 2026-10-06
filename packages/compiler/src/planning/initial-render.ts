@@ -20,8 +20,8 @@ export type InitialRenderNode =
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'component'; readonly site: string; readonly moduleId: string; readonly callModuleId: string; readonly component: string;
       readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true }
-  | { readonly kind: 'conditional'; readonly site: string; readonly branch: number;
-      readonly children: readonly InitialRenderNode[] }
+  | { readonly kind: 'conditional'; readonly site: string; readonly branch: number | null;
+      readonly children: readonly InitialRenderNode[]; readonly alternatives?: readonly (readonly InitialRenderNode[])[] }
   | { readonly kind: 'list'; readonly site: string; readonly rows: readonly (readonly InitialRenderNode[])[] }
   | { readonly kind: 'element'; readonly tag: string;
       readonly site?: string;
@@ -143,15 +143,15 @@ export function planInitialRendering(
   }
 
   function conditional(node: BaseNode, scope: Scope): Value {
-    if (request && bindings) need(scope, 'Request conditional extents need matching server placement');
     if (inStructure) need(scope, 'Nested structural bindings need a placement proof');
     const site = initialSite(node);
     if (!site) need(scope, 'Initial conditional placement needs authored source identity');
     const plan = planConditionalBranches(node as t.ConditionalExpression | t.LogicalExpression, {
       buildCodeFrameError(message) { return new NeedsBrowser({moduleId: scope.moduleId, kind: 'unknown', detail: message}); },
     });
-    const branch = primitive(expression(plan.pickExpr, scope), scope);
-    if (typeof branch !== 'number') need(scope, 'Initial conditional needs a closed selector');
+    const selected = expression(plan.pickExpr, scope);
+    const branch = selected === requestValue ? null : primitive(selected, scope);
+    if (branch !== null && typeof branch !== 'number') need(scope, 'Initial conditional needs a closed selector');
     inStructure = true;
     try {
       const alternatives = plan.branches.map(input => {
@@ -159,7 +159,18 @@ export function planInitialRendering(
         if (!astFactory.isJSXElement(input)) need(scope, 'Structural fragment bindings need a placement proof');
         return jsx(input, scope);
       });
-      return {kind: 'content', nodes: [{kind: 'conditional', site, branch, children: alternatives[branch] ?? []}]};
+      if (branch === null) {
+        // Runtime data chooses the branch, but every alternative must occupy
+        // one host position. Rows, nested regions and component factories need
+        // a separate extent proof; do not guess their placement from data.
+        const hostsOnly = (nodes: readonly InitialRenderNode[]): boolean => nodes.every(node =>
+          node.kind === 'text' || node.kind === 'element' && hostsOnly(node.children));
+        if (alternatives.some(nodes => nodes.length !== 1 || nodes[0]?.kind !== 'element' || !hostsOnly(nodes))) {
+          need(scope, 'Request conditionals need one fixed host extent per branch');
+        }
+      }
+      return {kind: 'content', nodes: [{kind: 'conditional', site, branch,
+        children: alternatives[branch ?? 0] ?? [], ...(branch === null ? {alternatives} : {})}]};
     } finally { inStructure = false; }
   }
 
@@ -274,15 +285,29 @@ export function planInitialRendering(
         if (!object.fields.has(name) && name in Object.prototype) return need(scope, 'Inherited property read needs browser execution');
         return object.fields.get(name);
       }
-      case 'ConditionalExpression':
+      case 'ConditionalExpression': {
         if (bindings && nodeHasJsx(node)) return conditional(node, scope);
         if (mixed && scope.rootRender && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
-        return expression(childNode(node, primitive(expression(childNode(node, 'test'), scope), scope)
+        const test = expression(childNode(node, 'test'), scope);
+        if (test === requestValue) {
+          for (const key of ['consequent', 'alternate']) {
+            const value = expression(childNode(node, key), scope);
+            if (value !== requestValue) primitive(value, scope);
+          }
+          return requestValue;
+        }
+        return expression(childNode(node, primitive(test, scope)
           ? 'consequent' : 'alternate'), scope);
+      }
       case 'LogicalExpression': {
         if (bindings && nodeHasJsx(node)) return conditional(node, scope);
         if (mixed && scope.rootRender && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
         const left = expression(childNode(node, 'left'), scope);
+        if (left === requestValue) {
+          const right = expression(childNode(node, 'right'), scope);
+          if (right !== requestValue) primitive(right, scope);
+          return requestValue;
+        }
         const value = primitive(left, scope);
         const operator = nodeField(node, 'operator');
         if (operator === '&&') return value ? expression(childNode(node, 'right'), scope) : left;

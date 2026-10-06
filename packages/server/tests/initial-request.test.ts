@@ -22,6 +22,39 @@ async function fixture(name: string, source: string) {
 }
 
 describe('request-only server delivery', () => {
+  it.each(['Ada','Other'])('settles request-selected regions with contract-only anchors (%s)',async name=>{
+    const value=await fixture(`request-condition-${name}`,`export function App(){const user=$fetch('/api/user');let show=true;
+      return <main><h1>{user?.name}</h1><button onClick={()=>show=!show}>Toggle</button>
+        {user?.name==='Ada' && show?<section><h2>{user?.name}</h2></section>:<p>Hidden</p>}<footer>Kept</footer></main>;}`);
+    const contract=value.server.initialDelivery!;
+    expect(contract).toMatchObject({browser:'bindings',key:value.client.initialDelivery?.key});
+    const fetch=(async()=>Response.json({name})) as typeof globalThis.fetch;
+    const result=await render(value.serverModule.App,{initialKey:contract.key,fetch,mode:'shell'});
+    expect(result.settlement.status).toBe('complete');
+    expect(result.html).toContain('<!--mmd:initial:when:');
+    expect(result.html).toContain('<!--/mmd:initial:when-->');
+    expect(result.html).toContain(name==='Ada'?'<section><h2>Ada</h2></section>':'<p>Hidden</p>');
+    expect(result.html).not.toMatch(/mmd:[rgl]:/);
+    expect(result.payload.state?.sources).toHaveLength(1);
+    expect(await new Response(renderToReadableStream(value.serverModule.App,{initialKey:contract.key,fetch,mode:'shell'})).text())
+      .toBe(result.html+result.scriptTag);
+    const ordinary=await render(value.serverModule.App,{mode:'resolve',markers:true,fetch});
+    expect(ordinary.html).toContain('mmd:g:');
+    expect(ordinary.html).not.toContain('mmd:initial:when');
+    expect(ordinary.html.replace(/<!--[^]*?-->/g,'')).toBe(result.html.replace(/<!--[^]*?-->/g,''));
+  });
+
+  it('emits reserved initial conditional comments only for a binding contract',()=>{
+    const document=new StringDocument();
+    for(const data of ['mmd:initial:when:1:2','/mmd:initial:when']) {
+      const node=document.createComment(data) as unknown as StringRenderableNode;
+      expect(node.toString(false,true)).toBe(`<!--${data}-->`);
+      expect(node.toString(false,false)).toBe('');expect(node.toString(true,false)).toBe('');
+    }
+    const normal=document.createComment('mmd:g:App/when0') as unknown as StringRenderableNode;
+    expect(normal.toString(false,true)).toBe('');expect(normal.toString(true,false)).toContain('mmd:g:');
+  });
+
   it('delivers settled interactive bindings and empty text addresses for results and streams',async()=>{
     const value=await fixture('request-bindings',`
       export function Card({name}){return <section><h2>{name}</h2><p>Kept</p></section>;}

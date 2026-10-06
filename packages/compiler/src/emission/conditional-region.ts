@@ -14,6 +14,7 @@ import {
   newEmitScope,
   registerStmt,
   updateDecl,
+  renderDocument,
   type EmitScope,
   type RegionSourcePlans,
 } from './scope';
@@ -122,7 +123,20 @@ export function emitConditionalRegion(
   ));
   const initial=scope.initialDom?.plan.conditions[initialSite(expression)];
   if (scope.initialDom && !initial) throw new Error('memo-dom: initial conditional has no placement');
-  const branchFactories: t.Expression[] = site.branches.map((jsx,index) =>
+  const branchFactories: t.Expression[] = site.branches.map((jsx,index) => {
+    const branch=initial?.branches?.[index];
+    const binding=branch ? {
+      plan:branch,variable:generatedIdentifier(ctx,'initialBranchNodes').name,descriptors:[],
+      adopting:generatedIdentifier(ctx,'adoptingBranch'),
+    } : initial && initial.branch === index && initial.returnSite !== null ? {
+      ...scope.initialDom!,plan:{...scope.initialDom!.plan,returnSite:initial.returnSite},
+      adopting:generatedIdentifier(ctx,'adoptingBranch'),
+    } : undefined;
+    const target=branch ? astFactory.memberExpression(
+      initialNode(scope,initial!.open,`#comment:mmd:initial:when:${initialSite(expression)}`),
+      astFactory.identifier('nextSibling'),
+    ) : undefined;
+    return (
     jsx !== null
       ? buildConditionalBranchCreate(
           ctx,
@@ -138,14 +152,20 @@ export function emitConditionalRegion(
           transparentSources,
           scope.reasonVar !== null,
           scope,
-          initial && initial.branch === index && initial.returnSite !== null ? {
-            ...scope.initialDom!,
-            plan: {...scope.initialDom!.plan,returnSite:initial.returnSite},
-            adopting:generatedIdentifier(ctx,'adoptingBranch'),
-          } : undefined,
+          binding,
+          target,
         )
-      : astFactory.nullLiteral(),
-  );
+      : astFactory.nullLiteral()
+    );
+  });
+
+  const serverPlacement=ctx.initialServerComponents[componentName]?.conditions[initialSite(expression)];
+  const serverAnchor=(closing:boolean):t.Statement=>astFactory.expressionStatement(astFactory.callExpression(
+    astFactory.memberExpression(astFactory.identifier(parentElementVariable),astFactory.identifier('appendChild')),
+    [astFactory.callExpression(astFactory.memberExpression(renderDocument(ctx,scope),astFactory.identifier('createComment')),
+      [astFactory.stringLiteral(closing?'/mmd:initial:when':`mmd:initial:when:${initialSite(expression)}`)])],
+  ));
+  if (serverPlacement) scope.creation.push(serverAnchor(false));
 
   scope.creation.push(
     registerStmt(
@@ -182,12 +202,13 @@ export function emitConditionalRegion(
           ...(initial ? [astFactory.identifier('undefined'),astFactory.objectExpression([
             astFactory.objectProperty(astFactory.identifier('open'),initialNode(scope,initial.open,`#comment:mmd:initial:when:${initialSite(expression)}`)),
             astFactory.objectProperty(astFactory.identifier('end'),initialNode(scope,initial.end,'#comment:/mmd:initial:when')),
-            astFactory.objectProperty(astFactory.identifier('index'),astFactory.numericLiteral(initial.branch)),
+            ...(initial.branch===null ? [] : [astFactory.objectProperty(astFactory.identifier('index'),astFactory.numericLiteral(initial.branch))]),
           ])] : []),
         ]),
       ),
     ]),
   );
+  if (serverPlacement) scope.creation.push(serverAnchor(true));
   if (
     forwardFromOwner ||
     scope.regionReplay!.conditionFromOwner(expression)
@@ -226,6 +247,7 @@ export function buildConditionalBranchCreate(
   forwardReasons = false,
   sources: RegionSourcePlans | null = null,
   initial?: EmitScope['initialDom'],
+  initialTarget?: t.Expression,
 ): t.ArrowFunctionExpression {
   const branchScope = newEmitScope(ctx, true, sources);
   if (initial) branchScope.initialDom=initial;
@@ -250,6 +272,12 @@ export function buildConditionalBranchCreate(
     inSvg,
     ownerId,
   );
+  if (initialTarget && initial?.adopting) branchScope.prelude.unshift(astFactory.variableDeclaration('const',[
+    astFactory.variableDeclarator(astFactory.identifier(initial.variable),astFactory.conditionalExpression(
+      cloneEstreeNode(initial.adopting),astFactory.callExpression(md(ctx,'bindInitialNodes'),[
+        initialTarget,astFactory.arrayExpression(initial.descriptors),
+      ]),astFactory.arrayExpression([]))),
+  ]));
   const properties: t.ObjectProperty[] = [
     astFactory.objectProperty(
       astFactory.identifier('nodes'),

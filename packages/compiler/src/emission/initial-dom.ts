@@ -18,8 +18,8 @@ export interface InitialDomRoot {
   readonly elements: Readonly<Record<string,InitialDomElement>>;
   readonly components: Readonly<Record<string,{readonly path:readonly number[];readonly tag:string;readonly moduleId:string;readonly component:string;readonly static?:boolean}>>;
   readonly factories?: Readonly<Record<string,InitialDomRoot>>;
-  readonly conditions: Readonly<Record<string, {readonly branch: number; readonly open: readonly number[];
-    readonly end: readonly number[]; readonly returnSite: string | null}>>;
+  readonly conditions: Readonly<Record<string, {readonly branch: number | null; readonly open: readonly number[];
+    readonly end: readonly number[]; readonly returnSite: string | null; readonly branches?: readonly InitialDomRoot[]}>>;
   readonly lists: Readonly<Record<string, {readonly open: readonly number[]; readonly end: readonly number[];
     readonly count: number; readonly row: InitialDomRoot | null}>>;
 }
@@ -72,6 +72,19 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
         if (conditions[node.site]) {valid=false;return;}
         const children=node.children;
         if (children.length > 1 || children.length === 1 && !['element','component'].includes(children[0]!.kind)) {valid=false;return;}
+        if (node.branch === null) {
+          const branches = node.alternatives?.map(nodes => {
+            const host=nodes[0];
+            if (nodes.length!==1 || host?.kind!=='element' || !host.site) return null;
+            const nested=planInitialDom({...plan,nodes,returnSite:host.site},factories,false);
+            return nested ? relativeInitialDom(nested) : null;
+          });
+          if (!branches?.length || branches.some(branch=>branch===null)) {valid=false;return;}
+          conditions[node.site]={branch:null,open:[...parent,current],end:[...parent,current+2],
+            returnSite:null,branches:branches as InitialDomRoot[]};
+          index+=2;
+          return;
+        }
         conditions[node.site]={branch:node.branch,open:[...parent,current],end:[...parent,current+children.length+1],
           returnSite:children[0] && 'site' in children[0] ? children[0].site ?? null : null};
         visit(children,parent,current+1);
@@ -115,7 +128,10 @@ function mergeInitialDom(left:InitialDomRoot,right:InitialDomRoot):InitialDomRoo
     const other=right.elements[site]!;
     return [site,{...element,staticAttributes:element.staticAttributes.filter(site=>other.staticAttributes.includes(site)),
       texts:element.texts.map((text,index)=>({...text,live:text.live||other.texts[index]!.live,empty:text.empty||other.texts[index]!.empty}))}];
-  })),lists:Object.fromEntries(Object.entries(left.lists).map(([site,list])=>[site,{...list,row:list.row?mergeInitialDom(list.row,right.lists[site]!.row!)!:null}]))};
+  })),conditions:Object.fromEntries(Object.entries(left.conditions).map(([site,condition])=>[site,{
+    ...condition,...(condition.branches ? {branches:condition.branches.map((branch,index)=>
+      mergeInitialDom(branch,right.conditions[site]!.branches![index]!)!)} : {}),
+  }])),lists:Object.fromEntries(Object.entries(left.lists).map(([site,list])=>[site,{...list,row:list.row?mergeInitialDom(list.row,right.lists[site]!.row!)!:null}]))};
 }
 
 /** Only nodes used by future browser work get a binding descriptor. */

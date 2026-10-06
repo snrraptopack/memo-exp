@@ -26,6 +26,7 @@ export function emitInitialHtml(plan: InitialRenderPlan): string | null {
         continue;
       }
       if (node.kind === 'conditional') {
+        if (node.alternatives?.some(nodes => emit(nodes, ancestors) === null)) return null;
         const children = emit(node.children, ancestors);
         if (children === null) return null;
         html += `<!--mmd:initial:when:${node.site}-->${children}<!--/mmd:initial:when-->`;

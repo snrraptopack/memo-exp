@@ -45,7 +45,7 @@ export function createCondRegion(
   pick: () => number,
   branches: readonly (CondBranchFactory | null)[],
   identity?: () => unknown,
-  initial?: { readonly open: Node; readonly end: Node; readonly index: number },
+  initial?: { readonly open: Node; readonly end: Node; readonly index?: number },
 ): CondRegion {
   // Hydration protocol (hydration-markers.md §2/§3): an opening `mmd:g`
   // marker before the branch content and a uniform `/mmd` close after it.
@@ -101,7 +101,7 @@ export function createCondRegion(
     if (disposed) return;
     const idx = pick();
     if (disposed) return;
-    if (bindingInitial && idx !== initial!.index) {
+    if (bindingInitial && initial!.index !== undefined && idx !== initial!.index) {
       throw new Error('memo-dom: initial conditional selection does not match its HTML');
     }
     const nextIdentity = identity?.();

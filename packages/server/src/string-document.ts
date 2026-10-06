@@ -221,8 +221,9 @@ export class StringComment implements StringRenderableNode {
     return new StringComment(this.data);
   }
 
-  toString(markers: boolean): string {
-    if (!markers || this.data.includes('-->') || this.data.endsWith('-')) return '';
+  toString(markers: boolean, initialBindings = false): string {
+    const initial = /^(?:mmd:initial:when:\d+:\d+|\/mmd:initial:when)$/.test(this.data);
+    if (!(initial ? initialBindings : markers) || this.data.includes('-->') || this.data.endsWith('-')) return '';
     return `<!--${this.data}-->`;
   }
 }

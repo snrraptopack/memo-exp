@@ -18,6 +18,7 @@ import {
   type Ctx,
 } from '../../context';
 import { mdd } from '../../identifiers';
+import { initialSite } from '../../planning/initial-render';
 import { wrapAutomaticSite } from './automatic-sites';
 import { lowerModuleRefReadsEstree } from './module-read-lowering';
 import {
@@ -245,11 +246,14 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         const eventDependencies = allDependencies.filter(source =>
           eventSources.has(source)
         );
-        // The initial-content proof rejects presentation policies and unknown
-        // structure. Its fixed scalar sinks can use the ordinary gated read;
-        // adding an automatic region would invent an unplanned DOM extent.
-        const fixedInitialSink = !nodeHasJsx(rawExpression as unknown as t.Node) &&
-          (ctx.initialDomRoot?.component === component || ctx.initialDomComponents[component] !== undefined);
+        // Proven scalar sinks and fixed-extent conditionals keep their authored
+        // placement. Gate individual reads rather than adding an automatic
+        // region that would invent an unplanned DOM extent.
+        const initial = ctx.initialDomRoot?.component === component ? ctx.initialDomRoot :
+          ctx.initialDomComponents[component] ?? ctx.initialServerComponents[component];
+        const fixedInitialSink = initial !== undefined && initial !== null &&
+          !nodeHasJsx(rawExpression as unknown as t.Node);
+        const fixedInitialStructure = initial?.conditions[initialSite(rawExpression)] !== undefined;
         if (
           !fixedInitialSink && !spread && ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
             nodeHasJsx(rawExpression as unknown as t.Node) ||
@@ -260,7 +264,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           )
         ) {
           if (
-            stateDependencies.length > 0 ||
+            fixedInitialStructure || stateDependencies.length > 0 ||
             eventDependencies.length > 0
           ) {
             // Authored control flow driven by request state (RFC §5):

@@ -97,7 +97,11 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('No test address');
     await page.goto(`http://127.0.0.1:${address.port}${pathname}`);
-    await check(page, apiRequests);
+    try { await check(page, apiRequests); }
+    catch(error) {
+      if(errors.length) throw new AggregateError([error,...errors.map(message=>new Error(message))],'Production browser check failed');
+      throw error;
+    }
     expect(errors).toEqual([]);
   } finally {
     try { await browser.close(); } finally { await new Promise<void>(done => server.close(() => done())); }
@@ -293,6 +297,80 @@ describe('production initial SSR bootstrap', () => {
       expect(apiRequests).toEqual([]);
     });
   }, 60_000);
+
+  it.each(['Ada',''])('binds request-selected branches and creates later branches in Chrome (name=%s)',async(name,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production(`request-condition-${name?'active':'empty'}`,`export function App(){const user=$fetch('/api/user');let show=true;let n=0;
+      return <main><h1>{user?.name}</h1><button class="toggle" onClick={()=>show=!show}>Toggle</button>
+        <button class="add" onClick={()=>n++}>{n}</button>
+        {user?.name==='Ada' && show?<section title="ready"><h2>{user?.name}:{n}</h2></section>:<p>Hidden {n}</p>}
+        <footer>Kept</footer><span>{n}</span></main>;}`,{},name);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain('mmd:initial:when:');expect(html).not.toMatch(/mmd:[rgl]:/);
+    expect(html).toContain('application/mmd+json');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      const selector=name?'section':'p';
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      expect(await page.evaluate(selector=>(window as unknown as {initial:Element[]}).initial.includes(document.querySelector(selector)!),selector)).toBe(true);
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('span')?.textContent==='1');
+      expect(await page.$eval(selector,node=>node.textContent)).toBe(name?'Ada:1':'Hidden 1');
+      expect(await page.evaluate(selector=>(window as unknown as {initial:Element[]}).initial.includes(document.querySelector(selector)!),selector)).toBe(true);
+      await page.click('.toggle');
+      if(name) {
+        await page.waitForSelector('p');expect(await page.$eval('p',node=>node.textContent)).toBe('Hidden 1');
+        await page.click('.toggle');await page.waitForSelector('section');
+        expect(await page.$eval('section',node=>[node.textContent,node.getAttribute('title')])).toEqual(['Ada:1','ready']);
+        expect(await page.evaluate(()=>(window as unknown as {initial:Element[]}).initial.includes(document.querySelector('section')!))).toBe(false);
+      }
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('span')?.textContent==='2');
+      expect(await page.$eval(selector,node=>node.textContent)).toBe(name?'Ada:2':'Hidden 2');
+      expect(await page.evaluate(()=>{
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return ['main','h1','footer','span','.toggle','.add'].every(selector=>initial.includes(document.querySelector(selector)!));
+      })).toBe(true);
+      expect(await page.$('script[type="application/mmd+json"]')).toBeNull();expect(requests).toEqual([]);
+    });
+  },60_000);
+
+  it('merges live bindings across repeated request-selected component branches in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('request-condition-repeated',`function Card({active,label}){
+      return <section>{active?<p title={label}>{label}</p>:<b>Hidden</b>}</section>;}
+      export function App(){const user=$fetch('/api/user');let n=0;return <main><button onClick={()=>n++}>Add</button>
+        <Card active={user?.name==='Ada'} label=""/><Card active={user?.name==='Ada'} label={n}/></main>;}`);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.$$eval('p',nodes=>nodes.map(node=>[node.textContent,node.getAttribute('title')]))).toEqual([['',''],['0','0']]);
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.click('button');await page.waitForFunction(()=>document.querySelectorAll('p')[1]?.textContent==='1');
+      expect(await page.$$eval('p',nodes=>nodes.map(node=>[node.textContent,node.getAttribute('title')]))).toEqual([['',''],['1','1']]);
+      expect(await page.evaluate(()=>{
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return [...document.querySelectorAll('section,p')].every(node=>initial.includes(node));
+      })).toBe(true);expect(requests).toEqual([]);
+    });
+  },60_000);
+
+  it('binds an initially empty local conditional beside settled request text in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('request-local-condition-empty',`export function App(){const user=$fetch('/api/user');let show=false;let n=0;
+      return <main><h1>{user?.name}</h1><button class="toggle" onClick={()=>show=!show}>Toggle</button>
+        {show&&<p>{user?.name}:{n}</p>}{n}<button class="add" onClick={()=>n++}>Add</button></main>;}`);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.$('p')).toBeNull();
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.click('.toggle');await page.waitForSelector('p');expect(await page.$eval('p',node=>node.textContent)).toBe('Ada:0');
+      await page.click('.add');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='Ada:1');
+      expect(await page.$eval('main',node=>node.textContent)).toBe('AdaToggleAda:11Add');
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelector('p')===null);
+      expect(await page.$eval('main',node=>node.textContent)).toBe('AdaToggle1Add');
+      expect(requests).toEqual([]);
+    });
+  },60_000);
 
   it('selects keyed-list adoption, retains row identity and recovers mismatched rows in Chrome', async context => {
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}

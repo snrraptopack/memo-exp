@@ -154,6 +154,8 @@ export interface InternalMemoDomOptions extends MemoDomOptions {
   initialBrowserRoot?: InitialBrowserRoot;
   initialDomRoot?: InitialDomRoot;
   initialDomComponents?: Readonly<Record<string,InitialDomRoot>>;
+  /** Source anchors for request contracts; server creation remains ordinary. */
+  initialServerComponents?: Readonly<Record<string,InitialDomRoot>>;
   initialMount?: { readonly payload: boolean };
   rootId?: string;
   rootComponent?: string;
@@ -403,6 +405,7 @@ export interface Ctx {
   initialBrowserRoot: InitialBrowserRoot | null;
   initialDomRoot: InitialDomRoot | null;
   initialDomComponents: Readonly<Record<string,InitialDomRoot>>;
+  initialServerComponents: Readonly<Record<string,InitialDomRoot>>;
   runtimePath: string;
   hotRuntimePath: string;
   routerPath: string;
@@ -759,6 +762,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     initialBrowserRoot: opts.initialBrowserRoot ?? null,
     initialDomRoot: opts.initialDomRoot ?? null,
     initialDomComponents: opts.initialDomComponents ?? {},
+    initialServerComponents: opts.initialServerComponents ?? {},
     runtimePath,
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',

@@ -1,5 +1,13 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-conditional': { './App.tsx': `export function App(){const user=$fetch('/api/user');let show=true;let n=0;
+    return <main><h1>{user?.name}</h1><button class="toggle" onClick={()=>show=!show}>Toggle</button>
+      <button class="add" onClick={()=>n++}>{n}</button>
+      {user?.name==='Ada' && show?<section><h2>{user?.name}:{n}</h2></section>:<p>Hidden {n}</p>}
+      <footer>Kept</footer><span>{n}</span></main>;}` },
+  'request-local-conditional': { './App.tsx': `export function App(){const user=$fetch('/api/user');let show=true;
+    return <main><h1>{user?.name}</h1><button onClick={()=>show=!show}>Toggle</button>
+      {show&&<p>Shown</p>}<footer>Kept</footer></main>;}` },
   'request-opaque': { './App.tsx': `import {createDataRuntime} from '@memoized-dom/data';
     export function App(){const api=createDataRuntime();const user=api.$fetch('/api/user');$cleanup(api.clear);
       return <main><p>{user.data?.name}</p></main>;}` },

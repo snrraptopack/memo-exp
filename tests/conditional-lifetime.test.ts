@@ -2,6 +2,30 @@ import { afterEach, expect, it } from 'vitest';
 import { createCondRegion } from '@memoized-dom/runtime';
 
 afterEach(()=>document.body.replaceChildren());
+it('picks a request-selected initial branch once, retains it and disposes it on a swap',()=>{
+  const host=document.createElement('main');document.body.append(host);
+  const open=document.createComment('open'), retained=document.createElement('p'), end=document.createComment('end');
+  host.append(open,retained,end);let selected=1,picks=0,updates=0,disposed=0;
+  const adoption:boolean[]=[];
+  const region=createCondRegion(host,'initial',()=>{picks++;return selected;},[
+    adopting=>{adoption.push(adopting===true);return {nodes:[document.createElement('b')],update(){}};},
+    adopting=>{adoption.push(adopting===true);return {nodes:[retained],update(){updates++;},dispose(){disposed++;}};},
+  ],undefined,{open,end});
+  expect(picks).toBe(1);expect(adoption).toEqual([true]);expect(host.querySelector('p')).toBe(retained);
+  region.update();expect(updates).toBe(1);expect(host.querySelector('p')).toBe(retained);
+  selected=0;region.update();expect(disposed).toBe(1);expect(retained.parentNode).toBeNull();
+  expect(adoption).toEqual([true,false]);expect(host.querySelector('b')).not.toBeNull();
+  region.dispose();expect(host.childNodes).toHaveLength(0);expect(disposed).toBe(1);
+});
+it('still rejects a known initial selection mismatch before calling a factory',()=>{
+  const host=document.createElement('main');document.body.append(host);
+  const open=document.createComment('open'), end=document.createComment('end');host.append(open,document.createElement('p'),end);
+  let factories=0,picks=0;
+  expect(()=>createCondRegion(host,'initial',()=>{picks++;return 1;},[
+    ()=>{factories++;return {nodes:[],update(){}};},()=>{factories++;return {nodes:[],update(){}};},
+  ],undefined,{open,end,index:0})).toThrow('initial conditional selection does not match its HTML');
+  expect(picks).toBe(1);expect(factories).toBe(0);expect(host.childNodes).toHaveLength(0);
+});
 it('removes initial anchors when construction throws, including undefined',()=>{
   const host=document.createElement('main');document.body.append(host);let caught=false;
   try {createCondRegion(host,'condition',()=>0,[()=>{throw undefined;}]);}
