@@ -135,7 +135,7 @@ export function installLinkedDynamicComponentImports(
     if (ctx.state.has(owner)) ctx.stateComponentCandidates.set(owner, unique);
     else ctx.functionComponentCandidates.set(owner, unique);
   }
-  ctx.header.push(...declarations);
+  ctx.emission.header.push(...declarations);
 }
 
 function unwrap(expression: BaseNode): BaseNode {
@@ -588,13 +588,13 @@ function finiteSelection(
   // update. Evaluate the selector once per pick through a shared scratch
   // binding instead of re-running it inside every candidate comparison.
   const scratch =
-    ctx.dynamicTagSelector ??
-    (ctx.dynamicTagSelector = generatedIdentifier(
+    ctx.emission.dynamicTagSelector ??
+    (ctx.emission.dynamicTagSelector = generatedIdentifier(
       ctx,
       'dynamicTagSelector',
     ).name);
-  if (ctx.header.every((node) => !isDynamicTagScratchDecl(node, scratch))) {
-    ctx.header.push(
+  if (ctx.emission.header.every((node) => !isDynamicTagScratchDecl(node, scratch))) {
+    ctx.emission.header.push(
       astFactory.variableDeclaration('let', [
         astFactory.variableDeclarator(astFactory.identifier(scratch)),
       ]),

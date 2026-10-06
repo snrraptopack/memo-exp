@@ -119,7 +119,7 @@ function prepared(twoLists = false) {
 
 it('captures immutable journal facts by original call identity before mutable context is consumed', () => {
   const { program, ctx, calls } = prepared();
-  const before = JSON.stringify(program), headers = [...ctx.header];
+  const before = JSON.stringify(program), headers = [...ctx.emission.header];
   const original = ctx.keyedListMutationSources.get('View')!.get('items')!;
   const plan = planComponentListSites(ctx).get('View')!;
   const journal = plan.mutationFor(calls[0]!)!;
@@ -130,7 +130,7 @@ it('captures immutable journal facts by original call identity before mutable co
   expect(Object.isFrozen(journal)).toBe(true);
   expect(Object.isFrozen(journal.keyPath)).toBe(true);
   expect(JSON.stringify(program)).toBe(before);
-  expect(ctx.header).toEqual(headers);
+  expect(ctx.emission.header).toEqual(headers);
   ctx.keyedListMutationSources.clear();
   (original.keyPath as string[]).push('changed');
   ctx.instanceState.clear();

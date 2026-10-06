@@ -25,7 +25,11 @@ export interface ComponentPullFacts {
 
 export interface ComponentPullPlan {
   /** Complete only after this owner's handlers/callbacks have been lowered. */
-  readonly finalize: (isInstrumented: (execution: BaseNode) => boolean) => ComponentPullFacts;
+  readonly finalize: (publication: CallbackPublicationFacts) => ComponentPullFacts;
+}
+
+export interface CallbackPublicationFacts {
+  readonly normalCompletion:ReadonlySet<BaseNode>;
 }
 
 /** Convert an expression to primitive grammar and lexical dependencies once. */
@@ -49,10 +53,10 @@ export function createPrimitivePullPlan(
   dynamicScope: boolean,
   resolve: (node: BaseNode, name: string) => Binding | undefined,
 ): ComponentPullPlan {
-  return { finalize(isInstrumented) {
+  return { finalize(publication) {
     const instrumented = new Set<BaseNode>();
     for (const fact of bindings.values()) for (const write of fact.writes) {
-      if (write.execution !== null && isInstrumented(write.execution)) instrumented.add(write.execution);
+      if (write.execution !== null && publication.normalCompletion.has(write.execution)) instrumented.add(write.execution);
     }
     const known = new Map<Binding, boolean>();
     const visiting = new Set<Binding>();

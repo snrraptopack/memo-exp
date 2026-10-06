@@ -11,7 +11,7 @@ function preparedHandler(source:string) {
   const program=parseEstreeOrThrow(source,{filename:'./plan.tsx'}).program as unknown as t.Program;
   const ctx=createCtx();
   prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
-  ctx.identifiers!.registerComponentId('App','_factoryId');
+  ctx.emission.identifiers!.registerComponentId('App','_factoryId');
   let handler:t.ArrowFunctionExpression|undefined;
   walkAst(program,{enter(node){
     if(node.type==='JSXAttribute'&&node.name.type==='JSXIdentifier'&&node.name.name==='onClick')
@@ -25,12 +25,12 @@ it('captures targeted item mutation without inserting a journal during analysis'
     let items=[{id:1,label:'one'}];return <main>
       <ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>
       <button onClick={()=>{items[0].label='new';}}/></main>;}`);
-  const authored=JSON.stringify(program), headers=[...ctx.header];
+  const authored=JSON.stringify(program), headers=[...ctx.emission.header];
   const journal=ctx.keyedListMutationSources.get('App')!.get('items')!;
   expect(journal).not.toHaveProperty('keysVariable');
   const plan=planHandlerWrites(ctx,handler,'App');
   expect(JSON.stringify(program)).toBe(authored);
-  expect(ctx.header).toEqual(headers);
+  expect(ctx.emission.header).toEqual(headers);
   expect(plan.mutationSites).toHaveLength(1);
   expect(plan.mutationSites[0]!.source).toBe('items');
   expect(plan.mutationSites[0]!.path.node.type).toBe('AssignmentExpression');
@@ -61,17 +61,17 @@ it('captures a native-operation write without mutating authored code or emitting
   }`, { filename: './plan.tsx' }).program as unknown as t.Program;
   const ctx = createCtx();
   prepareProgramAnalysis(ctx, { node: program, buildCodeFrameError: message => new Error(message) });
-  ctx.identifiers!.registerComponentId('App', '_factoryId');
+  ctx.emission.identifiers!.registerComponentId('App', '_factoryId');
   let handler: t.ArrowFunctionExpression | undefined;
   walkAst(program, { enter(node) {
     if (node.type === 'JSXAttribute' && node.name.type === 'JSXIdentifier' && node.name.name === 'onClick') {
       handler = (node.value as t.JSXExpressionContainer).expression as t.ArrowFunctionExpression;
     }
   } });
-  const original = JSON.stringify(program), header = [...ctx.header];
+  const original = JSON.stringify(program), header = [...ctx.emission.header];
   const plan = planHandlerWrites(ctx, handler!, 'App');
   expect(JSON.stringify(program)).toBe(original);
-  expect(ctx.header).toEqual(header);
+  expect(ctx.emission.header).toEqual(header);
   expect(plan.listWrites.operations).toHaveLength(1);
   const operation = plan.listWrites.operations[0]!.plan;
   expect(operation.source).toBe('items');
@@ -89,5 +89,5 @@ it('captures a native-operation write without mutating authored code or emitting
   expect(JSON.stringify(handler)).toContain(token);
   expect(JSON.stringify(handler)).toContain('evaluateListOperation');
   expect(JSON.stringify(handler)).toContain('markDirty');
-  expect(ctx.header.length).toBeGreaterThan(header.length);
+  expect(ctx.emission.header.length).toBeGreaterThan(header.length);
 });

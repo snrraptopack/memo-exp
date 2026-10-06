@@ -24,7 +24,7 @@ import * as astFactory from '../ast/factory';
 import { walkAst, type BaseNode } from '../ast';
 import { type Ctx } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
-import { freshMarkupConst } from '../context/ast';
+import { freshMarkupConst } from './constants';
 import type { EmitScope } from './scope';
 import { UNSAFE_TAGS, VOID_TAGS, parserClosesAncestor } from '../planning/html-shape';
 

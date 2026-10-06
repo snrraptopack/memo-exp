@@ -2050,4 +2050,22 @@ payload is unchanged. Counter remains 8,613 bytes and dedicated fetched list
 46,434 bytes. These are whole emitted browser graphs, including future code;
 the gain comes from proven initial binding replacing general adoption.
 
+#### Closure batch 4: backend storage and callback publication
+
+DOM output, generated identifiers and constant deduplication now live in one
+backend-owned state product. Their implementations moved into emission; facade
+imports reference those implementations without mirrored fields or extra output.
+Primitive pull planning consumes an explicit normal-completion publication set
+after successful callback lowering, rather than the handler analysis cycle guard.
+A regression verifies that entering the cycle guard alone grants no publication.
+Transparent receiver-write planning also uses async provenance instead of
+matching an emitted namespace and helper name.
+
+Six focused suites pass 94 tests. Five paired production delivery fixtures are
+byte-identical against `ea68839`, including routed Group and fetched siblings.
+The prior structural batch's full local DOM comparison passes all 21 scenarios
+and mixed sequences across eight compiled variants plus vanilla, with identity
+checks after every timed sample. Browser artifacts are identical, so timing
+differences are local noise and no CPU improvement is claimed.
+
 These are outstanding requirements, not reasons to mark the architecture closed.

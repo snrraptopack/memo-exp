@@ -77,7 +77,7 @@ export class GeneratedIdentifiers {
 }
 
 export interface IdentifierOwner {
-  identifiers: GeneratedIdentifiers | null;
+  emission:{identifiers: GeneratedIdentifiers | null};
 }
 
 export function initializeGeneratedIdentifiers(
@@ -85,7 +85,7 @@ export function initializeGeneratedIdentifiers(
   program: BaseNode,
 ): GeneratedIdentifiers {
   const identifiers = new GeneratedIdentifiers(program);
-  owner.identifiers = identifiers;
+  owner.emission.identifiers = identifiers;
   return identifiers;
 }
 
@@ -139,10 +139,10 @@ export function mdd(owner: IdentifierOwner, name: string): t.MemberExpression {
 }
 
 export function requireIdentifiers(owner: IdentifierOwner): GeneratedIdentifiers {
-  if (owner.identifiers === null) {
+  if (owner.emission.identifiers === null) {
     throw new Error('memo-dom: generated identifier allocator was not initialized');
   }
-  return owner.identifiers;
+  return owner.emission.identifiers;
 }
 
 function walkIdentifiers(root: BaseNode, visit: (name: string) => void): void {

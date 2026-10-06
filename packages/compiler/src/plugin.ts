@@ -289,7 +289,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   rewriteModuleEffects(ctx, programPath);
   rejectUnownedCleanup(ctx, programPath);
   rejectUnownedEffects(ctx, programPath);
-  ctx.header.unshift(...routeManifestStatements(ctx));
+  ctx.emission.header.unshift(...routeManifestStatements(ctx));
 
   // Safety net: any JSX left over lived outside a component function.
   rejectLeftoverJsx(ctx, programPath);
@@ -299,7 +299,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   if (ctx.moduleControlFlow.length > 0) {
     rewriteModuleControlFlow(ctx, programPath.node);
   }
-  if (table) ctx.header.push(table);
+  if (table) ctx.emission.header.push(table);
 
   if (Object.keys(ctx.lazyRouteImports).length > 0) {
     programPath.node.body = programPath.node.body.filter(statement => {
@@ -357,7 +357,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
       ),
     );
   }
-  programPath.node.body.unshift(...imports, ...ctx.header);
+  programPath.node.body.unshift(...imports, ...ctx.emission.header);
   if (ctx.rootComponent !== null) {
     const registration = astFactory.expressionStatement(
       astFactory.callExpression(md(ctx, 'registerRootFactory'), [

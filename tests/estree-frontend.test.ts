@@ -1120,8 +1120,7 @@ describe('ESTree parser and printer boundary', () => {
       moduleStateCells: true,
       state: new Map([['count', 'let']]),
       stateKeys: new Map([['count', './cells.tsx#count']]),
-      header: [],
-      identifiers: new GeneratedIdentifiers(parsed.program),
+      emission:{header:[],identifiers:new GeneratedIdentifiers(parsed.program)},
       astAnalysis: analyzeScope(parsed.program),
     } as unknown as Ctx;
 
@@ -1144,6 +1143,6 @@ describe('ESTree parser and printer boundary', () => {
     });
     expect(methods).toContain('setCell');
     expect(methods).toContain('readCell');
-    expect(context.header).toHaveLength(1);
+    expect(context.emission.header).toHaveLength(1);
   });
 });

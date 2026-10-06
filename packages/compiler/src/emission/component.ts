@@ -445,7 +445,7 @@ export function transformComponent(
   // local (dynamic writes inside updaters bind nodes too).
   if (scope.trackPullExpressions) {
     scope.slotPullIndependent = component.pullPlan!.finalize(
-      execution => ctx.analyzedFunctions.has(execution as t.Node),
+      {normalCompletion:ctx.callbackPublications},
     ).independentFor;
   }
   const updateStatement = updateDecl(ctx, scope);

@@ -135,6 +135,7 @@ export function finalizeHandlerInstrumentation(
     );
   }
   rootFn.body = clonedFn.body;
+  ctx.callbackPublications.add(rootFn);
 }
 
 function pathDepth(path: HandlerPath): number {

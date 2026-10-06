@@ -18,7 +18,7 @@ import type {
   ControlFlowDerivation,
   LocalDerivation,
 } from '../components/props';
-import type { GeneratedIdentifiers } from '../identifiers';
+import {createDomEmissionState,type DomEmissionState} from '../emission/state';
 import type {
   CompilerRouteDefinition,
   CompilerRouteElement,
@@ -579,7 +579,6 @@ export interface Ctx {
   /** Exact assignment operations captured before handler cloning. */
   ownerListOperations: WeakMap<t.Node, OwnerListOperation>;
   /** Shared static arrays for native-operation and guard requirements. */
-  listOperationConsts: Map<string, string>;
   /** Sources used by multiple list sites deliberately keep full reconciliation. */
   disabledKeyedListMutationSources: Set<string>;
   /** Closed module arrays eligible for static-index content invalidation. */
@@ -627,21 +626,12 @@ export interface Ctx {
   /** Pure exhaustive module-level if/switch calculations. */
   moduleControlFlow: ModuleControlFlowDerivation[];
 
-  // ---- emission accumulators ----
-  header: t.Statement[];
-  writeConstCounter: number;
-  /** Dedupe table for hoisted write-set consts: joined writes → const name. */
-  writeConsts: Map<string, string>;
-  reasonConstCounter: number;
-  /** Dedupe table for hoisted multi-reason arrays. */
-  reasonConsts: Map<string, string>;
-  markupConstCounter: number;
-  /** Dedupe table for hoisted static-markup strings. */
-  markupConsts: Map<string, string>;
-  /** Shared scratch binding for once-evaluated dynamic-tag selectors. */
-  dynamicTagSelector: string | null;
+  /** Backend-owned output, names and deduplication; no mirrored facade fields. */
+  emission:DomEmissionState;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
+  /** Authored callback boundaries with successfully emitted normal-exit publication. */
+  callbackPublications:Set<BaseNode>;
   /** Pure callbacks synthesized and owned by compiler derivation/read helpers. */
   compilerOwnedCallbacks: WeakSet<t.Node>;
   /** Generated lifecycle calls keep their identity despite authored shadows. */
@@ -655,8 +645,6 @@ export interface Ctx {
    * identifiers) instead of the helper body (which does not).
    */
   localParamEffects: WeakMap<t.Node, ParameterWrite[]>;
-  /** Compiler-wide allocator initialized from the original Program scope. */
-  identifiers: GeneratedIdentifiers | null;
 }
 
 export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
@@ -889,7 +877,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     ownerListStructureReasonKeys: new Map(),
     ownerListGuards: new Map(),
     ownerListOperations: new WeakMap(),
-    listOperationConsts: new Map(),
     moduleListTargets: new Map(),
     plainListItemTargets: new WeakMap(),
     disabledKeyedListMutationSources: new Set(),
@@ -905,19 +892,12 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     moduleEffects: [],
     computeds: new Map(),
     moduleControlFlow: [],
-    header: [],
-    writeConstCounter: 0,
-    writeConsts: new Map(),
-    reasonConstCounter: 0,
-    reasonConsts: new Map(),
-    markupConstCounter: 0,
-    markupConsts: new Map(),
-    dynamicTagSelector: null,
+    emission:createDomEmissionState(),
     analyzedFunctions: new WeakSet(),
+    callbackPublications:new Set(),
     compilerOwnedCallbacks: new WeakSet(),
     compilerLifecycleCalls: new WeakMap(),
     handlerHasRootCommit: new WeakMap(),
     localParamEffects: new WeakMap(),
-    identifiers: null,
   };
 }

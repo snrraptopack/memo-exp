@@ -132,9 +132,9 @@ it('copies analyzed identities and semantic facts without granting a clone the o
   const {ctx,program}=component(`let items=[];function Row({item}){return <li>{item.text}</li>;}
     function View(){let owned=[];return <ul>{owned.map(item=><Row item={item} key={item.id}/>)}</ul>;}`);
   const map=firstMap(ctx.compPaths.get('View')!.node), plans=planComponentListSites(ctx).get('View')!;
-  const callback=planListCallback(map,fail), before=JSON.stringify(program), header=[...ctx.header];
+  const callback=planListCallback(map,fail), before=JSON.stringify(program), header=[...ctx.emission.header];
   expect(plans.listFor(map,callback)).toMatchObject({sourceKey:'owned',sourceLocal:true,form:'component'});
-  expect(JSON.stringify(program)).toBe(before);expect(ctx.header).toEqual(header);
+  expect(JSON.stringify(program)).toBe(before);expect(ctx.emission.header).toEqual(header);
   ctx.instanceState.clear();ctx.instanceDerivedBindings.clear();ctx.componentProps.clear();ctx.opaqueBindings.clear();
   ctx.state.clear();ctx.comps.clear();ctx.importedComponents.clear();ctx.analyzedListSources=new WeakMap();
   (map.callee as t.MemberExpression).object=expression('available ? resolved : []');

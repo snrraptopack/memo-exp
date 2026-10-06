@@ -8,7 +8,6 @@ import {
   type Scope,
   type ScopeAnalysis,
 } from '../ast';
-import { generatedIdentifier } from '../identifiers';
 import type { Ctx, StateKind } from './model';
 import type { RowWriteFacts } from '../handlers/write-facts';
 import { canonicalKeyFor } from './state-keys';
@@ -140,92 +139,6 @@ export function canonicalStateKey(ctx: Ctx, key: string): string {
   return canonicalKeyFor(ctx.stateKeys, key);
 }
 
-/** Hoist and dedupe a canonical write-set constant. */
-export function freshWriteConst(
-  ctx: Ctx,
-  writes: readonly string[],
-): t.Identifier {
-  const canonicalWrites = [
-    ...new Set(writes.map((write) => canonicalStateKey(ctx, write))),
-  ].sort();
-  const key = canonicalWrites.join(' ');
-  const existing = ctx.writeConsts.get(key);
-  if (existing !== undefined) return astFactory.identifier(existing);
-  const id = generatedIdentifier(ctx, `WRITES_${ctx.writeConstCounter++}`);
-  ctx.writeConsts.set(key, id.name);
-  ctx.header.push(
-    astFactory.variableDeclaration('const', [
-      astFactory.variableDeclarator(
-        id,
-        astFactory.arrayExpression(
-          canonicalWrites.map((write) => astFactory.stringLiteral(write)),
-        ),
-      ),
-    ]),
-  );
-  return id;
-}
-
-/** Hoist and dedupe a sorted array used to batch local dirty reasons. */
-export function freshReasonConst(
-  ctx: Ctx,
-  reasons: readonly (number | string)[],
-): t.Identifier {
-  const unique = [...new Set(reasons)].sort((left, right) =>
-    typeof left === 'number' && typeof right === 'number'
-      ? left - right
-      : typeof left === 'number'
-        ? -1
-        : typeof right === 'number'
-          ? 1
-          : left < right
-            ? -1
-            : 1,
-  );
-  const key = unique.join(' ');
-  const existing = ctx.reasonConsts.get(key);
-  if (existing !== undefined) return astFactory.identifier(existing);
-  const id = generatedIdentifier(
-    ctx,
-    `REASONS_${ctx.reasonConstCounter++}`,
-  );
-  ctx.reasonConsts.set(key, id.name);
-  ctx.header.push(
-    astFactory.variableDeclaration('const', [
-      astFactory.variableDeclarator(
-        id,
-        astFactory.arrayExpression(
-          unique.map((reason) =>
-            typeof reason === 'number'
-              ? astFactory.numericLiteral(reason)
-              : astFactory.stringLiteral(reason),
-          ),
-        ),
-      ),
-    ]),
-  );
-  return id;
-}
-
-/** Hoist and dedupe a static-markup string const. */
-export function freshMarkupConst(
-  ctx: Ctx,
-  markup: string,
-): t.Identifier {
-  const existing = ctx.markupConsts.get(markup);
-  if (existing !== undefined) return astFactory.identifier(existing);
-  const id = generatedIdentifier(
-    ctx,
-    `HTML_${ctx.markupConstCounter++}`,
-  );
-  ctx.markupConsts.set(markup, id.name);
-  ctx.header.push(
-    astFactory.variableDeclaration('const', [
-      astFactory.variableDeclarator(id, astFactory.stringLiteral(markup)),
-    ]),
-  );
-  return id;
-}
 
 type MemberLike = t.MemberExpression | t.OptionalMemberExpression;
 

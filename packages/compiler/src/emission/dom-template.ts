@@ -97,7 +97,7 @@ export function applyRepeatedDomTemplate(
     ctx,
     `${rootVar}CreateTemplate`,
   );
-  ctx.header.push(
+  ctx.emission.header.push(
     astFactory.variableDeclaration('let', [
       astFactory.variableDeclarator(cloneEstreeNode(template)),
       astFactory.variableDeclarator(cloneEstreeNode(templateDocument)),

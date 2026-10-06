@@ -299,7 +299,7 @@ export function liftModuleStateCells(
         );
       }
     }
-    ctx.header.push(
+    ctx.emission.header.push(
       astFactory.variableDeclaration('const', [
         astFactory.variableDeclarator(
           astFactory.identifier(lift.cellId),

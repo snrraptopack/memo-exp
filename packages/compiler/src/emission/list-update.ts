@@ -14,11 +14,11 @@ import { listProvenanceVariable, type EmittedMutationJournal } from './list-bind
 /** Requirement arrays are compiler-owned and reused across actions/instances. */
 function operationConstant(ctx: Ctx, values: readonly string[]): t.Identifier {
   const key = JSON.stringify(values);
-  const existing = ctx.listOperationConsts.get(key);
+  const existing = ctx.emission.listOperationConsts.get(key);
   if (existing !== undefined) return astFactory.identifier(existing);
   const id = generatedIdentifier(ctx, 'LIST_REQUIREMENTS');
-  ctx.listOperationConsts.set(key, id.name);
-  ctx.header.push(astFactory.variableDeclaration('const', [
+  ctx.emission.listOperationConsts.set(key, id.name);
+  ctx.emission.header.push(astFactory.variableDeclaration('const', [
     astFactory.variableDeclarator(id, astFactory.arrayExpression(values.map(value => astFactory.stringLiteral(value)))),
   ]));
   return cloneEstreeNode(id);

@@ -36,6 +36,7 @@ import {
 import type { HandlerWritePlan } from './plan';
 import { createHandlerWriteRouting } from './write-routing';
 import { captureOwnerListWrites } from '../analysis/owner-list-structure';
+import {asyncReadFact} from '../planning/async-reads';
 
 /** A direct command on a compiler-known form publishes its own changes. */
 function isFormSubmit(ctx: Ctx, component: string | null, name: string, callee: t.MemberExpression): boolean {
@@ -130,21 +131,8 @@ export function planHandlerWrites(
     if (astFactory.isIdentifier(current)) {
       return transparentRoots.has(current.name) ? current.name : null;
     }
-    if (
-      astFactory.isCallExpression(current) &&
-      astFactory.isMemberExpression(current.callee) &&
-      !current.callee.computed &&
-      astFactory.isIdentifier(current.callee.object, {
-        name: ctx.identifiers?.dataRuntimeId,
-      }) &&
-      astFactory.isIdentifier(current.callee.property, {
-        name: 'readResolvedValue',
-      }) &&
-      astFactory.isIdentifier(current.arguments[0]) &&
-      transparentRoots.has(current.arguments[0].name)
-    ) {
-      return current.arguments[0].name;
-    }
+    const read=asyncReadFact(current);
+    if(read?.sources.length===1 && transparentRoots.has(read.sources[0]!))return read.sources[0]!;
     if (
       astFactory.isMemberExpression(current) ||
       astFactory.isOptionalMemberExpression(current)

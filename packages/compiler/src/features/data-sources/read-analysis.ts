@@ -142,7 +142,7 @@ export function isGeneratedDataCall(ctx: Ctx, node: BaseNode): boolean {
   return (
     astFactory.isMemberExpression(callee) &&
     astFactory.isIdentifier(callee.object, {
-      name: ctx.identifiers?.dataRuntimeId,
+      name: ctx.emission.identifiers?.dataRuntimeId,
     })
   );
 }

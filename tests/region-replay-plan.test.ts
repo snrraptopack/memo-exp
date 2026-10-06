@@ -67,9 +67,9 @@ it('captures lexical closed-list proofs before context and factory mutation with
   prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
   const calls: t.Node[] = [];
   walkAst(program,{enter(node){const call=matchMapCall(node); if(call!==null) calls.push(call);}});
-  const call = calls[0]!, before = JSON.stringify(program), header = [...ctx.header];
+  const call = calls[0]!, before = JSON.stringify(program), header = [...ctx.emission.header];
   const facts = planRegionReplays(ctx).get('View')!;
-  expect(JSON.stringify(program)).toBe(before); expect(ctx.header).toEqual(header);
+  expect(JSON.stringify(program)).toBe(before); expect(ctx.emission.header).toEqual(header);
   expect(facts.listFor(call,list()).fixedPositions).toBe(true);
   expect(facts.listFor(cloneNode(call),list()).fixedPositions).toBe(false);
   ctx.astAnalysis=null; ctx.plainListItemTargets=new WeakMap(); ctx.moduleListTargets.clear();
@@ -149,12 +149,12 @@ it('captures native-operation guards as source facts without a generated binding
   const ctx=createCtx();prepareProgramAnalysis(ctx,{node:program,buildCodeFrameError:message=>new Error(message)});
   let call:t.Node|undefined;
   walkAst(program,{enter(node){if(matchMapCall(node)!==null)call=node;}});
-  const original=JSON.stringify(program), headers=[...ctx.header];
+  const original=JSON.stringify(program), headers=[...ctx.emission.header];
   const facts=planRegionReplays(ctx).get('View')!,source={...list(),sourceLocal:true};
   expect(facts.listFor(call!,source).ownerGuarded).toBe(true);
   expect(facts.listFor(call!,source)).not.toHaveProperty('ownerProvenance');
   ctx.ownerListGuards.clear();ctx.ownerListStructureSources=new WeakMap();
   expect(facts.listFor(call!,source).ownerGuarded).toBe(true);
   expect(facts.listFor(cloneNode(call!),source).ownerGuarded).toBeUndefined();
-  expect(JSON.stringify(program)).toBe(original);expect(ctx.header).toEqual(headers);
+  expect(JSON.stringify(program)).toBe(original);expect(ctx.emission.header).toEqual(headers);
 });

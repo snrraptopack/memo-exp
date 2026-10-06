@@ -325,7 +325,7 @@ export function analyzeRoutedPreparations(
           );
           ctx.usesTransparentData = true;
         }
-        ctx.header.push(
+        ctx.emission.header.push(
           astFactory.expressionStatement(
             astFactory.callExpression(mr(ctx, 'registerRoutedPreparation'), [
               astFactory.objectExpression(properties),

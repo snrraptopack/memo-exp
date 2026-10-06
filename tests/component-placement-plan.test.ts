@@ -19,10 +19,10 @@ it('captures authored row aliases and local collection ownership without changin
     function App() { let items=[{id:1,text:'one'}];
       return <ul>{items.map(item=><Row key={item.id} item={item}/>)}</ul>; }
   `);
-  const before = JSON.stringify(program), header = [...ctx.header];
+  const before = JSON.stringify(program), header = [...ctx.emission.header];
   const placements = planComponentPlacements(ctx);
   expect(JSON.stringify(program)).toBe(before);
-  expect(ctx.header).toEqual(header);
+  expect(ctx.emission.header).toEqual(header);
   expect(placements.get('Row')).toMatchObject({
     listed: true, hasLinkedRows: false, sourceLocal: true,
     row: { itemParam: 'record', itemPath: [], keyPath: ['id'], sourceLocal: true },
