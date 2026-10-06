@@ -23,7 +23,7 @@
     "test:css": "bun run --cwd packages/css test",
     "test:corpus": "bun run scripts/corpus-e2e.ts",
     "lint": "oxlint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun run scripts/typecheck-prepare.ts && tsc --noEmit",
     "dev": "bun run build && vitest",
     "example:dev": "vite --config examples/vite.config.ts",
     "example:common-ground": "vite --config examples/common-ground/vite.config.ts",

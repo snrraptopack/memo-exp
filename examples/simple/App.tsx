@@ -42,7 +42,7 @@ function Thread({ messages }: ThreadProps) {
       ))}
       <form onSubmit={(e: SubmitEvent) => {
         form.submit(e)
-        e.currentTarget?.reset()
+        if(e.currentTarget instanceof HTMLFormElement)e.currentTarget.reset()
       }}>
         <input type="text" name="message" placeholder="Hello!" />
         <button type="submit">Send</button>

@@ -46,7 +46,7 @@ it.each(['bindings', 'mixed', 'conditional', 'list', 'input'] as const)('omits S
       : kind === 'list' ? `export function App(){let items=['one'];return <main><button onClick={()=>{items=[...items,'two'];}}>Add</button>{items.map((item,index)=><li key={index}>{item}</li>)}</main>;}`
       : kind === 'input' ? `export function App(){let value='seed';return <input value={value} onInput={e=>{value=e.target.value;}}/>;}`
       : `import {Counter} from './Counter';export function App(){return <main><h1>Static</h1><Counter/></main>;}`,
-    './Counter.tsx': `export function Counter(){let n=0;${kind === 'mixed' ? '$effect(()=>{});' : ''}return <button onClick={()=>n++}>{n}</button>;}`,
+    './Counter.tsx': `export function Counter(){let n=0;${kind === 'mixed' ? 'const setup=()=>{};$effect(setup);' : ''}return <button onClick={()=>n++}>{n}</button>;}`,
   };
   for (const initial of [true, false]) {
     const result = compileModulesDetailed(sources, { initialContent: initial });

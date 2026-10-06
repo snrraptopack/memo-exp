@@ -44,20 +44,22 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Input / list | 17,140 | 6,443 |
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
-| Interactive fetched page | 31,761 | 10,619 |
-| Interactive fetched page with request-selected host branches | 35,604 | 11,871 |
-| Interactive fetched page with a local conditional | 33,966 | 11,397 |
-| Interactive fetched list | 46,434 | 15,501 |
-| Interactive local list beside fetched text | 47,176 | 15,792 |
-| Routed fetched page with Group | 85,319 | 26,246 |
+| Interactive fetched page | 31,496 | 10,595 |
+| Interactive fetched page with request-selected host branches | 35,341 | 11,843 |
+| Interactive fetched page with a local conditional | 33,702 | 11,362 |
+| Interactive fetched list | 46,171 | 15,468 |
+| Interactive fetched list with fixed siblings | 46,687 | 15,546 |
+| Interactive local list beside fetched text | 46,913 | 15,763 |
+| Routed fetched page with Group | 85,056 | 26,209 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Fixed
 interactive fetched layouts now use initial bindings with the shared data
 envelope. Request-selected conditionals with one host root per alternative also
 bind their selected nodes. Fetched lists with fixed host rows in dedicated
-containers bind arbitrary initial row counts through the shared list engine.
-Unproved sibling extents, nested regions, component rows and routing/Group retain
+containers bind arbitrary initial row counts through the shared list engine. A
+single fetched list can also bind fixed siblings in the same host.
+Multiple unknown extents, nested regions, component rows and routing/Group retain
 general adoption and creation instructions.
 Their remaining cost needs deeper binding/reachability
 planning while preserving routing and data presentation.
@@ -67,11 +69,12 @@ planning while preserving routing and data presentation.
 | Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
 | Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages, fixed interactive fetched layouts, single-host conditional branches and dedicated-container fetched lists implemented; unproved extents, nested/component rows and routed/Group shapes retain general adoption |
+| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages, fixed interactive fetched layouts, single-host conditional branches and fetched lists with fixed siblings implemented; multiple unknown extents, nested/component rows and routed/Group shapes retain general adoption |
 | Runtime capabilities | Shared data settlement, optional promise reads/payload/polling, unused cursor removal, lean markup adoption and lazy state-cell storage implemented |
 
-Callback props, escaping mutable values, hidden reads, refs, effects and unknown
-initialization still require conservative ownership/creation proofs. Fixed-shape
+Callback props, escaping mutable values, hidden reads and unknown initialization
+still require conservative ownership/creation proofs. Supported refs, inline
+effects and cleanup retain their existing lifetime owner beside bound HTML. Fixed-shape
 composed factories now bind initial instances and create later conditional
 instances. Broader composition remains open. Mobile/desktop emission is
 not implemented. DOM performance work remains in `performance-work.md`; these
@@ -2085,5 +2088,50 @@ bytes for both fetched and routed Group fixtures; gzip changes by 57 and 67
 bytes respectively. Counter and list bytes are identical. All 12 package/source/
 baseline browser graphs pass. This is a small deduplication gain; the dominant
 resource, router and kernel costs remain candidates for further capability work.
+
+### Current completion boundary — 2026-10-06
+
+The five batches now have explicit async source facts, retained lifetime owners,
+variable list placement with fixed siblings, separated backend storage and
+callback publication, and one request-descriptor construction path. Alias
+analysis also consumes direct-read facts, and data lowering uses owned-call
+metadata; neither guesses a generated helper name or namespace.
+
+The final production audit covers 14 fixtures against compiler/Vite `049ee9f`,
+holding the current runtime/data/server packages fixed. All response checks pass.
+The sibling-list fixture drops from 58,621 to 46,687 browser bytes and from
+18,992 to 15,546 gzip bytes. Its HTML drops from 834 to 693 bytes, with the
+370-byte payload unchanged. The other 13 compiler comparisons preserve their
+HTML, payload and JavaScript counts. The current production table above includes
+the separate request deduplication change; it does not attribute that runtime
+change to this compiler comparison.
+
+Combined verification passes: all ten package builds, the compiler rebuild after
+the alias follow-up, 2,218 root tests across 229 files, and 396 package tests
+(data 67, router 113, server 135, Vite 81). Package data/router TypeScript checks
+also pass. Vite includes real Chrome production binding, lazy navigation,
+Group, refs, effects, cleanup and HMR checks. Changed-source lint exits
+successfully; the simple example retains an existing missing-key warning.
+Workspace typechecking now prepares declarations through the configured Vite
+adapter; it passes after removing the three generated fullstack declarations
+and regenerating them. Tests retain self-contained fixtures. Numbered docs and
+dependency versions are unchanged.
+
+The complete architecture remains open in these concrete areas:
+
+- Authored normalization still shares a phase with some runtime-producing read
+  and callback transforms. Explicit facts remove consumers' helper guessing;
+  they do not yet make the whole source pipeline backend independent.
+- Generic callback/child-slot composition and escaping values need broader
+  ownership and lifetime reachability. Named effects and unproved ref expressions
+  retain ordinary creation rather than acquiring a guessed placement.
+- Multiple unknown list extents, nested regions and component rows need sound
+  address/shape proofs before general adoption can be removed.
+- Resource, router and kernel capability costs still dominate interactive fetched
+  and routed pages. The request cleanup removes duplication, not those subsystems.
+  Numeric key interning also remains unimplemented.
+- A stable VM timing comparison remains outstanding. The full local DOM gate
+  validates all 21 scenarios and mixed sequences with retained identity, but its
+  byte-identical browser artifacts establish no speed gain.
 
 These are outstanding requirements, not reasons to mark the architecture closed.

@@ -5,7 +5,7 @@ import type {FetchOptions} from '../src/types';
 
 it('preserves paused requests without reading query or body inputs',()=>{
   const fetcher=vi.fn();const runtime=createDataRuntime({fetch:fetcher});
-  const options:FetchOptions={get query(){throw new Error('query was read');},get body(){throw new Error('body was read');}};
+  const options:FetchOptions={get query():never{throw new Error('query was read');},get body():never{throw new Error('body was read');}};
   try {
     const source=runtime.$fetch(null,options);
     rebindFetchResource(source,null,options);

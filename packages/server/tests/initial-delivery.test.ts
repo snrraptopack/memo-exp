@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
-import { mountInitial, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { commit, mountInitial, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import { registerRootFactory, rootFactoryStore } from '@memoized-dom/runtime/server';
 import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { registeredIds } from '@memoized-dom/runtime/testing';
@@ -120,11 +120,25 @@ describe('shared initial server delivery', () => {
     `let name='Ada';export function change(){name='Grace';}export function App(){return <h1>{name}</h1>;}`,
     `const value={get name(){return 'Ada';}};export function App(){return <h1>{value.name}</h1>;}`,
     `export function App(){const data=$fetch('/api/name');let n=0;return <main>{data.name?<h1>{data.name}</h1>:null}<button onClick={()=>n++}>{n}</button></main>;}`,
-    `export function App(){let n=0;$effect(()=>n++);return <h1>{n}</h1>;}`,
   ])('keeps request-dependent or externally writable roots on ordinary SSR: %s', source => {
     const compiled = compileInitial({ './main.ts': entry, './App.tsx': source }, { routedEnvironment: 'server' });
     expect(compiled.initialDelivery).toBeUndefined();
     expect(compiled.output['./App.tsx']).not.toContain('initialDelivery');
+  });
+
+  it('retains initial HTML while starting an inline effect only in the browser',async()=>{
+    const value=await fixture('inline-lifetime',`export function App(){let n=0;$effect(()=>{n=1;});return <h1>{n}</h1>;}`);
+    const contract=value.server.initialDelivery!;
+    expect(contract.browser).toBe('bindings');
+    const response=await render(value.serverModule.App,{initialKey:contract.key});
+    expect(response.html).toBe('<h1>0</h1>');
+    document.body.innerHTML=`<div id="root">${response.html}</div>`;
+    const heading=document.querySelector('h1');
+    setScheduler(run=>run());
+    mounted=mountInitial('root',value.clientModule.App);
+    commit();
+    expect(document.querySelector('h1')).toBe(heading);
+    expect(heading?.textContent).toBe('1');
   });
 
   it('allows an exported primitive that is never written', () => {

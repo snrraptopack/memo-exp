@@ -126,8 +126,8 @@ describe('initial HTML and browser bindings', () => {
     `let n=0;return <main><input type="file" value={n}/><button onClick={()=>n++}>Add</button></main>;`,
     `let n=0;return <main style={{color:'red'}}><button onClick={()=>n++}>Add</button></main>;`,
     `let n=Date.now();return <button onClick={()=>n++}>{n}</button>;`,
-    `let n=0;$effect(()=>{});return <button onClick={()=>n++}>{n}</button>;`,
-    `let n=0;let el=null;return <button ref={el} onClick={()=>n++}>{n}</button>;`,
+    `let n=0;const setup=()=>{};$effect(setup);return <button onClick={()=>n++}>{n}</button>;`,
+    `let n=0;const target=()=>null;return <button ref={target()} onClick={()=>n++}>{n}</button>;`,
     `let n=0;return <main><button onClick={()=>n++}>Add</button>{n?<><p>yes</p></>:<p>no</p>}</main>;`,
     `let n=0;const label='last';return <button data-x={n} DATA-X={label} onClick={()=>n++}>Add</button>;`,
   ])('keeps the creation program when initial binding semantics are unproved', body => {
