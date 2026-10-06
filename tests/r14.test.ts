@@ -92,7 +92,7 @@ describe('R14 - code generation', () => {
     expect(code).toMatch(/setTimeout\(\s*\(\) => \{[\s\S]*?\.invalidateEntity\(_id\d*\)/);
   });
 
-  it('accepts a local let derivation and rejects later writes to it', () => {
+  it('derives an unwritten local let and keeps written lets as owned state', () => {
     const source = `
       export function App() {
         let count = 1;
@@ -101,11 +101,12 @@ describe('R14 - code generation', () => {
       }
     `;
     expect(compile(source)).toContain('doubled = count * 2');
-    expect(() => compile(source.replace('count++', '(count++, doubled = 0)')))
-      .toThrowError(/cannot write derived 'doubled'/);
-    expect(() => compile(source.replace('count++', '(count++, doubled++)')))
-      .toThrowError(/cannot write derived 'doubled'/);
-    expect(() => compile(`
+    for (const write of ['(count++, doubled = 0)', '(count++, doubled++)']) {
+      const code = compile(source.replace('count++', write));
+      expect(code.match(/doubled = count \* 2/g)).toHaveLength(1);
+      expect(code).toContain('markDirty');
+    }
+    expect(compile(`
       export function App() {
         let items = [1];
         let visible = items.filter(Boolean);
@@ -113,7 +114,7 @@ describe('R14 - code generation', () => {
           {visible.length}
         </button>;
       }
-    `)).toThrowError(/cannot write derived 'visible'/);
+    `).match(/visible = items.filter\(Boolean\)/g)).toHaveLength(1);
   });
 
   it('keeps const collection contents reactive', () => {

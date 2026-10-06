@@ -133,6 +133,6 @@ it('rejects reassigned factories and opaque later field writes', () => {
 });
 
 it('does not classify a factory returning shared reactive state as fresh data', () => {
-  expect(() => compile(source('inline', "const shared = [{id:0,label:'row'}]; const make = () => shared;", 'make()')))
-    .toThrow(/cannot write derived 'items'/);
+  expect(compile(source('inline', "const shared = [{id:0,label:'row'}]; const make = () => shared;", 'make()')))
+    .not.toContain('ChangedKeys.add(items[i].id)');
 });

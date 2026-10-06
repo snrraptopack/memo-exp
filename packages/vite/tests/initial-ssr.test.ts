@@ -110,6 +110,33 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('preserves written let state while unwritten prop derivations refresh after SSR', async context => {
+    const executablePath = chromeExecutable(); if (!executablePath) { context.skip(); return; }
+    const result = await production('writable-prop-initializer', `
+      function Counter({seed}) {
+        let owned = seed * 2;
+        let live = seed * 3;
+        const label = owned + ':' + live;
+        return <button id="own" onClick={() => owned++}>{label}</button>;
+      }
+      export function App() { let seed = 2;
+        return <main><button id="source" onClick={() => seed++}>source</button><Counter seed={seed}/></main>;
+      }`);
+    const html = await (await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain('4:6');
+    await browserPage(result, html, executablePath, async (page, requests) => {
+      await page.waitForSelector('#own');
+      await page.evaluate(() => { (window as unknown as {owned: Element}).owned = document.querySelector('#own')!; });
+      await page.click('#own');
+      await page.waitForFunction(() => document.querySelector('#own')?.textContent === '5:6');
+      await page.click('#source');
+      await page.waitForFunction(() => document.querySelector('#own')?.textContent === '5:9');
+      await page.click('#own');
+      await page.waitForFunction(() => document.querySelector('#own')?.textContent === '6:9');
+      expect(await page.evaluate(() => (window as unknown as {owned: Element}).owned === document.querySelector('#own'))).toBe(true);
+      expect(requests).toEqual([]);
+    });
+  }, 60_000);
   it('retains static child slots as HTML while binding the counter in Chrome',async context=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production('static-child-slots',`import {Shell} from './Shell';export function App(){let n=0;

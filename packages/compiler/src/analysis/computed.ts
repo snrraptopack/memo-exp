@@ -219,9 +219,15 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
       const init = childNode(declaration, 'init');
       const name = identifierName(id);
       if (name === null || init === null) continue;
-      // A state-reading initializer takes precedence over provisional mutable
-      // classification. A later write to that binding is an error, even when
-      // it was authored with `let`.
+      // Authored writes establish state ownership before initializer reads
+      // establish derivations. A writable let is initialized once, even when
+      // its starting value comes from another reactive binding.
+      const binding = ctx.astAnalysis?.nodeToScope
+        .get(declaration)
+        ?.getBinding(name);
+      if (declarationKind === 'let' && bindingHasVisibleWrite(ctx, binding)) {
+        continue;
+      }
       if (ctx.state.get(name) === 'computed') {
         continue;
       }
@@ -237,10 +243,7 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
       // A statically shaped object whose members are written is an authored
       // store. A helper called only to build its initial value may read its
       // own module state; that does not make the object a derivation. Direct
-      // state reads in the initializer still make it a computed.
-      const binding = ctx.astAnalysis?.nodeToScope
-        .get(declaration)
-        ?.getBinding(name);
+      // state reads in a const initializer still make it a computed.
       if (
         ctx.state.get(name) === 'store' &&
         bindingHasVisibleWrite(ctx, binding) &&
@@ -262,12 +265,6 @@ export function scanComputeds(ctx: Ctx, programPath: ProgramPathLike): void {
         continue;
       }
       if (result.reads.size === 0) continue;
-      if (declarationKind === 'let' && bindingHasVisibleWrite(ctx, binding)) {
-        throw programPath.buildCodeFrameError(
-          `memo-dom: cannot write derived '${name}' — its initializer reads reactive state; write its source instead`,
-          declaration,
-        );
-      }
       registerState(ctx, name, 'computed');
       ctx.computeds.set(name, { reads: result.reads });
     }

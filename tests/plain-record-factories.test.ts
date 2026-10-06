@@ -153,7 +153,7 @@ it('keeps indexed-fill producers conservative because prototype setters can obse
   expect(compile(input)).not.toContain('ChangedKeys.add(items[i].id)');
 });
 
-it('preserves the derived-state diagnostic for factories returning shared records', () => {
-  expect(() => compile(source(true, false, 'const shared={id:0,label:"row"}; const row=(id,prefix)=>shared;')))
-    .toThrow(/cannot write derived 'items'/);
+it('keeps broad refresh for factories returning shared records', () => {
+  expect(compile(source(true, false, 'const shared={id:0,label:"row"}; const row=(id,prefix)=>shared;')))
+    .not.toContain('ChangedKeys.add(items[i].id)');
 });

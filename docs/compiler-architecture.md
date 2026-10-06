@@ -451,6 +451,40 @@ is established. The whole root suite was not repeated. Tests and benchmarks use
 self-contained authored fixtures; numbered docs and dependency versions are
 unchanged.
 
+### Writable initializer ownership — 2026-10-06
+
+Initializer reads no longer override authored writes when classifying a `let`.
+A writable binding owns state and evaluates its initializer once. For example,
+`let points = story.points ?? 0` with a later `points++` preserves local votes
+across prop updates. An unwritten `let sourcePoints = story.points ?? 0` remains
+a derivation and refreshes with its source. Downstream projections of either
+binding retain their normal reactive updates. This rule applies before purity
+checks and replay generation, rather than dropping a diagnostic and allowing
+the replay to overwrite authored state.
+
+Module and instance analysis reuse lexical write facts, including receiver and
+member mutations and deferred callback assignments. Receiver calls stay
+conservative; no method-name whitelist was added. Written component destructuring
+bindings now enter instance state, and the whole destructuring initializer stays
+one setup operation. Pure if/switch calculations without later writes retain
+their existing replay analysis. Const computed mutation guards and existing
+module-pattern/request-cell eligibility limits remain enforced.
+
+Self-contained regressions check source changes, full invalidation, independent
+instances, shared module readers, keyed row identity, object/array patterns,
+subscription callbacks, child callbacks, immutable reset and mutable collections
+under immediate and deferred scheduling. All three reported example graphs
+compile directly from the unchanged Desktop sources. The focused cross-feature
+suite passes 355 tests in 17 files; production Chrome confirms SSR interactivity
+and retained node identity. Compiler build and workspace typecheck pass. Numbered
+docs, examples, dependency versions and runtime code were not changed.
+
+The previous compiler at `9e02231` reproduces each of the three Desktop errors.
+A paired DOM comparison against that commit passes all 21 scenarios and mixed
+sequences, with text/classes/order/retained identity validation after every timed
+sample. Update and swap measurements use three samples in ABBA order. Browser
+artifacts are byte-identical, so this correctness batch establishes no CPU gain.
+
 ## Migration order and gates
 
 1. Return/control-flow planning is implemented. Keep generated output unchanged.

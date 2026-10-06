@@ -242,19 +242,21 @@ export function scanInstanceState(ctx: Ctx): void {
         continue;
       }
       for (const declaration of statement.declarations) {
-        if (!astFactory.isIdentifier(declaration.id)) continue;
-        const binding = astBindingAt(
-          ctx,
-          declaration as unknown as BaseNode,
-          declaration.id.name,
-        );
-        if (
-          ((statement.kind === 'let' || statement.kind === 'var') &&
-            bindingHasVisibleWrite(ctx, binding)) ||
-          isStoreObject(declaration.init) ||
-          isConstObjectState(declaration.init)
-        ) {
-          variables.add(declaration.id.name);
+        for (const name of bindingNames(declaration.id)) {
+          const binding = astBindingAt(
+            ctx,
+            declaration as unknown as BaseNode,
+            name,
+          );
+          if (
+            ((statement.kind === 'let' || statement.kind === 'var') &&
+              bindingHasVisibleWrite(ctx, binding)) ||
+            (astFactory.isIdentifier(declaration.id) &&
+              (isStoreObject(declaration.init) ||
+                isConstObjectState(declaration.init)))
+          ) {
+            variables.add(name);
+          }
         }
       }
     }
@@ -292,7 +294,7 @@ export function excludeRefBindings(ctx: Ctx): void {
   }
 }
 
-/** Discover ordered component-local const derivations. */
+/** Discover ordered component-local derivations without replaying owned state. */
 export function scanInstanceDerivations(ctx: Ctx): void {
   for (const [componentName, componentPath] of ctx.compPaths) {
     const component = componentPath.node as unknown as BaseNode;
@@ -432,6 +434,16 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         ) {
           continue;
         }
+        const names = bindingNames(declaration.id);
+        // Replaying the initializer of an authored writable let would overwrite
+        // its state on later updates. A destructuring initializer is one setup
+        // operation, so a write to any of its bindings makes it setup as well.
+        if (
+          statement.kind === 'let' &&
+          names.some((name) => bindingHasVisibleWrite(ctx, ownerBinding(name)))
+        ) {
+          continue;
+        }
         if (
           astFactory.isIdentifier(declaration.id) &&
           ctx.instanceState
@@ -537,18 +549,6 @@ export function scanInstanceDerivations(ctx: Ctx): void {
         if (directReads.size === 0) continue;
         walkExecuted(ctx, initializer, true, inspect);
         if (statement.kind !== 'const' && statement.kind !== 'let') continue;
-        const names = bindingNames(declaration.id);
-        if (
-          statement.kind === 'let' &&
-          names.some((name) => bindingHasVisibleWrite(ctx, ownerBinding(name)))
-        ) {
-          throw componentPath.buildCodeFrameError(
-            `memo-dom: cannot write derived '${
-              names.join(', ') || '<pattern>'
-            }' — its initializer reads reactive state; write its source instead`,
-            declaration,
-          );
-        }
         if (reason !== null) {
           throw componentPath.buildCodeFrameError(
             `memo-dom: local ${statement.kind} '${

@@ -13,7 +13,7 @@
  *     no method whitelist)
  *   - direct proven writes to state (or await) are a COMPILE ERROR
  *   - receiver-method semantics are author-owned; no method-name table
- *   - writes TO a computed are a compile error (write the source)
+ *   - writable lets own state; writes TO const computeds remain an error
  *   - chains: a computed may read another computed
  *   - ordering: recompute renders before any reader (depth -1)
  */
@@ -76,7 +76,7 @@ describe('R13 — computeds, code generation', () => {
     expect(code).toContain('"App/$computed/.%2Fcomponent.tsx#shout"');
   });
 
-  it('accepts a module let derivation and rejects later writes to it', () => {
+  it('derives an unwritten module let and keeps written lets as owned state', () => {
     const source = `
       let count = 1;
       let doubled = count * 2;
@@ -85,11 +85,11 @@ describe('R13 — computeds, code generation', () => {
       }
     `;
     expect(compile(source)).toContain('"App/$computed/.%2Fcomponent.tsx#doubled"');
-    expect(() => compile(source.replace('count++', '(count++, doubled = 0)')))
-      .toThrowError(/cannot write derived 'doubled'/);
-    expect(() => compile(source.replace('count++', '(count++, doubled++)')))
-      .toThrowError(/cannot write derived 'doubled'/);
-    expect(() => compile(`
+    for (const write of ['(count++, doubled = 0)', '(count++, doubled++)']) {
+      expect(compile(source.replace('count++', write)))
+        .not.toContain('"App/$computed/.%2Fcomponent.tsx#doubled"');
+    }
+    expect(compile(`
       let items = [1];
       let visible = items.filter(Boolean);
       export function App() {
@@ -97,7 +97,7 @@ describe('R13 — computeds, code generation', () => {
           {visible.length}
         </button>;
       }
-    `)).toThrowError(/cannot write derived 'visible'/);
+    `)).not.toContain('"App/$computed/.%2Fcomponent.tsx#visible"');
   });
 
   it('does not treat an unwritten primitive let as reactive by declaration kind', () => {
