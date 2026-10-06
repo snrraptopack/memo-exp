@@ -1,5 +1,22 @@
 # Compiler phase boundaries
 
+## Captured application handles — 2026-10-06
+
+Application entry discovery recognizes a top-level `mount()` call in a variable
+initializer as well as a bare expression statement. Capturing its return value
+in `const`, `let`, or an exported declaration must preserve the imported root's
+compiler metadata. Type assertions and awaiting the call do not change that
+boundary. Deferred calls inside functions do not become extra module entries;
+multiple top-level mounts remain ambiguous.
+
+The handle contains native DOM references. `JSON.stringify(handle)` showing
+`host: {}` and `nodes: [{}, ...]` is normal browser serialization, not a missing
+node list. Nodes can be inspected directly through `handle.nodes`, their
+`nodeName`, and `isConnected`. An active mount owns its host until `unmount()`.
+The new self-contained regressions reproduce the missing-metadata error before
+the fix; DOM and production Chrome tests verify capture, actual node ownership,
+duplicate-host rejection, disposal and fresh remounting. Examples are untouched.
+
 The browser payload measurements and proposed interaction/lifetime contracts
 are documented in [Browser JavaScript architecture](./browser-bundle-architecture.md).
 

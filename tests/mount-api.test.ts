@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 import {
   has,
@@ -98,6 +101,50 @@ describe('application mount boundary', () => {
     expect(compiled.output['./entry.ts']).toContain("mount('root', Application)");
   });
 
+  it.each([
+    ['const', "const rendered = start('root', Application);"],
+    ['let', "let rendered = start('root', Application);"],
+    ['export', "export const rendered = start('root', Application);"],
+    ['await', "const rendered = await start('root', Application);"],
+    ['typed', "const rendered = start('root', Application) as unknown;"],
+    ['multiple declarations', "const unused = 1, rendered = start('root', Application);"],
+  ])('recognizes a captured mount in a %s declaration', (_name, entry) => {
+    const result = compileModulesDetailed({
+      './entry.ts': `import {mount as start} from '@memoized-dom/runtime';
+        import {App as Application} from './App';${entry}`,
+      './App.tsx': `export function App(){return <main>Ready</main>;}`,
+    });
+    expect(result.applicationRoot?.key).toBe('./App.tsx#App');
+    expect(result.output['./App.tsx']).toContain('registerRootFactory(App');
+  });
+
+  it('executes a captured compiled mount and keeps actual nodes across unmount/remount', async () => {
+    const runtimePath = '@memoized-dom/runtime/testing';
+    const result = compileModulesDetailed({
+      './entry.ts': `import {mount} from '${runtimePath}';import {App} from './App';
+        export const rendered=mount('root',App);
+        export function remount(){return mount('root',App);}`,
+      './App.tsx': `export function App(){return <><header>Header</header><main>Ready</main><footer>Footer</footer></>;}`,
+    }, {runtimePath});
+    const directory = join(import.meta.dirname, 'fixtures/out/mount-captured');
+    mkdirSync(directory, {recursive:true});
+    for(const [id, code] of Object.entries(result.output)) writeFileSync(join(directory,id),code);
+    const host = document.createElement('div');host.id='root';document.body.append(host);
+    const entry = await import(/* @vite-ignore */ pathToFileURL(join(directory,'entry.ts')).href);
+    const application: MountedApplication = entry.rendered;mounted.push(application);
+    expect(application.nodes).toEqual([...host.childNodes]);
+    expect(application.nodes).toHaveLength(3);
+    expect(application.nodes.every(node=>node instanceof Node && node.isConnected)).toBe(true);
+    expect(()=>entry.remount()).toThrow(/already owns an application/);
+    application.unmount();
+    expect(application.nodes.every(node=>!node.isConnected)).toBe(true);
+    expect(host.childNodes).toHaveLength(0);
+    const next: MountedApplication=entry.remount();mounted.push(next);
+    expect(next.mounted).toBe(true);expect(host.textContent).toBe('HeaderReadyFooter');
+    expect(next.nodes).toEqual([...host.childNodes]);
+    expect(next.nodes[0]).not.toBe(application.nodes[0]);
+  });
+
   it('rejects ambiguous or non-component mount boundaries', () => {
     expect(() =>
       compileModulesDetailed({
@@ -110,6 +157,12 @@ describe('application mount boundary', () => {
         './App.tsx': `export function App() { return <main />; }`,
       }),
     ).toThrow(/only one top-level mount/);
+
+    expect(() => compileModulesDetailed({
+      './entry.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';
+        const rendered=mount('one',App);mount('two',App);`,
+      './App.tsx': `export function App(){return <main/>;}`,
+    })).toThrow(/only one top-level mount/);
 
     expect(() =>
       compileModulesDetailed({

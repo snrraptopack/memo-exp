@@ -110,6 +110,34 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('captures a mount handle with real DOM nodes and permits remount after unmount in Chrome', async context => {
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('captured-mount',`export function App(){return <><header>Header</header><main>Ready</main><footer>Footer</footer></>;}`,{
+      'src/main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';
+        const rendered=mount('root',App);
+        Object.assign(window,{rendered,remount:()=>mount('root',App)});`,
+    });
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async page=>{
+      await page.waitForFunction(()=>!!(window as any).rendered);
+      const checks=await page.evaluate(()=>{
+        const {rendered,remount}=window as any;
+        const json=JSON.parse(JSON.stringify(rendered));
+        const nodes=rendered.nodes.every((node:Node)=>node instanceof Node&&node.isConnected);
+        const owned=rendered.nodes.every((node:Node,index:number)=>rendered.host.children[index]===node);
+        let duplicate='';try{remount();}catch(error){duplicate=String(error);}
+        rendered.unmount();const empty=rendered.host.childNodes.length===0;
+        const disconnected=rendered.nodes.every((node:Node)=>!node.isConnected);
+        const next=remount();const fresh=next.nodes[0]!==rendered.nodes[0];
+        const text=next.host.textContent;next.unmount();
+        return {json,nodes,owned,duplicate,empty,disconnected,fresh,text};
+      });
+      expect(checks.json).toEqual({host:{},rootId:'App',nodes:[{},{},{}],mounted:true});
+      for(const field of ['nodes','owned','empty','disconnected','fresh'] as const) expect(checks[field],field).toBe(true);
+      expect(checks.duplicate).toContain('already owns an application');
+      expect(checks.text).toBe('HeaderReadyFooter');
+    });
+  },60_000);
   it('preserves written let state while unwritten prop derivations refresh after SSR', async context => {
     const executablePath = chromeExecutable(); if (!executablePath) { context.skip(); return; }
     const result = await production('writable-prop-initializer', `

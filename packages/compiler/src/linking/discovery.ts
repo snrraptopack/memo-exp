@@ -367,15 +367,17 @@ function applicationMounts(
   }
 
   const mounted: string[] = [];
-  for (const statement of program.body) {
-    if (!astFactory.isExpressionStatement(statement)) continue;
-    const expression = statement.expression;
+  const record = (value: t.Expression): void => {
+    let expression = unwrapTypeExpression(value);
+    if (astFactory.isAwaitExpression(expression)) {
+      expression = unwrapTypeExpression(expression.argument);
+    }
     if (
       !astFactory.isCallExpression(expression) ||
       !astFactory.isIdentifier(expression.callee) ||
       !mountBindings.has(expression.callee.name)
     ) {
-      continue;
+      return;
     }
     const component = expression.arguments[1];
     if (component === undefined || !astFactory.isIdentifier(component)) {
@@ -384,6 +386,21 @@ function applicationMounts(
       );
     }
     mounted.push(component.name);
+  };
+  for (const statement of program.body) {
+    // Capturing the mount handle changes neither the root nor its ownership.
+    // Keep discovery at the module boundary; calls in deferred functions are
+    // ordinary application code rather than additional entry points.
+    const declaration = astFactory.isExportNamedDeclaration(statement)
+      ? statement.declaration
+      : statement;
+    if (declaration && astFactory.isExpressionStatement(declaration)) {
+      record(declaration.expression);
+    } else if (declaration && astFactory.isVariableDeclaration(declaration)) {
+      for (const declarator of declaration.declarations) {
+        if (declarator.init) record(declarator.init);
+      }
+    }
   }
   return mounted;
 }
