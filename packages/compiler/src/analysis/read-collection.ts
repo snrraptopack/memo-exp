@@ -18,7 +18,6 @@ import { analyzeCondSite } from '../conds';
 import { summarizeHelper } from '../helper-summaries';
 import { matchRenderCallbackMap } from '../components/render-callbacks';
 import { findTargetedListDependencies, hasHiddenListDependency } from '../lists/targeted-refresh';
-import { generatedIdentifier } from '../identifiers';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
 import { findModuleListSelections } from '../lists/module-selection';
 import { isSimpleInlineRow } from './inline-row';
@@ -109,7 +108,6 @@ function registerKeyedListMutationPlan(
   const plan = {
     source,
     keyPath,
-    keysVariable: generatedIdentifier(ctx, `${source}ChangedKeys`).name,
     targetedReason: `${address}\0content`,
     structuralReason: `${address}\0structure`,
     call,

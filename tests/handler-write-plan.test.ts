@@ -5,6 +5,7 @@ import { createCtx } from '../packages/compiler/src/context';
 import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
 import { planHandlerWrites } from '../packages/compiler/src/handlers/analyze';
 import { emitHandlerWrites } from '../packages/compiler/src/emission/handler';
+import { mutationJournalVariable } from '../packages/compiler/src/emission/mutation-journals';
 
 function preparedHandler(source:string) {
   const program=parseEstreeOrThrow(source,{filename:'./plan.tsx'}).program as unknown as t.Program;
@@ -26,16 +27,18 @@ it('captures targeted item mutation without inserting a journal during analysis'
       <button onClick={()=>{items[0].label='new';}}/></main>;}`);
   const authored=JSON.stringify(program), headers=[...ctx.header];
   const journal=ctx.keyedListMutationSources.get('App')!.get('items')!;
+  expect(journal).not.toHaveProperty('keysVariable');
   const plan=planHandlerWrites(ctx,handler,'App');
   expect(JSON.stringify(program)).toBe(authored);
   expect(ctx.header).toEqual(headers);
   expect(plan.mutationSites).toHaveLength(1);
   expect(plan.mutationSites[0]!.source).toBe('items');
   expect(plan.mutationSites[0]!.path.node.type).toBe('AssignmentExpression');
-  expect(JSON.stringify(plan.copy)).not.toContain(journal.keysVariable);
+  const variable=mutationJournalVariable(ctx,'App',journal.source);
+  expect(JSON.stringify(plan.copy)).not.toContain(variable);
   ctx.keyedListMutationSources.clear();
-  emitHandlerWrites(ctx,plan,{journals:new Map([['items',journal.keysVariable]])});
-  expect(JSON.stringify(handler)).toContain(journal.keysVariable);
+  emitHandlerWrites(ctx,plan,{journals:new Map([['items',variable]])});
+  expect(JSON.stringify(handler)).toContain(variable);
   expect(JSON.stringify(handler)).toContain('markDirty');
 });
 

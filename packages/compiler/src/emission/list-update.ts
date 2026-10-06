@@ -4,12 +4,12 @@ import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import {
   type Ctx,
-  type KeyedListMutationPlan,
   type TargetedListDependency,
 } from '../context';
 import { generatedIdentifier, md } from '../identifiers';
 import { registerStmt } from './scope';
 import type { CapturedOwnerListWrites } from '../analysis/owner-list-structure';
+import type { EmittedMutationJournal } from './mutation-journals';
 
 /** Requirement arrays are compiler-owned and reused across actions/instances. */
 function operationConstant(ctx: Ctx, values: readonly string[]): t.Identifier {
@@ -139,7 +139,7 @@ export function buildTargetedListUpdate(
     dependency: TargetedListDependency;
     cache: string;
   }>,
-  mutation: KeyedListMutationPlan | undefined,
+  mutation: EmittedMutationJournal | undefined,
   generalReplay: t.Statement,
 ): t.Statement {
   const ownerReasons = ctx.instanceReasonIds.get(componentName);

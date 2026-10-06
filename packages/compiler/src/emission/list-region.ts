@@ -1,4 +1,5 @@
 import type * as t from '../ast/compiler-types';
+import { mutationJournalVariable } from './mutation-journals';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
@@ -237,7 +238,10 @@ export function emitListRegion(
     ctx.moduleListSelections.get(call) ?? []));
 
   const targeted = ctx.targetedListDependencies.get(call) ?? [];
-  const mutation = scope.listSites!.mutationFor(call);
+  const mutationFacts = scope.listSites!.mutationFor(call);
+  const mutation = mutationFacts === undefined ? undefined : {
+    ...mutationFacts, keysVariable: mutationJournalVariable(ctx, componentName, mutationFacts.source),
+  };
   if (mutation !== undefined) {
     scope.creation.push(
       astFactory.variableDeclaration('const', [

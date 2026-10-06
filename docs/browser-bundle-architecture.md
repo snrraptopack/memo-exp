@@ -1773,6 +1773,21 @@ checks retained nodes, counter events, empty/nonempty fetched text, no duplicate
 fetch, client-only fallback, keyed-list recovery and routing/Group lifecycles.
 The compiler, runtime, server and Vite builds pass without dependency changes.
 
+### Mutation-journal backend ownership — 2026-10-06
+
+Read analysis now records only the journal's source, key path, authored call
+and semantic causes. It no longer allocates a generated JavaScript variable.
+Handler and list emission share one binding per owner/source, allocated by the
+backend. Captured journal facts remain immutable when factory context is
+consumed; ambiguous multi-list sources keep their conservative fallback.
+
+The compiler build, changed-source lint and nine targeted suites pass 99 cases.
+The paired DOM run against `088dc31` validates all 21 scenarios and mixed
+selection/reverse/removal/append sequences, with retained-node checks after
+every timed sample. All eight compiled variants and vanilla pass. Browser
+artifacts are byte-identical, so noisy local timing differences are not a
+compiler performance gain or regression.
+
 ### Remaining completion requirements
 
 - Preserve the newly separated child/attribute/write facts while auditing other

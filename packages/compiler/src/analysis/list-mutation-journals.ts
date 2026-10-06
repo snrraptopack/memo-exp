@@ -1,4 +1,4 @@
-/** Shared mutation-journal candidates and captured backend bindings. */
+/** Shared authored mutation-journal candidates, independent of backend names. */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { walkAst } from '../ast';
@@ -58,8 +58,8 @@ export interface ComponentMutationJournals {
 
 /**
  * Freeze copies of the final unique-source journals before backend mutation.
- * Runtime binding/reason names are explicit compatibility data, allocated by
- * the existing read-analysis adapter; callers allocate no new names here.
+ * Source/key identities and semantic causes survive factory replacement.
+ * Generated journal variables are allocated separately by the backend.
  */
 export function captureMutationJournals(
   sources: ReadonlyMap<string, KeyedListMutationPlan> | undefined,

@@ -11,6 +11,7 @@ import { directItemWrite } from '../packages/compiler/src/lists/item-write';
 import { directListItemMutationKey } from '../packages/compiler/src/handlers/mutation-targets';
 import { matchMapCall } from '../packages/compiler/src/lists/source-shapes';
 import { planComponentListSites } from '../packages/compiler/src/planning/list-sites';
+import { mutationJournalVariable } from '../packages/compiler/src/emission/mutation-journals';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source, { filename: './mutation-plan.tsx' }).program as unknown as t.Program;
@@ -41,7 +42,7 @@ it.each([
   expect(JSON.stringify(member)).toBe(before);
   // The handler builds its key only after its separate plain-data proof.
   const key = directListItemMutationKey(member, {
-    source: 'items', keyPath: ['id'], keysVariable: 'keys', targetedReason: 'content',
+    source: 'items', keyPath: ['id'], targetedReason: 'content',
     structuralReason: 'structure', call: expression('items.map(item => <li/>)') as t.CallExpression,
   });
   expect(printEstree(key!).code).toMatch(/items\[(?:index|0)\].id/);
@@ -116,13 +117,14 @@ function prepared(twoLists = false) {
   return { program, ctx, calls };
 }
 
-it('captures immutable journal bindings by original call identity before mutable context is consumed', () => {
+it('captures immutable journal facts by original call identity before mutable context is consumed', () => {
   const { program, ctx, calls } = prepared();
   const before = JSON.stringify(program), headers = [...ctx.header];
   const original = ctx.keyedListMutationSources.get('View')!.get('items')!;
   const plan = planComponentListSites(ctx).get('View')!;
   const journal = plan.mutationFor(calls[0]!)!;
   expect(journal).toEqual(original);
+  expect(journal).not.toHaveProperty('keysVariable');
   expect(journal).not.toBe(original);
   expect(journal.keyPath).not.toBe(original.keyPath);
   expect(Object.isFrozen(journal)).toBe(true);
@@ -134,6 +136,16 @@ it('captures immutable journal bindings by original call identity before mutable
   ctx.instanceState.clear();
   expect(plan.mutationFor(calls[0]!)!.keyPath).toEqual(['id']);
   expect(plan.mutationFor(cloneNode(calls[0]!))).toBeUndefined();
+});
+
+it('allocates shared backend variables without adding generated bindings to semantic facts',()=>{
+  const {ctx,calls}=prepared();
+  const journal=planComponentListSites(ctx).get('View')!.mutationFor(calls[0]!)!;
+  const before=JSON.stringify(journal);
+  const variable=mutationJournalVariable(ctx,'View',journal.source);
+  expect(mutationJournalVariable(ctx,'View',journal.source)).toBe(variable);
+  expect(mutationJournalVariable(ctx,'Other',journal.source)).not.toBe(variable);
+  expect(JSON.stringify(journal)).toBe(before);
 });
 
 it('disables an independently consumed journal when two list regions use the same source', () => {

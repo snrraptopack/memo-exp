@@ -343,7 +343,6 @@ export interface TargetedListDependency {
 export interface KeyedListMutationPlan {
   readonly source: string;
   readonly keyPath: readonly string[];
-  readonly keysVariable: string;
   readonly targetedReason: string;
   readonly structuralReason: string;
   readonly call: MapCallExpression;

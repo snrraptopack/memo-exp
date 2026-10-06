@@ -47,6 +47,7 @@ import {
 } from './components/props';
 import { planHandlerWrites } from './handlers/analyze';
 import { emitHandlerWrites } from './emission/handler';
+import { mutationJournalVariable } from './emission/mutation-journals';
 import { callsOnlyCommittedLocalHelpers } from './handlers/local-calls';
 
 /** The coordinator owns the transition from captured writes to DOM lowering. */
@@ -59,7 +60,7 @@ function analyzeHandler(
     sourceKey:row.sourceKey, sourceLocal:row.sourceLocal, localRefresh:row.refreshVar !== undefined,
   };
   const journals = owner === null ? undefined : new Map(
-    [...ctx.keyedListMutationSources.get(owner) ?? []].map(([source,journal])=>[source,journal.keysVariable]),
+    [...ctx.keyedListMutationSources.get(owner)?.keys() ?? []].map(source=>[source,mutationJournalVariable(ctx,owner,source)]),
   );
   emitHandlerWrites(ctx, planHandlerWrites(ctx,target,owner,rowFacts,eventBoundary,executionAwareRoot), {row,eventOriginId,journals});
 }

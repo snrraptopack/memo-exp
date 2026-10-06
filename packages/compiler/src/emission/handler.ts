@@ -6,6 +6,7 @@ import type { Ctx, RowCtx } from '../context';
 import type { HandlerWritePlan } from '../handlers/plan';
 import { finalizeHandlerInstrumentation } from './handler-execution';
 import { applyListOperations } from './list-update';
+import { mutationJournalVariable } from './mutation-journals';
 
 export function emitHandlerWrites(ctx: Ctx, plan: HandlerWritePlan, target: {
   row?:RowCtx; eventOriginId?:t.Expression;
@@ -16,8 +17,9 @@ export function emitHandlerWrites(ctx: Ctx, plan: HandlerWritePlan, target: {
   }
   applyListOperations(ctx, plan.listWrites);
   for (const site of plan.mutationSites) {
+    const journal = plan.owner === null ? undefined : ctx.keyedListMutationSources.get(plan.owner)?.get(site.source);
     const variable = target.journals?.get(site.source) ??
-      (plan.owner === null ? undefined : ctx.keyedListMutationSources.get(plan.owner)?.get(site.source)?.keysVariable);
+      (journal === undefined ? undefined : mutationJournalVariable(ctx,plan.owner!,journal.source));
     if (variable === undefined) throw new Error(`memo-dom: missing mutation journal for '${site.source}'`);
     const original=cloneNode(site.path.node as t.Expression, true);
     site.path.replaceWith(astFactory.sequenceExpression([
