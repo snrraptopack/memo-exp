@@ -3,6 +3,7 @@ import {
   createApplicationRuntime, getActiveApplicationRuntime, has, markDirty, onEntityDispose,
   onRegistryChange, register, registeredIds, registryGeneration, setActiveApplicationRuntime,
   setScheduler, unregister, type ApplicationRuntime,
+  _internals,
 } from '../packages/runtime/src/kernel';
 import { cleanup } from '../packages/runtime/src/cleanup';
 
@@ -71,7 +72,7 @@ it('a leaf cleanup cancels pending and volatile state and allows a replacement o
   markDirty('Parent/Leaf', 'old');
   cleanup('Parent/Leaf', () => {
     expect(runtime.state.dirty.has('Parent/Leaf')).toBe(false);
-    expect(runtime.state.volatile.has('Parent/Leaf')).toBe(false);
+    expect(_internals().volatileSet.has('Parent/Leaf')).toBe(false);
     expect(runtime.state.dirtyReasons.has('Parent/Leaf')).toBe(false);
     markDirty('Parent/Leaf');
     register({id:'Parent/Leaf',parent:'Parent',render(){renders.push('new');}});

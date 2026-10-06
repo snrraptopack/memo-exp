@@ -111,7 +111,6 @@ const MAX_ENTITY_RENDERS_PER_COMMIT = 12;
 interface KernelState {
   readonly registry: Map<EntityId, Entity>;
   readonly dirty: Set<EntityId>;
-  readonly volatile: Set<EntityId>;
   /** Exact numeric causes per dirty entity until their next render. */
   readonly dirtyReasons: DirtyReasonStore;
   /** Cached id array for the access resolver — null when stale. */
@@ -119,7 +118,6 @@ interface KernelState {
   /** Monotonic registry generation for resolver caches. */
   generation: number;
   scheduler: Scheduler;
-  volatileFrameScheduled: boolean;
   scheduled: boolean;
   inCommit: boolean;
   /** Cycle diagnostics — non-null only while a commit drain runs. */
@@ -144,12 +142,10 @@ function createKernelState(
   return {
     registry: new Map(),
     dirty: new Set(),
-    volatile: new Set(),
     dirtyReasons: createDirtyReasonStore(),
     idsCache: null,
     generation: 0,
     scheduler: defaultScheduler,
-    volatileFrameScheduled: false,
     scheduled: false,
     inCommit: false,
     renderingEntity: null,
@@ -203,7 +199,6 @@ export function createApplicationRuntime(
         }
         state.dirty.clear();
         state.dirtyReasons.clear();
-        state.volatile.clear();
         state.idsCache = null;
         state.scheduled = false;
         state.inCommit = false;
@@ -417,13 +412,6 @@ export function registryGeneration(): number {
   return getActiveApplicationRuntime().state.generation;
 }
 
-type VolatileDriver = (runtime: ApplicationRuntime) => void;
-let volatileDriver: VolatileDriver | undefined;
-/** The optional opaque-pull capability uses the shared registry/scheduler. */
-export function installVolatileDriver(driver: VolatileDriver): void {
-  volatileDriver = driver;
-}
-
 /** Compiler-known entity registration; polling is selected by its emitter. */
 export function registerEntity(entity: Entity): void {
   const runtime = getActiveApplicationRuntime();
@@ -437,8 +425,6 @@ export function registerEntity(entity: Entity): void {
     entity.depth ??
     (parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id));
   k.registry.set(entity.id, entity);
-  if (entity.volatile === true) k.volatile.add(entity.id);
-  else k.volatile.delete(entity.id);
 
   if (parent) {
     (parent.children ??= new Set()).add(entity.id);
@@ -447,7 +433,6 @@ export function registerEntity(entity: Entity): void {
   k.idsCache = null;
   k.generation++;
   notifyRegistry(entity.id, 'add');
-  volatileDriver?.(runtime);
 }
 
 /**
@@ -514,7 +499,6 @@ function unregisterSubtreeInState(k: KernelState, id: EntityId): void {
 function removeRegisteredEntity(k: KernelState, id: EntityId): void {
   k.registry.delete(id);
   k.dirty.delete(id);
-  k.volatile.delete(id);
   clearDirtyReasons(k.dirtyReasons, id);
   // A registry listener can repopulate this cache after each removal. Clear
   // it again before the next notification, not after user cleanup has run.
@@ -846,5 +830,6 @@ export function _internals(): {
   volatileSet: ReadonlySet<EntityId>;
 } {
   const k = getActiveApplicationRuntime().state;
-  return { registry: k.registry, dirtySet: k.dirty, volatileSet: k.volatile };
+  const volatile = k.extensions.get('mmd:volatile') as { ids: Set<EntityId> } | undefined;
+  return { registry: k.registry, dirtySet: k.dirty, volatileSet: volatile?.ids ?? new Set() };
 }

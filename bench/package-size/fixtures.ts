@@ -1,5 +1,8 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-opaque': { './App.tsx': `import {createDataRuntime} from '@memoized-dom/data';
+    export function App(){const api=createDataRuntime();const user=api.$fetch('/api/user');$cleanup(api.clear);
+      return <main><p>{user.data?.name}</p></main>;}` },
   'route-helper': { './App.tsx': `import {buildRoutePath} from '@memoized-dom/router';
     export function App(){let id=1;return <main><button onClick={()=>id++}>Next</button>
       <a href={buildRoutePath('/person/:id',{id})}>Person</a></main>;}` },

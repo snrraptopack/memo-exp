@@ -1788,6 +1788,29 @@ every timed sample. All eight compiled variants and vanilla pass. Browser
 artifacts are byte-identical, so noisy local timing differences are not a
 compiler performance gain or regression.
 
+### Optional opaque polling ownership — 2026-10-06
+
+Opaque polling now owns its per-runtime IDs and frame state in its optional
+module. Ordinary entity registration no longer maintains a polling set in the
+kernel. The feature uses the existing registry and disposal hooks, seeds earlier
+registrations for compatibility, and stops queued frames after replacement or
+disposal. Failed renders still leave a recovery frame scheduled. There is no
+second entity registry or commit scheduler.
+
+Against runtime commit `b0cfce2`, source browser bundles for the owner counter,
+input list and request-data fixtures each drop 144 raw bytes (49–52 B gzip).
+The opaque fixture grows 317 raw bytes / 140 B gzip: capability ownership moves
+cost out of ordinary applications, but adds hook coordination to opaque ones.
+The fixture audit records both sides rather than attributing a universal saving.
+
+The runtime build and changed-source lint pass. Lifetime, opaque reactivity and
+kernel teardown checks pass 29 cases; recovery, concurrent SSR isolation and
+prepared-region checks pass another 55 cases. All 12 production SSR browser
+cases pass. The paired DOM comparison validates all 21 scenarios and mixed
+selection/reorder/removal sequences across eight compiled variants and vanilla,
+including retained-node checks after every timed sample. Local update, swap and
+reverse timings are mixed and noisy; this batch establishes no CPU speed claim.
+
 ### Remaining completion requirements
 
 - Preserve the newly separated child/attribute/write facts while auditing other
