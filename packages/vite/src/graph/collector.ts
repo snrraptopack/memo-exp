@@ -258,8 +258,9 @@ export async function compileGraph(
     initialContent: (plan: CompiledModules['initialRender'], delivery: InitialDelivery | undefined) => {
       if (hot || routedEnvironment === 'server' || !documents.length || plan.kind === 'browser' ||
           options.serverEntry !== undefined && delivery === undefined) return false;
-      if (plan.kind==='request' && options.serverEntry===undefined) return false;
-      const html = plan.kind==='request' ? '' : emitInitialHtml(plan);
+      const request = plan.kind === 'request' || plan.kind === 'bindings' && plan.request;
+      if (request && options.serverEntry===undefined) return false;
+      const html = request ? '' : emitInitialHtml(plan);
       const entry = [...sourceIds].find(([, id]) => id === plan.mountModuleId)?.[0];
       if (html === null || entry === undefined) return false;
       const page: InitialPage = { entry, target: plan.target, html,
@@ -391,7 +392,8 @@ export async function compileGraph(
     files: new Set(sourceIds.keys()),
     ...(compiled.initialDelivery === undefined ? {} : { initialDelivery: compiled.initialDelivery }),
     ...(!compiled.initialContent || (initialHtml === null && compiled.initialRender.kind !== 'request') || initialEntry === undefined || compiled.initialRender.kind === 'browser' ? {} : {
-      initialPage: { entry: initialEntry, target: compiled.initialRender.target, html: initialHtml??'',
+      initialPage: { entry: initialEntry, target: compiled.initialRender.target,
+        html: compiled.initialRender.kind === 'bindings' && compiled.initialRender.request ? '' : initialHtml??'',
         ...(compiled.initialRender.kind !== 'html' && compiled.initialRender.kind !== 'request' ? { interactive: true } : {}),
       },
     }),

@@ -18,7 +18,7 @@
  * Effects and refs do not run during server rendering.
  */
 
-import { StringDocument, type StringRenderableNode } from './string-document';
+import { stringTier, type StringRenderableNode } from './string-document';
 import type {
   RoutedServerContext,
   SerializedRoutedPreparationState,
@@ -110,12 +110,9 @@ export function createPayloadScriptTag(rootId: string, payload: RenderPayload): 
   return `<script type="application/mmd+json" data-mmd-root="${safeRootId}">${safeJson}</script>`;
 }
 
-const stringTier = () =>
-  ({ mode: 'server-string', document: new StringDocument() }) as const;
-
 function serializeString(session: RenderSession, root: Node): string {
   return session.wrap(
-    (root as unknown as StringRenderableNode).toString(session.markers),
+    (root as unknown as StringRenderableNode).toString(session.markers, session.initialBindings),
   );
 }
 
@@ -137,7 +134,7 @@ export async function render(
     return {
       html,
       payload,
-      scriptTag: session.initialDelivery === undefined ? createPayloadScriptTag(session.rootId, payload) : '',
+      scriptTag: session.carriesPayload ? createPayloadScriptTag(session.rootId, payload) : '',
       settlement: session.settlement,
     };
   });

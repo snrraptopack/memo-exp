@@ -41,6 +41,7 @@ import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './emission/dom';
 import { emittedRuntimeHelpers } from './emission/runtime-requirements';
+import { emitInitialMount } from './emission/initial-entry';
 import { planComponentListSites } from './planning/list-sites';
 import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
 import { planExpressionSources } from './planning/expression-sources';
@@ -399,6 +400,8 @@ function transformProgramAst(
   const renderPlan = prepareProgram(ctx, programPath);
   emitDomComponents(ctx, renderPlan);
   finishProgram(ctx, programPath);
+  if (opts.initialMount) emitInitialMount(programPath.node,
+    opts.runtimePath ?? '@memoized-dom/runtime', opts.initialMount.payload);
   if (opts.onRuntimeHelpers) {
     opts.onRuntimeHelpers(emittedRuntimeHelpers(
       programPath.node as unknown as BaseNode, requireIdentifiers(ctx).runtimeId,

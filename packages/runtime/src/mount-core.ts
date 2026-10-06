@@ -133,7 +133,11 @@ export function createApplication(host: Element, definition: RootFactoryDefiniti
 }
 
 /** Compiler-only operation for a build-proven initial-HTML entry. */
-export function mountInitial(target: MountTarget, component: MountableComponent): MountedApplication {
+export function mountInitial(
+  target: MountTarget, component: MountableComponent,
+  initialize?: (host: Element, definition: RootFactoryDefinition, create: () => MountedApplication) => MountedApplication,
+): MountedApplication {
   const { host, definition } = resolveMount(target, component);
-  return createApplication(host, definition);
+  return initialize ? initialize(host, definition, () => createApplication(host, definition))
+    : createApplication(host, definition);
 }

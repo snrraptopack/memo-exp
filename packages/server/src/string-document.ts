@@ -92,7 +92,7 @@ export interface StringRenderableNode {
   insertBefore(newNode: StringRenderableNode, referenceNode: StringRenderableNode | null): StringRenderableNode;
   removeChild(child: StringRenderableNode): StringRenderableNode;
   cloneNode(deep?: boolean): StringRenderableNode;
-  toString(markers: boolean): string;
+  toString(markers: boolean, initialTexts?: boolean): string;
 }
 
 /**
@@ -272,8 +272,9 @@ export class StringText implements StringRenderableNode {
     return new StringText(this._value);
   }
 
-  toString(): string {
-    return escapeHtml(this._value ?? '');
+  toString(_markers = false, initialTexts = false): string {
+    const value = this._value ?? '';
+    return initialTexts && value === '' ? '<!--mmd:empty-->' : escapeHtml(value);
   }
 }
 
@@ -393,7 +394,7 @@ export class StringElement extends StringContainer implements StringRenderableNo
     return clone;
   }
 
-  override toString(markers: boolean): string {
+  override toString(markers: boolean, initialTexts = false): string {
     const tag = this.info.tag;
     const className = this.className;
     const cssText = this.ownStyle?.cssText;
@@ -420,7 +421,7 @@ export class StringElement extends StringContainer implements StringRenderableNo
       out += this.innerHTML;
     } else {
       for (let child = this.firstChild; child !== null; child = child.nextSibling) {
-        out += child.toString(markers);
+        out += child.toString(markers, initialTexts);
       }
     }
     return out + '</' + tag + '>';
@@ -441,10 +442,10 @@ export class StringFragment extends StringContainer implements StringRenderableN
     return clone;
   }
 
-  override toString(markers: boolean): string {
+  override toString(markers: boolean, initialTexts = false): string {
     let out = '';
     for (let child = this.firstChild; child !== null; child = child.nextSibling) {
-      out += child.toString(markers);
+      out += child.toString(markers, initialTexts);
     }
     return out;
   }
@@ -473,6 +474,11 @@ const HTML_WRITER: NonNullable<DocumentLike['htmlWriter']> = Object.freeze({
   create: (write: () => string) => new StringHtmlChunk(write) as unknown as Node,
   text: escapeHtml,
   classAttribute: (value: string) => value === '' ? '' : ' class="' + escapeAttribute(value) + '"',
+});
+// The retained writer and node serializer give empty bindings the same address.
+const INITIAL_HTML_WRITER: NonNullable<DocumentLike['htmlWriter']> = Object.freeze({
+  ...HTML_WRITER,
+  text: (value: string) => value === '' ? '<!--mmd:empty-->' : escapeHtml(value),
 });
 
 const REFLECTED_BOOLEANS: ReadonlyArray<readonly [property: string, attribute: string]> = [
@@ -510,7 +516,9 @@ for (const [property, attribute] of REFLECTED_BOOLEANS) {
 const PARSED_MARKUP = new Map<string, readonly MarkupChild[]>();
 
 export class StringDocument implements DocumentLike {
-  readonly htmlWriter = HTML_WRITER;
+  htmlWriter = HTML_WRITER;
+
+  useInitialBindings(): void { this.htmlWriter = INITIAL_HTML_WRITER; }
 
   createComment(data: string): Comment {
     return new StringComment(data) as unknown as Comment;
@@ -572,4 +580,11 @@ export class StringDocument implements DocumentLike {
   getElementById(): Element | null {
     return null;
   }
+}
+
+/** One string tier shared by result and stream rendering. */
+export function stringTier() {
+  const document = new StringDocument();
+  return { mode: 'server-string' as const, document,
+    configureInitialBindings: () => document.useInitialBindings() };
 }

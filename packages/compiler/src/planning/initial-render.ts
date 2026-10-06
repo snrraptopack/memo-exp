@@ -51,7 +51,7 @@ export type InitialRenderPlan =
   | { readonly kind: 'bindings'; readonly target: string; readonly mountModuleId: string;
       readonly rootModuleId: string; readonly rootLocal: string; readonly returnSite: string;
       readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true;
-      readonly creationComponents?: readonly string[] }
+      readonly creationComponents?: readonly string[]; readonly request?: true }
   | { readonly kind: 'request'; readonly target: string; readonly mountModuleId: string;
       readonly nodes: readonly InitialRenderNode[]; readonly exposedMutableValues?: true }
   | { readonly kind: 'browser'; readonly requirements: readonly BrowserRequirement[] };
@@ -107,6 +107,7 @@ export function planInitialRendering(
         identifierLikeName(childNode(callee, 'property')) !== 'map') return undefined;
     const input = expression(childNode(callee, 'object'), scope);
     if (input === null || typeof input !== 'object' || input.kind !== 'array') return undefined;
+    if (request && bindings) need(scope, 'Request list extents need matching server placement');
     if (bindings && inStructure) need(scope, 'Nested list bindings need a placement proof');
     const fn=childNodes(node,'arguments')[0];
     if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
@@ -142,6 +143,7 @@ export function planInitialRendering(
   }
 
   function conditional(node: BaseNode, scope: Scope): Value {
+    if (request && bindings) need(scope, 'Request conditional extents need matching server placement');
     if (inStructure) need(scope, 'Nested structural bindings need a placement proof');
     const site = initialSite(node);
     if (!site) need(scope, 'Initial conditional placement needs authored source identity');
@@ -472,7 +474,7 @@ export function planInitialRendering(
         if (!pending.length) return;
         const joined=combineTextExpressions(pending);
         const resolved=expression(joined,scope);
-        if (resolved===requestValue) {result.push({kind:'text',value:''});pending.length=0;return;}
+        if (resolved===requestValue) {result.push({kind:'text',value:'',...(bindings?{live:true}:{})});pending.length=0;return;}
         const value=primitive(resolved,scope);
         if (bindings) {
           const live = !staysClosed(joined, scope);
@@ -693,7 +695,7 @@ export function planInitialRendering(
     const exposure = [...modules.values()].some(scope => [...scope.exports.values()].some(value =>
       value !== null && typeof value === 'object' && (value.kind === 'array' || value.kind === 'object')))
       ? { exposedMutableValues: true as const } : {};
-    if (request && requestReads) return {kind:'request',target,mountModuleId:root!.mountModuleId,nodes,...exposure};
+    if (request && requestReads && !bindings) return {kind:'request',target,mountModuleId:root!.mountModuleId,nodes,...exposure};
     if (bindings) {
       if (!bindingEvents || !returnSite || nodes.length !== 1 || nodes[0]?.kind !== 'element') need(component.scope,'No direct interactive DOM root');
       const calls = new Map<string,Set<string>>();
@@ -761,6 +763,7 @@ export function planInitialRendering(
       }
       return {kind:'bindings',target,mountModuleId:root!.mountModuleId,rootModuleId:root!.moduleId,
         rootLocal:root!.local,returnSite,nodes:retain(nodes),...exposure,
+        ...(request && requestReads?{request:true}:{}),
         ...(creationComponents.size?{creationComponents:[...creationComponents]}:{})};
     }
     if (regions.some(region => region.site === returnSite) || new Set(regions.map(region => region.site)).size !== regions.length) {
@@ -791,6 +794,13 @@ export function planInitialRendering(
     try { return plan(); } catch (error) {
       if (!(error instanceof NeedsBrowser)) throw error;
     }
+    bindings=true;
+    modules.clear(); visiting.clear(); rendering.clear(); returnSite=undefined; target=undefined;
+    requestReads=false; bindingEvents=false; bindingEventCount=0;
+    try { return plan(); } catch (error) {
+      if (!(error instanceof NeedsBrowser)) throw error;
+    }
+    bindings=false;
     request=false; mixed=true;
     modules.clear(); visiting.clear(); rendering.clear(); regions.length=0; returnSite=undefined; target=undefined;
     try { return plan(); } catch (error) {

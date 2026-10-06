@@ -60,7 +60,6 @@ import { analyzeManifest, discoverManifest, exportedLocals } from './linking/dis
 import { installCompilerIntrinsics } from './intrinsics';
 import { resolveRenderUsage } from './components/render-usage';
 import { planInitialRendering, type InitialRenderPlan } from './planning/initial-render';
-import { emitInitialMount } from './emission/initial-entry';
 import { planInitialDom } from './emission/initial-dom';
 import { emitInitialHtml } from './emission/initial-html';
 import { planInitialDelivery, type InitialDelivery } from './planning/initial-delivery';
@@ -892,11 +891,13 @@ function compileLinkedModules(
         (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId || Object.keys(initialComponents).length>0)) {
       compileOptions = { ...compileOptions,
         initialDomComponents:initialComponents,
+        ...(entry.id === initialRender.mountModuleId ? {initialMount:{
+          payload:initialRender.kind === 'bindings' && initialRender.request === true,
+        }} : {}),
         ...(entry.id !== initialRender.rootModuleId ? {} : initialRender.kind === 'mixed'
           ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
             returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),
       };
-      if (entry.id === initialRender.mountModuleId) emitInitialMount(entry.ast, options.runtimePath ?? '@memoized-dom/runtime');
     }
     if (sourceMaps) {
       const compiled = compileAstDetailed(entry.source, compileOptions, entry.ast, entry.comments);

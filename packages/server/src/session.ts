@@ -56,6 +56,8 @@ export interface SessionTier {
   readonly document: DocumentLike;
   /** A successful render hands its application runtime to the caller. */
   readonly callerOwnsRuntime?: boolean;
+  /** String writers preserve empty text addresses for fixed browser bindings. */
+  readonly configureInitialBindings?: () => void;
 }
 
 const DEFAULT_SETTLE_TIMEOUT = 5000;
@@ -106,6 +108,7 @@ export class RenderSession {
       throw new Error('memo-dom: server HTML and browser binding contracts do not match');
     }
     this.initialDelivery = options.initialKey === undefined ? undefined : delivery;
+    if (this.initialBindings) tier.configureInitialBindings?.();
     // The session owns asynchronous update failures too. Preserve the normal
     // microtask drain, but reject this render instead of reporting a process-
     // global exception and serializing partially updated HTML.
@@ -214,6 +217,14 @@ export class RenderSession {
 
   get markers(): boolean {
     return this.initialDelivery===undefined && this.options.markers===true;
+  }
+
+  get initialBindings(): boolean {
+    return this.initialDelivery?.browser === 'bindings' && this.initialDelivery.html === undefined;
+  }
+
+  get carriesPayload(): boolean {
+    return this.initialDelivery === undefined || this.initialBindings;
   }
 
   /** Hand the application runtime to the caller on success. */

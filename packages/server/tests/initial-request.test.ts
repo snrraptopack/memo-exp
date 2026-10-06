@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { render, renderToString, renderToReadableStream, serve } from '../src/index';
+import { StringDocument, type StringRenderableNode } from '../src/string-document';
 
 const entry = `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`;
 async function fixture(name: string, source: string) {
@@ -21,6 +22,38 @@ async function fixture(name: string, source: string) {
 }
 
 describe('request-only server delivery', () => {
+  it('delivers settled interactive bindings and empty text addresses for results and streams',async()=>{
+    const value=await fixture('request-bindings',`
+      export function Card({name}){return <section><h2>{name}</h2><p>Kept</p></section>;}
+      export function App(){const user=$fetch('/api/user');let count=0;return <main><Card name={user?.name}/><button onClick={()=>count++}>{count}</button></main>;}`);
+    const contract=value.server.initialDelivery!;
+    expect(contract).toMatchObject({browser:'bindings',key:value.client.initialDelivery?.key});
+    expect(contract).not.toHaveProperty('html');
+    const options={initialKey:contract.key,mode:'shell' as const};
+    const response=await render(value.serverModule.App,{...options,fetch:(async()=>Response.json({name:''})) as typeof fetch});
+    expect(response.html).toBe('<main><section><h2><!--mmd:empty--></h2><p>Kept</p></section><button>0</button></main>');
+    expect(response.payload.state?.sources).toHaveLength(1);
+    expect(response.scriptTag).toContain('application/mmd+json');
+    expect(response.settlement.status).toBe('complete');
+    const stream=renderToReadableStream(value.serverModule.App,{...options,fetch:(async()=>Response.json({name:''})) as typeof fetch});
+    expect(await new Response(stream).text()).toBe(response.html+response.scriptTag);
+    const full=await render(value.serverModule.App,{...options,markers:true,fetch:(async()=>Response.json({name:'Ada & <friends>'})) as typeof fetch});
+    expect(full.html).toContain('<h2>Ada &amp; &lt;friends&gt;</h2>');
+    expect(full.html).not.toContain('mmd:r:');expect(full.scriptTag).toContain('application/mmd+json');
+  });
+
+  it('preserves identical empty text addresses in node and retained writers without changing other request documents',()=>{
+    const initial=new StringDocument(),ordinary=new StringDocument();
+    initial.useInitialBindings();
+    const serialize=(node:Node, bindings:boolean)=>(node as unknown as StringRenderableNode).toString(false,bindings);
+    for(const value of ['', 'Ada & <friends>']) {
+      const expected=value===''?'<!--mmd:empty-->':'Ada &amp; &lt;friends&gt;';
+      expect(serialize(initial.createTextNode(value),true)).toBe(expected);
+      expect(serialize(initial.htmlWriter.create(()=>initial.htmlWriter.text(value)),true)).toBe(expected);
+    }
+    expect(serialize(ordinary.htmlWriter.create(()=>ordinary.htmlWriter.text('')),false)).toBe('');
+    expect(serialize(ordinary.createTextNode(''),false)).toBe('');
+  });
   it.each(['component', 'module'])('settles concurrent request-only compositions independently with %s-owned data', async placement => {
     const declaration = `const user=$fetch('/api/user');`;
     const value = await fixture(`request-only-${placement}`, `${placement === 'module' ? declaration : ''}

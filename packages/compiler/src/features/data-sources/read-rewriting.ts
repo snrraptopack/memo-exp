@@ -245,8 +245,13 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         const eventDependencies = allDependencies.filter(source =>
           eventSources.has(source)
         );
+        // The initial-content proof rejects presentation policies and unknown
+        // structure. Its fixed scalar sinks can use the ordinary gated read;
+        // adding an automatic region would invent an unplanned DOM extent.
+        const fixedInitialSink = !nodeHasJsx(rawExpression as unknown as t.Node) &&
+          (ctx.initialDomRoot?.component === component || ctx.initialDomComponents[component] !== undefined);
         if (
-          !spread && ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
+          !fixedInitialSink && !spread && ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
             nodeHasJsx(rawExpression as unknown as t.Node) ||
             ctx.transparentPolicyParams.has(component) ||
             dependencies.some((source) =>

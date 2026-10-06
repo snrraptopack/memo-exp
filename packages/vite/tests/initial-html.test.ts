@@ -56,6 +56,14 @@ describe('HTML first production builds', () => {
     expect(result.html).not.toContain('mmd:initial-delivery:');
   });
 
+  it('keeps fixed interactive fetch sinks on normal creation without a paired server entry',async()=>{
+    const result=await production(await fixture(`export function App(){const user=$fetch('/api/user');let n=0;
+      return <main><h1>{user?.name}</h1><button onClick={()=>n++}>{n}</button></main>;}`));
+    expect(result.files.some(file=>file.type==='chunk'&&file.isEntry)).toBe(true);
+    expect(result.html).not.toContain('mmd:initial-delivery:');
+    expect(result.html).not.toContain('<main>');
+  });
+
   it('binds nested composed children without creating their initial elements in Chrome', async context => {
     const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
       .find((path): path is string => !!path && existsSync(path));

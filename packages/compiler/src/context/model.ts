@@ -154,6 +154,7 @@ export interface InternalMemoDomOptions extends MemoDomOptions {
   initialBrowserRoot?: InitialBrowserRoot;
   initialDomRoot?: InitialDomRoot;
   initialDomComponents?: Readonly<Record<string,InitialDomRoot>>;
+  initialMount?: { readonly payload: boolean };
   rootId?: string;
   rootComponent?: string;
   /** Application-wide route graph supplied by compileModules(). */

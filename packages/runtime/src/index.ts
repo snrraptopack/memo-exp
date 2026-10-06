@@ -115,6 +115,7 @@ export { decodeListKey, encodeListKey } from './list-keys';
 export { HydrationMismatchError } from './hydration-error';
 export { mount } from './mount';
 export { mountInitial, registerRootFactory, rootFactoryStore } from './mount-core';
+export { initializePayload } from './payload';
 export type {
   MountableComponent,
   MountOptions,

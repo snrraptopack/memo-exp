@@ -20,7 +20,6 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('proves request-onl
 });
 
 it.each([
-  `export function App(){const user=$fetch('/api/user');return <h1 onClick={()=>{}}>{user?.name}</h1>;}`,
   `export function App(){const user=$fetch('/api/user');let node=null;return <h1 ref={node}>{user?.name}</h1>;}`,
   `export function App(){const user=$fetch('/api/user');$effect(()=>{});return <h1>{user?.name}</h1>;}`,
   `export function App(){const user=$fetch('/api/user');return <h1>{format(user)}</h1>;}`,
@@ -36,6 +35,44 @@ it.each([
     export function App(){return <Card error={Error}/>;}`,
 ])('retains browser work for unproved request behavior: %s',source=>{
   expect(compile(source).initialDelivery).toBeUndefined();
+});
+
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed fetched composition and restores data before mounting (%s)',frontend=>{
+  const sources={
+    './main.ts':`import {mount as attach} from '@memoized-dom/runtime';import {App} from './App';const _initialPayload=0;attach('root',App);`,
+    './App.tsx':`import {Card} from './Card';export function App(){const user=$fetch('/api/user');let count=0;
+      return <main><Card name={user?.name}/><button onClick={()=>count++}>{count}</button></main>;}`,
+    './Card.tsx':`export function Card({name}){return <section><h2>{name}</h2><p>Kept</p></section>;}`,
+  };
+  const client=compileModulesDetailed(sources,{initialContent:true,frontend});
+  const server=compileModulesDetailed(sources,{routedEnvironment:'server',moduleStateCells:true,frontend});
+  expect(client.initialRender).toMatchObject({kind:'bindings',request:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  expect(client.initialDelivery).not.toHaveProperty('html');
+  expect(client.output['./main.ts']).toContain('mountInitial as attach');
+  expect(client.output['./main.ts']).toContain('initializePayload as _initialPayload_');
+  expect(client.output['./main.ts']).toMatch(/attach\(['"]root['"], App, _initialPayload_\)/);
+  expect(client.output['./App.tsx']).toContain('bindInitialNodes');
+  expect(client.output['./Card.tsx']).toContain('bindInitialNodes');
+  expect(client.output['./App.tsx']).not.toMatch(/createElement|materializeMarkup|createTextNode/);
+  expect(client.output['./Card.tsx']).not.toMatch(/createElement|materializeMarkup|createTextNode/);
+  expect(server.output['./App.tsx']).not.toContain('bindInitialNodes');
+});
+
+it('keeps fixed fetched text as a gated scalar binding without inventing presentation regions',()=>{
+  const result=compile(`export function App(){const user=$fetch('/api/user');let count=0;
+    return <main><h1>{user?.name}</h1><button onClick={()=>count++}>{count}</button></main>;}`);
+  expect(result.initialRender).toMatchObject({kind:'bindings',request:true});
+  expect(result.output['./App.tsx']).toContain('readResolvedValuesForRender');
+  expect(result.output['./App.tsx']).not.toContain('createCondRegion');
+  expect(result.output['./App.tsx']).not.toMatch(/materializeMarkup|createElement/);
+});
+
+it.each([
+  `let rows=[{id:1}];return <main><h1>{user?.name}</h1><button onClick={()=>rows=[]}>Clear</button>{rows.map(row=><p key={row.id}>{row.id}</p>)}</main>;`,
+  `let show=true;return <main><h1>{user?.name}</h1><button onClick={()=>show=!show}>Toggle</button>{show?<p>Shown</p>:<p>Hidden</p>}</main>;`,
+])('keeps request structure on the general server placement contract: %s',body=>{
+  expect(compile(`export function App(){const user=$fetch('/api/user');${body}}`).initialDelivery).toBeUndefined();
 });
 
 it('does not snapshot externally exposed objects or enable production delivery in development',()=>{

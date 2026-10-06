@@ -13,14 +13,14 @@ import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, chec
 let fixture: string | undefined;
 afterEach(async () => { if (fixture) await rm(fixture, { recursive: true, force: true }); fixture = undefined; });
 
-async function production(name: string, source: string, extras: Record<string, string> = {}) {
+async function production(name: string, source: string, extras: Record<string, string> = {}, userName = 'Ada') {
   fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-initial-ssr-'));
   await mkdir(join(fixture, 'src'));
   await writeFile(join(fixture, 'index.html'), '<!doctype html><html><head><title>SSR</title></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="./src/main.ts"></script></body></html>');
   await writeFile(join(fixture, 'src/main.ts'), `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`);
   await writeFile(join(fixture, 'src/App.tsx'), source);
   for (const [file, content] of Object.entries(extras)) await writeFile(join(fixture, file), content);
-  await writeFile(join(fixture, 'server.ts'), `import {serve} from '@memoized-dom/server';import {App} from './src/App';const app=serve();app.get('/api/user',()=>({name:'Ada'}));app.ssr(App);export default app;`);
+  await writeFile(join(fixture, 'server.ts'), `import {serve} from '@memoized-dom/server';import {App} from './src/App';const app=serve();app.get('/api/user',()=>({name:${JSON.stringify(userName)}}));app.ssr(App);export default app;`);
   const repository = resolve(import.meta.dirname, '../../..');
   const config = (ssr = false) => ({ root: fixture!, configFile: false as const, logLevel: 'silent' as const,
     resolve: { alias: Object.entries({
@@ -105,6 +105,39 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([
+    {userName:'Ada',placement:'component'},{userName:'',placement:'component'},
+    {userName:'Ada',placement:'module'},{userName:'',placement:'module'},
+  ])('binds settled fetched composition without creating nodes or fetching again in Chrome (%j)',async({userName,placement},context)=>{
+    const declaration=`const user=$fetch('/api/user');`;
+    const result=await production(`request-bound-${placement}-${userName||'empty'}`,`import {Card} from './Card';
+      ${placement==='module'?declaration:''}
+      export function App(){${placement==='component'?declaration:''}let count=0;return <main><Card name={user?.name}/>
+        <button onClick={()=>count++}>{count}</button></main>;}`,{
+      'src/Card.tsx':`export function Card({name}){return <section><h2>{name}</h2><p>Kept</p></section>;}`,
+    },userName);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain(userName?'<h2>Ada</h2>':'<h2><!--mmd:empty--></h2>');
+    expect(html).toContain('application/mmd+json');expect(html).not.toContain('mmd:r:');
+    const scripts=result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n');
+    expect(scripts).not.toContain('hydration runtime is not installed');
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.$eval('h2',node=>node.textContent)).toBe(userName);
+      expect(await page.$eval('p',node=>node.textContent)).toBe('Kept');
+      expect(await page.$('script[type="application/mmd+json"]')).toBeNull();
+      await page.click('button');await page.waitForFunction(()=>document.querySelector('button')?.textContent==='1');
+      expect(await page.$eval('h2',node=>node.textContent)).toBe(userName);
+      expect(await page.evaluate(()=>{
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return ['main','section','h2','p','button'].every(selector=>initial.includes(document.querySelector(selector)!));
+      })).toBe(true);
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      expect(requests).toEqual([]);
+    });
+  },60_000);
+
   it('serves fetched composition with zero JavaScript, preserved CSS and no browser fetch in Chrome', async context => {
     const result = await production('request-only', `import './theme.css';import {Card} from './Card';
       export function App(){const user=$fetch('/api/user');return <main><h1>Directory</h1><Card name={user?.name}/></main>;}`, {
@@ -229,19 +262,19 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('restores request data and retains server nodes through ordinary hydration in Chrome', async context => {
+  it('restores fixed request data and retains server nodes through initial bindings in Chrome', async context => {
     const cards = Array.from({length:16}, (_, index) =>
       `<article data-card="${index}"><h2>Card ${index}</h2><p>Ready &amp; waiting.</p></article>`).join('');
     const result = await production('request-data', `export function App(){const user=$fetch('/api/user');let count=0;return <main>
       <h1>{user?.name}</h1><button onClick={()=>count++}>{count}</button><section>${cards}</section></main>;}`);
-    expect(result.html).not.toContain('mmd:initial-delivery:');
+    expect(result.html).toContain('mmd:initial-delivery:');
     expect(result.files.filter(file => file.type === 'chunk' && file.isEntry)).toHaveLength(1);
     const html = await (await result.app.fetch(new Request('https://app.test/demo/'))).text();
     expect(html.replace(/<!--[^]*?-->/g, '')).toContain('<h1>Ada</h1>');
-    expect(html).toContain('mmd:r:App');
+    expect(html).not.toContain('mmd:r:App');
     expect(html).toContain('application/mmd+json');
     expect(result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n'))
-      .toContain('Ready &amp; waiting.');
+      .not.toContain('Ready &amp; waiting.');
     const executablePath = chromeExecutable();
     if (!executablePath) { context.skip(); return; }
     await browserPage(result, html, executablePath, async (page, apiRequests) => {

@@ -1,4 +1,4 @@
-import { StringDocument, type StringRenderableNode } from './string-document';
+import { stringTier, type StringRenderableNode } from './string-document';
 import { createPayloadScriptTag } from './index';
 import type { RenderOptions } from './index';
 import type { ServerComponent } from './root-id';
@@ -37,15 +37,15 @@ export function prepareRenderToReadableStream(
   const parts = RenderSession.execute(
     component,
     options,
-    { mode: 'server-string', document: new StringDocument() },
+    stringTier(),
     async current => {
       session = current;
       await current.prepare();
       prepared.resolve();
       const root = current.mount() as unknown as StringRenderableNode;
       await current.settle();
-      const html = current.wrap(root.toString(current.markers));
-      return options.markers === true && current.initialDelivery === undefined
+      const html = current.wrap(root.toString(current.markers, current.initialBindings));
+      return current.carriesPayload && (options.markers === true || current.initialBindings)
         ? [html, createPayloadScriptTag(current.rootId, current.payload())]
         : [html];
     },

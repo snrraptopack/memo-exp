@@ -27,6 +27,6 @@ export function planInitialDelivery(
     'mmd:initial-delivery:1', rootKey, plan.target, plan,
     [...sources].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0),
   ])).digest('hex');
-  return { key, ...(plan.kind === 'request' ? {} : {html:html!}), target: plan.target,
+  return { key, ...(plan.kind === 'request' || plan.kind === 'bindings' && plan.request ? {} : {html:html!}), target: plan.target,
     browser: plan.kind === 'html' || plan.kind === 'request' ? 'none' : 'bindings' };
 }

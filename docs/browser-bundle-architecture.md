@@ -1739,14 +1739,48 @@ array and result wrapper: source values remain available directly in its
 semantic plan. The compiler build and five final attribute/ref/composition
 suites pass 56 cases after that removal.
 
+### Fixed request-dependent bindings — 2026-10-06
+
+Fixed interactive layouts can now combine fetched values with the existing
+initial-node binding program, including composed children. The server settles
+the request and sends HTML plus its data envelope; the browser restores that
+envelope before binding the retained elements. Payload restoration lives in one
+optional runtime module shared with general hydration. Entry import/call
+lowering runs after authored import analysis, preserving aliases and avoiding
+generated imports being mistaken for user dependencies.
+
+Empty fetched text retains an `mmd:empty` address. The node serializer and retained
+string writer use the same representation, scoped to the matching request
+contract. General SSR still uses its existing markers, recovery and settlement.
+Fixed scalar reads retain their normal data gates without inventing a new
+presentation region. Unproved structure, routing, Group and authored
+pending/error policies retain the general program. Client-only builds cannot
+select a request binding without a paired server entry.
+
+The paired production audit against compiler/Vite commit `4cadf24`, holding
+current runtime/data/server constant, measures the fetched-name counter at
+43,185 → 31,886 B raw JS and 14,087 → 10,661 B gzip. Served HTML falls from
+595 to 535 B; the 315 B payload is preserved. Static JS remains zero. Counter,
+composition, todo and routed Group outputs are unchanged in that paired audit.
+The optional initializer adds 22 raw bytes to the small initial mount relative
+to the preceding runtime; the comparison holds that runtime change constant.
+These are delivery measurements, not CPU performance claims.
+
+Verification covers compiler planning on both frontends, alias hygiene, gated
+direct fetched text, shared restoration, failed adopters, mount ownership,
+ordinary payload hydration, result/stream parity and request isolation. Chrome
+checks retained nodes, counter events, empty/nonempty fetched text, no duplicate
+fetch, client-only fallback, keyed-list recovery and routing/Group lifecycles.
+The compiler, runtime, server and Vite builds pass without dependency changes.
+
 ### Remaining completion requirements
 
 - Preserve the newly separated child/attribute/write facts while auditing other
   analysis-to-backend compatibility data, including generated operation bindings.
-- Extend fixed request-dependent interactive content to the same initial binding
-  program. Share payload restoration; do not add another hydration coordinator.
-  Unknown request structure, routing and Group must keep correct creation,
-  recovery, pending/error, retry and lifetime behavior.
+- Keep request-dependent structural extents on general adoption until their
+  server placement matches the initial binding proof. Extend that proof with
+  the existing region engine when justified; preserve creation, recovery,
+  pending/error, retry and lifetime behavior.
 - Review the remaining unconditional scheduler/access/lifetime costs using
   whole-application attribution. Remove unnecessary work with the owning
   subsystem, retaining cycle, isolation and teardown safeguards.
