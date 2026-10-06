@@ -10,6 +10,7 @@ import {
 } from '../../ast';
 import { astBindingAt, type Ctx } from '../../context';
 import { jsxAttributeName } from '../../jsx/attributes';
+import { isGeneratedDataMember } from '../../identifiers';
 
 export interface TransparentDerivation {
   binding: AstBinding;
@@ -139,12 +140,7 @@ export function isGeneratedDataCall(ctx: Ctx, node: BaseNode): boolean {
   }
   if (call === null) return false;
   const callee = (call as unknown as t.CallExpression).callee;
-  return (
-    astFactory.isMemberExpression(callee) &&
-    astFactory.isIdentifier(callee.object, {
-      name: ctx.emission.identifiers?.dataRuntimeId,
-    })
-  );
+  return isGeneratedDataMember(callee);
 }
 
 export function sourceBindings(

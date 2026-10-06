@@ -132,10 +132,15 @@ export function mr(owner: IdentifierOwner, name: string): t.MemberExpression {
 
 export function mdd(owner: IdentifierOwner, name: string): t.MemberExpression {
   const identifiers = requireIdentifiers(owner);
-  return astFactory.memberExpression(
+  return Object.assign(astFactory.memberExpression(
     astFactory.identifier(identifiers.dataRuntimeId),
     astFactory.identifier(name),
-  );
+  ), {__memoDomDataMember:true as const});
+}
+
+/** Lowering guard only: ownership does not prove a source read or projection. */
+export function isGeneratedDataMember(node:t.Node):boolean {
+  return (node as t.Node & {__memoDomDataMember?:boolean}).__memoDomDataMember===true;
 }
 
 export function requireIdentifiers(owner: IdentifierOwner): GeneratedIdentifiers {

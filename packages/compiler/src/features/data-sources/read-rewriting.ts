@@ -336,7 +336,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
           astFactory.identifier(name),
           astFactory.stringLiteral(name),
           astFactory.stringLiteral(site),
-        ]),[name],'throw') as unknown as BaseNode,
+        ]),[name],'throw',name) as unknown as BaseNode,
       );
     }
     refresh();

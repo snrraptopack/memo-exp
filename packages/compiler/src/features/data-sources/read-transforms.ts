@@ -157,7 +157,7 @@ export function replaceSourceReadsWithRenderGates(
       annotateAsyncRead(astFactory.callExpression(
         mdd(ctx, 'readResolvedValueForRender'),
         [astFactory.identifier(name)],
-      ),[name],'undefined') as unknown as BaseNode,
+      ),[name],'undefined',name) as unknown as BaseNode,
     );
   }
 }

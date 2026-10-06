@@ -6,6 +6,8 @@ import * as astFactory from '../ast/factory';
 export interface AsyncReadFact {
   readonly sources: readonly string[];
   readonly unavailable: 'throw' | 'undefined' | 'empty-list';
+  /** Direct payload read of this lexical source; projections have no binding. */
+  readonly binding?: string;
 }
 type AsyncExpression = t.Expression & {__memoDomAsyncRead?: AsyncReadFact};
 type SourceExpression=t.Expression & {
@@ -39,11 +41,11 @@ export function transparentExpressionSources(expression:t.Expression):readonly s
   return [...found].filter(source=>!excluded.has(source)).sort();
 }
 
-/** Clones preserve these value facts; they grant no lexical write/key proof. */
+/** Clones preserve value facts; lexical origins still require scope resolution. */
 export function annotateAsyncRead<T extends t.Expression>(
-  expression:T, sources:readonly string[], unavailable:AsyncReadFact['unavailable'],
+  expression:T, sources:readonly string[], unavailable:AsyncReadFact['unavailable'], binding?:string,
 ):T {
-  (expression as AsyncExpression).__memoDomAsyncRead={sources:[...sources],unavailable};
+  (expression as AsyncExpression).__memoDomAsyncRead={sources:[...sources],unavailable,...(binding===undefined?{}:{binding})};
   return expression;
 }
 

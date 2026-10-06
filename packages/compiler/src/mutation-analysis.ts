@@ -10,6 +10,7 @@ import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { walkAst } from './ast';
 import { memberKey, type StateKind } from './context';
+import { asyncReadFact } from './planning/async-reads';
 
 export type ReactiveLocality = 'module' | 'instance' | 'row' | 'prop';
 
@@ -145,22 +146,9 @@ export class AliasTracker {
 
   resolveExpression(scope: ScopeLike, raw: t.Node): ReactiveOrigin | null {
     const expression = unwrapExpression(raw);
-    if (
-      astFactory.isCallExpression(expression) &&
-      astFactory.isMemberExpression(expression.callee) &&
-      astFactory.isIdentifier(expression.callee.property) &&
-      (expression.callee.property.name === 'readResolvedValue' ||
-       expression.callee.property.name === 'readResolvedValueForRender' ||
-       expression.callee.property.name === 'readModuleSourceList')
-    ) {
-      const secondArg = expression.arguments[1];
-      if (astFactory.isStringLiteral(secondArg)) {
-        return this.resolveName(scope, secondArg.value);
-      }
-      const firstArg = expression.arguments[0];
-      if (astFactory.isIdentifier(firstArg)) {
-        return this.resolveName(scope, firstArg.name);
-      }
+    const read = asyncReadFact(expression);
+    if (read?.binding !== undefined && read.sources.length === 1) {
+      return this.resolveName(scope, read.binding);
     }
     if (astFactory.isIdentifier(expression)) {
       return this.resolveName(scope, expression.name);

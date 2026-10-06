@@ -269,16 +269,16 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | --- | --- | --- |
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
 | Primitive pull safety | Authored fact plan plus explicit late callback-publication input | Move callback analysis/lowering to a shared phase with target-specific publication |
-| Async provenance and effects | Existing collectors and shared `Ctx` | Distinct fact contracts with explicit pass dependencies |
+| Async provenance and effects | Explicit source/availability/direct-read facts and lifetime owner requirements | Finish authored normalization before target lowering; extend callback lifetime reachability |
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
-| List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts, including clone lookups | Replace lowered async-helper recognition with semantic provenance and extend to mutation journals |
+| List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts and async provenance, including clone lookups | Extend the contracts to mutation journals |
 | Mutation journals | Shared candidate/path analysis and frozen backend snapshots; one source registry | Move binding allocation and reason publication behind explicit backend contracts |
 | Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
-| Generated IDs, headers, imports and output buffers | Same `Ctx` as source analysis | Mutable emission state separate from analyzed facts and configuration |
+| Generated IDs, headers, imports and output buffers | One mutable DOM emission state referenced by `Ctx`; no mirrored facade fields | Replace remaining runtime-producing normalization with explicit target lowering |
 | Generated-header coverage | Deferred header insertion after some rewrites | Passes explicitly cover authored, generated or complete module trees |
 
 These boundaries are not implemented merely by moving files or renaming `Ctx`.
@@ -286,6 +286,21 @@ Move one fact's producer and consumers together; then remove the former answer
 from emission. Preserve parser origins and binding identity across AST rewrites.
 Facts requiring callback analysis must be finalized after that analysis, before
 their backend consumer runs.
+
+### Direct async reads and generated call ownership — 2026-10-06
+
+Alias analysis no longer recognizes generated read helper names. Direct payload
+reads carry their lexical source binding alongside canonical source identity;
+alias resolution still checks that binding in the current scope. Projected values
+and multi-source expressions do not acquire a direct origin. This preserves
+shadowing and allows module-source render reads to retain honest provenance.
+
+Data lowering identifies compiler-owned call targets through clone-preserved
+ownership metadata rather than a generated namespace. That marker only prevents
+rewriting an owned call twice; it grants no dependency or write proof. Authored
+lookalike calls remain ordinary code. Seven new regressions cover helper
+lookalikes, cloned/renamed backends, projection, multiple sources and shadowing.
+The compiler build and eight focused suites pass 102 tests.
 
 ## Migration order and gates
 

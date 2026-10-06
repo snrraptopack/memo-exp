@@ -103,7 +103,7 @@ export function lowerModuleRefReadsEstree(
       annotateAsyncRead(astFactory.callExpression(
         mdd(ctx, helper),
         [refCall(entry.key)],
-      ),[entry.key],helper==='readModuleSourceList'?'empty-list':'undefined') as unknown as BaseNode,
+      ),[entry.key],helper==='readModuleSourceList'?'empty-list':'undefined',entry.name) as unknown as BaseNode,
     );
   };
 
@@ -246,7 +246,7 @@ export function lowerModuleRefReadsEstree(
         refCall(entry.key),
         astFactory.stringLiteral(entry.name),
         astFactory.stringLiteral(site),
-      ]),[entry.key],'throw') as unknown as BaseNode,
+      ]),[entry.key],'throw',entry.name) as unknown as BaseNode,
     );
   }
   refresh();
