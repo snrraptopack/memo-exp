@@ -29,6 +29,7 @@ import {
 } from '../context';
 import { summarizeHelper } from '../helper-summaries';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
+import {sourceEffectInputs} from './source-inputs';
 
 type DiagnosticPath = CompilerPath<BaseNode>;
 
@@ -554,6 +555,17 @@ function scanModuleEffects(
       resolved.node === null
         ? resolved.importedReads
         : collectModuleEffectReads(ctx, resolved.node);
+    if (ctx.compilerLifecycleCalls.get(occurrence.call) === 'effect') {
+      for (const name of sourceEffectInputs(occurrence.call)) {
+        // Names came from module binding identities before lowering. Do not
+        // interpret arbitrary deferred callbacks in authored effects as reads.
+        if (astBindingAt(ctx, occurrence.call, name)?.scope.isProgramScope !== true) continue;
+        if (ctx.state.has(name)) moduleReads.add(name);
+        const summary = ctx.importedFunctions.get(name) ??
+          (ctx.helpers.has(name) ? summarizeHelper(ctx, name) : undefined);
+        for (const read of summary?.reads ?? []) moduleReads.add(read);
+      }
+    }
     const conditionModuleReads = new Set<string>();
     for (const condition of occurrence.conditions) {
       for (const read of collectModuleEffectReads(ctx, condition.node)) {

@@ -6,7 +6,7 @@ export {
 export { lowerReadReplays } from './read-replay';
 export {
   registerTransparentSourceRoots,
-  scanAndLowerModuleSourceDeclarations,
+  lowerModuleSourceDeclarations,
 } from './module-sources';
 export {
   rejectNonGetServerFunctionRenderCalls,

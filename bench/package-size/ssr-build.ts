@@ -23,6 +23,7 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'request-module-option-keys': sizeFixtures['request-module-option-keys']!,
   'request-inline-group': sizeFixtures['request-inline-group']!,
   'request-list-siblings': sizeFixtures['request-list-siblings']!,
   'request-list': sizeFixtures['request-list']!,
@@ -100,7 +101,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
       const html = await response.text();
       if(fixture==='request-inline-group' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Directory:Ada</h1>'))throw new Error('Inline policy data did not settle');
-      if (['request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
+      if (['request-module-option-keys', 'request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
       if (fixture==='request-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li title="one">0:one!</li><li title="two">1:two!</li>')) throw new Error('Fetched rows did not settle');
       if(fixture==='request-list-siblings' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Ada</h1><li>0:one</li><li>1:two</li><button>0</button>0<footer>After</footer>'))throw new Error('Fetched sibling placement did not settle');
       if (fixture==='request-local-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li>one</li><li>two</li>')) throw new Error('Local rows lost their initial content');
@@ -115,7 +116,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
         gzip: chunks.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), chunks: chunks.length };
       if (fixture === 'static' && version === 'after' && row.javascript !== 0) throw new Error('Static page emitted JavaScript');
       if (['request-data', 'request-composition'].includes(fixture) && version === 'after' && (row.javascript !== 0 || row.payload !== 0 || /<!--/.test(html))) throw new Error('Request-only page retained browser delivery');
-      if (['request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
+      if (['request-module-option-keys', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
       rows.push(row);
       await writeFile(resolve(directory, 'response.html'), html);
       console.log(`${fixture} ${version}: HTML ${row.html} B; payload ${row.payload} B; JS ${row.javascript} B / ${row.gzip} B gzip (${row.chunks} chunks)`);

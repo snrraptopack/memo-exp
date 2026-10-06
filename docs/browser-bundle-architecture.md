@@ -2124,8 +2124,9 @@ The complete architecture remains open in these concrete areas:
   they do not yet make the whole source pipeline backend independent.
   Group presentation policies now have an explicit source plan before lowering;
   read replay operations also carry owned creation expressions and lexical
-  placement into lowering. Other callback/source transforms and TSRX boundary
-  validation are still open.
+  placement into lowering. Lazy module sources now also carry their owned inputs
+  and lexical binding references into lowering. Other callback transforms and
+  TSRX boundary validation are still open.
 - Generic callback/child-slot composition and escaping values need broader
   ownership and lifetime reachability. Named effects and unproved ref expressions
   retain ordinary creation rather than acquiring a guessed placement.
@@ -2137,5 +2138,15 @@ The complete architecture remains open in these concrete areas:
 - A stable VM timing comparison remains outstanding. The full local DOM gate
   validates all 21 scenarios and mixed sequences with retained identity, but its
   byte-identical browser artifacts establish no speed gain.
+
+The module-source planning follow-up removes rebinding effects whose supposed
+input is only a property/type name. Against `7aae6c9`, the stable
+`request-module-option-keys` fixture shrinks by 720 browser JavaScript bytes and
+208 gzip bytes, with its 325-byte HTML and 78-byte payload unchanged. The audit
+counts every emitted browser chunk. Static, counter, inline Group and routed
+Group controls are unchanged. Mounted module promise reads also now rebind from
+their deferred lexical inputs without a false write feedback loop; their real
+callback writes remain reactive. This is a bounded correctness and dead-lifetime
+fix. The DOM artifacts remain identical, so it establishes no DOM timing gain.
 
 These are outstanding requirements, not reasons to mark the architecture closed.

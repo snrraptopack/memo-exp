@@ -29,6 +29,8 @@ import { HandlerPath, walkHandler, type FunctionNode } from './traversal';
 import type { HandlerExecutionSite, HandlerMutationSite } from './plan';
 import { captureMutationJournals } from '../analysis/list-mutation-journals';
 import { hasKnownAccessor, isPlainDataAssignment } from './member-assignment';
+import { isSourceReplayConsumption } from '../effects/source-inputs';
+import type { BaseNode } from '../ast';
 
 export interface HandlerWriteRouting {
   locals: Set<string>;
@@ -89,8 +91,10 @@ export function createHandlerWriteRouting({
   const ROOT = root;
   const consumedFunctions = new Set<t.Node>(executionAwareRoot ? [ROOT] : []);
   if (executionAwareRoot && astFactory.isFunction(clonedFn.body)) consumedFunctions.add(clonedFn.body);
-  const isSynchronousConsumption = (path: HandlerPath): boolean =>
-    consumedFunctions.has(path.getFunctionParent()?.node ?? ROOT);
+  const isSynchronousConsumption = (path: HandlerPath): boolean => {
+    const owner = path.getFunctionParent()?.node ?? ROOT;
+    return consumedFunctions.has(owner) || isSourceReplayConsumption(owner as unknown as BaseNode);
+  };
   const wrapper = clonedFn;
   const compName = componentName;
   const rowCtx = rowContext;

@@ -1,5 +1,8 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-module-option-keys': { './App.tsx': `let search='unused';
+    const user=$fetch('/api/user',{query:{search:'fixed'}});
+    export function App(){let n=0;return <main><h1>{user?.name}</h1><button onClick={()=>n++}>{n}</button></main>;}` },
   'request-list-siblings': { './App.tsx': `export function App(){const user=$fetch('/api/user');let n=0;
     return <main><h1>{user?.name}</h1>{user?.rows?.map((item,index)=><li key={item.id}>{index}:{item.label}</li>)}
       <button onClick={()=>n++}>{n}</button>{n}<footer>After</footer></main>;}` },

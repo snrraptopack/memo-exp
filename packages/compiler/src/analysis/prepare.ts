@@ -2,6 +2,7 @@
 import {refreshAstAnalysis,type Ctx,type ProgramPath} from '../context';
 import {planGroupPresentations} from '../planning/presentation-policy';
 import {planReadReplays} from '../planning/read-replay';
+import {planModuleSources} from '../planning/module-sources';
 import { runAnalysis } from '../analysis';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
@@ -14,7 +15,7 @@ import {
   scanTransparentSourceImports,
   lowerReadReplays,
   lowerTransparentGroups,
-  scanAndLowerModuleSourceDeclarations,
+  lowerModuleSourceDeclarations,
   rejectNonGetServerFunctionRenderCalls,
   scanEventSourceAssignments,
 } from '../data-sources';
@@ -35,7 +36,9 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   const presentations=planGroupPresentations(programPath.node,
     sourceAnalysis,ctx.transparentGroups,programPath);
   lowerTransparentGroups(ctx, programPath,presentations);
-  scanAndLowerModuleSourceDeclarations(ctx, programPath);
+  const moduleSources = planModuleSources(programPath.node, refreshAstAnalysis(ctx, programPath.node), ctx.moduleId,
+    {sources: ctx.transparentSourceFactories, forms: ctx.transparentFormFactories, reads: ctx.transparentReadFactories}, programPath);
+  lowerModuleSourceDeclarations(ctx, programPath.node, moduleSources);
   analyzeRouterJsx(ctx, programPath);
   runAnalysis(ctx, programPath);
   rejectNonGetServerFunctionRenderCalls(ctx, programPath);

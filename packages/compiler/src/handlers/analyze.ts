@@ -695,7 +695,7 @@ export function planHandlerWrites(
                 // state that its read summary cannot identify precisely.
                 if (callReceiver !== callee.object) scope.rootFallback = true;
               });
-            } else {
+            } else if (!isSynchronousConsumption(p)) {
               // A call result can alias any module object. Escalate its
               // receiver effect instead of silently emitting no invalidation.
               mutateScope(p, scope => {

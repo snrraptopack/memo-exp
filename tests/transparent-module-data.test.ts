@@ -98,6 +98,18 @@ describe('module-scope transparent sources', () => {
     expect(compiled).not.toMatch(/^effect\(/m);
   });
 
+  it('does not create a request-rebinding lifetime for noncomputed option keys', () => {
+    const compiled = compileModules({
+      './source.ts': `export let search='Ada';
+        export const users=$fetch('/api/users',{query:{search:'fixed'}});
+        export function setSearch(next){search=next;}`,
+    })['./source.ts']!;
+    expect(compiled).toContain('describeModuleSource');
+    expect(compiled).not.toContain('rebindModuleSource');
+    expect(compiled).not.toContain('registerEffect');
+    expect(compiled).not.toContain('unregisterSubtree');
+  });
+
   it('rebinds a mounted request after its module input changes without calling an authored lifecycle shadow', async () => {
     const directory = join(outDir, 'reactive-module-inputs');
     const output = compileModules({
@@ -137,6 +149,47 @@ describe('module-scope transparent sources', () => {
     } finally {
       for (const id of _internals().registry.keys()) unregister(id);
       data.clear(); setActiveDataRuntime(previous); resetAccessTable(); resetScheduler();
+      document.body.replaceChildren();
+    }
+  });
+
+  it.each([
+    ['direct', 'export const user=$read(Promise.resolve({id}));'],
+    ['deferred', 'export const user=$read(Promise.resolve().then(()=>({id})));'],
+    ['helper', 'function load(){return Promise.resolve().then(()=>({id}));}export const user=$read(load());'],
+    ['alias', 'function load(){return Promise.resolve({id});}const replay=load;export const user=$read(Promise.resolve({id:1}),replay);'],
+    ['publisher', "import {setObserved} from './observed';export const user=$read(Promise.resolve().then(()=>{setObserved(id*10);return {id};}));"],
+    ['local-publisher', 'export let observed=0;export const user=$read(Promise.resolve().then(()=>{observed=id*10;return {id};}));'],
+  ])('rebinds a mounted %s module read from current inputs while retaining its source ref', async (name, declaration) => {
+    const directory = join(outDir, `reactive-module-read-${name}`);
+    const output = compileModules({
+      ...(name === 'publisher' ? {'./observed.ts': 'export let observed=0;export function setObserved(value){observed=value;}'} : {}),
+      './read-source.ts': `export let id=1;${declaration}
+        export function advance(){id++;}`,
+      './ReadView.tsx': `import {user,advance} from './read-source';${name.endsWith('publisher') ? `import {observed} from './${name === 'publisher' ? 'observed' : 'read-source'}';` : ''}
+        export function ReadView(){return <main><button onClick={advance}>Next</button><output>{user.id}</output>${name.endsWith('publisher') ? '<p>{observed}</p>' : ''}</main>;}`,
+    }, {runtimePath: '@memoized-dom/runtime/testing'});
+    mkdirSync(directory, {recursive: true});
+    for (const [path, code] of Object.entries(output)) {
+      writeFileSync(join(directory, path.replace(/\.tsx$/, '.ts')), code);
+    }
+    const data = createDataRuntime();
+    const previous = setActiveDataRuntime(data);
+    setScheduler(run => run());document.body.replaceChildren();
+    try {
+      const {ReadView} = await import(pathToFileURL(join(directory, 'ReadView.ts')).href);
+      const source = await import(pathToFileURL(join(directory, 'read-source.ts')).href);
+      const original = source.user;
+      document.body.append(ReadView('App', null));
+      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('1'));
+      if (name.endsWith('publisher')) expect(document.querySelector('p')?.textContent).toBe('10');
+      document.querySelector('button')!.click();
+      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('2'));
+      if (name.endsWith('publisher')) expect(document.querySelector('p')?.textContent).toBe('20');
+      expect(source.user).toBe(original);
+    } finally {
+      for (const id of _internals().registry.keys()) unregister(id);
+      data.clear();setActiveDataRuntime(previous);resetAccessTable();resetScheduler();
       document.body.replaceChildren();
     }
   });

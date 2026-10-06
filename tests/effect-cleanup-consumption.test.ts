@@ -20,7 +20,8 @@ beforeEach(() => {
   document.body.replaceChildren(); resetAccessTable(); setScheduler(run => run());
   vi.stubGlobal('__cleanupRecord', vi.fn());
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, 'external.mjs'), 'export function record(value){globalThis.__cleanupRecord(value);}');
+  writeFileSync(join(directory, 'external.mjs'), `export function record(value){globalThis.__cleanupRecord(value);}
+    export function sink(){return {consume:record};}`);
 });
 afterEach(() => {
   for (const id of [..._internals().registry.keys()]) unregister(id);
@@ -47,6 +48,20 @@ it('keeps explicit cleanup writes and deferred callback publication', () => {
   expect(direct).toMatch(/record\('cleanup'\);\s*count = 0;\s*_MD\.(?:markDirty|invalidateEntity)\(/);
   const deferred = compile(source(`setTimeout(()=>record(count));return()=>record('cleanup');`));
   expect(deferred).toContain('.markDirtySubtree(');
+});
+
+it('consumes an opaque call result in the effect without publishing a feedback write', async () => {
+  const code = compile(`import {sink} from './external.mjs';export function App(){let count=0;
+    $effect(()=>sink().consume(count));return <main><button onClick={()=>count++}>Next</button><output>{count}</output></main>;}`);
+  expect(code).not.toContain('.markDirtySubtree(');
+  writeFileSync(join(directory, 'result-consumption.ts'), code);
+  const specifier = './fixtures/out/effect-cleanup-consumption/result-consumption.ts';
+  const {App} = await import(specifier);
+  document.body.append(App('App', null));
+  document.querySelector<HTMLButtonElement>('button')!.click();
+  expect(document.querySelector('output')!.textContent).toBe('1');
+  const record = (globalThis as unknown as {__cleanupRecord: ReturnType<typeof vi.fn>}).__cleanupRecord;
+  expect(record.mock.calls.map((call: number[]) => call[0])).toEqual([0, 1]);
 });
 
 it('publishes a visible cleanup write to another component', async () => {

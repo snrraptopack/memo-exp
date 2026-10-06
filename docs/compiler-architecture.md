@@ -277,7 +277,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
-| Normalization and transparent read/callback lowering | Group presentation policies and read replay operations are planned before target lowering; other transforms remain mixed | Extend explicit source plans to remaining callback/source transforms |
+| Normalization and transparent read/callback lowering | Group policies, read replay operations and lazy module sources have explicit plans before target lowering; other transforms remain mixed | Extend source contracts to remaining callback transforms and TSRX validation |
 | Generated IDs, headers, imports and output buffers | One mutable DOM emission state referenced by `Ctx`; no mirrored facade fields | Replace remaining runtime-producing normalization with explicit target lowering |
 | Generated-header coverage | Deferred header insertion after some rewrites | Passes explicitly cover authored, generated or complete module trees |
 
@@ -380,8 +380,8 @@ comparison against `fc09d7b` passes all 21 scenarios and mixed sequences across
 eight compiled variants plus vanilla, with text, class, order and retained-node
 identity checks. Update and swap timings use three samples in ABBA order; the
 browser hashes are identical, so this batch establishes no CPU improvement.
-Other callback transforms, module-source lowering and TSRX validation remain
-open architecture work.
+At this stage, other callback transforms, module-source lowering and TSRX
+validation remained open architecture work.
 
 Compiler build, workspace typecheck and changed-source lint pass. The final
 focused gate passes 177 cases across 14 files, including Group policy planning
@@ -390,6 +390,39 @@ routing/lifetime checks pass. The whole root suite was not repeated. Program
 preparation shares its source scope index with Group planning when no read
 lowering changed the tree, avoiding a redundant scope-analysis pass on ordinary
 components. Final compiler output matches all eight recorded DOM modules.
+
+### Lazy module sources before target lowering — 2026-10-06
+
+`planning/module-sources.ts` captures module source declarations, canonical keys,
+owned fetch/replay expressions and lexical input bindings. It follows closed
+replay aliases and local helper bodies, including deferred reads. Property/type
+names, local shadows and plain/destructured write targets are excluded. Plans
+allocate no runtime identifiers; invalid read plans fail before lowering mutates
+earlier declarations. The former combined source scan/lowering implementation
+is removed. Lowering consumes the plans and uses the existing request-local
+descriptions, source refs and resource controllers.
+
+Compiler-owned rebinding effects retain planned replay inputs even when their
+reads occur in a promise callback. Replay consumption boundaries survive AST
+cloning; they prevent a false opaque receiver write from feeding the request
+back into itself. Explicit writes, known receiver effects and deferred callback
+publication remain instrumented. These facts do not alter the dependency rules
+of ordinary authored deferred effects.
+
+Verification passes 237 focused tests across 17 files, compiler build, workspace
+typecheck, changed-source lint and two production Chrome routing/lifetime checks.
+Tests include mounted direct/deferred/helper/alias reads, stable source refs,
+live module inputs and callback writes to both local and imported module state.
+The full root suite was not repeated. The local DOM comparison against `7aae6c9`
+passes all 21 scenarios and mixed sequences with retained identity checks;
+its browser artifacts are identical, establishing no CPU gain.
+
+The paired production audit counts all browser chunks. Removing a rebinding
+lifetime caused by a noncomputed option key reduces the affected fixture from
+39,877 to 39,157 JavaScript bytes and from 13,065 to 12,857 gzip bytes. HTML and
+payload are unchanged. Static, counter, inline Group and routed Group controls
+are byte-identical; this is a specific dead-lifetime removal, not closure of the
+remaining callback/composition or runtime capability work.
 
 ## Migration order and gates
 
