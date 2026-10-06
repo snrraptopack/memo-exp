@@ -79,28 +79,11 @@ export function componentSourceProps(
   return [...sources].map(([prop, source]) => ({ prop, source }));
 }
 
-function rejectGroupDataAttribute(
-  element: t.JSXElement,
-  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
-): void {
-  const data = element.openingElement.attributes.find((attribute) =>
-    astFactory.isJSXAttribute(attribute) &&
-    astFactory.isJSXIdentifier(attribute.name, { name: 'data' }),
-  );
-  if (data === undefined) return;
-  throw errorAt.buildCodeFrameError(
-    'memo-dom: Group infers colorless sources from its content; remove the data prop',
-    data,
-  );
-}
-
 export function inferredGroupDataNames(
   ctx: Ctx,
   element: t.JSXElement,
   content: BaseNode,
-  errorAt: { buildCodeFrameError(message: string, at?: t.Node): Error },
 ): string[] {
-  rejectGroupDataAttribute(element, errorAt);
   const candidates = new Set<string>();
   let component = ctx.astAnalysis?.parentByNode.get(element as unknown as BaseNode) ?? null;
   while (component !== null && component.type !== 'FunctionDeclaration') {

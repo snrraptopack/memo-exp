@@ -78,7 +78,7 @@ const modules = {
       const user = $fetch<{ name: string }>('/inline');
       let label = 'Waiting';
       return <Group pending={() => <i class="inline-pending">{label}</i>}
-        error={({ error, retry }) => <button class="inline-error" onClick={retry}>{label}: {error.message}</button>}>
+        error={({ error: failure, retry: again }) => <button class="inline-error" onClick={again}>{label}: {failure.message}</button>}>
         <button id="change-label" onClick={() => { label = 'Still waiting'; }}>Change</button>
         <span id="inline-value">{user.name}</span>
       </Group>;
@@ -193,6 +193,12 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelector('.inline-pending')?.textContent).toBe('Still waiting');
     await respond({ message: 'offline' }, 503);
     await vi.waitFor(() => expect(document.querySelector('.inline-error')?.textContent).toContain('Still waiting'));
+    (document.querySelector<HTMLButtonElement>('.inline-error')!).click();
+    await vi.waitFor(()=>expect(requests).toHaveLength(2));
+    expect(document.querySelector('.inline-pending')?.textContent).toBe('Still waiting');
+    await respond({name:'Recovered'});
+    await vi.waitFor(()=>expect(document.querySelector('#inline-value')?.textContent).toBe('Recovered'));
+    expect(document.querySelector('.inline-error')).toBeNull();
   });
 
   it('inherits suspension presentation across files without a child Group declaration', async () => {

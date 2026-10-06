@@ -23,6 +23,7 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'request-inline-group': sizeFixtures['request-inline-group']!,
   'request-list-siblings': sizeFixtures['request-list-siblings']!,
   'request-list': sizeFixtures['request-list']!,
   'request-local-list': sizeFixtures['request-local-list']!,
@@ -98,6 +99,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       const response = await app.fetch(new Request('https://app.test/'));
       if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
       const html = await response.text();
+      if(fixture==='request-inline-group' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Directory:Ada</h1>'))throw new Error('Inline policy data did not settle');
       if (['request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
       if (fixture==='request-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li title="one">0:one!</li><li title="two">1:two!</li>')) throw new Error('Fetched rows did not settle');
       if(fixture==='request-list-siblings' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Ada</h1><li>0:one</li><li>1:two</li><button>0</button>0<footer>After</footer>'))throw new Error('Fetched sibling placement did not settle');

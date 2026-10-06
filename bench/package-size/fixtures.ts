@@ -25,6 +25,12 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
       <a href={buildRoutePath('/person/:id',{id})}>Person</a></main>;}` },
   'request-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
     export function App(){const user=$fetch('/api/user');return <main><Group pending={Pending}><p>{user?.name}</p></Group></main>;}` },
+  'request-inline-group': { './App.tsx': `import {Group} from '@memoized-dom/data';
+    export function App(){const user=$fetch('/api/user');let label='Directory';return <main>
+      <button class="rename" onClick={()=>label+='!'}>Rename</button>
+      <Group pending={()=> <p>{label}:Loading</p>}
+        error={({error:failure,retry:again})=> <button class="retry" onClick={again}>{label}:{failure.message}</button>}>
+        <h1>{label}:{user?.name}</h1></Group></main>;}` },
   'request-routed-group': { './App.tsx': `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
     export function App(){const user=$fetch('/api/user');return <main route="/">
       <nav><a class="home" route-to="/">Home</a><a class="about" route-to="/about">About</a></nav>

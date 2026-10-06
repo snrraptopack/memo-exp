@@ -31,7 +31,8 @@ import {
   isLoweredGroupExpression,
   jsxTagName,
 } from './group-analysis';
-import { componentPolicy } from './group-policy-components';
+import { emitPresentationComponent } from './group-policy-components';
+import type {GroupPresentationPlan} from '../../planning/presentation-policy';
 import {
   consumeSuspendDirective,
   suspendDirective,
@@ -49,6 +50,7 @@ function lowerGroupScopes(
     buildCodeFrameError(message: string, at?: t.Node): Error;
   },
   generatedPolicies: t.FunctionDeclaration[],
+  presentations:ReadonlyMap<t.JSXElement,GroupPresentationPlan>,
 ): void {
   const scopes: TransparentPresentationPolicy[] = [];
   const plans = new WeakMap<t.JSXElement, TransparentPresentationPolicy>();
@@ -63,38 +65,16 @@ function lowerGroupScopes(
     }
     throw programPath.buildCodeFrameError('memo-dom: Group must be authored inside a component', node as unknown as t.Node);
   };
-  const readPolicy = (element: t.JSXElement, kind: 'pending' | 'error') => {
-    const attribute = element.openingElement.attributes.find(candidate =>
-      astFactory.isJSXAttribute(candidate) && astFactory.isJSXIdentifier(candidate.name, { name: kind }));
-    if (attribute === undefined) return undefined;
-    if (!astFactory.isJSXAttribute(attribute) || !astFactory.isJSXExpressionContainer(attribute.value)) {
-      throw programPath.buildCodeFrameError(`memo-dom: Group ${kind} must be a component identifier or inline render callback`, attribute);
-    }
-    return componentPolicy(ctx, attribute.value.expression, kind, generatedPolicies, programPath, element as unknown as BaseNode);
-  };
   walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
     enter(node) {
       if (node.type !== 'JSXElement') return;
       const element = node as unknown as t.JSXElement;
       const tag = jsxTagName(element);
       if (tag === null || !ctx.transparentGroups.has(tag)) return;
-      const seenAttributes = new Set<string>();
-      for (const attribute of element.openingElement.attributes) {
-        if (astFactory.isJSXAttribute(attribute) && astFactory.isJSXIdentifier(attribute.name, { name: 'data' })) {
-          throw programPath.buildCodeFrameError('memo-dom: Group infers colorless sources from its content; remove the data prop', attribute);
-        }
-        if (!astFactory.isJSXAttribute(attribute) || !astFactory.isJSXIdentifier(attribute.name) ||
-          !['pending', 'error', 'suspend'].includes(attribute.name.name)) {
-          throw programPath.buildCodeFrameError('memo-dom: Group accepts pending, error, and suspend; sources are inferred from its content', attribute);
-        }
-        if (seenAttributes.has(attribute.name.name)) {
-          throw programPath.buildCodeFrameError(`memo-dom: duplicate Group ${attribute.name.name} declaration`, attribute);
-        }
-        seenAttributes.add(attribute.name.name);
-      }
-      suspendDirective(element, programPath);
-      const pending = readPolicy(element, 'pending');
-      const error = readPolicy(element, 'error');
+      const presentation=presentations.get(element);
+      if(presentation===undefined)throw new Error('memo-dom: missing authored Group presentation plan');
+      const pending=presentation.pending===undefined?undefined:emitPresentationComponent(ctx,presentation.pending,'pending',generatedPolicies);
+      const error=presentation.error===undefined?undefined:emitPresentationComponent(ctx,presentation.error,'error',generatedPolicies);
       const policy = {
         ...scopes.at(-1),
         ...(pending === undefined ? {} : { pending }),
@@ -141,7 +121,7 @@ function lowerGroupScopes(
         ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
       }
       const content = astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), element.children);
-      const data = inferredGroupDataNames(ctx, element, content as unknown as BaseNode, programPath);
+      const data = inferredGroupDataNames(ctx, element, content as unknown as BaseNode);
       const origins = groupOrigins(ctx, node, data);
       annotateGroupComponentCalls(ctx, content as unknown as BaseNode, origins, policy.pending, policy.error);
       walkAst(content as unknown as BaseNode, {
@@ -168,8 +148,7 @@ function lowerGroupScopes(
         },
       });
       ctx.usesTransparentData = true;
-      const directive = suspendDirective(element, programPath);
-      replaceNode(ctx.astAnalysis!, node, (directive === null ? content : atomicSite(content, policy)) as unknown as BaseNode);
+      replaceNode(ctx.astAnalysis!, node, (presentations.get(element)!.suspend ? atomicSite(content, policy) : content) as unknown as BaseNode);
     },
   });
   refreshAstAnalysis(ctx, programPath.node);
@@ -182,10 +161,10 @@ export function lowerTransparentGroups(
     node: t.Program;
     buildCodeFrameError(message: string, at?: t.Node): Error;
   },
+  presentations:ReadonlyMap<t.JSXElement,GroupPresentationPlan>,
 ): void {
   const generatedPolicies: t.FunctionDeclaration[] = [];
-  refreshAstAnalysis(ctx, programPath.node);
-  lowerGroupScopes(ctx, programPath, generatedPolicies);
+  lowerGroupScopes(ctx, programPath, generatedPolicies,presentations);
   walkAst<BaseNode>(programPath.node as unknown as BaseNode, {
     leave(node) {
         const tryMetadata = tsrxTryMetadata(node);

@@ -1,5 +1,6 @@
 /** Shared preparation for linked manifests and final program emission. */
-import type { Ctx, ProgramPath } from '../context';
+import {refreshAstAnalysis,type Ctx,type ProgramPath} from '../context';
+import {planGroupPresentations} from '../planning/presentation-policy';
 import { runAnalysis } from '../analysis';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
@@ -26,7 +27,9 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   scanExternalReactiveImports(ctx, programPath);
   scanTransparentSourceImports(ctx, programPath);
   addReadReplayFactories(ctx, programPath.node);
-  lowerTransparentGroups(ctx, programPath);
+  const presentations=planGroupPresentations(programPath.node,
+    refreshAstAnalysis(ctx,programPath.node),ctx.transparentGroups,programPath);
+  lowerTransparentGroups(ctx, programPath,presentations);
   scanAndLowerModuleSourceDeclarations(ctx, programPath);
   analyzeRouterJsx(ctx, programPath);
   runAnalysis(ctx, programPath);

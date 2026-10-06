@@ -23,8 +23,9 @@ import {
 } from './group-analysis';
 import {
   objectBindingPattern,
-  policyCaptures,
+  presentationCaptureProps,
 } from './group-policy-components';
+import {planPresentationCaptures} from '../../planning/presentation-policy';
 import { atomicSite, markAtomicRoute } from './atomic-sites';
 import {
   consumeSuspendDirective,
@@ -92,7 +93,7 @@ function tsrxPolicyComponent(
   ) {
     excluded.add((handler.resetParam as unknown as AstIdentifier).name);
   }
-  const captures = policyCaptures(ctx, boundary, output, excluded);
+  const captures = presentationCaptureProps(planPresentationCaptures(ctx.astAnalysis, boundary, output, excluded));
   const params: Array<{ prop: string; local: t.Identifier }> = [];
   if (kind === 'error') {
     const error = handler?.param === null || handler?.param === undefined
@@ -107,7 +108,7 @@ function tsrxPolicyComponent(
   for (const capture of captures) {
     params.push({
       prop: capture.prop,
-      local: astFactory.identifier(capture.binding.name),
+      local: astFactory.identifier(capture.name),
     });
   }
   const name = generatedComponentIdentifier(
@@ -129,7 +130,7 @@ function tsrxPolicyComponent(
       component: name.name,
       props: captures.map((capture) => ({
         name: capture.prop,
-        value: astFactory.identifier(capture.binding.name),
+        value: astFactory.identifier(capture.name),
       })),
     },
   };

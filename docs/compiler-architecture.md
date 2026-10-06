@@ -277,7 +277,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering | Explicit composition and publication contracts |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
-| Normalization and transparent read/callback lowering | Mixed semantic and runtime-producing transforms | Authored semantic normalization followed by explicit target lowering |
+| Normalization and transparent read/callback lowering | Group presentation validation and lexical captures are planned before target lowering; other transforms remain mixed | Extend explicit source plans to remaining read/callback transforms |
 | Generated IDs, headers, imports and output buffers | One mutable DOM emission state referenced by `Ctx`; no mirrored facade fields | Replace remaining runtime-producing normalization with explicit target lowering |
 | Generated-header coverage | Deferred header insertion after some rewrites | Passes explicitly cover authored, generated or complete module trees |
 
@@ -302,6 +302,50 @@ lookalike calls remain ordinary code. Seven new regressions cover helper
 lookalikes, cloned/renamed backends, projection, multiple sources and shadowing.
 The compiler build and eight focused suites pass 102 tests.
 
+### Presentation policies before target lowering — 2026-10-06
+
+Program preparation now plans every authored Group pending/error policy before
+calling its lowering pass. The source planner accepts only the owned tree,
+lexical scope analysis, the Group binding catalog and diagnostics. It validates
+attributes and callback signatures, records named references or owned callback
+bodies, preserves error/retry aliases and source locations, and captures owner
+bindings by identity. It allocates no runtime identifiers, props or component
+factories. A later invalid Group fails before any earlier policy allocates or
+mutates source.
+
+Group lowering requires that plan. It emits the existing private props/factory
+ABI without rediscovering captures or validating callbacks. TSRX uses the same
+lexical capture planner and the same target capture-prop encoder. The old mixed
+collector and redundant post-plan `data` validator were removed; there is no
+compatibility fallback or second runtime. Plans own cloned callback bodies;
+their source-node references belong to the same compilation.
+
+This separates one concrete normalization contract. Source dependency inference,
+TSRX boundary validation, other read/callback transforms and module finalization
+still require further separation. It does not implement another backend or
+remove routing, Group, pending/error presentation, retry or lifetime support.
+
+The new self-contained contract suite covers 20 cases. Existing inline-policy
+execution now checks captured owner changes, aliased error/retry bindings,
+failure, pending retry and successful recovery. Six paired production fixtures
+against `5fef5d5` preserve every HTML/payload/browser byte, including all future
+policy code. The new inline Group control is 45,802 raw / 14,968 gzip browser
+bytes. This batch makes no bundle-size or CPU improvement claim.
+
+Compiler build, workspace typecheck and changed-source lint pass. Eleven focused
+suites pass 163 tests; the final validator-removal gate repeats four of those
+files and passes 47 cases. Production Chrome navigation and lazy-route lifetime
+checks both pass. The routed check first exceeded 60 seconds while the DOM
+comparison was active; it passes when run separately, without changing its
+deadline or assertions. The entire root suite was not repeated for this batch.
+
+The local compiler comparison against `5fef5d5` passes all 21 DOM scenarios and
+mixed sequences across eight compiled variants plus vanilla, checking text,
+classes, order and retained identity after every timed sample. Three samples run
+in ABBA order. The before/after browser hashes are identical, so noisy local
+timings establish no speed change. Final compiler output is also checked against
+all eight recorded component modules after the coordinator/validator cleanup.
+
 ## Migration order and gates
 
 1. Return/control-flow planning is implemented. Keep generated output unchanged.
@@ -323,7 +367,8 @@ hydration and failed-render ownership. Compiler-regenerated benchmark output is
 compared for unintended changes. Browser gates verify text/classes/order and
 retained nodes. Benchmarks measure the complete path; an isolated simplification
 does not establish an overall speedup. Dependency versions and pinned upstream
-benchmarks stay unchanged. Bundle-size work remains deferred.
+benchmarks stay unchanged. Bundle-size claims require whole delivered graphs;
+CPU claims require a separate controlled comparison.
 
 ## Validation of the first boundary
 
