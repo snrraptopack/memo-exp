@@ -1,7 +1,4 @@
-import type * as t from '../ast/compiler-types';
-import * as astFactory from '../ast/factory';
 import { canonicalStateKey, type Ctx } from '../context';
-import { md } from '../identifiers';
 import { componentPatterns, pathVariants, isLightweightRowComponent } from './component-graph';
 import { expandRenderSlotPaths } from './slot-paths';
 
@@ -9,8 +6,11 @@ import { expandRenderSlotPaths } from './slot-paths';
 // an authored state path; ordinary state writes cannot match the NUL suffix.
 const LIST_STRUCTURE_READER_SUFFIX = '\0memo-dom:list-structure-reader';
 
-/** Build and install the module's state-reader access table. */
-export function buildAccessTable(ctx: Ctx): t.Statement | null {
+export type AccessReaderPlan = ReadonlyMap<string, ReadonlySet<string>>;
+
+/** Capture canonical reader routes without constructing backend statements. */
+export function planAccessReaders(ctx: Ctx): AccessReaderPlan {
+  const table = new Map<string, Set<string>>();
   const canonicalListSources = new Set(
     [...ctx.listSources].map((source) => canonicalStateKey(ctx, source)),
   );
@@ -30,14 +30,14 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     structuralPatterns: readonly string[] = patterns,
   ): void => {
     const key = canonicalStateKey(ctx, variable);
-    let readers = ctx.readers.get(key);
-    if (!readers) ctx.readers.set(key, (readers = new Set()));
+    let readers = table.get(key);
+    if (!readers) table.set(key, (readers = new Set()));
     for (const pattern of patterns) readers.add(pattern);
     if (!canonicalListSources.has(key)) return;
     const structuralKey = `${key}${LIST_STRUCTURE_READER_SUFFIX}`;
-    let structuralReaders = ctx.readers.get(structuralKey);
+    let structuralReaders = table.get(structuralKey);
     if (!structuralReaders) {
-      ctx.readers.set(structuralKey, (structuralReaders = new Set()));
+      table.set(structuralKey, (structuralReaders = new Set()));
     }
     for (const pattern of structuralPatterns) structuralReaders.add(pattern);
   };
@@ -122,28 +122,5 @@ export function buildAccessTable(ctx: Ctx): t.Statement | null {
     for (const key of flow.sources) add(key, [flow.entityId]);
   }
 
-  if (ctx.readers.size === 0) return null;
-
-  const readerProperties = [...ctx.readers.entries()]
-    .sort(([left], [right]) => (left < right ? -1 : 1))
-    .map(([variable, readers]) =>
-      astFactory.objectProperty(
-        astFactory.stringLiteral(variable),
-        astFactory.arrayExpression(
-          [...readers].sort().map((reader) => astFactory.stringLiteral(reader)),
-        ),
-      ),
-    );
-  return astFactory.expressionStatement(
-    astFactory.callExpression(md(ctx, 'installAccessTable'), [
-      astFactory.objectExpression([
-        astFactory.objectProperty(
-          astFactory.identifier('readers'),
-          astFactory.objectExpression(readerProperties),
-        ),
-      ]),
-      astFactory.stringLiteral(ctx.rootId),
-      astFactory.stringLiteral(ctx.moduleId),
-    ]),
-  );
+  return table;
 }

@@ -65,7 +65,7 @@ export {
   isListLightweightCandidate,
   isLightweightRowComponent,
 } from './analysis/component-graph';
-export { buildAccessTable } from './analysis/access-table';
+export { planAccessReaders } from './analysis/access-table';
 
 import { analyzeModuleListTargets } from './analysis/module-list-targets';
 import { analyzeDomOnlyRows } from './analysis/dom-only-rows';

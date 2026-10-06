@@ -626,7 +626,6 @@ export interface Ctx {
 
   // ---- emission accumulators ----
   header: t.Statement[];
-  readers: Map<string, Set<string>>;
   writeConstCounter: number;
   /** Dedupe table for hoisted write-set consts: joined writes → const name. */
   writeConsts: Map<string, string>;
@@ -903,7 +902,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     computeds: new Map(),
     moduleControlFlow: [],
     header: [],
-    readers: new Map(),
     writeConstCounter: 0,
     writeConsts: new Map(),
     reasonConstCounter: 0,

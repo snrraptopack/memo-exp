@@ -36,7 +36,8 @@ import {
   md,
   requireIdentifiers,
 } from './identifiers';
-import { buildAccessTable } from './analysis';
+import { planAccessReaders } from './analysis';
+import { emitAccessTable } from './emission/access-table';
 import { prepareProgramAnalysis } from './analysis/prepare';
 import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './emission/dom';
@@ -293,7 +294,7 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   // Safety net: any JSX left over lived outside a component function.
   rejectLeftoverJsx(ctx, programPath);
 
-  const table = buildAccessTable(ctx);
+  const table = emitAccessTable(ctx, planAccessReaders(ctx));
   if (ctx.computeds.size > 0) rewriteComputeds(ctx, programPath.node);
   if (ctx.moduleControlFlow.length > 0) {
     rewriteModuleControlFlow(ctx, programPath.node);

@@ -37,29 +37,30 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 
 | Fixture | Browser JS B | Gzip sum B |
 |---|---:|---:|
-| Static composition | 0 | 0 |
-| Counter | 8,730 | 3,517 |
-| Counter with 60 static cards | 8,728 | 3,517 |
-| Interactive composition | 10,417 | 4,107 |
-| Input / list | 17,156 | 6,449 |
+| Static page | 0 | 0 |
+| Counter | 8,613 | 3,483 |
+| Counter with 60 static cards | 8,611 | 3,483 |
+| Interactive composition | 10,300 | 4,074 |
+| Input / list | 17,039 | 6,415 |
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
-| Interactive fetched page | 43,245 | 14,095 |
-| Routed fetched page with Group | 85,487 | 26,281 |
+| Interactive fetched page | 31,761 | 10,619 |
+| Routed fetched page with Group | 85,301 | 26,239 |
 
 The static-card result demonstrates the architecture change: more static
-content grows HTML without growing the counter's browser program. Interactive
-request data remains the largest gap: it still retains general hydration,
-serialized state and creation instructions. That gap needs deeper
-binding/reachability planning while preserving routing and data presentation.
+content grows HTML without growing the counter's browser program. Fixed
+interactive fetched layouts now use initial bindings with the shared data
+envelope. Request-dependent structure and routing/Group retain general adoption
+and creation instructions. Their remaining cost needs deeper binding/reachability
+planning while preserving routing and data presentation.
 
 | Area | Status |
 |---|---|
 | Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
 | Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Read-only noninteractive fetch pages implemented; interactive/routed/Group pages retain general hydration |
-| Runtime capabilities | First cuts complete: shared data settlement, optional promise reads, unused cursor removal and lean markup adoption |
+| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages and fixed interactive fetched layouts implemented; structural/routed/Group pages retain general adoption |
+| Runtime capabilities | Shared data settlement, optional promise reads/payload/polling, unused cursor removal, lean markup adoption and lazy state-cell storage implemented |
 
 Callback props, escaping mutable values, hidden reads, refs, effects and unknown
 initialization still require conservative ownership/creation proofs. Fixed-shape
@@ -1827,10 +1828,44 @@ sequences and retained identity after every timed sample. Its browser artifacts
 are byte-identical; this removes compiler coupling without a delivered-byte or
 runtime speed claim.
 
+### Registration getter correction — 2026-10-06
+
+The broad root run passes 2,163 cases across 225 passing files and finds one
+regression in the new polling ownership: first registration reads the authored
+`volatile` getter twice. The assertion is preserved. General registration now
+seeds earlier owners before registering the new entity, and registry seeding
+skips the entity whose flag was already observed. Scheduling retains the
+registration runtime even when the getter changes the ambient runtime.
+
+The corrected host-callback suite covers both true and false getters and ambient
+owner changes. Its rerun with lifetime, teardown, opaque reactivity, failed-render
+recovery and concurrent SSR isolation passes 50 cases across eight files. The
+runtime build and changed-source lint pass. Six opaque/counter browser graphs
+pass after the correction. Against `b0cfce2`, the ordinary source counter still
+drops 144 raw bytes; the opaque graph now grows 326 raw bytes / 150 B gzip.
+The full 226-file run was not repeated after this focused correction.
+
+### Access-reader planning without discarded emission — 2026-10-06
+
+Manifest discovery now consumes canonical reader routes directly. It no longer
+constructs and discards an `installAccessTable` statement or keeps an extra
+mutable reader table on compiler context. Analysis returns a captured reader
+plan; one backend serializer emits it. Structural readers, targeted selection,
+effects, computed values and linked module routing retain their existing routes.
+
+The compiler build, changed-source lint and five focused suites pass 32 cases.
+New contract checks plan without a generated-name allocator, retain reader facts
+after context mutation and omit the runtime helper for an empty plan. All 39
+production HTML/SSR browser cases pass. The nine-fixture paired production audit
+against `85ecdb2` preserves every HTML, payload and delivered-JavaScript byte
+count. The checkpoint table above records the current measurements. This removes
+discarded compiler work; it does not establish a runtime timing gain.
+
 ### Remaining completion requirements
 
 - Preserve the newly separated child/attribute/write facts while auditing other
-  analysis-to-backend compatibility data, including generated operation bindings.
+  analysis-to-backend compatibility data and normalization before final backend
+  planning. Journal and native-operation bindings now belong to emission.
 - Keep request-dependent structural extents on general adoption until their
   server placement matches the initial binding proof. Extend that proof with
   the existing region engine when justified; preserve creation, recovery,

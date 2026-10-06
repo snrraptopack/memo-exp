@@ -6,7 +6,7 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import { buildAccessTable } from '../analysis';
+import { planAccessReaders } from '../analysis';
 import { prepareProgramAnalysis } from '../analysis/prepare';
 import {
   analyzedComponentDeclarations,
@@ -451,9 +451,7 @@ export function analyzeManifest(
           linkedRoutes,
         });
         prepareProgramAnalysis(ctx, compilerPath);
-        // buildAccessTable also materializes ctx.readers. The returned AST is
-        // intentionally discarded here; final emission builds its own table.
-        buildAccessTable(ctx);
+        const readers = planAccessReaders(ctx);
         const exports: Record<string, LinkedExport> = {};
         const functionTagCandidates = moduleFunctionStringCandidates(
           compilerPath.node,
@@ -573,7 +571,7 @@ export function analyzeManifest(
           componentUsages: analyzedComponentUsages(ctx),
           routedPreparations: analyzeRoutedPreparations(ctx, compilerPath),
           readers: Object.fromEntries(
-            [...ctx.readers.entries()]
+            [...readers.entries()]
               .sort(([left], [right]) => left.localeCompare(right))
               .map(([key, patterns]) => [key, [...patterns].sort()]),
           ),
