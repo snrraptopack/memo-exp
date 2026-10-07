@@ -56,6 +56,7 @@ describe('module-scope transparent sources', () => {
       {
         './mod-session.ts': sessionSource,
         './mod-header.tsx': headerSource,
+        './main.ts': `import { mount } from '@memoized-dom/runtime'; import { Header } from './mod-header'; mount('root', Header);`,
       },
       { runtimePath: '@memoized-dom/runtime' },
     );

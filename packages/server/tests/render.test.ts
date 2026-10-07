@@ -13,7 +13,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import { resetScheduler, unregister } from '@memoized-dom/runtime';
 import { _internals } from '@memoized-dom/runtime/testing';
-import { renderToString } from '../src/index';
+import { render, renderToString, renderToReadableStream } from '../src/index';
 import { renderWithDom } from '../src/dom';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -73,7 +73,8 @@ describe('LinkeDOM reference renderer', () => {
   beforeAll(async () => {
     mkdirSync(outDir, { recursive: true });
     const output = compileModules(
-      { './server-render.tsx': source },
+      { './server-render.tsx': source,
+        './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './server-render';mount('root',App);` },
       { runtimePath: '@memoized-dom/runtime' },
     );
     writeFileSync(fixture, output['./server-render.tsx']!);
@@ -90,6 +91,28 @@ describe('LinkeDOM reference renderer', () => {
   afterEach(() => {
     // Client-creation passes register into the ambient default runtime.
     _internals().registry.forEach((_, id) => unregister(id));
+  });
+
+  it('rejects unregistered components before invoking them in every renderer', async () => {
+    let calls = 0;
+    function Unregistered() {
+      calls++;
+      throw new Error('must not render');
+    }
+    const message = 'server render received a component that is not a compiled application root';
+    expect(() => renderToString(Unregistered)).toThrow(message);
+    await expect(render(Unregistered)).rejects.toThrow(message);
+    expect(() => renderToReadableStream(Unregistered)).toThrow(message);
+    expect(calls).toBe(0);
+  });
+
+  it('uses the registered root name for markers and the payload channel', async () => {
+    const { serverModule } = await import('./parity-harness').then(({ compileFixture }) =>
+      compileFixture('named-server-root', 'export function Dashboard() { return <main>Ready</main>; }', {}, 'Dashboard'));
+    const result = await render(serverModule.Dashboard, { markers: true });
+    expect(result.html).toContain('<!--mmd:r:Dashboard-->');
+    expect(result.scriptTag).toContain('data-mmd-root="Dashboard"');
+    expect(result.html).not.toContain('<!--mmd:r:App-->');
   });
 
   it('renders deterministic HTML through the server document', () => {

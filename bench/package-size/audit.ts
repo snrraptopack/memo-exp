@@ -1,5 +1,5 @@
 /** Attribute minified browser bytes to stable compiler-generated source graphs. */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
@@ -22,8 +22,6 @@ mkdirSync(directory, { recursive: true });
 const reference = args.find(arg => arg.startsWith('--before-ref='))?.slice(13);
 let baseline: string | undefined;
 let baselineRoot: string | undefined;
-let legacyBodylessAlias = false;
-let legacyClientSourceAlias = false;
 if (reference !== undefined) {
   baseline = execFileSync('git', ['rev-parse', '--verify', '--end-of-options', `${reference}^{commit}`], { cwd: root, encoding: 'utf8' }).trim();
   if (!/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error('Invalid runtime baseline');
@@ -35,18 +33,6 @@ if (reference !== undefined) {
     'packages/data/src', 'packages/data/package.json',
     'packages/router/src', 'packages/router/package.json'], { cwd: root });
   execFileSync('tar', ['-xf', archive, '-C', baselineRoot]);
-  const dataInternal = resolve(baselineRoot, 'packages/data/src/internal.ts');
-  const original = readFileSync(dataInternal, 'utf8');
-  if (!original.includes('createBodylessSource')) {
-    // Preserve the old implementation while adapting its compiler-hook ABI.
-    // A proved bodyless request previously used the generic source constructor.
-    writeFileSync(dataInternal, `${original}\nexport {createSource as createBodylessSource} from './transparent-module';\n`);
-    legacyBodylessAlias = true;
-  }
-  if (!original.includes('createClientSource')) {
-    writeFileSync(dataInternal, `${readFileSync(dataInternal, 'utf8')}\nexport {${legacyBodylessAlias ? 'createSource' : 'createBodylessSource'} as createClientSource} from './transparent-module';\n`);
-    legacyClientSourceAlias = true;
-  }
 }
 const rows: Array<{ fixture: string; graph: string; raw: number; gzip: number; brotli: number;
   inputs: Array<{ path: string; bytes: number }> }> = [];
@@ -75,6 +61,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
     const result = await build({ stdin: { contents: "import '@size-fixture/main.ts';", resolveDir: root },
       bundle: true, write: false, format: 'esm', platform: 'browser', minify: true, metafile: true,
       define: { 'process.env.NODE_ENV': '"production"' }, outfile: 'browser.js',
+      logOverride: {'import-is-undefined':'error'},
       plugins: [{ name: 'size-fixtures', setup(builder) {
         if (programHydration) {
           builder.onResolve({ filter: /^virtual:memoized-dom\/hydration$/ }, () => ({ path: '/hydration.ts', namespace: 'hydration-boot' }));
@@ -160,8 +147,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
 const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
   `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
-  `Legacy bodyless-hook alias: ${legacyBodylessAlias}. When required, the baseline exports its original generic createSource under the new compiler hook name; its request implementation is unchanged.`, '',
-  `Legacy client-source hook alias: ${legacyClientSourceAlias}. When required, the baseline exports its original bodyless source under the new client-only hook name, retaining its original restoration implementation.`, '',
+  'Archived runtime sources are used unchanged. Missing compiler hooks fail the audit; choose an API-compatible baseline or compare each revision with its own compiler.', '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
   `Optional hydration included: ${hydration}; compiler-selected capabilities: ${programHydration}. Baseline hydration: ${programHydration?(baselineProgramHydration?'same program capabilities':'explicit general entry'):'same entry'}. Use --baseline-hydration=general only to compare older revisions without program hydration. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime, data and router source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
@@ -279,6 +265,6 @@ for (const row of rows.filter(row => row.graph !== 'package')) {
     ...row.inputs.map(input => `| ${input.path} | ${input.bytes} |`), '');
 }
 writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(),
-  revision, status, baseline, legacyBodylessAlias, legacyClientSourceAlias, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
+  revision, status, baseline, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n') + '\n');
 console.log(`Report: ${resolve(directory, 'results.md')}`);

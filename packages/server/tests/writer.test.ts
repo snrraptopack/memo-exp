@@ -17,7 +17,8 @@ async function variants(name: string, source: string, options: { moduleStateCell
   mkdirSync(DIRECTORY, { recursive: true });
   const id = `./writer-${name}.tsx`;
   async function load(ssrWriter: boolean) {
-    const code = compileModules({ [id]: source }, { ...options, ssrWriter })[id]!;
+    const code = compileModules({ [id]: source,
+      './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from '${id}';mount('root',App);` }, { ...options, ssrWriter })[id]!;
     const path = join(DIRECTORY, `writer-${name}-${ssrWriter}.ts`);
     writeFileSync(path, code);
     return { code, module: await import(pathToFileURL(path).href) };
@@ -214,6 +215,8 @@ describe('experimental compiler leaf writer', () => {
 
   it('preserves imported row cells through concurrent replacement, insertion, and reordering', async () => {
     const sources = {
+      './writer-imported/main.ts': `import { mount } from '@memoized-dom/runtime';
+        import { App } from './app'; mount('root', App);`,
       './writer-imported/state.ts': `
         export let rows = [{ id: 1, label: 'first', active: false }, { id: 2, label: 'second', active: false }];
         export function replace(label) {

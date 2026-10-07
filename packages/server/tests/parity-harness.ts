@@ -39,11 +39,13 @@ export async function compileFixture(
   name: string,
   source: string,
   compilerOptions: Record<string, unknown> = {},
+  root = 'App',
 ): Promise<CompiledTiers> {
   mkdirSync(outDir, { recursive: true });
   const outputPath = join(outDir, `${name}.compiled.ts`);
   const output = compileModules(
-    { [`./${name}.tsx`]: source },
+    { [`./${name}.tsx`]: source,
+      './main.ts': `import {mount} from '@memoized-dom/runtime';import {${root}} from './${name}';mount('root',${root});` },
     {
       runtimePath: '@memoized-dom/runtime',
       ...compilerOptions,

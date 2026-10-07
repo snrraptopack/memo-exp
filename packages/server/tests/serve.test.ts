@@ -184,7 +184,7 @@ describe('serve', () => {
       export function Reports() {
         return <main><h1>Reports</h1></main>;
       }
-    `);
+    `, {}, 'Reports');
     const app = serve();
     app.ssr(global.serverModule.App);
     app.ssr('/reports/*', reports.serverModule.Reports);
@@ -225,7 +225,7 @@ describe('serve', () => {
           </main>
         );
       }
-    `, { routedEnvironment: 'server' });
+    `, { routedEnvironment: 'server' }, 'Reports');
     const app = serve<Locals, unknown, Services>({
       createLocals: request => ({
         user: request.headers.get('authorization'),

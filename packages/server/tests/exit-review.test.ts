@@ -105,7 +105,8 @@ describe('Phase 1 exit criteria', () => {
       'exit-boom',
       `
       export function App(): HTMLElement {
-        throw new Error('render failure');
+        if (true) throw new Error('render failure');
+        return <main/>;
       }
     `,
     );

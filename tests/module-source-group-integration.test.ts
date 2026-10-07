@@ -11,7 +11,7 @@
  * 3. Derived values over module refs (unread = list.filter().length) must
  *    gate through deriveResolvedValues instead of imperative reads.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
@@ -87,6 +87,7 @@ const appSource = `
 `;
 
 const modules = {
+  './main.ts': `import { mount } from '@memoized-dom/runtime'; import { Panel } from './panel'; mount('root', Panel);`,
   './session.ts': sessionSource,
   './panel.tsx': appSource,
 };
@@ -217,17 +218,29 @@ describe('module-scope sources through Group/$track/derivations', () => {
     }
   });
 
-  it('workspace example: independent sources commit client-side', async () => {
+  it('independent module sources commit client-side', async () => {
     const fixtures = join(
       import.meta.dirname,
       'fixtures',
       'out',
       'ws-e2e',
     );
-    const source = join(import.meta.dirname, '../examples/workspace');
     const output = compileModules({
-      './session.ts': readFileSync(join(source, 'session.ts'), 'utf8'),
-      './WorkspaceApp.tsx': readFileSync(join(source, 'WorkspaceApp.tsx'), 'utf8'),
+      './session.ts': `export const notifications = $fetch('/api/notifications');
+        export const session = $fetch('/api/session');`,
+      './WorkspaceApp.tsx': `import { Group } from '@memoized-dom/data';
+        import { notifications, session } from './session';
+        function Pending() { return <p class="skeleton">Loading</p>; }
+        export function WorkspaceApp() {
+          const unread = notifications.filter(item => !item.read).length;
+          return <main>
+            <span class="avatar">{session.name[0]}</span>
+            <span class="who"><strong>{session.name}</strong></span>
+            <span class="pill">{unread} unread</span>
+            <Group pending={Pending}><ul>{notifications.map(item =>
+              <li key={item.id} class={item.read ? 'read' : 'unread'}>{item.text}</li>)}</ul></Group>
+          </main>;
+        }`,
     }, { runtimePath: '@memoized-dom/runtime/testing' });
     mkdirSync(fixtures, { recursive: true });
     for (const [path, code] of Object.entries(output)) {

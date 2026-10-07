@@ -26,7 +26,10 @@ const forceGc = gcRuntime.gc ?? (gcRuntime.Bun ? () => gcRuntime.Bun!.gc(true) :
 assert(retained === 0 || forceGc, '--retained requires globalThis.gc or Bun.gc');
 async function variant(name: string, source: string, ssrWriter: boolean) {
   const id = `./writer-bench-${name}.tsx`;
-  const code = compileModules({ [id]: source }, { ssrWriter })[id]!;
+  const code = compileModules({
+    [id]: source,
+    './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from '${id}'; mount('root', App);`,
+  }, { ssrWriter })[id]!;
   const path = join(directory, `writer-bench-${name}-${ssrWriter}.ts`);
   writeFileSync(path, code);
   const module = await import(pathToFileURL(path).href);

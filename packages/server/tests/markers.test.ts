@@ -50,7 +50,8 @@ describe('SSR marker serialization', () => {
   beforeAll(() => {
     mkdirSync(outDir, { recursive: true });
     const output = compileModules(
-      { './markers.tsx': source },
+      { './markers.tsx': source,
+        './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './markers';mount('root',App);` },
       { runtimePath: '@memoized-dom/runtime' },
     );
     writeFileSync(fixture, output['./markers.tsx']!);

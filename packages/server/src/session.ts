@@ -86,6 +86,7 @@ export class RenderSession {
     readonly options: RenderOptions,
     private readonly tier: SessionTier,
   ) {
+    this.rootId = serverRootId(component);
     this.applicationRuntime = createApplicationRuntime(`ssr-${++sessionSequence}`, {
       mode: tier.mode,
       document: tier.document,
@@ -101,7 +102,6 @@ export class RenderSession {
     this.dataRuntime = createDataRuntime(
       options.fetch === undefined ? {} : { fetch: options.fetch },
     );
-    this.rootId = serverRootId(component);
     const delivery = rootFactoryStore().get(component)?.initialDelivery;
     if (options.initialKey !== undefined && delivery?.key !== options.initialKey) {
       this.dispose();

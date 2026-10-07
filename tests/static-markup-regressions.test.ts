@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { compile } from '../packages/compiler/src/compile';
+import { compileModules } from '../packages/compiler/src';
 import * as runtime from '@memoized-dom/runtime';
 import { renderToString } from '@memoized-dom/server';
 
 const padding = '<span data-kind="item">item</span>'.repeat(16);
 
 function compiled(body: string): (id: string, parent: string | null) => Node {
-  const code = compile(`export function App() { return ${body}; }`);
+  const code = compileModules({
+    './app.tsx': `export function App() { return ${body}; }`,
+    './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
+  })['./app.tsx']!;
   return new Function('_MD', code
     .replace(/^import \* as _MD from .*;$/m, '')
     .replace(/export function /g, 'function ')

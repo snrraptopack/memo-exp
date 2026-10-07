@@ -6,7 +6,6 @@ import { compileModules } from '@memoized-dom/compiler';
 import { render } from '@memoized-dom/server';
 import {
   mount,
-  registerRootFactory,
   type MountedApplication,
 } from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';
@@ -14,6 +13,7 @@ import '@memoized-dom/runtime/hydrate';
 const outDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'out');
 const output = join(outDir, 'ssr-query-fallback.compiled.ts');
 const compiled = compileModules({
+  './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
   './app.tsx': `
     import { $fetch, Group } from '@memoized-dom/data';
     function Loading() { return <p>Loading...</p>; }
@@ -65,10 +65,6 @@ it('refetches an untransferred query source without leaving duplicate SSR DOM', 
 
   const clientFetch = vi.fn(async () => response());
   vi.stubGlobal('fetch', clientFetch);
-  registerRootFactory(app.App, {
-    id: 'App',
-    create: () => app.App('App', null),
-  });
   mounted = mount('root', app.App);
 
   await vi.waitFor(() => expect(host?.querySelector('h1')?.textContent).toBe('Ada'));

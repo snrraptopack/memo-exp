@@ -56,11 +56,15 @@ interface CompiledApp {
 }
 
 mkdirSync(outDir, { recursive: true });
-const compiled = compileModules(modules, {});
-writeFileSync(output, compiled['./app.tsx']!);
+for (const root of ['App', 'PropCollectionApp']) {
+  const compiled = compileModules({ ...modules,
+    './main.ts': `import { mount } from '@memoized-dom/runtime'; import { ${root} } from './app'; mount('root', ${root});`,
+  });
+  writeFileSync(root === 'App' ? output : output.replace('.compiled.ts', '.collection.ts'), compiled['./app.tsx']!);
+}
 
-async function importCompiled(): Promise<CompiledApp> {
-  return import(/* @vite-ignore */ pathToFileURL(output).href);
+async function importCompiled(root = 'App'): Promise<CompiledApp> {
+  return import(/* @vite-ignore */ pathToFileURL(root === 'App' ? output : output.replace('.compiled.ts', '.collection.ts')).href);
 }
 
 function mockFetch(data: unknown): typeof fetch {
@@ -101,7 +105,7 @@ describe('SSR Settle Coordinator (RFC §16.5)', () => {
   });
 
   it('settles collection derivations transported through component props', async () => {
-    const app = await importCompiled();
+    const app = await importCompiled('PropCollectionApp');
     const fetch = mockFetch([
       { id: 3, title: 'Closed', done: true },
       { id: 2, title: 'Second', done: false },

@@ -7,8 +7,12 @@ export type ServerComponent = (id: string, parent: null) => Node;
  * The hydration root id stamped into markers and the payload channel must match
  * the client-side root factory id, which the compiler derives from the mount
  * callee (`mount('root', Main)` → `'Main'`). Registered factories record that
- * id at module evaluation; unregistered components keep the legacy 'App' id.
+ * id at module evaluation. Server rendering requires that registration.
  */
 export function serverRootId(component: ServerComponent): string {
-  return rootFactoryStore().get(component)?.id ?? 'App';
+  const root = rootFactoryStore().get(component);
+  if (!root) {
+    throw new Error('memoized-dom: server render received a component that is not a compiled application root');
+  }
+  return root.id;
 }

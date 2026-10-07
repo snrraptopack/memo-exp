@@ -64,6 +64,10 @@ describe('authored descendant-wide suspension', () => {
     }
     fixture = await import(pathToFileURL(join(directory, 'App.ts')).href);
     Object.assign(fixture = { ...fixture }, await import(pathToFileURL(join(directory, 'Tsrx.ts')).href));
+    // Each isolated suspension fixture is a distinct application root.
+    registerRootFactory(fixture.App!, { id: 'App', create: () => fixture.App!('App', null) });
+    registerRootFactory(fixture.Static!, { id: 'Static', create: () => fixture.Static!('Static', null) });
+    registerRootFactory(fixture.Tsrx!, { id: 'Tsrx', create: () => fixture.Tsrx!('Tsrx', null) });
   });
   afterEach(() => {
     mounted?.unmount();
@@ -177,7 +181,6 @@ describe('authored descendant-wide suspension', () => {
     document.body.append(host);
     const original = host.querySelector('h2');
     const onHydrateError = vi.fn();
-    registerRootFactory(fixture.Static!, { id: 'App', create: () => fixture.Static!('App', null) });
     mounted = mount(host, fixture.Static! as () => unknown, { onHydrateError });
     await Promise.resolve();
     expect(onHydrateError).not.toHaveBeenCalled();
@@ -196,7 +199,6 @@ describe('authored descendant-wide suspension', () => {
     document.body.append(host, payload);
     const original = host.querySelector('#leaf');
     const onHydrateError = vi.fn();
-    registerRootFactory(fixture.App!, { id: 'App', create: () => fixture.App!('App', null) });
     mounted = mount(host, fixture.App! as () => unknown, { onHydrateError });
     await Promise.resolve();
     expect(onHydrateError).not.toHaveBeenCalled();

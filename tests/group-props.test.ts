@@ -5,6 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import { render, renderToString } from '@memoized-dom/server';
+import { registerRootFactory } from '@memoized-dom/runtime';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
 const policies = `
@@ -118,6 +119,13 @@ describe('props-based Group policy scopes', () => {
       writeFileSync(join(directory, name.replace(/\.tsx$/, '.ts')), code);
     }
     fixture = await import(pathToFileURL(join(directory, 'App.ts')).href);
+    // These isolated policy fixtures deliberately expose multiple roots.
+    registerRootFactory(fixture.MultipleChildren!, {
+      id: 'MultipleChildren', create: () => fixture.MultipleChildren!('MultipleChildren', null),
+    });
+    registerRootFactory(fixture.AcrossFiles!, {
+      id: 'AcrossFiles', create: () => fixture.AcrossFiles!('AcrossFiles', null),
+    });
   });
   afterEach(() => {
     for (const id of _internals().registry.keys()) unregister(id);

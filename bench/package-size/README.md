@@ -187,6 +187,13 @@ constructor tests verify that explicitly exposed resource writes stay available.
 
 ## Architecture milestone checkpoint
 
+Source audits use archived runtime sources unchanged and require the compiler
+hooks used by the selected fixtures. Incompatible baselines fail instead of
+receiving API aliases. The paired production audit builds each compiler revision
+without patching it, against the current runtime; that boundary must also be
+API-compatible. To cross a removed API, build each entire revision with its own
+compiler and runtime.
+
 The 2026-10-06 architecture milestone checkpoint is recorded in
 [Browser JavaScript architecture](../../docs/browser-bundle-architecture.md).
 Reproduce its three distinct products after building runtime and compiler:

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { compile } from '@memoized-dom/compiler';
+import { compileModules } from '@memoized-dom/compiler';
 import { renderToString } from '@memoized-dom/server';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,10 @@ interface CompiledApp {
 }
 
 mkdirSync(outDir, { recursive: true });
-writeFileSync(output, compile(SOURCE, { runtimePath: '@memoized-dom/runtime' }));
+writeFileSync(output, compileModules({
+  './app.tsx': SOURCE,
+  './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
+}, { runtimePath: '@memoized-dom/runtime' })['./app.tsx']!);
 
 async function importCompiled(): Promise<CompiledApp> {
   return import(/* @vite-ignore */ pathToFileURL(output).href);

@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { compileModules } from '@memoized-dom/compiler';
 import { render } from '@memoized-dom/server';
-import { mount, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { mount, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -12,6 +12,7 @@ const outDir = join(here, 'fixtures', 'out');
 const output = join(outDir, 'ssr-payload-transport.compiled.ts');
 
 const modules = {
+  './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
   './app.tsx': `
     import { $fetch, Group } from '@memoized-dom/data';
     import { $routed } from '@memoized-dom/router';
@@ -106,11 +107,6 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
     vi.stubGlobal('fetch', vi.fn(() => {
       throw new Error('Client should not issue fetch — state must restore from payload channel');
     }));
-
-    registerRootFactory(app.App, {
-      id: 'App',
-      create: () => app.App('App', null),
-    });
 
     // 3. Hydrate with default payload: 'auto'
     const mounted = mount('root', app.App);

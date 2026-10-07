@@ -69,7 +69,10 @@ beforeAll(() => {
       </section>;
     }
   `;
-  const output = compileModules({ './app.tsx': source });
+  const output = compileModules({
+    './app.tsx': source,
+    './main.ts': `import { mount } from '@memoized-dom/runtime'; import { DataFormsReadApp } from './app'; mount('root', DataFormsReadApp);`,
+  });
   mkdirSync(outputDir, { recursive: true });
   writeFileSync(fixture, output['./app.tsx']!);
 });
@@ -87,7 +90,7 @@ it('runs read refresh and overlapping form submissions with independent rollback
   expect(html).toContain('Welcome');
   expect(html).toContain('<form');
   setScheduler(run => run());
-  const root = DataFormsReadApp('App', null) as HTMLElement;
+  const root = DataFormsReadApp('DataFormsReadApp', null) as HTMLElement;
   document.body.append(root);
   await vi.waitFor(() => expect(root.textContent).toContain('Welcome'));
 

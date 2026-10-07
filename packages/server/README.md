@@ -220,6 +220,10 @@ and has no preparation phase.
 
 Renderers accept a compiled root component and `RenderOptions`:
 
+The compiler identifies and registers that root from the client entry's
+`mount()` call. Unregistered components are rejected; the server never assumes
+an `App` root name.
+
 ```ts
 interface RenderOptions {
   mode?: 'shell' | 'resolve'; // resolve: await request data before output

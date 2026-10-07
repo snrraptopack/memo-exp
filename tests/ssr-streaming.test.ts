@@ -10,6 +10,7 @@ const outDir = join(here, 'fixtures', 'out');
 const output = join(outDir, 'ssr-streaming.compiled.ts');
 
 const modules = {
+  './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './streaming'; mount('root', App);`,
   './streaming.tsx': `
     import { $fetch, Group } from '@memoized-dom/data';
 

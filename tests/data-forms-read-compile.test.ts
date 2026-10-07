@@ -91,6 +91,7 @@ describe('$read and $forms compiler integration', () => {
 
   it('renders a form on the server and updates its compiled client UI after submission', async () => {
     const output = compileModules({
+      './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
       './app.tsx': `
         import { $forms } from '@memoized-dom/data';
         export function App() {
@@ -111,7 +112,7 @@ describe('$read and $forms compiler integration', () => {
     expect(renderToString(App)).toContain('<form');
 
     setScheduler(run => run());
-    const root = App('FormsApp', null) as HTMLFormElement;
+    const root = App('App', null) as HTMLFormElement;
     document.body.append(root);
     const input = root.querySelector('input')!;
     input.value = 'hello';
@@ -128,6 +129,7 @@ describe('$read and $forms compiler integration', () => {
 
   it('resolves a compiled read on the server and replays its bound promise on refresh', async () => {
     const output = compileModules({
+      './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
       './app.tsx': `
         import { $read, $track } from '@memoized-dom/data';
         export function App() {
@@ -150,7 +152,7 @@ describe('$read and $forms compiler integration', () => {
     expect((await render(App, { mode: 'resolve' })).html).toContain('<span>1</span>');
 
     setScheduler(run => run());
-    const root = App('ReadApp', null) as HTMLElement;
+    const root = App('App', null) as HTMLElement;
     document.body.append(root);
     await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('1'));
     root.querySelector('button')!.click();

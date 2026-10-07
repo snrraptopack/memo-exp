@@ -44,7 +44,7 @@ beforeAll(async () => {
       });
       return <main route="/reports/:id"><h1>{page.title}</h1></main>;
     }
-  `, { routedEnvironment: 'server' });
+  `, { routedEnvironment: 'server' }, 'Report');
 });
 
 function jsonFetch(body: unknown): typeof fetch {

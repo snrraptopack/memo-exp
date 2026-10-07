@@ -41,6 +41,6 @@ corresponding intrinsic. `Group`, runtime constructors, router utilities and
 types still use ordinary imports. `$effect` and `$cleanup` are compiler-owned
 calls, not runtime functions to capture as values.
 
-The legacy bare `effect` and `cleanup` calls and explicit imports of the data or
-route intrinsics remain compatible. New authored source uses the `$` names and
-omits intrinsic imports. Existing import aliases retain their binding behavior.
+Unbound `effect` and `cleanup` calls are rejected. Use `$effect` and `$cleanup`.
+Explicitly bound names remain ordinary JavaScript; they do not become lifecycle
+intrinsics.

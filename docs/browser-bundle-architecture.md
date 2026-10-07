@@ -1443,7 +1443,7 @@ list adoption or markup parsing when the compiler reports no requirement. The
 ordinary client-creation counter, keyed list and positional list source graphs
 remain 9,070 / 3,716 B, 24,442 / 9,508 B and 17,029 / 6,766 B respectively.
 
-The general compatibility entry grows: the counter graph is 18,263 / 6,759 B
+The general hydration entry grows: the counter graph is 18,263 / 6,759 B
 versus 17,820 / 6,616 B; the keyed graph is 33,656 / 12,473 B versus
 33,215 / 12,341 B. Optional dispatch, capability validation and cumulative
 installation cost bytes when every capability is retained. This is not a
@@ -1809,7 +1809,7 @@ compiler performance gain or regression.
 Opaque polling now owns its per-runtime IDs and frame state in its optional
 module. Ordinary entity registration no longer maintains a polling set in the
 kernel. The feature uses the existing registry and disposal hooks, seeds earlier
-registrations for compatibility, and stops queued frames after replacement or
+registrations when the polling capability is installed, and stops queued frames after replacement or
 disposal. Failed renders still leave a recovery frame scheduled. There is no
 second entity registry or commit scheduler.
 
@@ -2422,9 +2422,10 @@ current compiler held fixed and all reachable browser code counted:
 | JSON POST | 41,076 | 41,325 | 13,757 | 13,826 |
 | Opaque POST options | 41,103 | 41,352 | 13,769 | 13,839 |
 
-The older baseline exports its original generic source constructor under the
-new compiler hook name. This ABI alias does not change its request implementation;
-the audit records it explicitly. The whole source bundle is gzipped once.
+These historical measurements used an audit-only alias from the older generic
+source constructor to the then-new compiler hook. That shim has been removed:
+current audits require an API-compatible baseline and never patch archived APIs.
+The recorded whole source bundle was gzipped once.
 Generic graphs pay 249 raw bytes / 69–70 gzip bytes for capability installation;
 the reduction is specific to proved requests. Counter and input/list controls
 are byte-identical. Negative retention checks reject body encoders in the proved
@@ -2495,9 +2496,10 @@ compiler and authored fixtures held fixed:
 | Imported reactive request factory | 34,021 | 31,264 | 11,689 | 10,936 |
 | JSON POST, full public facade | 33,815 | 34,368 | 11,616 | 11,772 |
 
-The archived runtime exports its original bodyless constructor under the new
-private client hook name. Its request/restoration implementation is unchanged;
-the audit records that ABI alias. Whole source bundles are gzipped once.
+These historical measurements used an audit-only alias from the older bodyless
+constructor to the then-new private client hook. That shim has been removed:
+current audits require an API-compatible baseline and never patch archived APIs.
+The recorded whole source bundles were gzipped once.
 Negative retention checks require transfer validation to disappear from proved
 client-only graphs. Positive checks retain it for universal delivery. All 24
 client-only and 18 program-hydration package/current-source/baseline-source

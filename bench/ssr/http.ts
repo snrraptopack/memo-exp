@@ -40,7 +40,11 @@ assert(!(paired && ssrWriter), 'use --paired or --writer');
 mkdirSync(outDir, { recursive: true });
 async function load(name: string, source: string, writer: boolean) {
   const id = `./http-${name}.tsx`;
-  const output = compileModules({ [id]: source }, { routedEnvironment: 'server', ssrWriter: writer });
+  const component = name === 'feed' ? 'Feed' : name === 'routed' ? 'Report' : 'App';
+  const output = compileModules({
+    [id]: source,
+    './main.ts': `import { mount } from '@memoized-dom/runtime'; import { ${component} } from '${id}'; mount('root', ${component});`,
+  }, { routedEnvironment: 'server', ssrWriter: writer });
   if (writer && (name === 'table' || name === 'dashboard')) assert(output[id]!.includes('.htmlWriter'));
   const path = join(outDir, `${name}.${writer ? 'writer' : 'baseline'}.http.compiled.ts`);
   writeFileSync(path, output[id]!);
