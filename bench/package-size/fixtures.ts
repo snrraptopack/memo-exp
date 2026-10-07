@@ -1,5 +1,19 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-row-children': {
+    './App.tsx': `import {Row} from './Row';export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
+      <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+      <ul>{user?.rows?.map((item,index)=><Row key={item.id}><b>{index}:{item.label}:{n}</b></Row>)}</ul><footer>Kept {n}</footer></main>;}`,
+    './Row.tsx': `import {Frame} from './Frame';export function Row({children}){let n=0;return <li>
+      <button class="row-next" onClick={()=>n++}>{n}</button>{children}<Frame>{children}</Frame></li>;}`,
+    './Frame.tsx': `export function Frame({children}){return <aside><i>Prefix</i>{children}</aside>;}`,
+  },
+  'request-conditional-list': {
+    './App.tsx': `export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
+      <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+      {user?.active?<ul>{user.rows.map(item=><li key={item.id}>{item.active?<b>{item.label}</b>:<i>Hidden</i>}<span>{n}</span></li>)}</ul>:<p>Closed</p>}
+      <footer>Kept {n}</footer></main>;}`,
+  },
   'request-component-list': {
     './App.tsx':`import {Row} from './Row';export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;
       return <main><button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>

@@ -23,6 +23,8 @@ export interface RegionSourcePlans {
 }
 
 export interface EmitScope extends RegionSourcePlans {
+  /** Caller-owned content mounted by an adopted component row. */
+  initialSlots?: InitialDomRoot['slots'];
   initialDom: {plan:InitialDomRoot;variable:string;descriptors:t.Expression[];adopting?:t.Identifier;offset?:t.Expression} | null;
   /** Repeated row text avoids a DOM read on every content replay. */
   cacheText: boolean;

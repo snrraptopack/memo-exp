@@ -155,6 +155,17 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds component de
   expect(result.output['./App.tsx']).toContain('bindInitialList');
 });
 
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('plans fixed request-selected branches inside fetched rows (%s)',frontend=>{
+  const source=`export function App(){const user=$fetch('/api/user');let n=0;return <main><button onClick={()=>n++}>{n}</button>
+    <ul>{user?.rows?.map(item=><li key={item.id}>{item.active?<b>{item.label}</b>:<i>Hidden</i>}<span>{n}</span></li>)}</ul></main>;}`;
+  const client=compile(source,{frontend}),server=compile(source,{frontend,routedEnvironment:'server',moduleStateCells:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  if(client.initialRender.kind!=='bindings')throw Error('Missing row bindings');
+  const row=Object.values(planInitialDom(client.initialRender)!.lists)[0]!.row!;
+  expect(Object.values(row.conditions)[0]).toMatchObject({branch:null,open:[0],end:[2]});
+  expect(server.output['./App.tsx']).toContain('mmd:initial:when:');
+});
+
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed siblings around a variable fetched extent (%s)',frontend=>{
   const source=`export function App(){const user=$fetch('/api/user');let n=0;
     return <main><h1>Before</h1>{user?.rows?.map(item=><li key={item.id}>{item.label}</li>)}

@@ -151,8 +151,9 @@ export function createAuthoredSlotBuilders(
         },
       });
     },
-    ownerScope.initialDom && site ? (ctx.initialDomRoot?.component===componentName
-      ? ctx.initialDomRoot : ctx.initialDomComponents[componentName])?.slots?.[site] : undefined,
+    site ? ownerScope.initialSlots?.[site] ?? (ownerScope.initialDom
+      ? (ownerScope.initialDom.plan.slots?.[site] ?? (ctx.initialDomRoot?.component===componentName
+        ? ctx.initialDomRoot : ctx.initialDomComponents[componentName])?.slots?.[site]) : undefined) : undefined,
   );
 
   const buildAuthoredRenderValueSlot = (

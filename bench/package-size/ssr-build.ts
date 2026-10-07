@@ -24,6 +24,8 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'request-row-children': sizeFixtures['request-row-children']!,
+  'request-conditional-list': sizeFixtures['request-conditional-list']!,
   'request-nested-list': sizeFixtures['request-nested-list']!,
   'request-component-list': sizeFixtures['request-component-list']!,
   'composition-recreated-structural-children': sizeFixtures['composition-recreated-structural-children']!,
@@ -82,7 +84,8 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
   if (!root.startsWith(resolve(tmpdir()) + sep)) throw new Error('Unexpected temporary fixture path');
   try {
     const user = fixture==='request-nested-list' ? {groups:[{id:1,name:'One',rows:[]},{id:2,name:'Two',rows:[{id:21,label:'first'},{id:22,label:'second'}]}]} :
-      fixture==='request-list'||fixture==='request-list-siblings'||fixture==='request-component-list' ? {name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]} : {name:'Ada'};
+      ['request-row-children','request-conditional-list'].includes(fixture) ? {name:'Ada',active:true,rows:[{id:1,label:'one',active:true},{id:2,label:'two',active:false}]} :
+      ['request-list','request-list-siblings','request-component-list'].includes(fixture) ? {name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]} : {name:'Ada'};
     const files = { ...sources,
       './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
       './server.ts': `import {serve} from '@memoized-dom/server';import {App} from './App';const app=serve();

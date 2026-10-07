@@ -153,10 +153,6 @@ export function planInitialRendering(
     return true;
   }
 
-  function hostsOnly(nodes: readonly InitialRenderNode[]): boolean {
-    return nodes.every(node => node.kind === 'text' || node.kind === 'element' && hostsOnly(node.children));
-  }
-
   function fixedSlotHosts(nodes: readonly InitialRenderNode[]): boolean {
     return nodes.every(node => node.kind === 'text' ||
       (node.kind === 'element' || node.kind === 'slot' || node.kind === 'component') && fixedSlotHosts(node.children) ||
@@ -167,7 +163,9 @@ export function planInitialRendering(
   /** Request rows share a host shape while each nested list owns its extent. */
   function requestRowHosts(nodes: readonly InitialRenderNode[]): boolean {
     return nodes.every(node => node.kind === 'text' ||
-      (node.kind === 'element' || node.kind === 'component') && requestRowHosts(node.children) ||
+      (node.kind === 'element' || node.kind === 'slot' || node.kind === 'component') && requestRowHosts(node.children) ||
+      node.kind === 'conditional' && node.branch === null && node.alternatives !== undefined &&
+        node.alternatives.every(branch => branch.length === 1 && branch[0]?.kind === 'element' && requestRowHosts(branch)) ||
       node.kind === 'list' && node.requestRow !== undefined && requestRowHosts(node.requestRow));
   }
 
@@ -209,7 +207,7 @@ export function planInitialRendering(
       });
       if (!bindings) return {kind: 'content', nodes: rows.flat()};
       if (rows.some(row => row.length !== 1 || !['element','component'].includes(row[0]!.kind))) need(scope, 'Initial lists need one host root per row');
-      if (rows.some(row => row[0]?.kind === 'component' && !requestRowHosts(row))) need(scope, 'Component row content slots need a caller adoption scope');
+      if (rows.some(row => row[0]?.kind === 'component' && !requestRowHosts(row))) need(scope, 'Component rows need proved caller slot extents');
       if (unknown && !requestRowHosts(rows[0]!)) need(scope, 'Request list rows need proved host descendants');
       return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows:unknown?[]:rows,
         ...(unknown ? {requestRow:rows[0]!} : {})}]};
@@ -217,7 +215,6 @@ export function planInitialRendering(
   }
 
   function conditional(node: BaseNode, scope: Scope): Value {
-    if (inStructure) need(scope, 'Nested structural bindings need a placement proof');
     const site = initialSite(node);
     if (!site) need(scope, 'Initial conditional placement needs authored source identity');
     const plan = planConditionalBranches(node as t.ConditionalExpression | t.LogicalExpression, {
@@ -226,6 +223,8 @@ export function planInitialRendering(
     const selected = expression(plan.pickExpr, scope);
     const branch = selected === requestValue ? null : primitive(selected, scope);
     if (branch !== null && typeof branch !== 'number') need(scope, 'Initial conditional needs a closed selector');
+    if (inStructure && branch !== null) need(scope, 'Nested structural bindings need a placement proof');
+    const previous = inStructure;
     inStructure = true;
     try {
       const alternatives = plan.branches.map(input => {
@@ -235,15 +234,15 @@ export function planInitialRendering(
       });
       if (branch === null) {
         // Runtime data chooses the branch, but every alternative must occupy
-        // one host position. Rows, nested regions and component factories need
-        // a separate extent proof; do not guess their placement from data.
-        if (alternatives.some(nodes => nodes.length !== 1 || nodes[0]?.kind !== 'element' || !hostsOnly(nodes))) {
+        // one host position. Descendant request lists own their extent inside
+        // that host; absent branches still need a different extent proof.
+        if (alternatives.some(nodes => nodes.length !== 1 || nodes[0]?.kind !== 'element' || !requestRowHosts(nodes))) {
           need(scope, 'Request conditionals need one fixed host extent per branch');
         }
       }
       return {kind: 'content', nodes: [{kind: 'conditional', site, branch,
         children: alternatives[branch ?? 0] ?? [], ...(branch === null ? {alternatives} : {})}]};
-    } finally { inStructure = false; }
+    } finally { inStructure = previous; }
   }
 
   function primitive(value: Value, scope: Scope): string | number | boolean | null | undefined {

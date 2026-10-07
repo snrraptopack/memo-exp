@@ -154,10 +154,25 @@ it.each([
   expect(result.initialContent).toBe(false);
 });
 
-it('keeps ordinary rendering for component row slots without a caller adoption proof',()=>{
-  const result=compile(`function Row({children}){return <li>{children}</li>;}export function App(){let items=['one'];return <main>
-    <button onClick={()=>items=['two']}>Replace</button>{items.map(item=><Row key={item}><b>{item}</b></Row>)}</main>;}`);
-  expect(result.initialContent).toBe(false);expect(result.output['./App.tsx']).toMatch(/createElement|materializeMarkup/);
+it.each([0,2])('binds forwarded component-row caller slots and creates later rows (%i)',async count=>{
+  const log:string[]=[];vi.stubGlobal('__componentRows',log);
+  const items=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
+  await mount(`row-slots-${count}`,`function Frame({children}){return <aside><i>Prefix</i>{children}</aside>;}
+    function Row({children}){let n=0;$effect(()=>{globalThis.__componentRows.push('mount');return ()=>globalThis.__componentRows.push('dispose');});
+      return <li><button class="local" onClick={()=>n++}>{n}</button>{children}<Frame>{children}</Frame></li>;}
+    export function App(){let items=${JSON.stringify(items)};let n=0;let next=3;return <main>
+      <button class="next" onClick={()=>n++}>Next</button><button class="reverse" onClick={()=>items=items.toReversed()}>Reverse</button>
+      <button class="rename" onClick={()=>items=items.map(item=>({...item,label:item.label+'!'}))}>Rename</button>
+      <button class="append" onClick={()=>items=[...items,{id:next++,label:'new'}]}>Append</button><button class="clear" onClick={()=>items=[]}>Clear</button>
+      <ul>{items.map((item,index)=><Row key={item.id}><b>{index}:{item.label}:{n}</b></Row>)}</ul></main>;}`);
+  if(!count)click('.append');const original=rows();click('.local');click('.next');click('.rename');click('.reverse');
+  expect(rows()).toEqual(original.toReversed());expect(original[0]!.querySelector('.local')!.textContent).toBe('1');
+  expect([...document.querySelectorAll('b')].map(node=>node.textContent)).toEqual(count?['0:two!:1','0:two!:1','1:one!:1','1:one!:1']:['0:new!:1','0:new!:1']);
+  click('.append');expect(rows().at(-1)!.querySelector('b')!.textContent).toBe(`${original.length}:new:1`);
+  click('.clear');expect(original.every(node=>!node.isConnected)).toBe(true);click('.append');click('.next');
+  expect([...document.querySelectorAll('b')].map(node=>node.textContent)).toEqual(['0:new:2','0:new:2']);
+  app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
+  expect(log.filter(value=>value==='mount').length).toBe(log.filter(value=>value==='dispose').length);
 });
 
 it.each([

@@ -54,3 +54,36 @@ hydration/stream recovery cost and remains a separate optimization target.
 Generated detailed reports live under the ignored `bench/package-size/dist/`
 directories. Re-run these commands after composition changes; compare the same
 authored fixtures, build mode, runtime and compiler baseline.
+
+## Composition binding batch
+
+Component-row factories now receive their lexical caller's content-slot plans.
+Forwarded and repeated slots bind at their callee's mount positions; subsequent
+rows use the same retained creation factory. Request-selected conditionals may
+contain request lists inside their single host root, and fetched rows may
+contain conditionals whose alternatives each have one proved host. Missing
+branches, multiple variable sibling extents and unproved row semantics still
+use ordinary creation. Nested conditional planning restores its enclosing
+structural context.
+
+Production comparison uses compiler/Vite `36d6e42` and the same current runtime:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetched component rows with repeated caller children | 63,471 / 20,824 | 51,233 / 17,144 |
+| Request-selected list with conditional row content | 62,143 / 20,184 | 51,976 / 17,112 |
+| Existing fetched component rows | 51,539 / 17,077 | 51,539 / 17,077 |
+| Existing forwarded caller children | 11,211 / 4,398 | 11,211 / 4,398 |
+
+Run `bench:size:ssr --before-ref=36d6e42` with fixtures `request-row-children`,
+`request-conditional-list`, `request-component-list` and
+`composition-live-forwarded-children`. These are checked-in authored fixtures;
+tests do not depend on examples.
+
+Compiler build, root typecheck and changed-file lint pass. Seven initial plan,
+list, composition, conditional and lifetime suites pass 165 checks. Two new
+production Chrome checks verify no initial DOM creation/refetch, retained row
+identity after refresh/reorder, repeated slot updates, local row state, branch
+replacement and later row creation. Unit tests additionally verify balanced
+cleanup and empty initial lists. These measurements establish delivery size
+reductions, not update timing gains.

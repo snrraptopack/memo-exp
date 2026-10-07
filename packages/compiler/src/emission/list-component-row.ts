@@ -1,4 +1,5 @@
 import type * as t from '../ast/compiler-types';
+import { initialSite } from '../planning/initial-render';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
@@ -285,6 +286,7 @@ export function buildComponentRowCreate(
       : generatedIdentifier(ctx, 'nextIndex');
   const rowRefresh = generatedIdentifier(ctx, 'refreshRow');
   const rowScope = newEmitScope(ctx, false, sources);
+  rowScope.initialSlots = initial?.slots;
   rowScope.cacheText = true;
   const lightweight = isLightweightRowComponent(ctx, rowComponent);
   const rowContext: RowCtx = {
@@ -539,6 +541,7 @@ export function buildComponentRowCreate(
       rowId,
       inSvg,
       rowId,
+      initialSite(site.jsx!),
     );
     if (propObjectExpression !== null) {
       propObjectExpression.properties.push(

@@ -188,7 +188,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
   if (top) for (const [key, factory] of Object.entries(factories)) {
     if (slotOwners[key]) factories[key]={...factory,slots:slotOwners[key]};
   }
-  const slots=top?slotOwners[`${plan.rootModuleId}#${plan.rootLocal}`]:undefined;
+  // Row factories need their lexical caller's slot plans too. Slot paths are
+  // relative to the callee's mount host, not the row container address.
+  const slots=slotOwners[`${plan.rootModuleId}#${plan.rootLocal}`];
   return valid ? {target:plan.target,component:plan.rootLocal,returnSite:plan.returnSite,elements,components,conditions,lists,
     ...(texts.length?{texts}:{}), ...(slots?{slots}:{}),
     ...(dynamicPaths?{dynamicPaths:true as const}:{}),

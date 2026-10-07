@@ -138,6 +138,37 @@ describe('production initial SSR bootstrap', () => {
     });
   },120_000);
 
+  it.each(['request-row-children','request-conditional-list'])('binds composed fetched lists and updates retained nodes in Chrome (%s)',async(name,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const sources=sizeFixtures[name]!;
+    const extras=Object.fromEntries(Object.entries(sources).filter(([id])=>id!=='./App.tsx').map(([id,source])=>['src/'+id.slice(2),source]));
+    const rows=[{id:1,label:'one',active:true},{id:2,label:'two',active:false}];
+    const result=await production(name,sources['./App.tsx']!,extras,{active:true,rows});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    let next={active:true,rows};
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>({created:(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'),
+        retained:(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)}))).toEqual({created:[],retained:true});
+      expect(requests).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('li')];});
+      if(name==='request-row-children'){await page.click('.row-next');await page.waitForFunction(()=>document.querySelector('.row-next')?.textContent==='1');}
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='Kept 1');
+      next={active:true,rows:[{id:2,label:'changed',active:true},{id:1,label:'one',active:false},{id:3,label:'new',active:true}]};
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===3);
+      expect(await page.evaluate(()=>{const kept=(window as unknown as {kept:Element[]}).kept,rows=[...document.querySelectorAll('li')];return rows[0]===kept[1]&&rows[1]===kept[0];})).toBe(true);
+      if(name==='request-row-children'){
+        expect(await page.$$eval('li b',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:changed:1','0:changed:1','1:one:1','1:one:1','2:new:1','2:new:1']);
+        expect(await page.$eval('li:nth-child(2) .row-next',node=>node.textContent)).toBe('1');
+      } else expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['changed1','Hidden1','new1']);
+      next={active:false,rows:[]};await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===0);
+      next={active:true,rows:[{id:4,label:'fresh',active:true}]};await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===1);
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='Kept 2');
+      expect(await page.$eval('li',node=>node.textContent)).toContain(name==='request-row-children'?'0:fresh:2':'fresh2');
+      expect(requests).toEqual(['/api/user','/api/user','/api/user']);
+    },'/demo/',()=>next);
+  },60_000);
+
   it.each([0,2])('binds fetched component rows and retains local state in Chrome (%i)',async(count,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const sources=sizeFixtures['request-component-list']!;
