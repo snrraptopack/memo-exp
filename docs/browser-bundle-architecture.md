@@ -2358,3 +2358,33 @@ and public `restoreState()` behavior. Dropping the bridge merely to shrink a
 fixture would break that contract. The larger router, request encoding, cache
 and restoration costs remain open; this batch removes duplicated resolver code
 and fixes cleanup ownership.
+
+### Router branch integration — 2026-10-07
+
+Merged `feat/router-improvements` (`47abe94`) into main without conflicts.
+Its segment comparison rule is shared by the individual pattern matcher and
+the route table. This removes the separate pattern regex builder and aligns
+encoded static segments, repeated pathname slashes and empty wildcard captures.
+Cached matches are immutable. Embedded queries/hashes in `buildRoutePath()`
+are rejected explicitly; relative query/hash navigation retains its API.
+The newer resolver-publication ownership fix remains intact.
+
+Scroll-frame tracking now records offsets in memory. Persistence occurs on
+entry capture, pagehide or hidden visibility; an indexed storage limit keeps
+newly managed positions bounded. This avoids synchronous session-storage writes
+on each scroll frame while retaining saved history positions and delayed hash
+restoration. No second route or scroll engine was introduced.
+
+Verification passes 124 router tests and 33 compiler/integration tests, router
+build and test typechecking. Six real Chrome checks cover history positions,
+pending/failed traversal, retries, Navigation API keys, late hash targets and
+obsolete restoration. Two production Chrome cases retain routed Group and lazy
+route lifetimes. Nine package/current-source/baseline-source browser graphs
+pass; counter and input/list controls are byte-identical. Changed-file lint
+exits successfully with the existing test typing warnings.
+
+Against `2f7e324`, the matched routed program-hydration source graph grows from
+84,518 to 84,803 raw bytes and 27,041 to 27,103 gzip bytes. The storage index and
+lifecycle handling cost more than the removed pattern matcher saves. This is a
+correctness and scroll-work improvement, not a bundle reduction or a measured
+CPU timing gain. Source graph audits do not measure Vite initial-HTML delivery.

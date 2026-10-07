@@ -7,7 +7,13 @@
  * - Active route pointer cache for instant sub-nanosecond memoized repeated lookups.
  */
 
-import { decodePathValue, normalizeRoutePath, pathSegments, validateRoutePattern } from './path';
+import {
+  decodePathValue,
+  normalizeRoutePath,
+  pathSegments,
+  staticSegmentKey,
+  validateRoutePattern,
+} from './path';
 import type {
   RouteLocationSnapshot,
   RouteMatch,
@@ -81,10 +87,11 @@ export function createRouteMatcher(
         if (current.staticChildren === undefined) {
           current.staticChildren = new Map();
         }
-        let child = current.staticChildren.get(segment);
+        const key = staticSegmentKey(segment);
+        let child = current.staticChildren.get(key);
         if (child === undefined) {
           child = {};
-          current.staticChildren.set(segment, child);
+          current.staticChildren.set(key, child);
         }
         current = child;
       }
@@ -155,7 +162,7 @@ export function createRouteMatcher(
 
     // Step A: Static children check (highest specificity)
     if (node.staticChildren !== undefined) {
-      const staticChild = node.staticChildren.get(segment);
+      const staticChild = node.staticChildren.get(staticSegmentKey(segment));
       if (staticChild !== undefined) {
         const result = search(staticChild, segments, index + 1, paramValues, normalizedPath);
         if (result !== null) return result;

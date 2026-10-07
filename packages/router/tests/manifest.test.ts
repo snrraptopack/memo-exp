@@ -64,6 +64,20 @@ describe('route manifest', () => {
     }));
   });
 
+  it('resolves repeated slashes, encoded segments, and empty wildcards without throwing', () => {
+    const local = createRouteManifest([
+      { id: 'root', pattern: '/' },
+      { id: 'cafe', parentId: 'root', pattern: '/caf\u00e9' },
+      { id: 'menu', parentId: 'cafe', pattern: '/menu/:item' },
+      { id: 'docs', parentId: 'root', pattern: '/docs/*' },
+    ]);
+    expect(local.matchAll('/caf%C3%A9//menu/tea').map(match => match.id))
+      .toEqual(['root', 'cafe', 'menu']);
+    expect(local.match('/caf%C3%A9/menu/tea')?.params).toEqual({ item: 'tea' });
+    expect(local.match('/docs')?.params).toEqual({ '*': '' });
+    expect(local.match('/docs/a/b')?.params).toEqual({ '*': 'a/b' });
+  });
+
   it('lets the runtime publish a generated nested chain atomically', () => {
     const runtime = createRouteRuntime({
       environment: {},

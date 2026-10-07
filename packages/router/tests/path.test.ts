@@ -6,6 +6,7 @@ import {
   createRouteQuery,
   joinRoutePaths,
   matchRoutePattern,
+  normalizeRoutePath,
   parseRouteQuery,
   rankRoutePattern,
   resolveRoutePath,
@@ -321,5 +322,49 @@ describe('createRouteMatcher (Trie Route Table)', () => {
       pathname: '/non-existent',
     } as any);
     expect(empty).toHaveLength(0);
+  });
+});
+
+describe('route matcher agreement', () => {
+  const encodedCafe = new URL('http://localhost/caf\u00e9').pathname;
+
+  it('collapses repeated slashes in pathnames', () => {
+    expect(normalizeRoutePath('/a//b')).toBe('/a/b');
+    expect(normalizeRoutePath('//a///b//')).toBe('/a/b');
+    expect(matchRoutePattern('/a/b', '/a//b')?.pathname).toBe('/a/b');
+    expect(createRouteMatcher(['/a/b']).match('/a//b')?.pathname).toBe('/a/b');
+  });
+
+  it('matches non-ASCII static segments against percent-encoded pathnames', () => {
+    expect(encodedCafe).toBe('/caf%C3%A9');
+    expect(matchRoutePattern('/caf\u00e9', encodedCafe)?.pattern).toBe('/caf\u00e9');
+    expect(matchRoutePattern('/caf\u00e9', '/caf%c3%a9')?.pattern).toBe('/caf\u00e9');
+    expect(matchRoutePattern('/caf\u00e9/:id', `${encodedCafe}/7`)?.params).toEqual({ id: '7' });
+    expect(matchRoutePattern('/caf\u00e9', `${encodedCafe}/menu`, { end: false })).toMatchObject({
+      consumed: encodedCafe,
+      remaining: '/menu',
+    });
+    expect(createRouteMatcher(['/caf\u00e9']).match(encodedCafe)?.id).toBe('/caf\u00e9');
+    expect(matchRoutePattern('/a%2Fb', '/a/b')).toBeNull();
+    expect(createRouteMatcher(['/a%2Fb']).match('/a/b')).toBeNull();
+  });
+
+  it('reports an empty wildcard capture from both matchers', () => {
+    expect(matchRoutePattern('/docs/*', '/docs')?.params).toEqual({ '*': '' });
+    expect(matchRoutePattern('/*', '/')?.params).toEqual({ '*': '' });
+    expect(createRouteMatcher(['/docs/*']).match('/docs')?.params).toEqual({ '*': '' });
+  });
+
+  it('returns immutable cached matches', () => {
+    const prefix = matchRoutePattern('/settings', '/settings/profile', { end: false })!;
+    expect(Object.isFrozen(prefix)).toBe(true);
+    expect(Object.isFrozen(matchRoutePattern('/users/:id', '/users/1'))).toBe(true);
+    expect(matchRoutePattern('/settings', '/settings/profile', { end: false })).toBe(prefix);
+  });
+
+  it('rejects queries and hashes embedded in a destination pattern', () => {
+    expect(() => buildRoutePath('/search?q=router')).toThrow('use the query and hash options');
+    expect(() => buildRoutePath('/docs#intro')).toThrow('use the query and hash options');
+    expect(buildRoutePath('/search', undefined, { q: 'router' }, 'top')).toBe('/search?q=router#top');
   });
 });
