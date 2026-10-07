@@ -68,3 +68,28 @@ export async function settleDataRuntimeSources(runtime: object, timeoutMs?: numb
     }
   }
 }
+
+/**
+ * Wait for the next settled unit of provider work. Streaming SSR publishes
+ * after each one instead of once the runtime is quiescent.
+ */
+export async function nextDataRuntimeSettlement(
+  runtime: object,
+  budgetMs: number,
+): Promise<'idle' | 'progress' | 'timeout'> {
+  // Resource completion and derived callbacks can enqueue another provider.
+  await Promise.resolve();
+  await Promise.resolve();
+  const pending = [...lifetime(runtime).providers].flatMap(provider => [...provider.pending()]);
+  if (pending.length === 0) return 'idle';
+  if (budgetMs <= 0) return 'timeout';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      ...pending.map(work => work.then(() => 'progress' as const, () => 'progress' as const)),
+      new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), budgetMs); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}

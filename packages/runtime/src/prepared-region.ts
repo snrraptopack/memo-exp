@@ -32,14 +32,15 @@ export function createPreparedRegion(
   const createContent = () => {
     if (!preserveAdopted) return create();
     controller!.pushRange(adopted!);
+    let entry: CondEntry;
     try {
-      const entry = create();
-      controller!.popRange();
-      return entry;
+      entry = create();
     } catch (cause) {
       try { controller!.popRange(); } catch { /* Preserve the primary mismatch. */ }
       throw cause;
     }
+    controller!.popRange();
+    return entry;
   };
   // The outer uncommitted generation owns first-mount readiness and lifecycle.
   const enclosing = runtime.state.preparation as RenderPreparation | undefined;
@@ -166,9 +167,27 @@ export function createPreparedRegion(
         for (const node of fallback.nodes) end.parentNode!.insertBefore(node, end);
       }
     } catch (cause) {
+      if (recoverAdoption(cause)) return;
       if (!hasFailed()) fail(cause);
       else throw cause;
     }
+  }
+  /**
+   * A mismatch inside this range discards only this range: the failed attempt
+   * is released, then the region renders on the client like a fresh mount
+   * while the rest of the root keeps its server DOM.
+   */
+  function recoverAdoption(cause: unknown): boolean {
+    if (!preserveAdopted || !(cause instanceof HydrationMismatchError) || controller?.recoverRange === undefined) {
+      return false;
+    }
+    unsubscribe();
+    releaseContent();
+    preserveAdopted = false;
+    const settlePrevious = { resolve: resolveReady, reject: rejectReady };
+    controller.recoverRange(adopted!, cause, start);
+    readiness.then(settlePrevious.resolve, settlePrevious.reject);
+    return true;
   }
   function retry(): Promise<void> {
     if (state === 'disposed') return Promise.resolve();

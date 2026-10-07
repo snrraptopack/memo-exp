@@ -326,6 +326,53 @@ describe('serve', () => {
     }
   });
 
+  it('streams pending regions through serve() with a per-request CSP nonce', async () => {
+    const fixture = await compileFixture('serve-region-stream', `
+      import { $fetch, Group } from '@memoized-dom/data';
+      function Skeleton() {
+        return <i class="skeleton">Loading</i>;
+      }
+      export function App() {
+        const feed = $fetch('/api/feed');
+        return <main><Group pending={Skeleton}><p id="feed">{feed.title}</p></Group></main>;
+      }
+    `);
+    const outcomes: string[] = [];
+    const app = serve({ onRender: report => outcomes.push(report.outcome) });
+    app.get('/api/feed', async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return { title: 'Fresh' };
+    });
+    app.ssr(fixture.serverModule.App, {
+      mode: 'stream',
+      nonce: request => request.headers.get('x-nonce') ?? undefined,
+    });
+    internals(app).installDocumentTemplate(
+      '<!doctype html><body><div id="app"><!--ssr-outlet--></div></body>',
+    );
+
+    const response = await app.fetch(new Request('https://app.test/', {
+      headers: { 'x-nonce': 'n0nce' },
+    }));
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    for (let read = await reader.read(); !read.done; read = await reader.read()) {
+      chunks.push(decoder.decode(read.value));
+    }
+    const html = chunks.join('');
+
+    expect(response.status).toBe(200);
+    expect(chunks.findIndex(chunk => chunk.includes('class="skeleton"')))
+      .toBeLessThan(chunks.findIndex(chunk => chunk.includes('Fresh')));
+    expect(html).toContain('<template data-mmd-region=');
+    const inlineScripts = html.match(/<script(?! type=)[^>]*>/g) ?? [];
+    expect(inlineScripts.length).toBeGreaterThan(1);
+    expect(inlineScripts.every(tag => tag === '<script nonce="n0nce">')).toBe(true);
+    expect(html.endsWith('</div></body>')).toBe(true);
+    await vi.waitFor(() => expect(outcomes).toEqual(['complete']));
+  });
+
   it('rejects duplicate SSR fallbacks and ambiguous scoped registrations', () => {
     const app = serve();
     const component = vi.fn();

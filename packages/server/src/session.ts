@@ -38,6 +38,7 @@ import {
   runWithDataRuntime,
   type DataRuntime,
 } from '@memoized-dom/data';
+import { nextDataRuntimeSettlement } from '@memoized-dom/data/internal';
 import type { RenderOptions, RenderPayload } from './index';
 import { serverRootId, type ServerComponent } from './root-id';
 
@@ -179,12 +180,16 @@ export class RenderSession {
     return this.component(this.rootId, null);
   }
 
-  /** Request-only delivery always settles; other roots honor the mode. */
+  /**
+   * Request-only delivery always settles; other roots honor the mode. A
+   * renderer that cannot stream regions settles a `stream` render fully.
+   */
   async settle(): Promise<RenderSettlement> {
-    if (this.options.mode !== 'resolve' && !(this.initialDelivery && this.initialDelivery.html===undefined)) return (this.settlement = SHELL);
+    if (this.options.mode !== 'resolve' && this.options.mode !== 'stream' &&
+      !(this.initialDelivery && this.initialDelivery.html===undefined)) return (this.settlement = SHELL);
     const started = performance.now();
     const settled = await this.untilAborted(
-      this.dataRuntime.settle(this.options.timeout ?? DEFAULT_SETTLE_TIMEOUT),
+      this.dataRuntime.settle(this.settleTimeout),
     );
     this.signal.throwIfAborted();
     if (!settled && this.initialDelivery && this.initialDelivery.html===undefined) {
@@ -194,6 +199,28 @@ export class RenderSession {
       status: settled ? 'complete' : 'timeout',
       settleMs: performance.now() - started,
     }));
+  }
+
+  /**
+   * Wait for the next settled unit of request data, then let the entity
+   * updates and region activations it scheduled publish into the tree.
+   */
+  async nextSettlement(budgetEnd: number): Promise<'idle' | 'progress' | 'timeout'> {
+    const step = await this.untilAborted(
+      nextDataRuntimeSettlement(this.dataRuntime, budgetEnd - performance.now()),
+    );
+    await this.untilAborted(new Promise<void>(resolve => setTimeout(resolve, 0)));
+    this.signal.throwIfAborted();
+    return step;
+  }
+
+  get settleTimeout(): number {
+    return this.options.timeout ?? DEFAULT_SETTLE_TIMEOUT;
+  }
+
+  /** Regions stream only with markers the browser can target. */
+  get streamsRegions(): boolean {
+    return this.options.mode === 'stream' && this.markers;
   }
 
   /** The hydration payload: data state plus routed preparation state. */

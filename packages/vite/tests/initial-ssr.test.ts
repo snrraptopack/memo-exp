@@ -15,14 +15,14 @@ import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, chec
 let fixture: string | undefined;
 afterEach(async () => { if (fixture) await rm(fixture, { recursive: true, force: true }); fixture = undefined; });
 
-async function production(name: string, source: string, extras: Record<string, string> = {}, userName: string | Record<string,unknown> = 'Ada', clientOnly = false) {
+async function production(name: string, source: string, extras: Record<string, string> = {}, userName: string | Record<string,unknown> = 'Ada', clientOnly = false, renderMode?: 'stream') {
   fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-initial-ssr-'));
   await mkdir(join(fixture, 'src'));
   await writeFile(join(fixture, 'index.html'), '<!doctype html><html><head><title>SSR</title></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="./src/main.ts"></script></body></html>');
   await writeFile(join(fixture, 'src/main.ts'), `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`);
   await writeFile(join(fixture, 'src/App.tsx'), source);
   for (const [file, content] of Object.entries(extras)) await writeFile(join(fixture, file), content);
-  await writeFile(join(fixture, 'server.ts'), `import {serve} from '@memoized-dom/server';import {App} from './src/App';const app=serve();app.get('/api/user',()=>(${JSON.stringify(typeof userName==='string'?{name:userName}:userName)}));app.ssr(App);export default app;`);
+  await writeFile(join(fixture, 'server.ts'), `import {serve} from '@memoized-dom/server';import {App} from './src/App';const app=serve();app.get('/api/user',()=>(${JSON.stringify(typeof userName==='string'?{name:userName}:userName)}));app.ssr(App${renderMode ? ','+JSON.stringify({mode:renderMode}) : ''});export default app;`);
   const repository = resolve(import.meta.dirname, '../../..');
   const config = (ssr = false) => ({ root: fixture!, configFile: false as const, logLevel: 'silent' as const,
     resolve: { alias: Object.entries({
@@ -114,6 +114,30 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('parses streamed regions and adopts their DOM in Chrome', async context => {
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('streamed-region-browser',`
+      import {Group} from '@memoized-dom/data';
+      function Pending(){return <i class="pending">Loading</i>;}
+      export function App(){
+        const user=$fetch('/api/user');let count=0;
+        return <main><header id="kept"><button onClick={()=>count++}>{count}</button></header>
+          <Group pending={Pending}><section id="loaded"><span>{user.name}</span></section></Group></main>;
+      }
+    `,{},'Ada',false,'stream');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    expect(html).toContain('<template data-mmd-region=');
+    expect(html).toContain('"streaming":true');
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForFunction(()=>document.querySelector('#loaded')?.textContent==='Ada');
+      expect(await page.evaluate(()=>(window as unknown as {initial:Element[]}).initial
+        .filter(node=>node.localName!=='script').every(node=>node.isConnected))).toBe(true);
+      expect(await page.$$('.pending,template[data-mmd-region],script[data-mmd-delta]')).toHaveLength(0);
+      expect(requests).toEqual([]);
+      await page.click('button');await page.waitForFunction(()=>document.querySelector('button')?.textContent==='1');
+    });
+  },120_000);
+
   it.each([0,2])('binds fetched component rows and retains local state in Chrome (%i)',async(count,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const sources=sizeFixtures['request-component-list']!;

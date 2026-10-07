@@ -331,7 +331,9 @@ export function runWithRenderEnvironment<T>(
     schedule: overrides.schedule !== undefined ? overrides.schedule : previous.schedule,
     effects: overrides.effects ?? previous.effects,
     refs: overrides.refs ?? previous.refs,
-    hydration: overrides.hydration ?? previous.hydration,
+    // An explicit `hydration: undefined` leaves adoption, e.g. for a region
+    // that recovers from a mismatch by rendering on the client.
+    hydration: 'hydration' in overrides ? overrides.hydration : previous.hydration,
   };
   try {
     return run();

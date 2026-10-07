@@ -10,8 +10,12 @@ import type { HydrationMismatchError } from './hydration-error';
 export type MountableComponent = () => unknown;
 export type MountTarget = string | Element;
 export interface MountOptions {
-  /** Called before a hydration mismatch is recovered with a fresh client mount. */
-  onHydrateError?: (error: HydrationMismatchError) => void;
+  /**
+   * Called for each hydration mismatch. `region`: one data region rendered
+   * itself on the client and the rest of the root kept its server DOM.
+   * `root`: called before the whole root is replaced by a fresh client mount.
+   */
+  onHydrateError?: (error: HydrationMismatchError, scope: 'region' | 'root') => void;
 }
 export interface RootMountContext {
   readonly mode: 'create' | 'hydrate';

@@ -37,8 +37,14 @@ import { prepareRenderToReadableStream } from './stream';
  * with per-`app.ssr()` overrides.
  */
 export interface RenderPolicy {
-  /** `resolve` (default) awaits request data; `shell` serializes pending UI. */
+  /**
+   * `resolve` (default) awaits request data; `shell` serializes pending UI;
+   * `stream` sends the shell, then each region as its data settles. Buffered
+   * delivery settles a `stream` render like `resolve`.
+   */
   readonly mode?: RenderOptions['mode'];
+  /** Per-request CSP nonce for the inline scripts used by `stream` mode. */
+  readonly nonce?: (request: Request) => string | undefined;
   /** Emit hydration markers and the payload (default `true`). */
   readonly markers?: boolean;
   /** Soft settle budget in ms; delivery without a browser rejects incomplete data. */
@@ -52,10 +58,10 @@ export interface RenderPolicy {
    * application when it completes. `buffer` responds only with the complete
    * document, so any failure can still change the status.
    *
-   * A streamed application body is atomic: markup and payload are emitted
-   * together only after the render succeeds. If it fails after commit, the
-   * document closes with an empty outlet and `mount()` performs a fresh client
-   * render, so the page still works and no partial markup is ever adopted.
+   * With `mode: 'resolve'`, markup and payload are emitted together after
+   * success. `mode: 'stream'` sends a complete shell followed by region
+   * replacements. Failure after the shell leaves undelivered sources for the
+   * browser to fetch; failure before it leaves a client-rendered outlet.
    * Compiler-proven pages without browser code are buffered so incomplete
    * data and render failures remain response errors before headers commit.
    */
@@ -299,12 +305,14 @@ async function renderPage<
   // With no browser program, incomplete request data cannot resume on the
   // client. Settle and validate the body before committing the response.
   const delivery = requestHtml ? 'buffer' : policy.delivery ?? 'stream';
+  const nonce = policy.nonce?.(context.request);
   const renderOptions: RenderOptions = {
     mode: requestHtml ? 'resolve' : policy.mode ?? 'resolve',
     markers,
     ...(initial === undefined ? {} : { initialKey: initial.key }),
     timeout: policy.timeout ?? DEFAULT_TIMEOUT,
     ...(policy.deadline === undefined ? {} : { deadline: policy.deadline }),
+    ...(nonce === undefined ? {} : { nonce }),
     url: context.url.pathname + context.url.search,
     fetch: createServerFetch(router, context, options.fetch ?? globalThis.fetch),
     routedContext: context,

@@ -154,7 +154,7 @@ class FetchEntry {
 
   cancelRequest(reason?: unknown): void {
     this.cancelDeferredStart();
-    if (this.controller === null && this.request === null) return;
+    if (this.controller === null && this.request === null && !this.snapshot.pending && !this.snapshot.refreshing) return;
     // A response may notify consumers from its terminal `then` immediately
     // before the promise finalizer clears these handles. Releasing the final
     // consumer in that window must not turn a completed request into an
@@ -282,6 +282,8 @@ class FetchEntry {
 
 /** Optional ownership hook; request execution and caches stay in FetchStore. */
 export interface FetchRestoration {
+  deliverStreamedState(state: import('./types').SerializedDataState): void;
+  endStream(): void;
   start(entry: FetchEntry, force: boolean): void;
   release(entry: FetchEntry): void;
   resumeHydration(): void;

@@ -89,10 +89,18 @@ function isSerializedSourceRecord(value: unknown): value is SerializedSourceReco
 
 class RestoredFetchStore implements FetchRestoration {
   private readonly restoreRecords = new Map<string, SerializedSourceRecord>();
+  private readonly streamWaiters = new Map<string, Set<FetchEntry>>();
+  private readonly retiredStreams = new Set<string>();
   private hydrationBlocked = false;
   private readonly deferredStarts = new Set<FetchEntry>();
 
+  constructor(private readonly store: FetchStore) {}
+
   install(state: SerializedDataState): void {
+    for (const record of this.records(state)) this.restoreRecords.set(record.sourceId, record);
+  }
+
+  private records(state: SerializedDataState): SerializedSourceRecord[] {
     if (!isRecord(state)) {
       throw new TypeError('Serialized data state must be an object');
     }
@@ -106,9 +114,45 @@ class RestoredFetchStore implements FetchRestoration {
     if (!Array.isArray(sources)) {
       throw new TypeError('Serialized data state sources must be an array');
     }
-    for (const record of sources) {
-      if (isSerializedSourceRecord(record)) {
+    return sources.filter(isSerializedSourceRecord);
+  }
+
+  deliverStreamedState(state: SerializedDataState): void {
+    for (const record of this.records(state)) {
+      if (record.snapshot.status === 'pending' || this.retiredStreams.has(record.sourceId)) continue;
+      const waiters = this.streamWaiters.get(record.sourceId);
+      if (waiters === undefined) {
         this.restoreRecords.set(record.sourceId, record);
+        continue;
+      }
+      for (const entry of [...waiters]) {
+        if (!this.store.allEntries.has(entry) || record.contractId !== fetchTransferContract(entry.descriptor.schema)) continue;
+        waiters.delete(entry);
+        seedEntryFromRecord(entry, record);
+        entry.emit();
+        if (record.snapshot.status === 'success' && record.snapshot.revalidate) entry.start(true).catch(() => {});
+      }
+      if (waiters.size === 0) {
+        this.streamWaiters.delete(record.sourceId);
+        this.restoreRecords.delete(record.sourceId);
+        this.retiredStreams.add(record.sourceId);
+      }
+    }
+  }
+
+  endStream(): void {
+    const waiting = [...this.streamWaiters.values()].flatMap(entries => [...entries]);
+    for (const entry of waiting) {
+      this.release(entry);
+      if (!this.store.allEntries.has(entry) || entry.request !== null) continue;
+      if (this.hydrationBlocked) {
+        entry.deferStart();
+        this.deferredStarts.add(entry);
+      } else entry.start(true).catch(() => {});
+    }
+    for (const [identity, record] of this.restoreRecords) {
+      if (record.snapshot.status === 'pending' && record.snapshot.streamed) {
+        this.restoreRecords.set(identity, {...record, snapshot: {status: 'pending'}});
       }
     }
   }
@@ -120,7 +164,7 @@ class RestoredFetchStore implements FetchRestoration {
     if (identity === null) return undefined;
     const record = this.restoreRecords.get(identity);
     if (record === undefined || record.contractId !== contractId) return undefined;
-    this.restoreRecords.delete(identity);
+    if (record.snapshot.status !== 'pending' || record.snapshot.streamed !== true) this.restoreRecords.delete(identity);
     return record;
   }
 
@@ -130,22 +174,28 @@ class RestoredFetchStore implements FetchRestoration {
       descriptor.transferIdentity,
       fetchTransferContract(descriptor.schema),
     );
+    const awaitingStream = restored?.snapshot.status === 'pending' && restored.snapshot.streamed === true;
     if (restored !== undefined) {
       seedEntryFromRecord(entry, restored);
       entry.emit();
+      if (awaitingStream) {
+        let waiters = this.streamWaiters.get(restored.sourceId);
+        if (waiters === undefined) this.streamWaiters.set(restored.sourceId, waiters = new Set());
+        waiters.add(entry);
+      }
     }
     // A seeded entry resumes only through an explicit refresh — a restored
     // success must not re-issue its request (RFC §16.6.6) and a restored
     // error retries only through its restored source handle (§16.6.8).
-    // Restored pending entries (e.g. from SSR shell streaming) start their
-    // client-side fetch immediately so the in-flight server request resolves.
+    // Shell pending entries fetch after adoption. Streamed entries wait for
+    // delivery or the end of parsing; explicit refresh takes ownership.
     const shouldStart =
       force ||
       (restored === undefined &&
         (entry.snapshot.status === 'idle' ||
           entry.snapshot.status === 'error')) ||
       (restored !== undefined &&
-        (restored.snapshot.status === 'pending' ||
+        ((restored.snapshot.status === 'pending' && !awaitingStream) ||
           (restored.snapshot.status === 'success' && restored.snapshot.revalidate)));
     if (getActiveEnvironment().mode === 'hydrate') {
       this.hydrationBlocked = true;
@@ -174,9 +224,20 @@ class RestoredFetchStore implements FetchRestoration {
     }
   }
 
-  release(entry: FetchEntry): void { this.deferredStarts.delete(entry); }
+  release(entry: FetchEntry): void {
+    this.deferredStarts.delete(entry);
+    for (const [identity, waiters] of this.streamWaiters) {
+      if (waiters.delete(entry) && waiters.size === 0) {
+        this.streamWaiters.delete(identity);
+        this.restoreRecords.delete(identity);
+        this.retiredStreams.add(identity);
+      }
+    }
+  }
   clear(): void {
     this.restoreRecords.clear();
+    this.streamWaiters.clear();
+    this.retiredStreams.clear();
     this.deferredStarts.clear();
     this.hydrationBlocked = false;
   }
@@ -187,7 +248,7 @@ export function enableDataRestoration<T extends CoreDataRuntime>(runtime: T): T 
   if ('restoreState' in runtime) return runtime as T & Pick<DataRuntime, 'restoreState'>;
   installFetchTransferIdentity(runtime, fetchTransferIdentity);
   const store = fetchStoreForRuntime(runtime);
-  const restoration = new RestoredFetchStore();
+  const restoration = new RestoredFetchStore(store);
   store.restoration = restoration;
   return Object.assign(runtime, {restoreState(state: SerializedDataState) { restoration.install(state); }});
 }
@@ -196,4 +257,12 @@ export function resumeDataHydration(runtime: CoreDataRuntime): void {
 }
 export function cancelDataHydration(runtime: CoreDataRuntime): void {
   fetchRestorationForRuntime(runtime)?.cancelHydration();
+}
+
+export function deliverStreamedDataState(runtime: CoreDataRuntime, state: SerializedDataState): void {
+  fetchRestorationForRuntime(runtime)?.deliverStreamedState(state);
+}
+
+export function endDataStream(runtime: CoreDataRuntime): void {
+  fetchRestorationForRuntime(runtime)?.endStream();
 }

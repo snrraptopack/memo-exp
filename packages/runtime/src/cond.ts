@@ -16,7 +16,7 @@
  *     survives, so re-mounting a branch reflects current state.
  */
 
-import { getActiveEnvironment, type EntityId } from './kernel';
+import { getActiveEnvironment, getEntity, unregisterSubtree, type EntityId } from './kernel';
 import type { DirtyReasons } from './dirty-reasons';
 
 export interface CondEntry {
@@ -131,17 +131,17 @@ export function createCondRegion(
       factoryError = error;
     }
     if (adopting) {
-      if (!factoryFailed) {
+      // The primary mismatch error must win over cleanup diagnostics.
+      try {
         controller!.popRange();
-      } else {
-        // The primary mismatch error must win over cleanup diagnostics.
-        try {
-          controller!.popRange();
-        } catch {
-          // masked by factoryError
+      } catch (error) {
+        if (!factoryFailed) {
+          factoryFailed = true;
+          factoryError = error;
         }
       }
       adopting = false;
+      if (factoryFailed && recoverBranch(factory, factoryError)) factoryFailed = false;
     }
     if (factoryFailed) throw factoryError;
     if (disposed) {
@@ -169,6 +169,21 @@ export function createCondRegion(
     current = idx;
     bindingInitial = false;
     currentIdentity = nextIdentity;
+  }
+
+  /**
+   * Adoption of this range failed: release what the attempt registered, then
+   * render the branch on the client while the rest of the root keeps adopting.
+   */
+  function recoverBranch(factory: CondBranchFactory | null, error: unknown): boolean {
+    if (controller?.recoverRange === undefined) return false;
+    return controller.recoverRange(adoptedRange!, error, () => {
+      const failed = entry;
+      entry = null;
+      try { failed?.dispose?.(); } catch { /* The mismatch is the reported failure. */ }
+      for (const child of [...(getEntity(id)?.children ?? [])]) unregisterSubtree(child);
+      if (factory !== null) entry = factory();
+    });
   }
 
   function dispose(): void {

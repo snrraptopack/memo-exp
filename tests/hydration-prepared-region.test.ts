@@ -38,6 +38,8 @@ describe('atomic prepared-range hydration', () => {
       const fragment = dom.createDocumentFragment();
       register({ id: 'App', parent: null, render() { region.update(); } });
       const child = (): CondEntry => {
+        // Like compiled region factories, read the document per creation.
+        const dom = getActiveEnvironment().document;
         register({ id: 'App/child', parent: 'App', render() {} });
         const text = dom.createTextNode('Ready');
         const node = dom.createElement('p');
@@ -48,7 +50,7 @@ describe('atomic prepared-range hydration', () => {
       };
       const region = createPreparedRegion(fragment, 'App/atomic', () => {
         if (!nested) return child();
-        const innerFragment = dom.createDocumentFragment();
+        const innerFragment = getActiveEnvironment().document.createDocumentFragment();
         const inner = createPreparedRegion(innerFragment, 'App/atomic/inner', child, pending);
         return { nodes: rootNodes(innerFragment), update: () => inner.update(), dispose: () => inner.dispose() };
       }, pending);
@@ -86,20 +88,37 @@ describe('atomic prepared-range hydration', () => {
     expect(runtime.state.registry.size).toBe(0);
   });
 
-  it('keeps the rejected server range intact until mount reports recovery', async () => {
+  it('recovers a mismatched range on the client without replacing the root', async () => {
     const fixture = app();
     const root = host('<!--mmd:g:App/atomic--><span>Ready</span><!--/mmd-->');
-    const original = root.querySelector('span')!;
-    const mismatch = vi.fn(() => {
-      expect(original.isConnected).toBe(true);
-      expect(root.querySelector('span')).toBe(original);
-    });
+    const open = root.childNodes[1]!;
+    const mismatch = vi.fn();
     mounted = inRuntime(() => mount(root, fixture.App, { onHydrateError: mismatch }));
     await Promise.resolve();
-    expect(mismatch).toHaveBeenCalledTimes(1);
+    expect(mismatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: 'HydrationMismatchError' }), 'region');
     expect(root.querySelector('span')).toBeNull();
     expect(root.querySelectorAll('p')).toHaveLength(1);
+    // The adopted range markers stay; only their content was rendered again.
+    expect(open.parentNode).toBe(root);
+    expect(open.nextSibling).toBe(root.querySelector('p'));
     expect(fixture.pending).not.toHaveBeenCalled();
+    expect(fixture.refs).toHaveBeenCalledExactlyOnceWith(root.querySelector('p'));
+    expect(fixture.effects).toHaveBeenCalledTimes(1);
+    inRuntime(() => runtime.state.registry.get('App')!.render(null));
+    expect(root.querySelector('p')!.textContent).toBe('Updated');
+  });
+
+  it('recovers a nested atomic mismatch at the atomic range that owns its generation', async () => {
+    const fixture = app(true);
+    const root = host('<!--mmd:g:App/atomic--><!--mmd:g:App/atomic/inner--><span>Ready</span><!--/mmd--><!--/mmd-->');
+    const mismatch = vi.fn();
+    mounted = inRuntime(() => mount(root, fixture.App, { onHydrateError: mismatch }));
+    await Promise.resolve();
+    expect(mismatch).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'region');
+    expect(mismatch.mock.calls[0]![0]).toMatchObject({ boundary: 'App/atomic/inner' });
+    expect(root.querySelectorAll('span')).toHaveLength(0);
+    expect(root.querySelectorAll('p')).toHaveLength(1);
     expect(fixture.effects).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,7 +3,7 @@ import { createCoreDataRuntime } from '../src/runtime-core';
 import { enableDataReads } from '../src/read-resource';
 import { exposeDataRuntime } from '../src/client';
 import { enableDataSerialization } from '../src/serialization';
-import { enableDataRestoration } from '../src/restoration';
+import { enableDataRestoration, deliverStreamedDataState, endDataStream } from '../src/restoration';
 import { getActiveDataRuntime, runWithDataRuntime } from '../src';
 
 describe('optional data transfer producer', () => {
@@ -82,6 +82,41 @@ describe('optional data transfer producer', () => {
     } finally { runtime.clear(); }
   });
 
+  it('waits for streamed outcomes instead of refetching, and fetches what never arrives', async () => {
+    const server = exposeDataRuntime(createCoreDataRuntime({fetch:async () => Response.json({name:'Ada'})}));
+    const pending = exposeDataRuntime(createCoreDataRuntime({fetch:() => new Promise<Response>(() => {})}));
+    const browserFetch = vi.fn(async () => Response.json({name:'browser'}));
+    const browser = exposeDataRuntime(createCoreDataRuntime({fetch:browserFetch}));
+    try {
+      server.$fetch('/user');
+      server.$fetch('/team');
+      await server.settle();
+      pending.$fetch('/user');
+      pending.$fetch('/team');
+      const streamed = pending.serializeState();
+      browser.restoreState({...streamed, sources: streamed.sources.map(record =>
+        ({...record, snapshot: {status:'pending' as const, streamed:true}}))});
+      const user = browser.$fetch<{name:string}>('/user');
+      const team = browser.$fetch<{name:string}>('/team');
+      await Promise.resolve();
+      expect(browserFetch).not.toHaveBeenCalled();
+
+      const delivered = server.serializeState().sources.filter(record => record.sourceId === streamed.sources[0]!.sourceId);
+      deliverStreamedDataState(browser, {formatVersion:1, sources:delivered});
+      expect([user.data, team.data].filter(Boolean)).toEqual([{name:'Ada'}]);
+      expect(browserFetch).not.toHaveBeenCalled();
+
+      endDataStream(browser);
+      await browser.settle();
+      expect(browserFetch).toHaveBeenCalledTimes(1);
+      expect([user.data, team.data]).toContainEqual({name:'browser'});
+    } finally {
+      server.clear();
+      pending.clear();
+      browser.clear();
+    }
+  });
+
   it('keeps serialization safety checks and excludes rich data without invoking getters', async () => {
     const runtime = exposeDataRuntime(createCoreDataRuntime({fetch:async () => Response.json({ok:true})}));
     const resource = runtime.$fetch<Record<string,unknown>>('/user');
@@ -98,5 +133,46 @@ describe('optional data transfer producer', () => {
       resource.update(() => cycle);
       expect(runtime.serializeState().sources).toEqual([]);
     } finally { runtime.clear(); }
+  });
+
+  it.each(['refresh', 'update', 'abort'] as const)('ignores late stream outcomes after client %s', async operation => {
+    const server = exposeDataRuntime(createCoreDataRuntime({fetch:async () => Response.json('server')}));
+    const fetcher = vi.fn(async () => Response.json('client'));
+    const browser = exposeDataRuntime(createCoreDataRuntime({fetch:fetcher}));
+    try {
+      server.$fetch('/stream');
+      await server.settle();
+      const state = server.serializeState();
+      browser.restoreState({...state, sources:state.sources.map(record => ({...record, snapshot:{status:'pending', streamed:true}}))});
+      const resource = browser.$fetch<string>('/stream');
+      if (operation === 'refresh') await resource.refresh();
+      else if (operation === 'update') resource.update(() => 'local');
+      else resource.abort();
+      deliverStreamedDataState(browser, state);
+      endDataStream(browser);
+      await browser.settle();
+      expect(resource.data).toBe(operation === 'refresh' ? 'client' : operation === 'update' ? 'local' : undefined);
+      expect(resource.pending).toBe(false);
+      expect(fetcher).toHaveBeenCalledTimes(operation === 'refresh' ? 1 : 0);
+    } finally {server.clear();browser.clear();}
+  });
+
+  it('delivers a streamed outcome to separate uncached consumers', async () => {
+    const server = exposeDataRuntime(createCoreDataRuntime({fetch:async () => Response.json('server')}));
+    const fetcher = vi.fn(async () => Response.json('client'));
+    const browser = exposeDataRuntime(createCoreDataRuntime({fetch:fetcher}));
+    try {
+      server.$fetch('/stream', {cache:false});
+      await server.settle();
+      const state = server.serializeState();
+      browser.restoreState({...state, sources:state.sources.map(record => ({...record, snapshot:{status:'pending', streamed:true}}))});
+      const first = browser.$fetch<string>('/stream', {cache:false});
+      const second = browser.$fetch<string>('/stream', {cache:false});
+      expect(fetcher).not.toHaveBeenCalled();
+      deliverStreamedDataState(browser, state);
+      endDataStream(browser);
+      expect([first.data,second.data]).toEqual(['server','server']);
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {server.clear();browser.clear();}
   });
 });

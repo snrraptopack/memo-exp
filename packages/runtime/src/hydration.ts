@@ -1,10 +1,9 @@
 /**
  * Hydration creation plan — read-only adoption over the v0.2 marker stream.
  *
- * The plan never creates, moves, or removes nodes. It validates and claims
- * the server tree in compiler-defined order. Mutation/recovery belongs to the
- * mount integration layer; keeping this primitive read-only makes failed
- * adoption safe and independently testable.
+ * Claims validate the server tree in compiler-defined order without mutation.
+ * Region callers can explicitly abandon a mismatched range and create its
+ * replacement; all other claims continue against the same adoption plan.
  */
 
 import type { DocumentLike } from './environment';
@@ -48,6 +47,14 @@ export interface HydrationController {
    * validation to sequential createElement/createTextNode claims.
    */
   claimMarkup(markup: string): Node[];
+  /**
+   * When `error` is a hydration mismatch, discard the claimed range and run
+   * `render` as a fresh client render inside it, so the rest of the root keeps
+   * adopting; returns false for any other error. Callers must already have
+   * released everything the failed attempt registered. Deciding here keeps
+   * the mismatch type out of bundles without hydration.
+   */
+  recoverRange?(range: ClaimedHydrationRange, error: unknown, render: () => void): boolean;
 }
 
 /** Row validation and cursor transactions belong to the hydration host. */
@@ -324,6 +331,18 @@ export class HydrationMarkerIndex {
     return this.#claim('w', `${listId}:${encodedKey}`);
   }
 
+  /** Forget every range nested in a discarded range; nothing will claim them. */
+  abandonWithin(range: ClaimedHydrationRange): void {
+    const walk = (start: Node | null, end: Node | null): void => {
+      for (let node = start; node !== null && node !== end; node = node.nextSibling) {
+        const marker = markerFor(node);
+        if (marker?.type === 'open') this.#ranges.delete(marker.identity);
+        if (node.firstChild !== null) walk(node.firstChild, null);
+      }
+    };
+    walk(range.open.nextSibling, range.end);
+  }
+
   get unclaimed(): number {
     let count = 0;
     for (const range of this.#ranges.values()) {
@@ -435,6 +454,7 @@ export class HydrationDocument
   readonly #plans: HydrationNodePlan[];
   #hydrating = true;
   readonly #patchedElements: Element[] = [];
+  readonly #recovered: HydrationMismatchError[] = [];
 
   constructor(fallback: DocumentLike, range: ClaimedHydrationRange, readonly capabilities: HydrationCapabilities = {}) {
     this.#fallback = fallback;
@@ -466,8 +486,8 @@ export class HydrationDocument
     if (this.#plans.length === 1) {
       throw new Error('memoized-dom: cannot pop the hydration root plan');
     }
-    this.#plans.at(-1)!.expectDone();
-    this.#plans.pop();
+    // Pop before validating: a recovered range must not leave its plan active.
+    this.#plans.pop()!.expectDone();
   }
 
   recordFragmentRange(parent: Node, range: ClaimedHydrationRange): void {
@@ -523,6 +543,26 @@ export class HydrationDocument
   claimMarkup(markup: string): Node[] {
     if (!this.capabilities.markup) throw new HydrationMismatchError(this.#activePlan().boundary, 'markup adoption capability', 'an incomplete browser program');
     return this.capabilities.markup(this, markup);
+  }
+
+  recoverRange(range: ClaimedHydrationRange, error: unknown, render: () => void): boolean {
+    if (!(error instanceof HydrationMismatchError)) return false;
+    this.#index.abandonWithin(range);
+    const parent = range.open.parentNode!;
+    while (range.open.nextSibling !== null && range.open.nextSibling !== range.end) {
+      parent.removeChild(range.open.nextSibling);
+    }
+    this.#recovered.push(error);
+    runWithRenderEnvironment(
+      { mode: 'client-create', document: this.#fallback, hydration: undefined },
+      render,
+    );
+    return true;
+  }
+
+  /** Mismatches that one region absorbed by rendering itself on the client. */
+  get recovered(): readonly HydrationMismatchError[] {
+    return this.#recovered;
   }
 
   createComment(data: string): Comment {
@@ -620,6 +660,8 @@ export class HydrationDocument
 /** Server-adopted application root: the claimed top node plus marker cleanup. */
 export interface HydratedApplicationRoot {
   readonly root: Node;
+  /** Region mismatches recovered without discarding the root. */
+  readonly recovered: readonly HydrationMismatchError[];
   disposeMarkers(): void;
 }
 
@@ -651,6 +693,7 @@ export function hydrateApplicationRoot(
     hydrationDocument.expectDone();
     return {
       root,
+      recovered: hydrationDocument.recovered,
       disposeMarkers() {
         range.open.parentNode?.removeChild(range.open);
         range.end.parentNode?.removeChild(range.end);

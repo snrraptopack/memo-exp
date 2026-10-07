@@ -1,13 +1,15 @@
 /** Optional SSR handoff, installed before requests materialize. */
 import {getExtensionStore} from '@memoized-dom/runtime';
 import {getActiveDataRuntime, installActiveRuntimeInitializer} from './active-runtime';
-import {enableDataRestoration, resumeDataHydration, cancelDataHydration} from './restoration';
+import {enableDataRestoration, resumeDataHydration, cancelDataHydration, deliverStreamedDataState, endDataStream} from './restoration';
 import type {SerializedDataState} from './types';
 
 interface ActiveDataRuntimeBridge {
   restoreState?(state: unknown): void;
   completeHydration?(): void;
   cancelHydration?(): void;
+  deliverStreamedState?(state: unknown): void;
+  endStream?(): void;
   pendingState?: unknown;
 }
 let installed = false;
@@ -29,6 +31,8 @@ export function installActiveDataRestoration(): void {
     enableDataRestoration(getActiveDataRuntime()).restoreState(state as SerializedDataState);
   };
   bridge.completeHydration = () => resumeDataHydration(getActiveDataRuntime());
+  bridge.deliverStreamedState = state => deliverStreamedDataState(getActiveDataRuntime(), state as SerializedDataState);
+  bridge.endStream = () => endDataStream(getActiveDataRuntime());
   bridge.cancelHydration = () => {
     const runtime = getActiveDataRuntime();
     cancelDataHydration(runtime);

@@ -10,6 +10,7 @@ import {
   render,
 } from '../src/index';
 import { compileFixture, type CompiledTiers } from './parity-harness';
+import { prepareRenderToReadableStream } from '../src/stream';
 
 let data: CompiledTiers;
 let routed: CompiledTiers;
@@ -125,6 +126,19 @@ describe('render session', () => {
     expect(preparationSignals[0]!.aborted).toBe(true);
   });
 
+  it('cancels request work after a region-streaming shell was delivered', async () => {
+    const request = hangingFetch();
+    const reader = renderToReadableStream(data.serverModule.App, {
+      mode: 'stream', markers: true, fetch: request.fetch,
+    }).getReader();
+    const shell = await reader.read();
+    expect(new TextDecoder().decode(shell.value)).toContain('class="pending"');
+    const waiting = reader.read();
+    await reader.cancel(new Error('consumer left after shell'));
+    expect(request.signals[0]!.aborted).toBe(true);
+    await expect(waiting).resolves.toEqual({done:true, value:undefined});
+  });
+
   it('rejects a render that exceeds its hard deadline', async () => {
     const rendering = render(routed.serverModule.Report, {
       url: '/reports/7',
@@ -133,5 +147,19 @@ describe('render session', () => {
     });
     await expect(rendering).rejects.toMatchObject({ name: 'TimeoutError' });
     expect(preparationSignals[0]!.aborted).toBe(true);
+  });
+
+  it('honors the deadline while region output waits for a slow reader', async () => {
+    const prepared = prepareRenderToReadableStream(data.serverModule.App, {
+      mode:'stream', markers:true, fetch:jsonFetch({name:'Ada'}), deadline:250,
+    });
+    try {
+      await prepared.prepared;
+      await expect(prepared.ready).rejects.toMatchObject({name:'TimeoutError'});
+      const reader = prepared.stream.getReader();
+      const shell = await reader.read();
+      expect(new TextDecoder().decode(shell.value)).toContain('class="pending"');
+      await reader.cancel();
+    } finally { await prepared.stream.cancel().catch(() => {}); }
   });
 });

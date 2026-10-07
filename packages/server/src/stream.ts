@@ -3,6 +3,13 @@ import { createPayloadScriptTag } from './index';
 import type { RenderOptions } from './index';
 import type { ServerComponent } from './root-id';
 import { RenderSession, type RenderSettlement } from './session';
+import {
+  RegionTracker,
+  SourceDeltas,
+  streamBootstrap,
+  streamChunk,
+  streamedState,
+} from './stream-regions';
 
 export interface PreparedRenderStream {
   readonly stream: ReadableStream<Uint8Array>;
@@ -16,13 +23,52 @@ export interface PreparedRenderStream {
 }
 
 /**
+ * Send the shell, then every region whose data settles, until the request
+ * data is idle or the settle budget elapses. Undelivered sources stay
+ * `streamed` pending; the browser fetches them once the document ends.
+ */
+async function streamRegions(
+  session: RenderSession,
+  root: StringRenderableNode,
+  push: (part: string) => Promise<void>,
+): Promise<void> {
+  const serialize = (node: StringRenderableNode) => node.toString(true, false);
+  const tracker = new RegionTracker(root, serialize);
+  const payload = session.payload();
+  const state = payload.state === undefined ? undefined : streamedState(payload.state);
+  const deltas = new SourceDeltas(state ?? { formatVersion: 1, sources: [] });
+  const nonce = session.options.nonce;
+  await push(
+    session.wrap(serialize(root)) +
+    createPayloadScriptTag(session.rootId, { ...payload, streaming: true, ...(state === undefined ? {} : { state }) }) +
+    streamBootstrap(nonce),
+  );
+  const started = performance.now();
+  const budgetEnd = started + session.settleTimeout;
+  let step: 'idle' | 'progress' | 'timeout';
+  do {
+    step = await session.nextSettlement(budgetEnd);
+    const regions = tracker.changes();
+    const sources = deltas.take(streamedState(session.dataRuntime.serializeState()));
+    if (regions.length > 0 || sources.length > 0) {
+      await push(streamChunk(session.rootId, regions, sources, nonce));
+    }
+  } while (step === 'progress');
+  session.settlement = Object.freeze({
+    status: step === 'idle' ? 'complete' : 'timeout',
+    settleMs: performance.now() - started,
+  });
+}
+
+/**
  * Render a compiled application as a Web stream and expose its completion.
  *
- * This is ordered, settled streaming—not suspense/out-of-order region
- * streaming. In `resolve` mode the host can flush its document prefix while
- * this stream settles request data, then pipe a fully resolved application
- * body followed by its state envelope. In `shell` mode the pending UI is
- * emitted immediately and no late replacement protocol is implied.
+ * In `stream` mode the shell is sent as soon as route preparation and mount
+ * finish, followed by each pending region as `<template>` chunks in completion
+ * order. In `resolve` mode the host can flush its document prefix while this
+ * stream settles request data, then pipe a fully resolved application body
+ * followed by its state envelope. In `shell` mode the pending UI is emitted
+ * immediately and the browser fetches pending data itself.
  *
  * Cancelling the stream aborts the render session: in-flight route
  * preparation and data settlement stop and request runtimes are released.
@@ -33,8 +79,36 @@ export function prepareRenderToReadableStream(
 ): PreparedRenderStream {
   const encoder = new TextEncoder();
   const prepared = Promise.withResolvers<void>();
+  const queue: string[] = [];
+  let cancelled = false;
+  const drained = new Set<() => void>();
+  let wake: (() => void) | undefined;
+  const push = (part: string): void => {
+    if (cancelled) return;
+    queue.push(part);
+    wake?.();
+  };
   let session: RenderSession | undefined;
-  const parts = RenderSession.execute(
+  const pushRegion = async (part: string): Promise<void> => {
+    const signal = session!.signal;
+    signal.throwIfAborted();
+    push(part);
+    if (queue.length > 0) {
+      let finish!: () => void;
+      try {
+        await new Promise<void>(resolve => {
+          finish = resolve;
+          drained.add(finish);
+          signal.addEventListener('abort', finish, { once: true });
+        });
+      } finally {
+        drained.delete(finish);
+        signal.removeEventListener('abort', finish);
+      }
+    }
+    signal.throwIfAborted();
+  };
+  const work = RenderSession.execute(
     component,
     options,
     stringTier(),
@@ -43,17 +117,24 @@ export function prepareRenderToReadableStream(
       await current.prepare();
       prepared.resolve();
       const root = current.mount() as unknown as StringRenderableNode;
+      if (current.streamsRegions) return streamRegions(current, root, pushRegion);
       await current.settle();
-      const html = current.wrap(root.toString(current.markers, current.initialBindings));
-      return current.carriesPayload && (options.markers === true || current.initialBindings)
-        ? [html, createPayloadScriptTag(current.rootId, current.payload())]
-        : [html];
+      push(current.wrap(root.toString(current.markers, current.initialBindings)));
+      if (current.carriesPayload && (options.markers === true || current.initialBindings)) {
+        push(createPayloadScriptTag(current.rootId, current.payload()));
+      }
     },
   );
-  const ready = parts.then(() => session!.settlement);
+  let finished = false;
+  let failure: { readonly error: unknown } | undefined;
+  void work.then(
+    () => { finished = true; wake?.(); },
+    (error: unknown) => { failure = { error }; finished = true; wake?.(); },
+  );
+  const ready = work.then(() => session!.settlement);
   // A failure before preparation completes rejects `prepared`; afterwards it
   // only rejects `ready` and the stream.
-  parts.catch(prepared.reject);
+  work.catch(prepared.reject);
   // Consumers observe failures through the stream, `prepared`, or `ready`;
   // never leave the internal promises unhandled when none is awaited.
   ready.catch(() => {});
@@ -61,11 +142,24 @@ export function prepareRenderToReadableStream(
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
-      for (const part of await parts) controller.enqueue(encoder.encode(part));
-      controller.close();
+      while (queue.length === 0 && !finished) {
+        await new Promise<void>(resolve => { wake = resolve; });
+        wake = undefined;
+      }
+      if (cancelled) return;
+      if (queue.length > 0) {
+        for (const part of queue.splice(0)) controller.enqueue(encoder.encode(part));
+        for (const finish of drained) finish();
+        return;
+      }
+      if (failure !== undefined) controller.error(failure.error);
+      else controller.close();
     },
     cancel(reason) {
+      cancelled = true;
+      queue.length = 0;
       session?.abort(reason);
+      return work.catch(() => {});
     },
   });
   return { stream, prepared: prepared.promise, ready };
