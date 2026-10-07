@@ -24,6 +24,7 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'route-lazy': sizeFixtures['route-lazy']!,
   'composition-static-children': sizeFixtures['composition-static-children']!,
   'composition-static-children-60': sizeFixtures['composition-static-children-60']!,
   'composition-live-children': sizeFixtures['composition-live-children']!,

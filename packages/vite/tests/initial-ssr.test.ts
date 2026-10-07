@@ -111,6 +111,32 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('keeps lazy-only navigation and direct SSR adoption without routed data code in Chrome', async context => {
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('lazy-module-only',`import {Detail} from './Detail';export function App(){return <main route="/">
+      <nav><a class="home" route-to="/demo/">Home</a><a class="about" route-to="/demo/about">Detail</a></nav>
+      <section route="/demo/"><h2>Home</h2></section><Detail route="/demo/about"/></main>;}`,{
+      'src/Detail.tsx':`export function Detail(){let n=0;return <article><h2>Detail</h2><button onClick={()=>n++}>{n}</button></article>;}`,
+    });
+    const code=result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n');
+    expect(code).not.toContain('/_memoized/routed');expect(code).not.toContain('requires an active server request context');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.click('.about');await page.waitForSelector('article');
+      await page.click('article button');await page.waitForFunction(()=>document.querySelector('article button')?.textContent==='1');
+      await page.click('.home');await page.waitForFunction(()=>document.querySelector('article')===null);
+      await page.click('.about');await page.waitForFunction(()=>document.querySelector('article button')?.textContent==='0');
+      expect(await page.$$eval('article',nodes=>nodes.length)).toBe(1);expect(requests).toEqual([]);
+    });
+    const direct=await(await result.app.fetch(new Request('https://app.test/demo/about'))).text();
+    await browserPage(result,direct,executablePath,async(page,requests)=>{
+      await page.waitForSelector('article');
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.click('article button');await page.waitForFunction(()=>document.querySelector('article button')?.textContent==='1');
+      expect(requests).toEqual([]);
+    },'/demo/about');
+  },60_000);
+
   it('omits restoration from client-only fetched Group delivery and retains reactive inputs in Chrome', async context => {
     const executablePath = chromeExecutable();if (!executablePath) {context.skip();return;}
     const result = await production('client-only-request', `import {Group} from '@memoized-dom/data';

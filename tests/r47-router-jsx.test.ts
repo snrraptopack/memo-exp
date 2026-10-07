@@ -7,6 +7,14 @@ import {
 } from '@memoized-dom/compiler';
 
 describe('compiler-owned JSX routing', () => {
+  it('prepares only route modules when the authored graph has no data gates', () => {
+    const result=compileModulesDetailed({
+      './App.tsx':`import {Detail} from './Detail';export function App(){return <main route="/"><p route="/">Home</p><Detail route="/detail"/></main>;}`,
+      './Detail.tsx':`export function Detail(){return <section>Detail</section>;}`,
+    },{routedEnvironment:'client'});
+    expect(result.output['./App.tsx']).toContain('await _MR.prepareInitialRouteModules()');
+    expect(result.output['./App.tsx']).not.toContain('await _MR.prepareInitialRoute()');
+  });
   it('prepares eager client entry gates too, but leaves server preparation to SSR', () => {
     const modules = {
       './App.tsx': `
@@ -196,9 +204,9 @@ describe('compiler-owned JSX routing', () => {
     expect(client.output['./App.tsx']).not.toContain('import { Detail } from');
     expect(client.output['./App.tsx']).toContain('import("./Detail.tsx")');
     expect(client.output['./App.tsx']).toContain('readRouteComponent');
-    expect(client.output['./App.tsx']).toContain('prepareInitialRoute()');
+    expect(client.output['./App.tsx']).toContain('prepareInitialRouteModules()');
     expect(server.output['./App.tsx']).toContain('import { Detail } from');
-    expect(server.output['./App.tsx']).not.toContain('prepareInitialRoute()');
+    expect(server.output['./App.tsx']).not.toContain('prepareInitialRouteModules()');
 
     const eager = compileModulesDetailed({
       ...modules,

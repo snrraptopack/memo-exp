@@ -19,17 +19,19 @@ import {
 import {
   invokeServerRoutedPreparation,
   prepareInitialRoutedRuntime,
-  prepareInitialRouteModules as prepareInitialModules,
-  readRouteModuleState,
-  readRouteComponent,
-  registerRouteComponent,
-  subscribeRouteModuleState,
   readRoutedPreparation as readPreparedValue,
   registerRoutedPreparation,
   restoreRoutedPreparationState,
   RoutedPreparationRedirectError,
   serializeRoutedPreparationState,
 } from './preparation';
+import {
+  prepareInitialRouteModules as prepareInitialModules,
+  readRouteModuleState,
+  readRouteComponent,
+  registerRouteComponent,
+  subscribeRouteModuleState,
+} from './route-modules';
 export type {
   RouteModuleListener,
   RouteModuleState,

@@ -2541,6 +2541,46 @@ Lint retains the existing snapshot-iteration warnings; those snapshots protect
 reentrant changes to consumer/entry sets. Examples, numbered docs and dependency
 versions are unchanged.
 
-Next: narrow optional router capabilities, then extend binding proofs for nested
-lists and recreated slots. Request cache and transfer fingerprint reachability
-remain further opportunities within the same engine.
+### Lazy routes retain module loading without data gates — 2026-10-07
+
+Lazy module loading now owns its existing module cache independently of routed
+data definitions. One preparation pipeline still processes parents before
+children, using the same cancellation helper. Optional data transactions publish
+their pending values only after every gate succeeds. Parent redirects and failed
+children therefore cannot publish partial data or commit a destination.
+
+The compiler selects module-only initial preparation when the authored graph has
+lazy routes without data gates. Graphs with `$routed` and public runtime creation
+retain full preparation. Authors use the same route APIs. No navigation engine,
+cache or package entry was duplicated.
+
+Paired Vite production delivery against compiler/Vite `a34fc5a`, holding the
+current runtime packages fixed, counts all emitted chunks and gzips each chunk:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Lazy route without data gates | 70,100 | 66,369 | 22,669 | 21,465 |
+| Routed fetch with Group | 83,561 | 83,561 | 25,839 | 25,839 |
+| Counter | 8,613 | 8,613 | 3,483 | 3,483 |
+| Static | 0 | 0 | 0 | 0 |
+
+Lazy route HTML/payload remain 603/78 B across three chunks. Routed Group remains
+783/315 B. The full routed production runtime costs 260 raw / 65 gzip bytes more
+than the preceding checkpoint. Matched esbuild source audits, which do not emit
+the same initial entry preparation, grow 393 raw / 102–107 gzip bytes for routed
+fixtures; counter and input/list controls are unchanged. These are separate
+measurements, with no CPU performance claim.
+
+Reproduce production delivery with
+`bun run bench:size:ssr --before-ref=a34fc5a --fixture=route-lazy --fixture=request-routed-group --fixture=counter --fixture=static`.
+The corresponding source audit uses
+`bun run bench:size:audit --hydrate-program --before-ref=a34fc5a --verify --fixture=route-lazy --fixture=request-routed-group --fixture=owner-counter --fixture=input-list`.
+
+Verification passes 126 router tests, 32 focused root tests, six Chrome navigation
+and scroll checks, three production Chrome tests and twelve source audit Chrome
+graphs. Checks include cancellation, retry, metadata read order, atomic gate
+publication, lazy navigation and direct SSR adoption without creating elements.
+Builds and typechecks pass. Examples, numbered docs and dependencies are unchanged.
+
+Next: extend binding proofs for nested lists and recreated slots. Request cache
+and transfer fingerprint reachability remain opportunities within the same engine.

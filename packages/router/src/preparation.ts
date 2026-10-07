@@ -1,6 +1,13 @@
 import type { RouteRuntime } from './runtime';
 import { getActiveRouteRuntime } from './active-runtime';
-import { installRoutePreparationRunner } from './preparation-capability';
+import {installRoutePreparationRunner, installRouteModuleLoader, prepareRoutedMatches,
+  type RoutePreparationTransaction} from './preparation-capability';
+import {prepareRouteModules} from './route-modules';
+import {awaitRouteWork} from './route-work';
+export {prepareRoutedMatches} from './preparation-capability';
+export {readRouteModuleState, subscribeRouteModuleState, registerRouteComponent,
+  readRouteComponent, prepareInitialRouteModules} from './route-modules';
+export type {RouteModuleState, RouteModuleListener} from './route-modules';
 import type {
   RouteMatch,
   RouteQuery,
@@ -76,61 +83,6 @@ export class RoutedPreparationRedirectError extends Error {
 }
 
 const definitions = new Map<string, RoutedPreparationDefinition>();
-const routeComponents = new Map<string, unknown>();
-const loadingComponents = new Map<string, Promise<void>>();
-
-export type RouteModuleState =
-  | { readonly status: 'idle' | 'loading' | 'ready'; readonly error: null }
-  | { readonly status: 'error'; readonly error: unknown };
-
-export type RouteModuleListener = (state: RouteModuleState) => void;
-
-const idleModuleState: RouteModuleState = Object.freeze({ status: 'idle', error: null });
-const moduleStates = new Map<string, RouteModuleState>();
-const moduleListeners = new Map<string, Set<RouteModuleListener>>();
-
-function setRouteModuleState(
-  key: string,
-  state: RouteModuleState,
-  force = false,
-): void {
-  const previous = moduleStates.get(key);
-  if (!force && previous?.status === state.status && previous.error === state.error) return;
-  const snapshot = Object.freeze(state);
-  moduleStates.set(key, snapshot);
-  for (const listener of moduleListeners.get(key) ?? []) {
-    try {
-      listener(snapshot);
-    } catch (error) {
-      // Observer errors must not turn a successfully loaded module into a
-      // failed import or prevent other observers from seeing its state.
-      queueMicrotask(() => { throw error; });
-    }
-  }
-}
-
-export function readRouteModuleState(key: string): RouteModuleState {
-  return moduleStates.get(key) ??
-    (routeComponents.has(key)
-      ? Object.freeze({ status: 'ready', error: null })
-      : idleModuleState);
-}
-
-export function subscribeRouteModuleState(
-  key: string,
-  listener: RouteModuleListener,
-): () => void {
-  let listeners = moduleListeners.get(key);
-  if (listeners === undefined) {
-    listeners = new Set();
-    moduleListeners.set(key, listeners);
-  }
-  listeners.add(listener);
-  return () => {
-    listeners!.delete(listener);
-    if (listeners!.size === 0) moduleListeners.delete(key);
-  };
-}
 const preparedByRuntime = new WeakMap<RouteRuntime, Map<string, unknown>>();
 const cacheStateByRuntime = new WeakMap<
   RouteRuntime,
@@ -235,147 +187,62 @@ export function registerRoutedPreparation(
 
 export { hasRoutedPreparations } from './preparation-capability';
 
-/** Compiler-owned route module cache. Re-registration replaces an HMR predecessor. */
-export function registerRouteComponent(key: string, component: unknown): unknown {
-  if (typeof component !== 'function') {
-    throw new TypeError(`memo-dom: lazy route component '${key}' is not a function export`);
-  }
-  routeComponents.set(key, component);
-  if (!loadingComponents.has(key)) {
-    setRouteModuleState(key, { status: 'ready', error: null }, true);
-  }
-  return component;
-}
-
-export function readRouteComponent(key: string): (...args: unknown[]) => unknown {
-  const component = routeComponents.get(key);
-  if (typeof component !== 'function') {
-    throw new Error(`memo-dom: lazy route component '${key}' was mounted before loading`);
-  }
-  return component as (...args: unknown[]) => unknown;
-}
-
-async function awaitRouteWork<Value>(
-  loading: PromiseLike<Value>,
-  signal: AbortSignal,
-): Promise<Value> {
-  if (signal.aborted) {
-    throw signal.reason ?? new DOMException('Route loading was superseded', 'AbortError');
-  }
-  let abort = () => {};
-  const canceled = new Promise<never>((_, reject) => {
-    abort = () => reject(
-      signal.reason ?? new DOMException('Route loading was superseded', 'AbortError'),
-    );
-    signal.addEventListener('abort', abort, { once: true });
-  });
-  try {
-    const value = await Promise.race([loading, canceled]);
-    signal.throwIfAborted();
-    return value;
-  } finally {
-    signal.removeEventListener('abort', abort);
-  }
-}
-
-async function prepareRouteModules(
-  matches: readonly RouteMatch[],
-  signal: AbortSignal,
-): Promise<void> {
-  for (const match of matches) {
-    const metadata = match.metadata as RoutedPreparationMetadata | undefined;
-    const key = metadata?.componentKey;
-    const loader = metadata?.moduleLoader;
-    if (key === undefined || loader === undefined) continue;
-    if (signal.aborted) {
-      throw signal.reason ?? new DOMException('Route loading was superseded', 'AbortError');
-    }
-    let loading = loadingComponents.get(key);
-    if (loading === undefined && routeComponents.has(key)) continue;
-    if (loading === undefined) {
-      loading = Promise.resolve().then(loader).then(() => {
-        if (!routeComponents.has(key)) {
-          throw new Error(`memo-dom: lazy route component '${key}' did not register`);
-        }
-        setRouteModuleState(key, { status: 'ready', error: null });
-      }).catch(error => {
-        if (loadingComponents.get(key) === loading) loadingComponents.delete(key);
-        routeComponents.delete(key);
-        setRouteModuleState(key, { status: 'error', error });
-        throw error;
-      }).finally(() => {
-        if (loadingComponents.get(key) === loading) loadingComponents.delete(key);
-      });
-      loadingComponents.set(key, loading);
-      setRouteModuleState(key, { status: 'loading', error: null });
-    }
-    await awaitRouteWork(loading, signal);
-    if (signal.aborted) {
-      throw signal.reason ?? new DOMException('Route loading was superseded', 'AbortError');
-    }
-  }
-}
-
-export async function prepareInitialRouteModules(runtime: RouteRuntime): Promise<void> {
-  await prepareRouteModules(runtime.route.matches, runtime.route.signal);
-}
-
-/** Run matched preparations in parent-to-child declaration order. */
-export async function prepareRoutedMatches(
+/** One transaction publishes all matched gate values only after every gate succeeds. */
+export function createRoutePreparationTransaction(
   runtime: RouteRuntime,
-  matches: readonly RouteMatch[],
   input: RoutedPreparationInput,
-): Promise<RoutedPreparationOutcome> {
-  input.signal.throwIfAborted();
+): RoutePreparationTransaction {
   const pending = new Map<string, unknown>();
-  for (const match of matches) {
-    // A parent gate may redirect or reject before child code is even fetched.
-    await prepareRouteModules([match], input.signal);
-    for (const { id, key } of preparationIds([match])) {
-      input.signal.throwIfAborted();
-      if (input.reusePrepared && preparedByRuntime.get(runtime)?.has(key)) continue;
-      const definition = definitions.get(id);
-      if (definition === undefined) {
-        throw new Error(`memo-dom: missing routed preparation '${id}'`);
-      }
-      if (
-        definition.server &&
-        input.serverContext === undefined &&
-        definition.prepare !== undefined
-      ) {
-        throw new Error(
-          `memo-dom: server routed preparation '${id}' requires an active server request context`,
+  return {
+    async prepare(match) {
+      for (const { id, key } of preparationIds([match])) {
+        input.signal.throwIfAborted();
+        if (input.reusePrepared && preparedByRuntime.get(runtime)?.has(key)) continue;
+        const definition = definitions.get(id);
+        if (definition === undefined) {
+          throw new Error(`memo-dom: missing routed preparation '${id}'`);
+        }
+        if (
+          definition.server &&
+          input.serverContext === undefined &&
+          definition.prepare !== undefined
+        ) {
+          throw new Error(
+            `memo-dom: server routed preparation '${id}' requires an active server request context`,
+          );
+        }
+        const outcome: RoutedPreparationOutcome = await awaitRouteWork(
+          definition.prepare === undefined
+          ? invokeBrowserServerPreparation(runtime, id, key, input)
+          : (async () => {
+              const value = await definition.prepare!(browserContext(runtime, key, input));
+              return definition.settle?.(value, input.signal) ?? value;
+            })().then(data => isRedirect(data)
+              ? { kind: 'redirect', redirect: data } as const
+              : { kind: 'data', data } as const),
+          input.signal,
         );
+        if (outcome.kind === 'redirect') return outcome;
+        if (outcome.state !== undefined) {
+          Object.assign(stateFor(runtime, key), outcome.state);
+        }
+        pending.set(key, outcome.data);
       }
-      const outcome: RoutedPreparationOutcome = await awaitRouteWork(
-        definition.prepare === undefined
-        ? invokeBrowserServerPreparation(runtime, id, key, input)
-        : (async () => {
-            const value = await definition.prepare!(browserContext(runtime, key, input));
-            return definition.settle?.(value, input.signal) ?? value;
-          })().then(data => isRedirect(data)
-            ? { kind: 'redirect', redirect: data } as const
-            : { kind: 'data', data } as const),
-        input.signal,
-      );
-      if (outcome.kind === 'redirect') return outcome;
-      if (outcome.state !== undefined) {
-        Object.assign(stateFor(runtime, key), outcome.state);
+      return undefined;
+    },
+    commit() {
+      // The application's callback may ignore cancellation. Never let its late
+      // result overwrite data belonging to a newer navigation, even at the last
+      // gate where there is no subsequent child to check the signal.
+      input.signal.throwIfAborted();
+      let prepared = preparedByRuntime.get(runtime);
+      if (prepared === undefined) {
+        prepared = new Map();
+        preparedByRuntime.set(runtime, prepared);
       }
-      pending.set(key, outcome.data);
-    }
-  }
-  // The application's callback may ignore cancellation. Never let its late
-  // result overwrite data belonging to a newer navigation, even at the last
-  // gate where there is no subsequent child to check the signal.
-  input.signal.throwIfAborted();
-  let prepared = preparedByRuntime.get(runtime);
-  if (prepared === undefined) {
-    prepared = new Map();
-    preparedByRuntime.set(runtime, prepared);
-  }
-  for (const [id, value] of pending) prepared.set(id, value);
-  return { kind: 'data', data: undefined };
+      for (const [id, value] of pending) prepared.set(id, value);
+    },
+  };
 }
 
 export interface InitialRoutedPreparationOptions {
@@ -541,8 +408,9 @@ export async function invokeServerRoutedPreparation(
 }
 
 // Restoring routed data belongs to preparation, not ordinary URL navigation.
-// This module is retained by preparations/lazy modules or public construction.
-installRoutePreparationRunner(prepareRoutedMatches);
+// Data preparation and public construction retain this capability.
+installRouteModuleLoader(prepareRouteModules);
+installRoutePreparationRunner(createRoutePreparationTransaction);
 
 interface RouterPreparationBridge {
   restoreState?(state: unknown): void;

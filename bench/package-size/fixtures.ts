@@ -1,5 +1,9 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'route-lazy': {
+    './App.tsx':`import {Detail} from './Detail';export function App(){return <main route="/"><nav><a class="home" route-to="/">Home</a><a class="about" route-to="/about">Detail</a></nav><section route="/"><h2>Home</h2></section><Detail route="/about"/></main>;}`,
+    './Detail.tsx':`export function Detail(){let n=0;return <article><h2>Detail</h2><button onClick={()=>n++}>{n}</button></article>;}`,
+  },
   'composition-static-children': {
     './App.tsx': `import {Shell} from './Shell';export function App(){const name='Ada';let count=0;return <main>
       <button onClick={()=>count++}>Add</button><p>{count}</p><Shell><h2>Static card</h2><p>{name}</p></Shell></main>;}`,

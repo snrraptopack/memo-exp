@@ -7,6 +7,34 @@ import {
 import { prepareRoutedMatches } from '../src/preparation';
 
 describe('route preparation cancellation', () => {
+  it('publishes no parent gate value when a later child gate fails', async () => {
+    registerRoutedPreparation({id:'atomic-parent',server:false,prepare:()=> 'parent data'});
+    registerRoutedPreparation({id:'atomic-child',server:false,prepare:()=> {throw new Error('child failed');}});
+    const runtime=createRouteRuntime({environment:{},routes:[
+      {id:'parent',pattern:'/parent',metadata:{preparations:['atomic-parent']}},
+      {id:'child',parentId:'parent',pattern:'/child',metadata:{preparations:['atomic-child']}},
+    ]});
+    try {
+      const result=runtime.navigate('/parent/child');
+      if(result.status!=='preparing')throw new Error('Expected preparation');
+      await expect(result.finished).rejects.toThrow('child failed');
+      expect(serializeRoutedPreparationState(runtime)).toBeUndefined();expect(runtime.route.pathname).toBe('/');
+      const parent=runtime.navigate('/parent');if(parent.status!=='preparing')throw new Error('Expected preparation');
+      await parent.finished;expect(serializeRoutedPreparationState(runtime)?.entries.map(entry=>entry.data)).toEqual(['parent data']);
+    } finally {runtime.dispose();}
+  });
+
+  it('keeps module and gate metadata reads in their original order', async () => {
+    const order:string[]=[];
+    const metadata={get componentKey(){order.push('key');return undefined;},
+      get moduleLoader(){order.push('loader');return undefined;},get preparations(){order.push('gates');return [];}};
+    const runtime=createRouteRuntime({environment:{}});
+    try {
+      await prepareRoutedMatches(runtime,[{id:'home',pattern:'/',pathname:'/',params:{},metadata}],
+        {href:runtime.route.href,params:{},signal:runtime.route.signal});
+      expect(order).toEqual(['key','loader','gates']);
+    } finally {runtime.dispose();}
+  });
   it('settles supersession without waiting for an uncooperative gate and ignores its late data', async () => {
     let release!: (value: string) => void;
     registerRoutedPreparation({

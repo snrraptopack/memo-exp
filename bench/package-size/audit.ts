@@ -123,6 +123,9 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
     if (fixture === 'route-helper' && graph !== 'source-before' && /new RegExp\(/.test(output.text)) {
       throw new Error('Path interpolation must not retain pattern matching expressions');
     }
+    if (fixture === 'route-lazy' && graph !== 'source-before' && output.text.includes('/_memoized/routed')) {
+      throw new Error('Lazy-only routes must not retain routed data execution');
+    }
     if (['request-group','request-routed-group','request-data'].includes(fixture) && graph !== 'source-before' &&
       inputs.some(input => input.path.endsWith('/data/src/resource-writes.ts'))) {
       throw new Error('Read-only fetched pages must not retain the optional mutation implementation');
@@ -203,12 +206,19 @@ if (process.argv.includes('--verify')) {
           await page.click('.about'); await page.waitForSelector('h2');
           await page.click('.home'); await page.waitForFunction(() => document.querySelector('main p')?.textContent === 'Ada');
         }
+        if (row.fixture === 'route-lazy') {
+          await page.click('.about');await page.waitForSelector('article');
+          await page.click('article button');await page.waitForFunction(()=>document.querySelector('article button')?.textContent==='1');
+          await page.click('.home');await page.waitForFunction(()=>document.querySelector('article')===null);
+          await page.click('.about');await page.waitForFunction(()=>document.querySelector('article button')?.textContent==='0');
+        }
         await page.evaluate(async fixture => {
           const main = document.querySelector('#root>main')!;
           const button = main.querySelector('button')!;
           const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
           const check = (condition: boolean) => { if (!condition) throw new Error(`Failed ${fixture} interaction`); };
           if (fixture === 'static') { check(main.textContent === 'Static shellReady.'); return; }
+          if (fixture === 'route-lazy') {check(main.querySelector('article button')?.textContent==='0');return;}
           if (fixture === 'route-helper') {
             check(main.querySelector('a')?.getAttribute('href') === '/person/1');
             button.click(); await settle();

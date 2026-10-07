@@ -1,9 +1,11 @@
 /** Public construction exposes preparation support on the same route engine. */
 import { createRouteRuntime as createRuntime } from './runtime';
-import { prepareRoutedMatches } from './preparation';
-import { installRoutePreparationRunner } from './preparation-capability';
+import { createRoutePreparationTransaction } from './preparation';
+import { prepareRouteModules } from './route-modules';
+import { installRoutePreparationRunner, installRouteModuleLoader } from './preparation-capability';
 
 export function createRouteRuntime(...args: Parameters<typeof createRuntime>): ReturnType<typeof createRuntime> {
-  installRoutePreparationRunner(prepareRoutedMatches);
+  installRoutePreparationRunner(createRoutePreparationTransaction);
+  installRouteModuleLoader(prepareRouteModules);
   return createRuntime(...args);
 }

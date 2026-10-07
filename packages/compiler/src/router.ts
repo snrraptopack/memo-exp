@@ -747,8 +747,9 @@ export function initialRoutePreparationStatements(ctx: Ctx): t.Statement[] {
   const definitions = ctx.linkedRoutes ?? ctx.localRoutes;
   if (!definitions.some(definition => definition.lazyComponent !== undefined ||
       (definition.preparations?.length ?? 0) > 0)) return [];
+  const preparesData = definitions.some(definition => (definition.preparations?.length ?? 0) > 0);
   return [astFactory.expressionStatement({
     type: 'AwaitExpression',
-    argument: astFactory.callExpression(mr(ctx, 'prepareInitialRoute'), []),
+    argument: astFactory.callExpression(mr(ctx, preparesData ? 'prepareInitialRoute' : 'prepareInitialRouteModules'), []),
   })];
 }

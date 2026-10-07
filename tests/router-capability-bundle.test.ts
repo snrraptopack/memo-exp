@@ -43,3 +43,37 @@ describe('bundled public router construction', () => {
     });
   }
 });
+
+describe('bundled lazy-only router capabilities', () => {
+  for (const graph of ['source','package'] as const) {
+    it(`omits routed data while retaining lazy retries through the ${graph} graph`, async () => {
+      const result = await build({stdin:{contents:`
+        import {route,navigateRoute,createRouteManifest,replaceRouteResolver,registerRouteComponent,
+          prepareInitialRouteModules} from '@memoized-dom/router/internal';
+        let attempts=0;
+        const manifest=createRouteManifest([{id:'home',pattern:'/'},{id:'detail',pattern:'/detail',metadata:{
+          componentKey:'lazy-only-${graph}',moduleLoader:async()=>{
+            if(++attempts===1)throw new Error('chunk unavailable');
+            registerRouteComponent('lazy-only-${graph}',()=>null);
+          }}}]);
+        export async function initialize(){replaceRouteResolver(manifest.resolve);await prepareInitialRouteModules();}
+        export {route,navigateRoute};`,resolveDir:resolve(import.meta.dirname,'..')},
+        alias:graph==='source'?{'@memoized-dom/router/internal':resolve(import.meta.dirname,'../packages/router/src/internal.ts')}:undefined,
+        bundle:true,write:false,platform:'browser',format:'iife',globalName:'LazyRouter',minify:true});
+      const code=result.outputFiles[0]!.text;
+      expect(code).not.toContain('/_memoized/routed');
+      expect(code).not.toContain('requires an active server request context');
+      const api=new Function(`${code};return LazyRouter;`)() as {
+        initialize():Promise<void>;route:RouteRuntime['route'];navigateRoute:RouteRuntime['navigate'];
+      };
+      await api.initialize();api.navigateRoute('/');
+      const first=api.navigateRoute('/detail');
+      if(first.status!=='preparing')throw new Error('Lazy navigation committed prematurely');
+      await expect(first.finished).rejects.toThrow('chunk unavailable');expect(api.route.pathname).toBe('/');
+      const second=api.navigateRoute('/detail');
+      if(second.status!=='preparing')throw new Error('Lazy retry committed prematurely');
+      await expect(second.finished).resolves.toMatchObject({status:'completed'});expect(api.route.pathname).toBe('/detail');
+      api.navigateRoute('/');
+    });
+  }
+});
