@@ -3,6 +3,7 @@ import { createAnalysisCtx, type AnalysisOptions } from '../context/model';
 import type {Ctx as AnalysisContext} from '../context/model';
 import type * as t from '../ast/compiler-types';
 import type {BaseNode} from '../ast';
+import type {ModuleCallbacks} from '../planning/module-callbacks';
 import type { InitialBrowserRoot } from './browser-plan';
 import type { InitialDelivery } from './delivery-plan';
 import type { InitialDomRoot } from './initial-dom';
@@ -27,6 +28,7 @@ export interface DomContext extends AnalysisContext {
   analyzedFunctions:WeakSet<t.Node>;
   callbackPublications:Set<BaseNode>;
   handlerHasRootCommit:WeakMap<t.Node,boolean>;
+  moduleCallbacks:ModuleCallbacks|null;
   initialDelivery:InitialDelivery|undefined;
   initialBrowserRoot:InitialBrowserRoot|null;
   initialDomRoot:InitialDomRoot|null;
@@ -38,7 +40,7 @@ export interface DomContext extends AnalysisContext {
 
 export function createCtx(opts:InternalMemoDomOptions={}):DomContext {
   return {...createAnalysisCtx(opts),instanceReasonIds:new Map(),analyzedFunctions:new WeakSet(),
-    callbackPublications:new Set(),handlerHasRootCommit:new WeakMap(),initialDelivery:opts.initialDelivery,
+    callbackPublications:new Set(),handlerHasRootCommit:new WeakMap(),moduleCallbacks:null,initialDelivery:opts.initialDelivery,
     initialBrowserRoot:opts.initialBrowserRoot??null,initialDomRoot:opts.initialDomRoot??null,
     initialDomComponents:opts.initialDomComponents??{},initialServerComponents:opts.initialServerComponents??{},
     domOnlyRowComponents:new Set(),emission:createDomEmissionState()};

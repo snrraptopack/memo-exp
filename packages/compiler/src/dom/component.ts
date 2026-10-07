@@ -16,7 +16,7 @@ import { instanceSourceReasons } from './instance-reasons';
 import { type DomContext as Ctx } from './context';
 import { buildBranchCreate, emitNode } from './nodes';
 import { generatedIdentifier, md, mdHot, mdd, requireIdentifiers } from './identifiers';
-import { transformComponentLifecycle } from '../lifecycle';
+import { transformComponentLifecycle } from './lifecycle';
 import { buildPropDeclaration, buildPropReplay, runtimeParameter, simpleObjectPropBindings, type ComponentPropsPlan, propReasonArguments, type SimpleObjectPropBinding } from '../components/props';
 import { buildRenderPreludeReplay } from './components/render-prelude';
 import { structuralReasonsFor } from './components/local-derived';

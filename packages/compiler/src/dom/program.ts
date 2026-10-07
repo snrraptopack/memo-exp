@@ -27,15 +27,15 @@ import { emitInitialMount } from './initial-entry';
 import { planComponentListSites } from '../planning/list-sites';
 import { planComponentRendering, type ModuleRenderPlan } from '../planning/component-render';
 import {planComponentCallbacks} from '../planning/component-callbacks';
+import {planModuleCallbacks} from '../planning/module-callbacks';
+import {instrumentSharedCallback} from './handlers';
 import { planExpressionSources } from '../planning/expression-sources';
 import { planComponentPulls } from '../planning/primitive-pull';
 import { planComponentPlacements } from '../planning/component-placement';
 import { planRegionReplays } from '../planning/region-replay';
 import {
   rejectUnownedCleanup,
-  transformProgramCallbacks,
-  transformSharedHelperCallbacks,
-} from '../lifecycle';
+} from './lifecycle';
 import {
   rejectUnownedEffects,
   rewriteModuleEffects,
@@ -255,8 +255,8 @@ function prepareProgram(
   prepareProgramAnalysis(ctx, programPath);
   analyzeRoutedPreparations(ctx, programPath, true);
   rewriteTransparentDataReads(ctx);
-  transformProgramCallbacks(ctx, programPath);
-  transformSharedHelperCallbacks(ctx, programPath);
+  ctx.moduleCallbacks=planModuleCallbacks(ctx,programPath);
+  for(const site of ctx.moduleCallbacks.retained)instrumentSharedCallback(ctx,site.target,site.executionAware);
   return planComponentRendering(ctx.compPaths, {
     callbacks:new Map([...ctx.compPaths].map(([name,path])=>[name,planComponentCallbacks(ctx,name,path)])),
     expressionSources: planExpressionSources(ctx),

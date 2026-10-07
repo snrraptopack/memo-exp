@@ -59,7 +59,8 @@ function analyzeHandler(
     [...ctx.keyedListMutationSources.get(owner)?.keys() ?? []].map(source=>[source,mutationJournalVariable(ctx,owner,source)]),
   );
   const writes=source?source.writesFor(rowFacts,eventBoundary):
-    planHandlerWrites(ctx,target,owner,rowFacts,eventBoundary,executionAwareRoot);
+    owner===null&&ctx.moduleCallbacks!==null?ctx.moduleCallbacks.writesFor(target,executionAwareRoot):
+      planHandlerWrites(ctx,target,owner,rowFacts,eventBoundary,executionAwareRoot);
   emitHandlerWrites(ctx,writes,{row,eventOriginId,journals});
 }
 
@@ -76,15 +77,8 @@ export function instrumentSharedCallback(
 ): void {
   if (ctx.analyzedFunctions.has(target)) return;
   ctx.analyzedFunctions.add(target);
-  analyzeHandler(
-    ctx,
-    target,
-    null,
-    undefined,
-    false,
-    undefined,
-    executionAwareRoot,
-  );
+  if(ctx.moduleCallbacks===null)throw new Error('memo-dom: module callbacks were not planned before DOM lowering');
+  emitHandlerWrites(ctx,ctx.moduleCallbacks.writesFor(target,executionAwareRoot));
 }
 
 /**

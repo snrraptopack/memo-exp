@@ -206,6 +206,17 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
   chunks (67,988 raw / 21,987 gzip B); routed/Group remains 87,015 / 26,781 B.
   This is a source-boundary change, with no browser performance claim.
 
-Next in area 1: finish semantic normalization and module callbacks; complete
-ownership inputs and move remaining generated ABI state out of source facts.
+### Captured module callbacks (parent `1bc3081`)
+
+- Shared planning captures module setup callbacks, helper-retained callbacks
+  and async helper completion before instrumentation. Named native handlers
+  and factory setup consume the same captured module source identities.
+- Removed both backend module callback traversals. Remaining DOM lifecycle
+  lowering moved into `dom/lifecycle.ts`; its former root file is deleted.
+- Type checking, compiler build and lint passed. Eight affected suites passed
+  85 tests. All 123 generated-output/graph/delivery comparisons matched the
+  baseline. No browser-size or CPU improvement is claimed for this migration.
+
+Next in area 1: finish semantic normalization; complete ownership inputs and
+move remaining generated ABI state out of source facts.
 These are prerequisites for the runtime-size and broader precision batches.
