@@ -5,6 +5,7 @@ import { matchMapCall } from '../packages/compiler/src/lists';
 import { planListCallback } from '../packages/compiler/src/lists/callback-plan';
 import { planConditionalBranches } from '../packages/compiler/src/jsx/conditional-plan';
 import { planComponentRegionShapes } from '../packages/compiler/src/planning/region-shapes';
+import { planRenderCallback } from '../packages/compiler/src/components/render-callbacks';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source,{filename:'./shapes.tsx'}).program as unknown as t.Program;
@@ -14,6 +15,48 @@ function expression(source: string): t.Expression {
 }
 const fail = (message: string): never => {throw new Error(message);};
 const errorAt = {buildCodeFrameError:(message:string)=>new Error(message)};
+
+it.each([
+  '(item: {id:number}, index:number)=><li key={item.id}>{index}</li>',
+  'function(item: {id:number}, index:number){return <li key={item.id}>{index}</li>;}',
+])('captures render callback identity without changing authored syntax: %s',source=>{
+  const callback=expression(source),before=JSON.stringify(callback),plan=planRenderCallback(callback,fail);
+  expect(JSON.stringify(callback)).toBe(before);
+  expect(plan).toMatchObject({itemParam:'item',indexParam:'index',keyPath:['id']});
+  expect(printEstree(plan.jsx).code).not.toContain('key=');
+  expect(printEstree(plan.keyExpression!).code).toBe('item.id');
+  expect((plan.itemPattern as unknown as {typeAnnotation:unknown}).typeAnnotation).toBeNull();
+  expect(planRenderCallback(cloneNode(callback),fail)).toEqual(plan);
+});
+
+it('normalizes destructured render callback patterns without renderer state',()=>{
+  const callback=expression('({label, nested: [value = 1]}: {label:string,nested:number[]})=><li>{label}:{value}</li>');
+  const before=JSON.stringify(callback),plan=planRenderCallback(callback,fail);
+  expect(JSON.stringify(callback)).toBe(before);expect(plan.itemParam).toBe('label');expect(plan.keyPath).toEqual([]);
+  expect(printEstree(plan.itemPattern).code).not.toContain(':string');
+  expect(JSON.stringify(plan)).not.toMatch(/createElement|registerEntity|_MD/);
+});
+
+it.each([
+  'async item=><li/>','function*(item){return <li/>;}','()=> <li/>',
+  '({},index)=><li/>','(item,{index})=><li/>','(item,index,extra)=><li/>',
+  'item=>item.label','item=>{const label=item.label;return <li>{label}</li>;}','item=><li key/>',
+])('rejects unproved render callback syntax before lowering: %s',source=>{
+  const callback=expression(source),before=JSON.stringify(callback);
+  expect(()=>planRenderCallback(callback,fail)).toThrow(/render callback|key=.*expression/);
+  expect(JSON.stringify(callback)).toBe(before);
+});
+
+it.each(['renderItem={item=><li key={item.id}>{item.label}</li>}',"{...{renderItem:item=><li>{item.label}</li>}}"])
+  ('captures declared callback props before backend mutation: %s',attributes=>{
+    const program=parse(`function App(){return <Rows ${attributes}/>;}`),node=program.body[0] as t.FunctionDeclaration,before=JSON.stringify(program);
+    const plans=planComponentRegionShapes({node,...errorAt},new Map([['Rows',['renderItem']]]));
+    let callback:t.Expression|undefined;
+    walkAst(node,{enter(current){if(current.type==='ArrowFunctionExpression')callback=current as t.Expression;}});
+    const plan=plans.renderCallbackFor(callback!);
+    expect(plans.renderCallbackFor(callback!)).toBe(plan);expect(plans.renderCallbackFor(cloneNode(callback!))).toEqual(plan);
+    expect(JSON.stringify(program)).toBe(before);
+  });
 function callback(source: string) { return matchMapCall(expression(`items.map(${source})`))!; }
 function condition(source: string) { return expression(source) as t.ConditionalExpression | t.LogicalExpression; }
 

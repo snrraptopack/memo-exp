@@ -144,7 +144,7 @@ export function emitComponentCall(
         property.value = buildRenderCallbackAdapter(
           ctx,
           scope,
-          property.value,
+          scope.regionShapes!.renderCallbackFor(property.value),
           componentName,
           componentPath,
           emitNode,
@@ -220,7 +220,7 @@ export function emitComponentCall(
         value: buildRenderCallbackAdapter(
           ctx,
           scope,
-          v,
+          scope.regionShapes!.renderCallbackFor(v),
           componentName,
           componentPath,
           emitNode,

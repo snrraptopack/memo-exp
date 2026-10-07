@@ -4,11 +4,14 @@ import {
   childNode,
   childNodes,
   cloneNode as cloneEstreeNode,
+  extractPatternIdentifiers,
   nodeField as field,
   walkAst,
   type BaseNode,
 } from '../ast';
 import type { Ctx, MapCallExpression } from '../context';
+import { attrExpr, keyPathOf } from '../context/ast';
+import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {matchMapCall} from '../lists/source-shapes';
 import {
   localBindingForProp,
@@ -21,6 +24,46 @@ export interface RenderCallbackInvocation {
   propName: string;
   target: t.Expression;
   arguments: t.Expression[];
+}
+
+/** Authored callback syntax and row identity, without a renderer ABI. */
+export interface RenderCallbackPlan {
+  readonly jsx: t.JSXElement;
+  readonly itemPattern: t.Identifier | t.ObjectPattern | t.ArrayPattern;
+  readonly itemParam: string;
+  readonly indexParam: string | null;
+  readonly keyExpression: t.Expression | null;
+  readonly keyPath: readonly string[] | null;
+}
+
+/** Normalize a callback on clones; planning never removes authored keys. */
+export function planRenderCallback(source: t.Expression, fail: (message: string) => never): RenderCallbackPlan {
+  if ((!astFactory.isArrowFunctionExpression(source) && !astFactory.isFunctionExpression(source)) || source.async || source.generator) {
+    return fail('memo-dom: render callbacks must be synchronous inline arrows or function expressions');
+  }
+  const body = source.body;
+  const returned = astFactory.isJSXElement(body) ? body :
+    astFactory.isBlockStatement(body) && body.body.length === 1 && astFactory.isReturnStatement(body.body[0]) &&
+      astFactory.isJSXElement(body.body[0].argument) ? body.body[0].argument : null;
+  const first = source.params[0], second = source.params[1];
+  if (returned === null || source.params.length < 1 || source.params.length > 2 ||
+      (!astFactory.isIdentifier(first) && !astFactory.isObjectPattern(first) && !astFactory.isArrayPattern(first)) ||
+      (second !== undefined && !astFactory.isIdentifier(second))) {
+    return fail('memo-dom: render callbacks take an item binding pattern and optional index, then return one JSX element');
+  }
+  const itemPattern = cloneRuntimeBindingPattern(first);
+  const bindings = extractPatternIdentifiers(itemPattern as unknown as BaseNode);
+  if (!bindings.length) return fail('memo-dom: render callback item patterns must bind at least one name');
+  const itemParam = astFactory.isIdentifier(itemPattern) ? itemPattern.name : bindings[0]!.name;
+  const jsx = cloneEstreeNode(returned);
+  let keyExpression: t.Expression | null = null;
+  jsx.openingElement.attributes = jsx.openingElement.attributes.filter(attribute => {
+    if (astFactory.isJSXSpreadAttribute(attribute) || !astFactory.isJSXIdentifier(attribute.name) || attribute.name.name !== 'key') return true;
+    keyExpression = attrExpr(attribute.value);
+    if (keyExpression === null) return fail('memo-dom: key={...} needs an expression');
+    return false;
+  });
+  return {jsx,itemPattern,itemParam,indexParam:second?.name ?? null,keyExpression,keyPath:keyPathOf(keyExpression,itemParam)};
 }
 
 interface NodeHolder {

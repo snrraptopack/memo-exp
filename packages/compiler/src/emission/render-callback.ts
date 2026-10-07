@@ -2,13 +2,8 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
-  extractPatternIdentifiers,
-  type BaseNode,
 } from '../ast';
-import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {
-  attrExpr,
-  keyPathOf,
   type ComponentPath,
   type Ctx,
   type RowCtx,
@@ -23,21 +18,7 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { applyRepeatedDomTemplate } from './dom-template';
-
-function callbackJsx(
-  callback: t.ArrowFunctionExpression | t.FunctionExpression,
-): t.JSXElement | null {
-  if (astFactory.isJSXElement(callback.body)) return callback.body;
-  if (
-    astFactory.isBlockStatement(callback.body) &&
-    callback.body.body.length === 1 &&
-    astFactory.isReturnStatement(callback.body.body[0]) &&
-    astFactory.isJSXElement(callback.body.body[0].argument)
-  ) {
-    return callback.body.body[0].argument;
-  }
-  return null;
-}
+import type { RenderCallbackPlan } from '../components/render-callbacks';
 
 /**
  * Compile one caller-authored render callback into a row-factory adapter.
@@ -49,73 +30,17 @@ function callbackJsx(
 export function buildRenderCallbackAdapter(
   ctx: Ctx,
   ownerScope: EmitScope,
-  source: t.Expression,
+  plan: RenderCallbackPlan,
   componentName: string,
   componentPath: ComponentPath,
   emitNode: NodeEmitter,
   inSvg: boolean,
   ownerId: t.Expression,
 ): t.Identifier {
-  if (
-    (!astFactory.isArrowFunctionExpression(source) &&
-      !astFactory.isFunctionExpression(source)) ||
-    source.async ||
-    source.generator
-  ) {
-    throw componentPath.buildCodeFrameError(
-      'memo-dom: render callbacks must be synchronous inline arrows or function expressions',
-    );
-  }
-  const jsx = callbackJsx(source);
-  const first = source.params[0];
-  const second = source.params[1];
-  if (
-    jsx === null ||
-    source.params.length < 1 ||
-    source.params.length > 2 ||
-    (!astFactory.isIdentifier(first) &&
-      !astFactory.isObjectPattern(first) &&
-      !astFactory.isArrayPattern(first)) ||
-    (second !== undefined && !astFactory.isIdentifier(second))
-  ) {
-    throw componentPath.buildCodeFrameError(
-      'memo-dom: render callbacks take an item binding pattern and optional index, then return one JSX element',
-    );
-  }
-
-  const itemPattern = cloneRuntimeBindingPattern(first);
-  const itemBindings = extractPatternIdentifiers(
-    itemPattern as unknown as BaseNode,
-  ).map((identifier) => identifier.name);
-  if (itemBindings.length === 0) {
-    throw componentPath.buildCodeFrameError(
-      'memo-dom: render callback item patterns must bind at least one name',
-    );
-  }
-  const itemParam = astFactory.isIdentifier(itemPattern)
-    ? itemPattern.name
-    : itemBindings[0]!;
-  const indexParam = second === undefined ? null : second.name;
-
-  let keyExpression: t.Expression | null = null;
-  jsx.openingElement.attributes = jsx.openingElement.attributes.filter(
-    (attribute) => {
-      if (
-        astFactory.isJSXSpreadAttribute(attribute) ||
-        !astFactory.isJSXIdentifier(attribute.name) ||
-        attribute.name.name !== 'key'
-      ) {
-        return true;
-      }
-      keyExpression = attrExpr(attribute.value);
-      if (keyExpression === null) {
-        throw componentPath.buildCodeFrameError(
-          'memo-dom: key={...} needs an expression',
-        );
-      }
-      return false;
-    },
-  );
+  const {itemParam,indexParam}=plan;
+  const itemPattern=cloneEstreeNode(plan.itemPattern);
+  const jsx=cloneEstreeNode(plan.jsx);
+  const keyExpression=plan.keyExpression===null?null:cloneEstreeNode(plan.keyExpression);
 
   const adapter = generatedIdentifier(ctx, 'renderCallback');
   const liveRows = generatedIdentifier(ctx, 'renderRows');
@@ -130,7 +55,7 @@ export function buildRenderCallbackAdapter(
     itemParam,
     itemPath: [],
     rowIdVar: rowId.name,
-    keyPath: keyPathOf(keyExpression, itemParam),
+    keyPath: plan.keyPath===null?null:[...plan.keyPath],
     sourceKey: '$render-callback',
     sourceLocal: true,
     ownerIdVar: astFactory.isIdentifier(ownerId)

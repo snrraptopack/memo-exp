@@ -67,6 +67,7 @@ it('plans lexical call facts before emission and consumes them without the mutab
   const plan=planComponentRendering(ctx.compPaths, {
     expressionSources:sources, pullPlans:new Map(), placements:planComponentPlacements(ctx),
     regionReplays:planRegionReplays(ctx), listSites:planComponentListSites(ctx),
+    renderCallbackProps:new Map([...ctx.componentProps].map(([name,props])=>[name,[...props.renderCallbacks]])),
   });
   expect(JSON.stringify(program)).toBe(before); expect(ctx.emission.header).toEqual(header);
   const calls=new Map<string,t.CallExpression>();

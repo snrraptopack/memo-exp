@@ -31,6 +31,7 @@ function planReturns(paths: ReadonlyMap<string, ComponentPath>) {
   ctx.compPaths=new Map(paths);
   return planComponentRendering(paths, {
     listSites:planComponentListSites(ctx),
+    renderCallbackProps:new Map(),
     expressionSources:new Map([...paths.keys()].map(name=>[name,facts])), pullPlans:new Map(),
     placements:new Map([...paths.keys()].map(name=>[name,placement])),
     regionReplays:new Map([...paths.keys()].map(name=>[name,replay])),
@@ -63,6 +64,15 @@ it('validates all return shapes before the backend replaces any component', () =
     .toThrow(/Bad.*unsupported JSX return control flow/);
   expect(JSON.stringify(program.body[0])).toBe(first);
   expect((program.body[0] as t.FunctionDeclaration).params).toHaveLength(0);
+});
+
+it.each(['renderItem={()=> <li/>}','{...{renderItem:()=> <li/>}}'])('validates render callback props before replacing earlier factories: %s',attributes=>{
+  const program=parse(`function Good(){return <main/>;}
+    function Rows({items,renderItem}){return <ul>{items.map((item,index)=>renderItem(item,index))}</ul>;}
+    function App(){let items=[{id:1}];return <Rows items={items} ${attributes}/>;}`);
+  const first=JSON.stringify(program.body[0]);
+  expect(()=>transformEstreeProgram({node:program,buildCodeFrameError:message=>new Error(message)})).toThrow(/render callbacks take an item/);
+  expect(JSON.stringify(program.body[0])).toBe(first);expect((program.body[0] as t.FunctionDeclaration).params).toHaveLength(0);
 });
 
 it('plans from normalized paths and semantic sources, independent of emission state', () => {

@@ -30,6 +30,7 @@ export interface ComponentRenderInputs {
   readonly placements: ReadonlyMap<string, ComponentPlacement>;
   readonly regionReplays: ReadonlyMap<string, ComponentRegionReplay>;
   readonly listSites: ReadonlyMap<string, ComponentListSites>;
+  readonly renderCallbackProps: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -57,7 +58,7 @@ export function planComponentRendering(
       if (listSites === undefined) throw new Error(`memo-dom: missing list-site plan for '${name}'`);
       return { name, source, returns: analyzeComponentReturns(source, name), expressionSources: sources,
         pullPlan: inputs.pullPlans.get(name) ?? null, placement, regionReplay,
-        regionShapes: planComponentRegionShapes(source), listSites };
+        regionShapes: planComponentRegionShapes(source, inputs.renderCallbackProps), listSites };
     }),
   };
 }

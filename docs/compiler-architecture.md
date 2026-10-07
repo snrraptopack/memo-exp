@@ -667,3 +667,19 @@ regeneration leaves tracked benchmark output unchanged. The pinned Octane
 canonical and reorder smoke suites pass for memoized-dom. These gates establish
 correctness and removal of redundant callback replay; they do not establish
 comparative timing gains or complete owner-state structural-write proof.
+
+## Render callback source planning — 2026-10-07
+
+Shared region planning now captures render callback syntax, runtime binding
+patterns and authored keys before component factory emission. Direct props and
+literal object spreads use the same pure normalizer. Plans own cloned content;
+the DOM adapter consumes that content and allocates its row factory and
+lifetime, without repeating source validation or removing authored keys.
+Invalid callback syntax is diagnosed before earlier factories are replaced.
+
+Compiler build, root typechecking and changed-source lint pass. The selected
+plan, callback boundary, published callback, named prop and initial list suites
+cover 95 checks. They verify non-mutation, typed and destructured patterns,
+key paths, eager diagnostics and callback execution. This change establishes
+no runtime timing gain. Handler instrumentation and publication still use
+backend row ownership; this batch does not claim complete renderer separation.

@@ -281,6 +281,7 @@ function prepareProgram(
     placements: planComponentPlacements(ctx),
     regionReplays: planRegionReplays(ctx),
     listSites: planComponentListSites(ctx),
+    renderCallbackProps: new Map([...ctx.componentProps].map(([name, props]) => [name, [...props.renderCallbacks]])),
   });
 }
 
