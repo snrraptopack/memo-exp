@@ -139,6 +139,16 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         inputs.some(input => /\/request-(?:transfer|hash)\.ts$/.test(input.path))) {
       throw new Error('Proved bodyless client-only fetches must not retain transfer fingerprints');
     }
+    if (!hydration && graph !== 'source-before' &&
+        ['static','owner-counter','input-list','request-group','request-routed-group','request-data'].includes(fixture) &&
+        output.text.includes('memoized-dom:stream')) {
+      throw new Error('Client-only programs must not retain streamed document handoff');
+    }
+    if (!hydration && graph === 'source' &&
+        ['request-group','request-routed-group','request-data'].includes(fixture) &&
+        inputs.some(input => /\/data\/src\/(?:active-restoration|restoration)\.ts$/.test(input.path))) {
+      throw new Error('Client-only requests must not retain restoration or stream waiters');
+    }
     if (hydration && graph === 'source' && fixture.startsWith('request-') &&
         !inputs.some(input => input.path.endsWith('/request-transfer.ts'))) {
       throw new Error('SSR-capable fetches must retain transfer fingerprints');
