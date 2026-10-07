@@ -47,10 +47,7 @@ import {
   type RegionSourcePlans,
 } from './scope';
 import { compileRefValue } from '../jsx/refs';
-import {
-  instrumentComponentCallback,
-  resolveLocalHelper,
-} from '../handlers';
+import {emitComponentCallback} from './component-callback';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { isImplicitPolicyProp, transparentCallPolicyArgument } from '../data-sources';
 import type { InitialDomRoot } from './initial-dom';
@@ -411,14 +408,7 @@ export function buildComponentRowCreate(
         targetPlan?.refProps.includes(propName) !== true &&
         isInlineScalarCallback(property.value)
       ) {
-        instrumentComponentCallback(
-          ctx,
-          componentPath,
-          property.value,
-          componentName,
-          rowContext,
-          true,
-        );
+        emitComponentCallback(ctx,rowScope.callbacks!.forValue(property.value),rowContext);
         property.value = stabilizeInlineCallbackStatement(
           ctx,
           prefixStatements,
@@ -482,28 +472,7 @@ export function buildComponentRowCreate(
         );
       }
       const inlineCallback = isInlineScalarCallback(value);
-      if (inlineCallback) {
-        instrumentComponentCallback(
-          ctx,
-          componentPath,
-          value,
-          componentName,
-          rowContext,
-          true,
-        );
-      } else if (astFactory.isIdentifier(value)) {
-        const localFn = resolveLocalHelper(ctx, componentPath, value.name);
-        if (localFn !== null && !nodeHasJsx(localFn.body)) {
-          instrumentComponentCallback(
-            ctx,
-            componentPath,
-            localFn,
-            componentName,
-            undefined,
-            true,
-          );
-        }
-      }
+      emitComponentCallback(ctx,rowScope.callbacks!.forValue(value),inlineCallback?rowContext:undefined);
       propEntries.push({
         name: propName,
         value: inlineCallback

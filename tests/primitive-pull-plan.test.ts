@@ -3,7 +3,8 @@ import { childNode, parseEstreeOrThrow, walkAst, isFunctionNode, type BaseNode }
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { createCtx, refreshAstAnalysis } from '../packages/compiler/src/context';
 import { planComponentPull } from '../packages/compiler/src/planning/primitive-pull';
-import {instrumentComponentCallback} from '../packages/compiler/src/handlers';
+import {planComponentCallbacks} from '../packages/compiler/src/planning/component-callbacks';
+import {emitComponentCallback} from '../packages/compiler/src/emission/component-callback';
 import {initializeGeneratedIdentifiers} from '../packages/compiler/src/identifiers';
 
 function parse(source: string): t.Program {
@@ -52,7 +53,7 @@ it('grants publication only after callback lowering, independently of its cycle 
   initializeGeneratedIdentifiers(ctx,program);
   ctx.emission.identifiers!.registerComponentId('View','_id');
   ctx.instanceState.set('View',new Set(['a']));
-  instrumentComponentCallback(ctx,ctx.compPaths.get('View')!,inc,'View');
+  emitComponentCallback(ctx,planComponentCallbacks(ctx,'View',ctx.compPaths.get('View')!).forValue(inc,false));
   expect(ctx.callbackPublications.has(inc)).toBe(true);
   expect(plan.finalize({normalCompletion:ctx.callbackPublications}).independentFor(expression('a'))).toBe(true);
 });

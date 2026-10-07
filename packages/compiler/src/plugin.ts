@@ -45,6 +45,7 @@ import { emittedRuntimeHelpers } from './emission/runtime-requirements';
 import { emitInitialMount } from './emission/initial-entry';
 import { planComponentListSites } from './planning/list-sites';
 import { planComponentRendering, type ModuleRenderPlan } from './planning/component-render';
+import {planComponentCallbacks} from './planning/component-callbacks';
 import { planExpressionSources } from './planning/expression-sources';
 import { planComponentPulls } from './planning/primitive-pull';
 import { planComponentPlacements } from './planning/component-placement';
@@ -276,6 +277,7 @@ function prepareProgram(
   transformProgramCallbacks(ctx, programPath);
   transformSharedHelperCallbacks(ctx, programPath);
   return planComponentRendering(ctx.compPaths, {
+    callbacks:new Map([...ctx.compPaths].map(([name,path])=>[name,planComponentCallbacks(ctx,name,path)])),
     expressionSources: planExpressionSources(ctx),
     pullPlans: planComponentPulls(ctx),
     placements: planComponentPlacements(ctx),

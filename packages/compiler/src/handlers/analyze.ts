@@ -96,11 +96,12 @@ export function planHandlerWrites(
   rowCtx?: RowWriteFacts,
   eventBoundary = false,
   executionAwareRoot = false,
+  authoredSource = rootFn,
 ): HandlerWritePlan {
   // Capture writes on a deep parser-neutral clone. Emission later instruments
   // this exact clone and adopts its body; authored code stays intact here.
   const clonedFn = cloneNode(
-    rootFn as unknown as BaseNode,
+    authoredSource as unknown as BaseNode,
   ) as unknown as typeof rootFn;
   const ROOT: t.Node = clonedFn;
   const wrapper = clonedFn;

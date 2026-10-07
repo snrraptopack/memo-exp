@@ -7,6 +7,7 @@ import type { ComponentPullPlan } from '../analysis/primitive-pull';
 import type { ComponentPlacement } from './component-placement';
 import type { ComponentRegionReplay } from '../analysis/region-replay';
 import { planComponentRegionShapes, type ComponentRegionShapes } from './region-shapes';
+import type {ComponentCallbacks} from './component-callbacks';
 
 export interface PlannedComponent {
   readonly name: string;
@@ -18,6 +19,7 @@ export interface PlannedComponent {
   readonly regionReplay: ComponentRegionReplay;
   readonly regionShapes: ComponentRegionShapes;
   readonly listSites: ComponentListSites;
+  readonly callbacks: ComponentCallbacks;
 }
 
 export interface ModuleRenderPlan {
@@ -25,6 +27,7 @@ export interface ModuleRenderPlan {
 }
 
 export interface ComponentRenderInputs {
+  readonly callbacks: ReadonlyMap<string,ComponentCallbacks>;
   readonly expressionSources: ReadonlyMap<string, ComponentExpressionSources>;
   readonly pullPlans: ReadonlyMap<string, ComponentPullPlan>;
   readonly placements: ReadonlyMap<string, ComponentPlacement>;
@@ -56,7 +59,10 @@ export function planComponentRendering(
       if (regionReplay === undefined) throw new Error(`memo-dom: missing region-replay plan for '${name}'`);
       const listSites = inputs.listSites.get(name);
       if (listSites === undefined) throw new Error(`memo-dom: missing list-site plan for '${name}'`);
+      const callbacks=inputs.callbacks.get(name);
+      if(callbacks===undefined)throw new Error(`memo-dom: missing callback-source plan for '${name}'`);
       return { name, source, returns: analyzeComponentReturns(source, name), expressionSources: sources,
+        callbacks,
         pullPlan: inputs.pullPlans.get(name) ?? null, placement, regionReplay,
         regionShapes: planComponentRegionShapes(source, inputs.renderCallbackProps), listSites };
     }),

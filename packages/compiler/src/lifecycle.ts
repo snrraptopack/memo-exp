@@ -23,10 +23,10 @@ import {
 } from './context';
 import { extractPatternIdentifiers } from './ast';
 import {
-  instrumentComponentCallback,
   instrumentSharedCallback,
-  resolveLocalHelper,
 } from './handlers';
+import type {ComponentCallbacks} from './planning/component-callbacks';
+import {emitComponentCallback} from './emission/component-callback';
 import { md } from './identifiers';
 import { isIntrinsicLifecycleCall } from './intrinsics';
 
@@ -50,20 +50,13 @@ function instrumentIdentifier(
   ctx: Ctx,
   compPath: ComponentPath,
   name: string,
-  compName: string,
+  callbacks: ComponentCallbacks,
   rowCtx?: RowCtx,
   executionAwareRoot = false,
 ): void {
-  const local = resolveLocalHelper(ctx, compPath, name);
+  const local = callbacks.forValue(astFactory.identifier(name),executionAwareRoot);
   if (local !== null) {
-    instrumentComponentCallback(
-      ctx,
-      compPath,
-      local,
-      compName,
-      rowCtx,
-      executionAwareRoot,
-    );
+    emitComponentCallback(ctx,local,rowCtx);
     return;
   }
 
@@ -87,38 +80,31 @@ function instrumentArgument(
   ctx: Ctx,
   compPath: ComponentPath,
   argument: t.CallExpression['arguments'][number],
-  compName: string,
+  callbacks: ComponentCallbacks,
   rowCtx?: RowCtx,
   executionAwareRoot = false,
 ): void {
   if (ctx.compilerOwnedCallbacks.has(argument as t.Node)) return;
   if (astFactory.isArrowFunctionExpression(argument) || astFactory.isFunctionExpression(argument)) {
     if (nodeHasJsx(argument.body)) return;
-    instrumentComponentCallback(
-      ctx,
-      compPath,
-      argument,
-      compName,
-      rowCtx,
-      executionAwareRoot,
-    );
+    emitComponentCallback(ctx,callbacks.forValue(argument,executionAwareRoot),rowCtx);
   } else if (astFactory.isObjectExpression(argument)) {
     for (const property of argument.properties) {
       if (astFactory.isSpreadElement(property)) {
         if (astFactory.isExpression(property.argument)) {
-          instrumentArgument(ctx, compPath, property.argument, compName, rowCtx, executionAwareRoot);
+          instrumentArgument(ctx, compPath, property.argument, callbacks, rowCtx, executionAwareRoot);
         }
       } else if (
         astFactory.isObjectProperty(property) &&
         astFactory.isExpression(property.value)
       ) {
-        instrumentArgument(ctx, compPath, property.value, compName, rowCtx, executionAwareRoot);
+        instrumentArgument(ctx, compPath, property.value, callbacks, rowCtx, executionAwareRoot);
       }
     }
   } else if (astFactory.isArrayExpression(argument)) {
     for (const element of argument.elements) {
       if (element !== null) {
-        instrumentArgument(ctx, compPath, element, compName, rowCtx, executionAwareRoot);
+        instrumentArgument(ctx, compPath, element, callbacks, rowCtx, executionAwareRoot);
       }
     }
   } else if (astFactory.isIdentifier(argument)) {
@@ -126,7 +112,7 @@ function instrumentArgument(
       ctx,
       compPath,
       argument.name,
-      compName,
+      callbacks,
       rowCtx,
       executionAwareRoot,
     );
@@ -203,6 +189,7 @@ export function transformComponentLifecycle(
   compPath: ComponentPath,
   compName: string,
   factoryId: string,
+  callbacks: ComponentCallbacks,
   rowCtx?: RowCtx,
 ): void {
   let functionDepth = 0;
@@ -269,7 +256,7 @@ export function transformComponentLifecycle(
             ctx,
             compPath,
             originalCallee.name,
-            compName,
+            callbacks,
             rowCtx,
           );
         }
@@ -278,7 +265,7 @@ export function transformComponentLifecycle(
             ctx,
             compPath,
             argument,
-            compName,
+            callbacks,
             rowCtx,
             intrinsicEffect,
           );
@@ -289,7 +276,7 @@ export function transformComponentLifecycle(
         if (derivationDepth > 0) return false;
         const call = node as unknown as t.NewExpression;
         for (const argument of call.arguments) {
-          instrumentArgument(ctx, compPath, argument, compName, rowCtx);
+          instrumentArgument(ctx, compPath, argument, callbacks, rowCtx);
         }
       }
     },

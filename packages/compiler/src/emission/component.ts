@@ -295,7 +295,7 @@ export function transformComponent(
     factoryParent,
   );
 
-  transformComponentLifecycle(ctx, path, name, factoryId, rowCtx);
+  transformComponentLifecycle(ctx, path, name, factoryId, component.callbacks, rowCtx);
   // Structural emitters may replace nodes inside the authored return subtree.
   // Snapshot the statements retained by the factory before emission so
   // removal does not depend on object identity after those replacements.

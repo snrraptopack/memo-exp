@@ -14,8 +14,10 @@ import type { ComponentRegionReplay } from '../analysis/region-replay';
 import type { ComponentListSites } from '../planning/list-sites';
 import type { ComponentRegionShapes } from '../planning/region-shapes';
 import type { InitialDomRoot } from './initial-dom';
+import type {ComponentCallbacks} from '../planning/component-callbacks';
 
 export interface RegionSourcePlans {
+  callbacks?: ComponentCallbacks | null;
   /** Shared source facts inherited by nested region/slot factories. */
   regionReplay: ComponentRegionReplay | null;
   regionShapes: ComponentRegionShapes | null;
@@ -77,6 +79,7 @@ export interface EmitScope extends RegionSourcePlans {
 export function newEmitScope(ctx: Ctx, manualDisposal = false, sources?: RegionSourcePlans | null): EmitScope {
   return {
     initialDom:null,
+    callbacks:sources?.callbacks??null,
     regionReplay: sources?.regionReplay ?? null,
     regionShapes: sources?.regionShapes ?? null,
     listSites: sources?.listSites ?? null,

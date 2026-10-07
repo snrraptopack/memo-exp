@@ -683,3 +683,38 @@ cover 95 checks. They verify non-mutation, typed and destructured patterns,
 key paths, eager diagnostics and callback execution. This change establishes
 no runtime timing gain. Handler instrumentation and publication still use
 backend row ownership; this batch does not claim complete renderer separation.
+
+## Component callback source plans — 2026-10-07
+
+Component planning now snapshots authored callback bodies and lexical helper
+identities before a backend replaces any factory. One component snapshot owns
+its nested callback bodies; it does not clone the whole module map per owner.
+The shared callback plan resolves function-valued props and reachable helpers,
+handles helper cycles and supplies write plans parameterized by semantic row
+facts. Write queries retain the authored owner even after factory replacement.
+Queries can be instantiated when row placement is known; they allocate no
+runtime identifiers or DOM statements.
+
+The DOM adapter supplies actual row IDs, refresh functions and mutation-journal
+variables, then lowers the existing handler write plan. Component props,
+component rows and callbacks retained by setup use that adapter. Named helpers
+called from a row keep their factory scope; they cannot acquire the caller's
+row-local identifiers. Normal-completion publication remains a result of
+successful lowering, separate from the cycle guard. The previous component
+callback coordinator is removed. Native event boundaries still use the shared
+handler write planner with their event-specific origin and commit adapter.
+The helper resolver and conditional-execution analysis have one implementation.
+
+The selected root suites pass 235 distinct checks across 24 files, including
+source preservation, helper cycles, semantic row facts, a named helper passed
+from nested inline rows, callback publication, async/forms, opaque reads, aliases,
+effects, list operations and cleanup. Five production Chrome cases pass for
+streaming, composed fetched lists, routed Group and lazy-route lifecycles.
+Compiler build, root typechecking and changed-source lint pass.
+
+Seven production fixtures compared with compiler/Vite `8ab100d` retain identical
+HTML, payload, JavaScript and gzip sizes: static, counter, todo, fetched component
+rows, fetched row children, conditional fetched lists and routed Group. The
+composition reductions recorded in [the delivery audit](./merged-delivery-audit.md)
+are preserved. Callback separation establishes no runtime timing gain and adds
+no browser mechanism or compatibility path.

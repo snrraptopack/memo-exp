@@ -6,6 +6,7 @@ import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepar
 import { createCtx } from '../packages/compiler/src/context';
 import { planExpressionSources } from '../packages/compiler/src/planning/expression-sources';
 import {planComponentListSites} from '../packages/compiler/src/planning/list-sites';
+import {planComponentCallbacks} from '../packages/compiler/src/planning/component-callbacks';
 import { planComponentRendering } from '../packages/compiler/src/planning/component-render';
 import { planComponentPlacements } from '../packages/compiler/src/planning/component-placement';
 import { planRegionReplays } from '../packages/compiler/src/planning/region-replay';
@@ -65,6 +66,7 @@ it('plans lexical call facts before emission and consumes them without the mutab
   const before=JSON.stringify(program), header=[...ctx.emission.header];
   const sources=planExpressionSources(ctx);
   const plan=planComponentRendering(ctx.compPaths, {
+    callbacks:new Map([...ctx.compPaths].map(([name,path])=>[name,planComponentCallbacks(ctx,name,path)])),
     expressionSources:sources, pullPlans:new Map(), placements:planComponentPlacements(ctx),
     regionReplays:planRegionReplays(ctx), listSites:planComponentListSites(ctx),
     renderCallbackProps:new Map([...ctx.componentProps].map(([name,props])=>[name,[...props.renderCallbacks]])),

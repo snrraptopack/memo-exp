@@ -28,10 +28,7 @@ import {
   isInlineScalarCallback,
   stabilizeInlineCallbackProp,
 } from '../components/callback-props';
-import {
-  instrumentComponentCallback,
-  resolveLocalHelper,
-} from '../handlers';
+import {emitComponentCallback} from './component-callback';
 import { buildRenderCallbackAdapter } from './render-callback';
 import { compileRefValue } from '../jsx/refs';
 import {
@@ -179,14 +176,7 @@ export function emitComponentCall(
         targetPlan?.refProps.includes(propName) !== true &&
         isInlineScalarCallback(property.value)
       ) {
-        instrumentComponentCallback(
-          ctx,
-          componentPath,
-          property.value,
-          componentName,
-          rowContext,
-          true,
-        );
+        emitComponentCallback(ctx,scope.callbacks!.forValue(property.value),rowContext);
         property.value = stabilizeInlineCallbackProp(
           ctx,
           scope,
@@ -297,25 +287,8 @@ export function emitComponentCall(
     // treatment that callbacks passed to setInterval/addEventListener get
     // via transformComponentLifecycle — component prop functions that close
     // over parent state need identical treatment (R12 local invalidation).
-    // Guard: skip JSX-bearing functions — those are component definitions,
-    // not callbacks. The analyzedFunctions WeakSet in instrumentComponentCallback
-    // prevents double-instrumentation if the same function was already seen
-    // through a native onClick attribute on the same component.
-    if (inlineCallback) {
-      instrumentComponentCallback(ctx, componentPath, v, componentName, rowContext, true);
-    } else if (astFactory.isIdentifier(v)) {
-      const localFn = resolveLocalHelper(ctx, componentPath, v.name);
-      if (localFn !== null && !nodeHasJsx(localFn.body)) {
-        instrumentComponentCallback(
-          ctx,
-          componentPath,
-          localFn,
-          componentName,
-          rowContext,
-          true,
-        );
-      }
-    }
+    const callback=scope.callbacks!.forValue(v);
+    emitComponentCallback(ctx,callback,inlineCallback?rowContext:undefined);
     propEntries.push({
       name: propName,
       value: inlineCallback

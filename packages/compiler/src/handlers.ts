@@ -49,6 +49,7 @@ import { planHandlerWrites } from './handlers/analyze';
 import { emitHandlerWrites } from './emission/handler';
 import { mutationJournalVariable } from './emission/list-bindings';
 import { callsOnlyCommittedLocalHelpers } from './handlers/local-calls';
+import {hasConditionalRootExecution,resolveLocalHelper} from './planning/component-callbacks';
 
 /** The coordinator owns the transition from captured writes to DOM lowering. */
 function analyzeHandler(
@@ -69,87 +70,6 @@ export type HandlerFn =
   | t.ArrowFunctionExpression
   | t.FunctionExpression
   | t.FunctionDeclaration;
-
-/** Does a root write site have a path on which it may not execute? */
-function hasConditionalRootExecution(target: HandlerFn): boolean {
-  let conditional = false;
-  walkNodes(target.body, (node) => {
-    if (node !== target.body && astFactory.isFunction(node)) return false;
-    if (
-      node.type === 'IfStatement' ||
-      node.type === 'SwitchStatement' ||
-      node.type === 'ConditionalExpression' ||
-      node.type === 'LogicalExpression' ||
-      node.type === 'ForStatement' ||
-      node.type === 'ForInStatement' ||
-      node.type === 'ForOfStatement' ||
-      node.type === 'WhileStatement' ||
-      node.type === 'DoWhileStatement'
-    ) {
-      conditional = true;
-      return false;
-    }
-  });
-  return conditional;
-}
-
-/** Resolve a component-local helper declared directly in the factory body. */
-export function resolveLocalHelper(
-  ctx: Ctx,
-  compPath: ComponentPath,
-  name: string,
-): HandlerFn | null {
-  const binding = astBindingAt(
-    ctx,
-    compPath.node as unknown as BaseNode,
-    name,
-  );
-  if (
-    binding === undefined ||
-    binding.scope.getFunctionScope()?.block !== compPath.node
-  ) {
-    return null;
-  }
-  if (
-    binding.kind === 'function' &&
-    binding.declarationNode.type === 'FunctionDeclaration'
-  ) {
-    return binding.declarationNode as unknown as t.FunctionDeclaration;
-  }
-  const declaration = variableDeclaratorFor(ctx, binding);
-  if (declaration === null) return null;
-  const init = declaration.init;
-  return init && (astFactory.isArrowFunctionExpression(init) || astFactory.isFunctionExpression(init))
-    ? init
-    : null;
-}
-
-/**
- * Instrument a callback that executes outside the component's synchronous
- * factory call. The callback owns its normal-completion commit; no event
- * boundary or generated exception wrapper is introduced.
- */
-export function instrumentComponentCallback(
-  ctx: Ctx,
-  compPath: ComponentPath,
-  target: HandlerFn,
-  compName: string,
-  rowCtx?: RowCtx,
-  executionAwareRoot = false,
-): void {
-  if (ctx.analyzedFunctions.has(target)) return;
-  instrumentReachableLocalHelpers(ctx, compPath, target, compName, rowCtx);
-  ctx.analyzedFunctions.add(target);
-  analyzeHandler(
-    ctx,
-    target,
-    compName,
-    rowCtx,
-    false,
-    undefined,
-    executionAwareRoot,
-  );
-}
 
 /** Instrument a module-owned callback through canonical access-table writes. */
 export function instrumentSharedCallback(
