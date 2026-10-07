@@ -35,6 +35,7 @@ export {
 export {
   createSource,
   createBodylessSource,
+  createClientSource,
   createReadSource,
   describeModuleSource,
   isModuleSourceRef,

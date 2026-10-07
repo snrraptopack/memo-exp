@@ -17,6 +17,9 @@ import { $forms, isFormSource, trackForm } from './forms';
 import { enableDataReads } from './read-resource';
 import { exposeDataRuntime } from './client';
 import { enableRequestEncoding } from './request-encoding';
+import { installActiveDataRestoration } from './active-restoration';
+
+installActiveDataRestoration();
 
 export { createDataRuntime } from './client';
 export const runWithDataRuntime: <T>(runtime: DataRuntime, fn: () => T) => T = withActiveRuntime;

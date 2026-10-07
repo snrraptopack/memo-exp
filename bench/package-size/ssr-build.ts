@@ -1,4 +1,4 @@
-/** Paired production SSR delivery audit; fixtures never depend on examples. */
+/** Paired production delivery audit; fixtures never depend on examples. */
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,9 +11,10 @@ import { sizeFixtures } from './fixtures';
 import { compilerBaseline } from './compiler-baseline';
 
 const repository = resolve(import.meta.dirname, '../..');
-const output = resolve(import.meta.dirname, 'dist/ssr');
 const args = process.argv.slice(2);
-if (args.some(arg => !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --before-ref=<commit> or --fixture=<name>');
+if (args.some(arg => arg !== '--client-only' && !arg.startsWith('--before-ref=') && !arg.startsWith('--fixture='))) throw new Error('Use --before-ref=<commit>, --fixture=<name> or --client-only');
+const clientOnly = args.includes('--client-only');
+const output = resolve(import.meta.dirname, clientOnly ? 'dist/client' : 'dist/ssr');
 const reference = args.find(arg => arg.startsWith('--before-ref='))?.slice(13) ?? 'cc5ce13';
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
 const baseline = git('rev-parse', '--verify', '--end-of-options', `${reference}^{commit}`);
@@ -80,7 +81,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
       './server.ts': `import {serve} from '@memoized-dom/server';import {App} from './App';const app=serve();
         app.get('/api/user',()=>(${JSON.stringify(user)}));app.ssr(App,{delivery:'buffer'});export default app;`,
-      './index.html': '<!doctype html><html><head><title>SSR audit</title></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="./main.ts"></script></body></html>',
+      './index.html': `<!doctype html><html><head><title>SSR audit</title></head><body><div id="root">${clientOnly ? '' : '<!--ssr-outlet-->'}</div><script type="module" src="./main.ts"></script></body></html>`,
     };
     for (const [file, source] of Object.entries(files)) {
       const target = resolve(root, file);
@@ -88,34 +89,38 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
     }
     for (const [version, plugin] of [['before', before], ['after', memoizedDom]] as const) {
       const config = (server = false) => ({ root, configFile: false as const, logLevel: 'silent' as const,
-        resolve: { alias: aliases(server) }, plugins: [plugin({ clientEntry: 'main.ts', serverEntry: 'server.ts' })] });
+        resolve: { alias: aliases(server) }, plugins: [plugin({ clientEntry: 'main.ts', ...(clientOnly ? {} : {serverEntry:'server.ts'}) })] });
       const client = await build({ ...config(), build: { write: false } });
       const assets = (Array.isArray(client) ? client : [client]).flatMap(result => result.output);
       const template = assets.find(file => file.type === 'asset' && file.fileName === 'index.html');
       if (!template || template.type !== 'asset') throw new Error('Missing production page');
-      const server = await build({ ...config(true), build: { write: false, ssr: 'server.ts' } });
-      const emitted = (Array.isArray(server) ? server : [server]).flatMap(result => result.output);
       const directory = resolve(output, fixture, version);
-      for (const file of emitted) {
-        const path = resolve(directory, file.fileName);
-        await mkdir(dirname(path), { recursive: true }); await writeFile(path, file.type === 'chunk' ? file.code : file.source);
+      await mkdir(directory, {recursive:true});
+      let html = String(template.source);
+      if (!clientOnly) {
+        const server = await build({ ...config(true), build: { write: false, ssr: 'server.ts' } });
+        const emitted = (Array.isArray(server) ? server : [server]).flatMap(result => result.output);
+        for (const file of emitted) {
+          const path = resolve(directory, file.fileName);
+          await mkdir(dirname(path), { recursive: true }); await writeFile(path, file.type === 'chunk' ? file.code : file.source);
+        }
+        const entry = emitted.find((file): file is Rollup.OutputChunk => file.type === 'chunk' && file.isEntry)!;
+        const { default: app } = await import(pathToFileURL(resolve(directory, entry.fileName)).href);
+        app.installDocumentTemplate(String(template.source));
+        const response = await app.fetch(new Request('https://app.test/'));
+        if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
+        html = await response.text();
+        if(fixture==='composition-static-children' && !html.replace(/<!--[^]*?-->/g,'').includes('<section><h2>Static card</h2><p>Ada</p></section>'))throw new Error('Static child content was lost');
+        if(fixture==='composition-static-children-60' && (html.match(/<section>/g)?.length!==60 || !html.replace(/<!--[^]*?-->/g,'').includes('<aside><h2>Static card 59</h2><p>Ready.</p></aside>')))throw new Error('Repeated forwarded child content was lost');
+        if(fixture==='request-inline-group' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Directory:Ada</h1>'))throw new Error('Inline policy data did not settle');
+        if (['request-module-option-keys', 'request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
+        if (fixture==='request-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li title="one">0:one!</li><li title="two">1:two!</li>')) throw new Error('Fetched rows did not settle');
+        if(fixture==='request-list-siblings' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Ada</h1><li>0:one</li><li>1:two</li><button>0</button>0<footer>After</footer>'))throw new Error('Fetched sibling placement did not settle');
+        if (fixture==='request-local-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li>one</li><li>two</li>')) throw new Error('Local rows lost their initial content');
+        if (fixture === 'request-conditional' && !html.replace(/<!--[^]*?-->/g, '').includes('<section><h2>Ada:0</h2></section>')) throw new Error('Request conditional selected the wrong branch');
+        if (fixture === 'request-local-conditional' && !html.includes('<p>Shown</p>')) throw new Error('Local conditional lost its initial branch');
+        if (fixture === 'request-composition' && !html.replace(/<!--[^]*?-->/g, '').includes('Hello Ada')) throw new Error('Composed request data did not settle');
       }
-      const entry = emitted.find((file): file is Rollup.OutputChunk => file.type === 'chunk' && file.isEntry)!;
-      const { default: app } = await import(pathToFileURL(resolve(directory, entry.fileName)).href);
-      app.installDocumentTemplate(String(template.source));
-      const response = await app.fetch(new Request('https://app.test/'));
-      if (response.status !== 200) throw new Error(`SSR failed: ${await response.text()}`);
-      const html = await response.text();
-      if(fixture==='composition-static-children' && !html.replace(/<!--[^]*?-->/g,'').includes('<section><h2>Static card</h2><p>Ada</p></section>'))throw new Error('Static child content was lost');
-      if(fixture==='composition-static-children-60' && (html.match(/<section>/g)?.length!==60 || !html.replace(/<!--[^]*?-->/g,'').includes('<aside><h2>Static card 59</h2><p>Ready.</p></aside>')))throw new Error('Repeated forwarded child content was lost');
-      if(fixture==='request-inline-group' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Directory:Ada</h1>'))throw new Error('Inline policy data did not settle');
-      if (['request-module-option-keys', 'request-data', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && !html.replace(/<!--[^]*?-->/g, '').includes('<h1>Ada</h1>')) throw new Error('Request data did not settle');
-      if (fixture==='request-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li title="one">0:one!</li><li title="two">1:two!</li>')) throw new Error('Fetched rows did not settle');
-      if(fixture==='request-list-siblings' && !html.replace(/<!--[^]*?-->/g,'').includes('<h1>Ada</h1><li>0:one</li><li>1:two</li><button>0</button>0<footer>After</footer>'))throw new Error('Fetched sibling placement did not settle');
-      if (fixture==='request-local-list' && !html.replace(/<!--[^]*?-->/g,'').includes('<li>one</li><li>two</li>')) throw new Error('Local rows lost their initial content');
-      if (fixture === 'request-conditional' && !html.replace(/<!--[^]*?-->/g, '').includes('<section><h2>Ada:0</h2></section>')) throw new Error('Request conditional selected the wrong branch');
-      if (fixture === 'request-local-conditional' && !html.includes('<p>Shown</p>')) throw new Error('Local conditional lost its initial branch');
-      if (fixture === 'request-composition' && !html.replace(/<!--[^]*?-->/g, '').includes('Hello Ada')) throw new Error('Composed request data did not settle');
       // All emitted chunks, including shared/imported code and later capabilities.
       const chunks = assets.filter(file => file.type === 'chunk');
       const payload = html.match(/<script\b[^>]*type="application\/mmd\+json"[^>]*>[^]*?<\/script>/g) ?? [];
@@ -124,7 +129,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
         gzip: chunks.reduce((size, file) => size + gzipSync(file.code).byteLength, 0), chunks: chunks.length };
       if (fixture === 'static' && version === 'after' && row.javascript !== 0) throw new Error('Static page emitted JavaScript');
       if(fixture.startsWith('composition-') && row.javascript===0)throw new Error('Composition lost its counter browser program');
-      if (['request-data', 'request-composition'].includes(fixture) && version === 'after' && (row.javascript !== 0 || row.payload !== 0 || /<!--/.test(html))) throw new Error('Request-only page retained browser delivery');
+      if (!clientOnly && ['request-data', 'request-composition'].includes(fixture) && version === 'after' && (row.javascript !== 0 || row.payload !== 0 || /<!--/.test(html))) throw new Error('Request-only page retained browser delivery');
       if (['request-module-option-keys', 'request-interactive', 'request-routed-group', 'request-conditional', 'request-local-conditional', 'request-list', 'request-local-list'].includes(fixture) && row.javascript === 0) throw new Error('Interactive behavior lost its browser program');
       rows.push(row);
       await writeFile(resolve(directory, 'response.html'), html);
@@ -134,12 +139,12 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
     await rm(root, { recursive: true, force: true });
   }
 }
-const metadata = { baseline, head: git('rev-parse', 'HEAD'), dirty: !!git('status', '--porcelain'), rows };
+const metadata = { clientOnly, baseline, head: git('rev-parse', 'HEAD'), dirty: !!git('status', '--porcelain'), rows };
 await writeFile(resolve(output, 'results.json'), JSON.stringify(metadata, null, 2));
 await writeFile(resolve(output, 'results.md'), [
-  '# Production SSR delivery audit', '',
+  clientOnly ? '# Production client-only delivery audit' : '# Production SSR delivery audit', '',
   `Compiler/Vite baseline: ${baseline}; current HEAD: ${metadata.head}; dirty: ${metadata.dirty}.`, '',
-  'Both builds use the current runtime/data/server packages and stable authored fixtures; the baseline archives compiler and Vite source without changing the checkout. Identical HTML shells, actual served responses, production minification. HTML includes its payload; payload is also reported separately. JS counts every emitted chunk once, including shared and future code. Gzip compresses each chunk separately. Server JavaScript is excluded.', '',
+  'Both builds use the current runtime/data/server packages and stable authored fixtures; the baseline archives compiler and Vite source without changing the checkout. Identical HTML shells, production minification. Client-only runs measure the built document; SSR runs measure actual served responses. HTML includes its payload; payload is also reported separately. JS counts every emitted chunk once, including shared and future code. Gzip compresses each chunk separately. Server JavaScript is excluded.', '',
   '| Fixture | Delivery | HTML B | Payload B | JS B | JS gzip sum B | Chunks |',
   '|---|---|---:|---:|---:|---:|---:|',
   ...rows.map(row => `| ${row.fixture} | ${row.version} | ${row.html} | ${row.payload} | ${row.javascript} | ${row.gzip} | ${row.chunks} |`), '',

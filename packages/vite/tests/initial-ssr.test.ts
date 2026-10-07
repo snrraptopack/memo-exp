@@ -14,7 +14,7 @@ import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, chec
 let fixture: string | undefined;
 afterEach(async () => { if (fixture) await rm(fixture, { recursive: true, force: true }); fixture = undefined; });
 
-async function production(name: string, source: string, extras: Record<string, string> = {}, userName: string | Record<string,unknown> = 'Ada') {
+async function production(name: string, source: string, extras: Record<string, string> = {}, userName: string | Record<string,unknown> = 'Ada', clientOnly = false) {
   fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-initial-ssr-'));
   await mkdir(join(fixture, 'src'));
   await writeFile(join(fixture, 'index.html'), '<!doctype html><html><head><title>SSR</title></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="./src/main.ts"></script></body></html>');
@@ -36,7 +36,7 @@ async function production(name: string, source: string, extras: Record<string, s
       '@memoized-dom/server/router': 'packages/server/dist/http-router.js',
       '@memoized-dom/server': 'packages/server/dist/index.js',
     }).map(([name, path]) => ({ find: new RegExp(`^${name}$`), replacement: resolve(repository, path) })) },
-    base: '/demo/', plugins: [memoizedDom({ clientEntry: 'src/main.ts', serverEntry: 'server.ts' })] });
+    base: '/demo/', plugins: [memoizedDom({ clientEntry: 'src/main.ts', ...(clientOnly ? {} : {serverEntry: 'server.ts'}) })] });
   const client = await build({ ...config(), build: { write: false } });
   const files = (Array.isArray(client) ? client : [client]).flatMap(value => value.output);
   const html = String(files.find(file => file.type === 'asset' && file.fileName === 'index.html')?.source);
@@ -111,6 +111,30 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it('omits restoration from client-only fetched Group delivery and retains reactive inputs in Chrome', async context => {
+    const executablePath = chromeExecutable();if (!executablePath) {context.skip();return;}
+    const result = await production('client-only-request', `import {Group} from '@memoized-dom/data';
+      function Pending(){return <i>Waiting</i>;}export function App(){let name='Ada';let n=0;
+      const user=$fetch('/api/user',{query:{name}});return <main><button class="next" onClick={()=>n++}>Next {n}</button>
+        <button class="change" onClick={()=>name='Lin'}>Change</button><Group pending={Pending}><p>{user?.name}:{n}</p></Group></main>;}`, {}, 'Ada', true);
+    const delivered = result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n');
+    expect(delivered).not.toContain('Serialized data state sources must be an array');
+    expect(delivered).not.toContain('Request body must be JSON-serializable');
+    let name = 'Ada';
+    await browserPage(result, result.html, executablePath, async (page, requests) => {
+      await page.waitForFunction(() => document.querySelector('p')?.textContent === 'Ada:0');
+      expect(requests).toEqual(['/api/user?name=Ada']);
+      await page.click('.next');await page.waitForFunction(() => document.querySelector('p')?.textContent === 'Ada:1');
+      name = 'Lin';await page.click('.change');
+      await page.waitForFunction(() => document.querySelector('p')?.textContent === 'Lin:1');
+      expect(requests).toEqual(['/api/user?name=Ada','/api/user?name=Lin']);
+      expect(await page.evaluate(() => {
+        const initial=(window as unknown as {initial:Element[]}).initial;
+        return initial.includes(document.querySelector('main')!) && initial.includes(document.querySelector('.next')!);
+      })).toBe(true);
+    }, '/demo/', () => ({name}));
+  },60_000);
+
   it.each([0,2])('binds fetched lists inside repeated authored children (%i rows) in Chrome',async(count,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production(`structural-child-list-${count}`,`import {Shell} from './Shell';export function App(){

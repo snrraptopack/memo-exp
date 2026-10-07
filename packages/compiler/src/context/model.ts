@@ -27,6 +27,10 @@ import type {
 export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceDefinition[] = [
   {
     module: '@memoized-dom/data/internal',
+    source: 'createClientSource',
+  },
+  {
+    module: '@memoized-dom/data/internal',
     source: 'createBodylessSource',
   },
   {
@@ -54,6 +58,8 @@ export interface MemoDomOptions {
   routerPath?: string;
   /** Runtime helpers used by compiler-transparent async data sources. */
   dataRuntimePath?: string;
+  /** Host delivery fact: client-only sources need no server transfer consumer. */
+  dataDelivery?: 'universal' | 'client';
   /**
    * Library declarations that participate in transparent async lowering.
    * The default describes @memoized-dom/data without baking its local import
@@ -414,6 +420,7 @@ export interface Ctx {
   hotRuntimePath: string;
   routerPath: string;
   dataRuntimePath: string;
+  dataDelivery: 'universal' | 'client';
   transparentAsyncSources: readonly TransparentAsyncSourceDefinition[];
   externalReactiveSources: readonly ExternalReactiveSourceDefinition[];
   rootId: string;
@@ -759,6 +766,7 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
     dataRuntimePath: opts.dataRuntimePath ?? '@memoized-dom/data/internal',
+    dataDelivery: opts.routedEnvironment === 'server' ? 'universal' : opts.dataDelivery ?? 'universal',
     transparentAsyncSources: opts.transparentAsyncSources ??
       DEFAULT_TRANSPARENT_ASYNC_SOURCES,
     externalReactiveSources: opts.externalReactiveSources ??

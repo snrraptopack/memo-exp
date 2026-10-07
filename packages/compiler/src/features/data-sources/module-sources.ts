@@ -70,7 +70,7 @@ export function lowerModuleSourceDeclarations(
                 astFactory.returnStatement(
                   astFactory.callExpression(mdd(ctx, readSource
                     ? 'createReadSource'
-                    : source.bodyless ? 'createBodylessSource' : 'createSource'), readSource
+                    : source.bodyless ? source.clientOnly ? 'createClientSource' : 'createBodylessSource' : 'createSource'), readSource
                     ? [astFactory.callExpression(sourceReplayConsumption(cloneNode(source.replay, true)), []), ...inputs()]
                     : inputs()),
                 ),

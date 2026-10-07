@@ -33,7 +33,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   let sourceAnalysis = refreshAstAnalysis(ctx, programPath.node);
   const bodylessFetches = ctx.dataRuntimePath === '@memoized-dom/data/internal'
     ? lowerBodylessFetchImports(programPath.node,
-      planBodylessFetchImports(programPath.node, sourceAnalysis, ctx.transparentProviderFactories))
+      planBodylessFetchImports(programPath.node, sourceAnalysis, ctx.transparentProviderFactories), ctx.dataDelivery)
     : new Set<string>();
   if (bodylessFetches.size > 0) sourceAnalysis = refreshAstAnalysis(ctx, programPath.node);
   const reads = planReadReplays(programPath.node, sourceAnalysis, ctx.transparentReadFactories);
@@ -45,7 +45,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   lowerTransparentGroups(ctx, programPath,presentations);
   const moduleSources = planModuleSources(programPath.node, refreshAstAnalysis(ctx, programPath.node), ctx.moduleId,
     {sources: ctx.transparentSourceFactories, forms: ctx.transparentFormFactories, reads: ctx.transparentReadFactories,
-      bodylessFetches}, programPath);
+      bodylessFetches, clientOnly:ctx.dataDelivery === 'client'}, programPath);
   lowerModuleSourceDeclarations(ctx, programPath.node, moduleSources);
   analyzeRouterJsx(ctx, programPath);
   runAnalysis(ctx, programPath);

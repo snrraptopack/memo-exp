@@ -10,6 +10,7 @@ export function compilerOptions(
     ...(options.hotRuntimePath === undefined ? {} : { hotRuntimePath: options.hotRuntimePath }),
     ...(options.routerPath === undefined ? {} : { routerPath: options.routerPath }),
     ...(options.dataRuntimePath === undefined ? {} : { dataRuntimePath: options.dataRuntimePath }),
+    ...(options.dataDelivery === undefined ? {} : { dataDelivery: options.dataDelivery }),
     ...(options.transparentAsyncSources === undefined
       ? {}
       : { transparentAsyncSources: options.transparentAsyncSources }),

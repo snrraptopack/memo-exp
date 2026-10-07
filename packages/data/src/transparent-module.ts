@@ -24,6 +24,7 @@
 import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
 import { enableRequestEncoding } from './request-encoding';
+import { installActiveDataRestoration } from './active-restoration';
 import { disposeFetchResource, rebindFetchResource } from './resource';
 import type { FetchOptions, FetchResource, ResolvedValue } from './types';
 import { enableDataReads, rebindReadResource } from './read-resource';
@@ -139,6 +140,15 @@ export function createBodylessSource<T>(
   target: string | URL | null,
   options?: FetchOptions,
 ): ResolvedValue<T> {
+  installActiveDataRestoration();
+  return createClientSource(target, options);
+}
+
+/** Host-proved client delivery omits transfer setup on the same request engine. */
+export function createClientSource<T>(
+  target: string | URL | null,
+  options?: FetchOptions,
+): ResolvedValue<T> {
   return getActiveDataRuntime().$fetch(
     target,
     options,
@@ -150,6 +160,7 @@ export function createReadSource<T>(
   promise: PromiseLike<T>,
   replay: () => PromiseLike<T>,
 ): ResolvedValue<T> {
+  installActiveDataRestoration();
   return enableDataReads(getActiveDataRuntime()).$read(promise, replay) as unknown as ResolvedValue<T>;
 }
 

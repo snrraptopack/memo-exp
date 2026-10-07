@@ -8,6 +8,7 @@ import {
   createFetchResource,
   FetchStore,
   type FetchEnvironment,
+  type FetchRestoration,
 } from './resource';
 import type {
   DataRuntime,
@@ -17,7 +18,7 @@ import type {
   StandardSchemaV1,
 } from './types';
 
-export type CoreDataRuntime = Omit<DataRuntime, '$read' | 'serializeState'>;
+export type CoreDataRuntime = Omit<DataRuntime, '$read' | 'serializeState' | 'restoreState'>;
 
 const stores = new WeakMap<CoreDataRuntime, FetchStore>();
 
@@ -36,12 +37,9 @@ export function fetchStoreForRuntime(runtime: CoreDataRuntime): FetchStore {
   return store;
 }
 
-export function resumeDataHydration(runtime: CoreDataRuntime): void {
-  stores.get(runtime)?.resumeHydration();
-}
-
-export function cancelDataHydration(runtime: CoreDataRuntime): void {
-  stores.get(runtime)?.cancelHydration();
+/** A foreign public runtime may own a different request implementation. */
+export function fetchRestorationForRuntime(runtime: CoreDataRuntime): FetchRestoration | undefined {
+  return stores.get(runtime)?.restoration;
 }
 
 /** Create an isolated request/cache/action ownership boundary. */
@@ -70,9 +68,6 @@ export function createCoreDataRuntime(
     },
     settle(timeoutMs) {
       return settleDataRuntimeSources(runtime, timeoutMs);
-    },
-    restoreState(state) {
-      store.installRestoreRecords(state);
     },
   };
   registerDataRuntimeProvider(runtime, store);

@@ -3,9 +3,10 @@ import { enableDataSerialization } from './serialization';
 import { enableDataReads } from './read-resource';
 import { enableDataWrites } from './resource-writes';
 import { enableRequestEncoding } from './request-encoding';
+import { enableDataRestoration } from './restoration';
 import type { DataRuntime, DataRuntimeOptions } from './types';
 
-export { resumeDataHydration, cancelDataHydration } from './runtime-core';
+export { resumeDataHydration, cancelDataHydration } from './restoration';
 
 /** Public runtimes expose every source capability on the same ownership boundary. */
 export function createDataRuntime(options: DataRuntimeOptions = {}): DataRuntime {
@@ -14,5 +15,5 @@ export function createDataRuntime(options: DataRuntimeOptions = {}): DataRuntime
 
 /** Add public capabilities to the same lazily created internal runtime. */
 export function exposeDataRuntime(runtime: CoreDataRuntime): DataRuntime {
-  return enableDataSerialization(enableDataReads(enableDataWrites(enableRequestEncoding(runtime))));
+  return enableDataSerialization(enableDataReads(enableDataWrites(enableRequestEncoding(enableDataRestoration(runtime)))));
 }

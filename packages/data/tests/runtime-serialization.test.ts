@@ -30,7 +30,7 @@ describe('optional data transfer producer', () => {
       expect(read.data).toBe('ready');
       expect(fetcher).toHaveBeenCalledTimes(1);
       const restoredFetch = vi.fn(async () => Response.json({name:'wrong'}));
-      const restored = createCoreDataRuntime({fetch:restoredFetch});
+      const restored = exposeDataRuntime(createCoreDataRuntime({fetch:restoredFetch}));
       try {
         restored.restoreState(runtime.serializeState());
         expect(restored.$fetch('/user').data).toEqual({name:'Ada'});

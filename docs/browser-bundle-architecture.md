@@ -46,13 +46,13 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Input / list | 17,140 | 6,443 |
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
-| Interactive fetched page | 29,071 | 9,952 |
+| Interactive fetched page | 29,654 | 10,102 |
 | Interactive fetched page with request-selected host branches | 35,341 | 11,843 |
 | Interactive fetched page with a local conditional | 33,702 | 11,362 |
 | Interactive fetched list | 46,171 | 15,468 |
 | Interactive fetched list with fixed siblings | 46,687 | 15,546 |
 | Interactive local list beside fetched text | 46,913 | 15,763 |
-| Routed fetched page with Group | 82,720 | 25,632 |
+| Routed fetched page with Group | 83,301 | 25,774 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Fixed
@@ -2454,3 +2454,93 @@ data test typechecking and root typechecking pass. Changed-file lint exits
 successfully with existing snapshot-iteration warnings. Fixtures are independent
 of examples; examples, numbered docs and dependency versions are unchanged.
 Request restoration, cache and broader router costs remain open.
+
+### Restoration follows host delivery facts — 2026-10-07
+
+Transfer validation, restored snapshots and hydration deferral now live in one
+optional consumer attached to the existing fetch store. They were moved out of
+the store, rather than copied into a second request implementation. Request
+execution, active/app caches, controllers, notification, settlement, cancellation
+and source ownership remain shared. Public runtimes expose `restoreState()` on
+that same object, including when public capabilities are enabled after a client
+request already exists. Foreign public runtimes keep their own implementation.
+
+The compiler carries a host delivery fact alongside the existing bodyless-input
+proof. Vite derives client-only delivery when there is no server entry. Default
+standalone compiler output retains transfer support; server compilation and
+Vite graphs with a server entry retain it as well. A host can request conservative
+universal support for a browser graph. Authors keep using the same fetch and
+mount APIs. The private client constructor calls the same active runtime's fetch
+method without installing transfer. Its universal constructor adds the transfer
+capability before delegating to that constructor. No package entry, second cache,
+scheduler or browser graph was added.
+
+Escaping providers, opaque options and requests with bodies conservatively keep
+the public facade. A mixed graph or explicit public runtime may therefore retain
+restoration. Transfer fingerprints and the engine's operation bookkeeping also
+remain shared so exposing serialization later does not lose existing requests.
+This batch removes the transfer consumer and deferral coordinator from proved
+client-only graphs; it does not remove every server-related byte from arbitrary
+client applications.
+
+Matched esbuild client-only source graphs against `763b905`, with the current
+compiler and authored fixtures held fixed:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Fixed fetch | 32,472 | 29,719 | 11,185 | 10,441 |
+| Fixed fetch with Group | 32,655 | 29,902 | 11,239 | 10,490 |
+| Routed fetch with Group | 76,214 | 73,452 | 24,526 | 23,758 |
+| Direct reactive query | 33,564 | 30,811 | 11,531 | 10,792 |
+| Imported reactive request factory | 34,021 | 31,264 | 11,689 | 10,936 |
+| JSON POST, full public facade | 33,815 | 34,368 | 11,616 | 11,772 |
+
+The archived runtime exports its original bodyless constructor under the new
+private client hook name. Its request/restoration implementation is unchanged;
+the audit records that ABI alias. Whole source bundles are gzipped once.
+Negative retention checks require transfer validation to disappear from proved
+client-only graphs. Positive checks retain it for universal delivery. All 24
+client-only and 18 program-hydration package/current-source/baseline-source
+Chrome graphs pass. Counter and input/list controls are byte-identical.
+
+Optional wiring has a cost when transfer is retained. The universal source
+fixtures grow 553–588 raw bytes / 144–166 gzip bytes against the old runtime;
+the generic client POST also grows 553 raw / 156 gzip bytes. These costs are
+reported alongside the client-only savings, not treated as SSR improvements.
+
+A separate paired Vite production client-only audit holds the current
+runtime/data/server packages fixed and compares compiler/Vite `763b905` with
+the current compiler/Vite. It counts every emitted browser chunk, including
+shared and future code, and gzips each chunk separately:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Interactive fetched page | 33,485 | 30,152 | 11,350 | 10,441 |
+| Routed fetched page with Group | 75,813 | 72,471 | 23,465 | 22,538 |
+
+Both client-only documents are 177 B with no data payload. Static remains zero
+JavaScript, and the counter remains 8,613 B / 3,483 B gzip. Reproduce with
+`bun run bench:size:ssr --client-only --before-ref=763b905 --fixture=request-interactive --fixture=request-routed-group --fixture=counter --fixture=static`;
+the report goes to `bench/package-size/dist/client` separately from SSR results.
+
+The corresponding paired SSR delivery audit is byte-identical on both sides:
+interactive fetch is 29,654 B / 10,102 B gzip, routed Group is 83,301 B / 25,774 B
+gzip. HTML/payload remain 535/315 B and 783/315 B. These comparisons hold the
+new runtime fixed and isolate compiler delivery selection. Compared with the
+previous measured production checkpoint, the full SSR runtime costs 583 raw /
+150 gzip bytes for the interactive fetch and 581 raw / 142 gzip bytes for routed
+Group. No CPU or DOM performance gain is claimed.
+
+Verification passes 81 data tests, 120 focused root tests across sixteen suites,
+135 server tests and seven production delivery tests, six using real Chrome.
+The checks cover public bundled restoration, upgrading an existing cache,
+deferred resume/cancel/disposal, restored pending/error/revalidation, reactive
+client request inputs, SSR without duplicate fetching, general recovery, lazy
+routes and Group. Builds, data test typechecking and root typechecking pass.
+Lint retains the existing snapshot-iteration warnings; those snapshots protect
+reentrant changes to consumer/entry sets. Examples, numbered docs and dependency
+versions are unchanged.
+
+Next: narrow optional router capabilities, then extend binding proofs for nested
+lists and recreated slots. Request cache and transfer fingerprint reachability
+remain further opportunities within the same engine.

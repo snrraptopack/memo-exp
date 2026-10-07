@@ -23,6 +23,7 @@ const reference = args.find(arg => arg.startsWith('--before-ref='))?.slice(13);
 let baseline: string | undefined;
 let baselineRoot: string | undefined;
 let legacyBodylessAlias = false;
+let legacyClientSourceAlias = false;
 if (reference !== undefined) {
   baseline = execFileSync('git', ['rev-parse', '--verify', '--end-of-options', `${reference}^{commit}`], { cwd: root, encoding: 'utf8' }).trim();
   if (!/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error('Invalid runtime baseline');
@@ -42,6 +43,10 @@ if (reference !== undefined) {
     writeFileSync(dataInternal, `${original}\nexport {createSource as createBodylessSource} from './transparent-module';\n`);
     legacyBodylessAlias = true;
   }
+  if (!original.includes('createClientSource')) {
+    writeFileSync(dataInternal, `${readFileSync(dataInternal, 'utf8')}\nexport {${legacyBodylessAlias ? 'createSource' : 'createBodylessSource'} as createClientSource} from './transparent-module';\n`);
+    legacyClientSourceAlias = true;
+  }
 }
 const rows: Array<{ fixture: string; graph: string; raw: number; gzip: number; brotli: number;
   inputs: Array<{ path: string; bytes: number }> }> = [];
@@ -51,7 +56,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
   if (selected.size && !selected.has(fixture)) continue;
   const compilation = compileModulesDetailed({ ...sources,
     './main.ts': `${hydration ? `import '${programHydration ? hydrationVirtualId : '@memoized-dom/runtime/hydrate'}';` : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
-  });
+  }, {dataDelivery: hydration ? 'universal' : 'client'});
   const compiled = compilation.output;
   if (fixture === 'request-factory-rebind' && !compiled['./App.tsx']?.includes('rebindResolvedValueFromFactory')) {
     throw new Error('The factory fixture must exercise imported request adoption');
@@ -134,6 +139,15 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       !output.text.includes('Request body must be JSON-serializable')) {
       throw new Error('Generic requests must retain request body encoding');
     }
+    if (!hydration && graph !== 'source-before' &&
+        ['request-group','request-routed-group','request-data','request-rebind','request-factory-rebind'].includes(fixture) &&
+        output.text.includes('Serialized data state sources must be an array')) {
+      throw new Error('Proved client-only fetches must not retain restoration validation');
+    }
+    if (hydration && graph !== 'source-before' && fixture.startsWith('request-') &&
+        !output.text.includes('Serialized data state sources must be an array')) {
+      throw new Error('SSR-capable fetches must retain transfer restoration');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));
@@ -144,6 +158,7 @@ const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
   `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
   `Legacy bodyless-hook alias: ${legacyBodylessAlias}. When required, the baseline exports its original generic createSource under the new compiler hook name; its request implementation is unchanged.`, '',
+  `Legacy client-source hook alias: ${legacyClientSourceAlias}. When required, the baseline exports its original bodyless source under the new client-only hook name, retaining its original restoration implementation.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
   `Optional hydration included: ${hydration}; compiler-selected capabilities: ${programHydration}. Baseline hydration: ${programHydration?(baselineProgramHydration?'same program capabilities':'explicit general entry'):'same entry'}. Use --baseline-hydration=general only to compare older revisions without program hydration. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime, data and router source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
@@ -254,6 +269,6 @@ for (const row of rows.filter(row => row.graph !== 'package')) {
     ...row.inputs.map(input => `| ${input.path} | ${input.bytes} |`), '');
 }
 writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(),
-  revision, status, baseline, legacyBodylessAlias, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
+  revision, status, baseline, legacyBodylessAlias, legacyClientSourceAlias, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n') + '\n');
 console.log(`Report: ${resolve(directory, 'results.md')}`);

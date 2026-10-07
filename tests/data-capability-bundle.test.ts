@@ -31,6 +31,12 @@ describe('bundled public data construction', () => {
         second.mutate(person => { person!.name = 'Lin'; });
         expect(first.data).toBe(second.data);
         expect(first.data).toEqual({ name: 'Lin' });
+        const client = api.createDataRuntime({fetch:async () => {throw new Error('Restoration fetched again');}});
+        try {
+          client.restoreState(runtime.serializeState());
+          expect(client.$fetch('/person').data).toEqual({name:'Lin'});
+          expect(await client.settle()).toBe(true);
+        } finally {client.clear();}
       } finally { runtime.clear(); }
     });
   }

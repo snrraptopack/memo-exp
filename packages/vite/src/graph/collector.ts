@@ -230,6 +230,8 @@ export async function compileGraph(
   }
 
   const compileOptions = {
+    dataDelivery: options.serverEntry !== undefined || routedEnvironment === 'server'
+      ? 'universal' : options.dataDelivery ?? 'client',
     ...(options.frontend === undefined ? {} : { frontend: options.frontend }),
     ...(options.runtimePath === undefined
       ? {}
