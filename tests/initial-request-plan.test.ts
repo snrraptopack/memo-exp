@@ -1,8 +1,30 @@
 import { expect, it } from 'vitest';
 import { compileModulesDetailed, emitInitialHtml, yukuEstreeFrontend, experimentalTsrxEstreeFrontend } from '@memoized-dom/compiler';
 import { planInitialDom } from '../packages/compiler/src/emission/initial-dom';
+import {sizeFixtures} from '../bench/package-size/fixtures';
 
 const entry=`import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`;
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds recreated component-owned request structures (%s)',frontend=>{
+  const sources={'./main.ts':entry,...sizeFixtures['request-component-structures']!};
+  const client=compileModulesDetailed(sources,{initialContent:true,frontend});
+  const server=compileModulesDetailed(sources,{initialContent:true,frontend,routedEnvironment:'server',moduleStateCells:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  if(client.initialRender.kind!=='bindings')throw Error('Missing component structures');
+  const row=planInitialDom(client.initialRender)!.factories!['./Row.tsx#Row']!;
+  expect(row.retainCreation).toBe(true);
+  const branch=Object.values(row.conditions)[0]!.branches![0]!;
+  expect(Object.values(branch.lists)[0]).toMatchObject({count:null});
+  expect(Object.values(branch.elements).flatMap(element=>element.texts).every(text=>text.live)).toBe(true);
+  expect(client.output['./Row.tsx']).toContain('bindInitialList');
+  expect(server.output['./Row.tsx']).toContain('mmd:initial:when:');
+});
+it.each(['missing branch','variable siblings'])('keeps ordinary creation for unproved component request extents (%s)',shape=>{
+  const sources={...sizeFixtures['request-component-structures']!};
+  sources['./Row.tsx']=shape==='missing branch'
+    ? sources['./Row.tsx']!.replace(':<aside>Hidden</aside>',':null')
+    : sources['./Row.tsx']!.replace('</div><small>','{item.tags.map(tag=><strong key={tag.id}>{tag.label}</strong>)}</div><small>');
+  expect(compileModulesDetailed({'./main.ts':entry,...sources},{initialContent:true}).initialDelivery).toBeUndefined();
+});
 function compile(source:string,options:Parameters<typeof compileModulesDetailed>[1]={}) {
   return compileModulesDetailed({'./main.ts':entry,'./App.tsx':source},{initialContent:true,...options});
 }

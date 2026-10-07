@@ -114,6 +114,48 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([0,2])('binds and recreates component-owned request structures in Chrome (%i)',async(count,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const sources=sizeFixtures['request-component-structures']!;
+    const extras=Object.fromEntries(Object.entries(sources).filter(([id])=>id!=='./App.tsx').map(([id,source])=>['src/'+id.slice(2),source]));
+    const rows=[{id:1,label:'one',active:true,tags:[{id:11,label:'first'},{id:12,label:'second'}]},
+      {id:2,label:'two',active:false,tags:[]}].slice(0,count);
+    const result=await production(`component-structures-${count}`,sources['./App.tsx']!,extras,{rows});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    let next=rows;
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>({created:(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'),
+        retained:(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)}))).toEqual({created:[],retained:true});
+      expect(requests).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('li')];});
+      if(count){await page.click('.row-next');await page.waitForFunction(()=>document.querySelector('.row-next')?.textContent==='1');}
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='Kept 1');
+      next=[{id:2,label:'changed',active:true,tags:[{id:21,label:'new tag'}]},
+        {id:1,label:'one',active:false,tags:[]},{id:3,label:'new',active:true,tags:[]}];
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===3);
+      expect(await page.$$eval('li h2',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:changed:1','1:one:1','2:new:1']);
+      expect(await page.$$eval('li em',nodes=>nodes.map(node=>node.textContent))).toEqual(['new tag']);
+      expect(await page.$$eval('li section small',nodes=>nodes.map(node=>node.textContent))).toEqual(['After tags','After tags']);
+      expect(await page.$$eval('li p',nodes=>nodes.map(node=>node.textContent))).toEqual(['Row end','Row end','Row end']);
+      if(count)expect(await page.evaluate(()=>{const kept=(window as unknown as {kept:Element[]}).kept;
+        return document.querySelector('li')===kept[1]&&document.querySelector('li:nth-child(2)')===kept[0]&&kept[0]!.querySelector('button')?.textContent==='1';})).toBe(true);
+      await page.evaluate(()=>{(window as unknown as {tags:Element[]}).tags=[...document.querySelectorAll('em')];});
+      next=[{id:2,label:'changed',active:true,tags:[{id:22,label:'added'},{id:21,label:'retained'}]},
+        {id:1,label:'one',active:true,tags:[{id:11,label:'recreated'}]}];
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('em').length===3);
+      expect(await page.$$eval('li em',nodes=>nodes.map(node=>node.textContent))).toEqual(['added','retained','recreated']);
+      expect(await page.evaluate(()=>document.querySelectorAll('em')[1]===(window as unknown as {tags:Element[]}).tags[0])).toBe(true);
+      next=[];await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===0);
+      next=[{id:1,label:'fresh',active:true,tags:[{id:31,label:'fresh tag'}]}];
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelector('em')?.textContent==='fresh tag');
+      expect(await page.$eval('.row-next',node=>node.textContent)).toBe('0');
+      expect(await page.$eval('li b',node=>node.textContent)).toBe('Active');
+      await page.click('.row-next');await page.waitForFunction(()=>document.querySelector('.row-next')?.textContent==='1');
+      expect(requests).toEqual(['/api/user','/api/user','/api/user','/api/user']);
+    },'/demo/',()=>({rows:next}));
+  },120_000);
+
   it('parses streamed regions and adopts their DOM in Chrome', async context => {
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production('streamed-region-browser',`

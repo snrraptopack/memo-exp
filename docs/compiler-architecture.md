@@ -285,7 +285,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Concern | Current ownership | Next boundary |
 | --- | --- | --- |
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
-| Primitive pull safety | Authored fact plan plus explicit late callback-publication input | Move callback analysis/lowering to a shared phase with target-specific publication |
+| Primitive pull safety | Authored fact plan plus explicit late callback-publication input; component callbacks have immutable source plans | Extend explicit publication to remaining native-event and normalization consumers |
 | Async provenance and effects | Explicit source/availability/direct-read facts and lifetime owner requirements | Finish authored normalization before target lowering; extend callback lifetime reachability |
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
 | Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |

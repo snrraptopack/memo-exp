@@ -1,5 +1,14 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-component-structures': {
+    './App.tsx': `import {Row} from './Row';export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
+      <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+      <ul>{user?.rows?.map((item,index)=><Row key={item.id} item={item} index={index} suffix={n}/>)}</ul><footer>Kept {n}</footer></main>;}`,
+    './Row.tsx': `export function Row({item,index,suffix}){let n=0;return <li data-id={item.id}><h2>{index}:{item.label}:{suffix}</h2>
+      <button class="row-next" onClick={()=>n++}>{n}</button>
+      {item.active?<section><b>Active</b><div>{item.tags.map(tag=><em key={tag.id}>{tag.label}</em>)}</div><small>After tags</small></section>:<aside>Hidden</aside>}
+      <p>Row end</p></li>;}`,
+  },
   'request-row-children': {
     './App.tsx': `import {Row} from './Row';export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
       <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>

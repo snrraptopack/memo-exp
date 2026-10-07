@@ -107,3 +107,42 @@ The first combined browser run exceeded this case's 60-second outer timeout;
 an isolated rerun passed in 25 seconds with a 120-second outer limit. Browser
 assertions and operation wait limits were preserved. Build, typecheck and lint
 also pass.
+
+## Component-owned structural creation — 2026-10-07
+
+Fetched component rows can now bind their own request-selected conditional
+content and nested request lists. Previously, the shared plan proved those
+host extents but a later blanket guard rejected every structural region in a
+recreated component. That guard and its slot-only exception are removed.
+Future creation now propagates through branch alternatives and list row plans,
+preserving static text and attributes when the same factory creates new rows.
+DOM lowering and the existing conditional/list runtime engines are unchanged.
+
+Production comparison uses compiler/Vite `931934a` and the same current runtime:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Fetched component-owned conditional and nested list | 64,915 / 21,100 | 55,047 / 18,074 |
+| Fetched component rows | 51,539 / 17,077 | 51,539 / 17,077 |
+| Fetched rows with caller children | 51,233 / 17,144 | 51,233 / 17,144 |
+| Recreated structural caller children | 28,177 / 9,911 | 28,177 / 9,911 |
+| Static production page | 0 / 0 | 0 / 0 |
+
+The new fixture's initial HTML falls from 1,470 to 1,248 bytes; its 458-byte
+request payload is unchanged. This is a delivery size improvement, not an
+update timing measurement. Re-run `bench:size:ssr --before-ref=931934a` with
+`--fixture=request-component-structures` and the control fixtures above.
+
+Both parser regressions failed before the correction. Five focused compiler,
+composition, list, conditional and lifetime suites pass 123 distinct checks. Two
+production Chrome cases cover empty and populated initial lists: no initial
+element creation or refetch, retained row and nested keyed-node identity,
+reorder/refresh, independent local state, branch swaps, clearing and later
+creation with fresh state and intact static content.
+Compiler build, root typecheck and changed-file lint pass. Explicit negative
+checks retain ordinary creation for missing branches and variable sibling lists.
+
+Eligibility still requires proved row hosts and branch extents. Missing
+request branches, incompatible repeated component shapes, closed nested
+structural rows and multiple variable sibling extents remain separate proof
+work. This batch adds no new hydration path or compatibility API.

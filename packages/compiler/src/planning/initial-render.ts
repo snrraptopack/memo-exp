@@ -890,24 +890,23 @@ export function planInitialRendering(
         }});
       }
       // A future parent creates its composed descendants too. Keep one factory
-      // for binding and creation; only factories proved fixed in shape qualify.
+      // for binding and creation, including each region's proved host extent.
       for (const key of creationComponents) for (const child of descendants.get(key)??[]) creationComponents.add(child);
-      function retain(nodes:readonly InitialRenderNode[], creating=false, slotStructure=false):readonly InitialRenderNode[] {
+      function retain(nodes:readonly InitialRenderNode[], creating=false):readonly InitialRenderNode[] {
         return nodes.map(node=>{
           if (node.kind==='component') {
             const creation=creationComponents.has(`${node.moduleId}#${node.component}`);
             return {...node, ...(creation?{static:false}:{}), children:retain(node.children,creation)};
           }
-          if (creating && !slotStructure && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');
           if (node.kind==='element') return {...node,
             attributes:creating?node.attributes.map(attribute=>({...attribute,live:true})):node.attributes,
-            children:retain(node.children,creating,slotStructure)};
+            children:retain(node.children,creating)};
           if (node.kind==='text') return creating?{...node,live:true}:node;
-          if (node.kind==='slot') return {...node,...(creating?{static:undefined,creation:true as const}:{}),children:retain(node.children,creating,true)};
-          if (node.kind==='conditional') return {...node,children:retain(node.children),
-            ...(node.alternatives?{alternatives:node.alternatives.map(branch=>retain(branch))}:{})};
-          if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row)),
-            ...(node.requestRow?{requestRow:retain(node.requestRow)}:{})};
+          if (node.kind==='slot') return {...node,...(creating?{static:undefined,creation:true as const}:{}),children:retain(node.children,creating)};
+          if (node.kind==='conditional') return {...node,children:retain(node.children,creating),
+            ...(node.alternatives?{alternatives:node.alternatives.map(branch=>retain(branch,creating))}:{})};
+          if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row,creating)),
+            ...(node.requestRow?{requestRow:retain(node.requestRow,creating)}:{})};
           return node;
         });
       }
