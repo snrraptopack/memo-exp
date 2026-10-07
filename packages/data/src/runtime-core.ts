@@ -13,6 +13,7 @@ import type {
   DataRuntimeOptions,
   FetchFunction,
   FetchOptions,
+  SerializedDataState,
   StandardSchemaV1,
 } from './types';
 
@@ -32,6 +33,14 @@ export function resumeDataHydration(runtime: CoreDataRuntime): void {
 
 export function cancelDataHydration(runtime: CoreDataRuntime): void {
   stores.get(runtime)?.cancelHydration();
+}
+
+export function deliverStreamedDataState(runtime: CoreDataRuntime, state: SerializedDataState): void {
+  stores.get(runtime)?.deliverStreamedState(state);
+}
+
+export function endDataStream(runtime: CoreDataRuntime): void {
+  stores.get(runtime)?.endStream();
 }
 
 /** Create an isolated request/cache/action ownership boundary. */

@@ -222,21 +222,46 @@ Renderers accept a compiled root component and `RenderOptions`:
 
 ```ts
 interface RenderOptions {
-  mode?: 'shell' | 'resolve'; // resolve: await request data before output
+  mode?: 'shell' | 'resolve' | 'stream'; // see below
   timeout?: number;           // soft settle budget; pending UI is serialized
   deadline?: number;          // hard budget; the render rejects with TimeoutError
   signal?: AbortSignal;       // aborts preparation and data work
   url?: string;
   fetch?: typeof globalThis.fetch;
   markers?: boolean;
+  nonce?: string;             // CSP nonce for stream mode's inline scripts
 }
 ```
+
+- `shell` serializes pending UI immediately; the browser fetches pending data.
+- `resolve` awaits request data, then serializes the resolved UI.
+- `stream` sends the shell immediately, then each pending region as its data
+  settles, in completion order. Every pending data read sits in a
+  compiler-owned region, so wrapping slow UI in a `Group` gives it a skeleton
+  while the rest of the page arrives. Each region is a `<template>` plus its
+  data; a small inline script patches it into place before the browser program
+  runs, so the page fills in without JavaScript bundles and hydrates without
+  refetching. Regions that arrive after `mount()` reach the mounted root as
+  data. Sources still pending at the `timeout` budget are fetched by the
+  browser once the document ends. Requires `markers: true` and
+  `renderToReadableStream()`; `render()` settles a `stream` render like
+  `resolve`.
 
 - `render()` prepares the route, settles data in `resolve` mode, and returns
   the HTML, payload, ready-to-embed payload script, and settlement.
 - `renderToString()` synchronously renders a shell.
-- `renderToReadableStream()` returns ordered application streaming; cancelling
-  the stream aborts the render.
+- `renderToReadableStream()` streams the application; cancelling the stream
+  aborts the render.
+
+With `serve()`, choose it per root or application-wide through the render
+policy:
+
+```ts
+app.ssr(App, {
+  mode: 'stream',
+  nonce: request => request.headers.get('x-csp-nonce') ?? undefined,
+});
+```
 
 ```ts
 import { render } from '@memoized-dom/server';

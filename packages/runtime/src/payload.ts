@@ -11,7 +11,43 @@ interface DataRuntimeBridge {
   restoreState?(state: unknown): void;
   completeHydration?(): void;
   cancelHydration?(): void;
+  deliverStreamedState?(state: unknown): void;
+  endStream?(): void;
   pendingState?: unknown;
+}
+/**
+ * Streamed SSR chunks run inline scripts. Before a root mounts they patch the
+ * server DOM and payload; afterwards the root owns its DOM, so they hand the
+ * data to its runtime instead.
+ */
+interface StreamRealm {
+  readonly roots: Map<string, DataRuntimeBridge>;
+  owns(rootId: string): boolean;
+  deliver(rootId: string, state: unknown): void;
+}
+const streamRealmKey = Symbol.for('memoized-dom:stream');
+
+function streamRealm(): StreamRealm {
+  const realm = globalThis as unknown as Record<PropertyKey, unknown>;
+  const existing = realm[streamRealmKey] as StreamRealm | undefined;
+  if (existing !== undefined) return existing;
+  const roots = new Map<string, DataRuntimeBridge>();
+  const created: StreamRealm = {
+    roots,
+    owns: rootId => roots.has(rootId),
+    deliver(rootId, state) {
+      // A malformed late chunk falls back to the source's normal fetch.
+      try { roots.get(rootId)?.deliverStreamedState?.(state); } catch { /* malformed chunk */ }
+    },
+  };
+  realm[streamRealmKey] = created;
+  return created;
+}
+
+/** The response is complete once parsing ends; undelivered sources then fetch. */
+function endStreamAfterParsing(document: Document, data: DataRuntimeBridge): void {
+  if (document.readyState !== 'loading') data.endStream?.();
+  else document.addEventListener('DOMContentLoaded', () => data.endStream?.(), { once: true });
 }
 interface RouterRuntimeBridge {
   restoreState?(state: unknown): void;
@@ -60,6 +96,7 @@ export function initializePayload(
   recoverable?: (error: unknown) => boolean,
 ): MountedApplication {
   const restoration = restorePayload(definition.id, host);
+  streamRealm().roots.set(definition.id, restoration.data);
   let mounted: MountedApplication;
   try {
     mounted = initialize();
@@ -68,9 +105,11 @@ export function initializePayload(
     if (recoverable?.(error)) restoration.data.completeHydration?.();
     else restoration.data.cancelHydration?.();
     restoration.script?.remove();
+    endStreamAfterParsing(host.ownerDocument, restoration.data);
     throw error;
   }
   try { restoration.data.completeHydration?.(); }
   finally { restoration.script?.remove(); }
+  endStreamAfterParsing(host.ownerDocument, restoration.data);
   return mounted;
 }

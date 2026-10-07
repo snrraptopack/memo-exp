@@ -37,8 +37,14 @@ import { prepareRenderToReadableStream } from './stream';
  * with per-`app.ssr()` overrides.
  */
 export interface RenderPolicy {
-  /** `resolve` (default) awaits request data; `shell` serializes pending UI. */
+  /**
+   * `resolve` (default) awaits request data; `shell` serializes pending UI;
+   * `stream` sends the shell, then each region as its data settles. Buffered
+   * delivery settles a `stream` render like `resolve`.
+   */
   readonly mode?: RenderOptions['mode'];
+  /** Per-request CSP nonce for the inline scripts used by `stream` mode. */
+  readonly nonce?: (request: Request) => string | undefined;
   /** Emit hydration markers and the payload (default `true`). */
   readonly markers?: boolean;
   /** Soft settle budget in ms; delivery without a browser rejects incomplete data. */
@@ -299,12 +305,14 @@ async function renderPage<
   // With no browser program, incomplete request data cannot resume on the
   // client. Settle and validate the body before committing the response.
   const delivery = requestHtml ? 'buffer' : policy.delivery ?? 'stream';
+  const nonce = policy.nonce?.(context.request);
   const renderOptions: RenderOptions = {
     mode: requestHtml ? 'resolve' : policy.mode ?? 'resolve',
     markers,
     ...(initial === undefined ? {} : { initialKey: initial.key }),
     timeout: policy.timeout ?? DEFAULT_TIMEOUT,
     ...(policy.deadline === undefined ? {} : { deadline: policy.deadline }),
+    ...(nonce === undefined ? {} : { nonce }),
     url: context.url.pathname + context.url.search,
     fetch: createServerFetch(router, context, options.fetch ?? globalThis.fetch),
     routedContext: context,

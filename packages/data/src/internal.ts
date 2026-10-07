@@ -1,4 +1,5 @@
 export { createDataRuntime } from './client';
+export { nextDataRuntimeSettlement } from './runtime-lifetime';
 export {
   disposeFetchResource,
   fetchResourceSnapshot,

@@ -19,6 +19,7 @@
  */
 
 import { stringTier, type StringRenderableNode } from './string-document';
+import { escapeJsonForScriptTag } from './json-script';
 import type {
   RoutedServerContext,
   SerializedRoutedPreparationState,
@@ -53,10 +54,15 @@ export interface RenderOptions {
    *   bundling the state envelope.
    * - 'resolve': await in-flight data resources, flush entity updates, and
    *   serialize the fully resolved UI.
+   * - 'stream': send the shell immediately, then each pending region as its
+   *   data settles, in completion order. Needs `markers` and a streaming
+   *   renderer; other renderers settle it like 'resolve'.
    */
-  mode?: 'shell' | 'resolve';
-  /** Soft settle budget in ms for 'resolve' mode (default 5000ms). */
+  mode?: 'shell' | 'resolve' | 'stream';
+  /** Soft settle budget in ms for 'resolve' and 'stream' modes (default 5000ms). */
   timeout?: number;
+  /** CSP nonce for the inline scripts that patch streamed regions into place. */
+  nonce?: string;
   /**
    * Hard budget in milliseconds for the whole render, route preparation
    * included. Unlike the soft `timeout` settle budget (which serializes
@@ -88,17 +94,7 @@ export interface RenderOptions {
   markers?: boolean;
 }
 
-/**
- * Safely serializes a JSON state payload for HTML script-tag embedding.
- * Escapes `<`, `>`, and `&` using Unicode escapes (`\u003c`, `\u003e`, `\u0026`)
- * to prevent premature script block closure or XSS injection (RFC §16.6).
- */
-export function escapeJsonForScriptTag(json: string): string {
-  return json
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026');
-}
+export { escapeJsonForScriptTag };
 
 export function createPayloadScriptTag(rootId: string, payload: RenderPayload): string {
   const safeJson = escapeJsonForScriptTag(JSON.stringify(payload));

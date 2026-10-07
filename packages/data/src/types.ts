@@ -249,7 +249,11 @@ export type SerializedSourceSnapshot =
       readonly revalidate: boolean;
     }
   | { readonly status: 'error'; readonly error: SerializedSourceError }
-  | { readonly status: 'pending' };
+  | {
+      readonly status: 'pending';
+      /** The streaming response delivers the outcome later; do not refetch it. */
+      readonly streamed?: boolean;
+    };
 
 export interface SerializedSourceRecord {
   /** Stable public transfer identity. */

@@ -12,6 +12,8 @@ import { getExtensionStore } from '@memoized-dom/runtime';
 import {
   cancelDataHydration,
   createCoreDataRuntime,
+  deliverStreamedDataState,
+  endDataStream,
   resumeDataHydration,
   type CoreDataRuntime,
 } from './runtime-core';
@@ -21,6 +23,8 @@ interface ActiveDataRuntimeBridge {
   restoreState?(state: unknown): void;
   completeHydration?(): void;
   cancelHydration?(): void;
+  deliverStreamedState?(state: unknown): void;
+  endStream?(): void;
   pendingState?: unknown;
 }
 
@@ -62,6 +66,12 @@ activeStore.cancelHydration = () => {
   const runtime = getActiveDataRuntime();
   cancelDataHydration(runtime);
   runtime.clear();
+};
+activeStore.deliverStreamedState = state => {
+  deliverStreamedDataState(getActiveDataRuntime(), state as SerializedDataState);
+};
+activeStore.endStream = () => {
+  endDataStream(getActiveDataRuntime());
 };
 
 export function runWithDataRuntime<T>(runtime: CoreDataRuntime, fn: () => T): T {

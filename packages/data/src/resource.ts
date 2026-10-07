@@ -364,6 +364,27 @@ function isSerializedSourceRecord(value: unknown): value is SerializedSourceReco
     isSerializedSnapshot(value.snapshot);
 }
 
+function serializedSources(state: SerializedDataState): SerializedSourceRecord[] {
+  if (!isRecord(state)) {
+    throw new TypeError('Serialized data state must be an object');
+  }
+  const version: unknown = state.formatVersion;
+  if (version !== 1) {
+    throw new TypeError(
+      `Unsupported serialized data state format: ${String(version)}`,
+    );
+  }
+  const sources: unknown = state.sources;
+  if (!Array.isArray(sources)) {
+    throw new TypeError('Serialized data state sources must be an array');
+  }
+  return sources.filter(isSerializedSourceRecord);
+}
+
+function isStreamedPending(record: SerializedSourceRecord): boolean {
+  return record.snapshot.status === 'pending' && record.snapshot.streamed === true;
+}
+
 export class FetchStore {
   readonly entries = new Map<string, FetchEntry>();
   readonly allEntries = new Set<FetchEntry>();
@@ -373,28 +394,51 @@ export class FetchStore {
    * issuing a duplicate network request.
    */
   private restoreRecords = new Map<string, SerializedSourceRecord>();
+  /** Entries waiting for an outcome the streaming response promised. */
+  private readonly streamWaiters = new Map<string, FetchEntry>();
   private hydrationBlocked = false;
   readonly deferredStarts = new Set<FetchEntry>();
 
   constructor(readonly environment: FetchEnvironment) {}
 
   installRestoreRecords(state: SerializedDataState): void {
-    if (!isRecord(state)) {
-      throw new TypeError('Serialized data state must be an object');
+    for (const record of serializedSources(state)) {
+      this.restoreRecords.set(record.sourceId, record);
     }
-    const version: unknown = state.formatVersion;
-    if (version !== 1) {
-      throw new TypeError(
-        `Unsupported serialized data state format: ${String(version)}`,
-      );
-    }
-    const sources: unknown = state.sources;
-    if (!Array.isArray(sources)) {
-      throw new TypeError('Serialized data state sources must be an array');
-    }
-    for (const record of sources) {
-      if (isSerializedSourceRecord(record)) {
+  }
+
+  /** Settle waiting entries with outcomes that arrived later in the response. */
+  deliverStreamedState(state: SerializedDataState): void {
+    for (const record of serializedSources(state)) {
+      if (record.snapshot.status === 'pending') continue;
+      const entry = this.streamWaiters.get(record.sourceId);
+      if (
+        entry === undefined ||
+        !this.allEntries.has(entry) ||
+        record.contractId !== fetchTransferContract(entry.descriptor.schema)
+      ) {
+        // Not acquired yet: the next matching acquire claims the outcome.
         this.restoreRecords.set(record.sourceId, record);
+        continue;
+      }
+      this.streamWaiters.delete(record.sourceId);
+      seedEntryFromRecord(entry, record);
+      entry.emit();
+      if (record.snapshot.status === 'success' && record.snapshot.revalidate) {
+        entry.start(true).catch(() => {});
+      }
+    }
+  }
+
+  /** The response ended: anything it never delivered is fetched normally. */
+  endStream(): void {
+    for (const [identity, entry] of this.streamWaiters) {
+      this.streamWaiters.delete(identity);
+      if (this.allEntries.has(entry) && entry.request === null) entry.start(true).catch(() => {});
+    }
+    for (const [identity, record] of this.restoreRecords) {
+      if (isStreamedPending(record)) {
+        this.restoreRecords.set(identity, { ...record, snapshot: { status: 'pending' } });
       }
     }
   }
@@ -448,22 +492,24 @@ export class FetchStore {
       descriptor.transferIdentity,
       fetchTransferContract(descriptor.schema),
     );
+    const awaitingStream = restored !== undefined && isStreamedPending(restored);
     if (restored !== undefined) {
       seedEntryFromRecord(entry, restored);
       entry.emit();
+      if (awaitingStream) this.streamWaiters.set(restored.sourceId, entry);
     }
     // A seeded entry resumes only through an explicit refresh — a restored
     // success must not re-issue its request (RFC §16.6.6) and a restored
     // error retries only through its restored source handle (§16.6.8).
-    // Restored pending entries (e.g. from SSR shell streaming) start their
-    // client-side fetch immediately so the in-flight server request resolves.
+    // Restored pending entries (e.g. from an SSR shell) start their client-side
+    // fetch, unless the streaming response will still deliver the outcome.
     const shouldStart =
       force ||
       (restored === undefined &&
         (entry.snapshot.status === 'idle' ||
           entry.snapshot.status === 'error')) ||
       (restored !== undefined &&
-        (restored.snapshot.status === 'pending' ||
+        ((restored.snapshot.status === 'pending' && !awaitingStream) ||
           (restored.snapshot.status === 'success' && restored.snapshot.revalidate)));
     if (getActiveEnvironment().mode === 'hydrate') {
       this.hydrationBlocked = true;
@@ -506,6 +552,7 @@ export class FetchStore {
     this.entries.clear();
     this.allEntries.clear();
     this.restoreRecords.clear();
+    this.streamWaiters.clear();
     this.deferredStarts.clear();
     this.hydrationBlocked = false;
   }

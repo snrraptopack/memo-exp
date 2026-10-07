@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- SSR: `mode: 'stream'` streams pending regions out of order. The shell is
+  sent as soon as route preparation and mount finish; each region whose data
+  settles follows as a `<template>` with its data, in completion order, and
+  an inline script patches it into place before the browser program runs.
+  Hydration then adopts the resolved regions without refetching. Regions
+  that arrive after `mount()` are delivered to the mounted root as data;
+  sources still pending at the settle budget are fetched by the browser once
+  the document ends. `RenderOptions.nonce` and `RenderPolicy.nonce` supply a
+  CSP nonce for the inline scripts.
+- Data: serialized pending sources may be marked `streamed`; the browser
+  waits for the streaming response to deliver them instead of fetching.
+
 ### Fixed
 
 - SSR: in-memory `$fetch` dispatch now carries the page request's

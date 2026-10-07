@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCoreDataRuntime } from '../src/runtime-core';
+import { createCoreDataRuntime, deliverStreamedDataState, endDataStream } from '../src/runtime-core';
 import { enableDataReads } from '../src/read-resource';
 import { exposeDataRuntime } from '../src/client';
 import { getActiveDataRuntime, runWithDataRuntime } from '../src';
@@ -39,6 +39,41 @@ describe('optional data transfer producer', () => {
       runtime.clear();
       expect(runtime.serializeState()).toEqual({formatVersion:1,sources:[]});
     } finally { runtime.clear(); }
+  });
+
+  it('waits for streamed outcomes instead of refetching, and fetches what never arrives', async () => {
+    const server = exposeDataRuntime(createCoreDataRuntime({fetch:async () => Response.json({name:'Ada'})}));
+    const pending = exposeDataRuntime(createCoreDataRuntime({fetch:() => new Promise<Response>(() => {})}));
+    const browserFetch = vi.fn(async () => Response.json({name:'browser'}));
+    const browser = createCoreDataRuntime({fetch:browserFetch});
+    try {
+      server.$fetch('/user');
+      server.$fetch('/team');
+      await server.settle();
+      pending.$fetch('/user');
+      pending.$fetch('/team');
+      const streamed = pending.serializeState();
+      browser.restoreState({...streamed, sources: streamed.sources.map(record =>
+        ({...record, snapshot: {status:'pending' as const, streamed:true}}))});
+      const user = browser.$fetch<{name:string}>('/user');
+      const team = browser.$fetch<{name:string}>('/team');
+      await Promise.resolve();
+      expect(browserFetch).not.toHaveBeenCalled();
+
+      const delivered = server.serializeState().sources.filter(record => record.sourceId === streamed.sources[0]!.sourceId);
+      deliverStreamedDataState(browser, {formatVersion:1, sources:delivered});
+      expect([user.data, team.data].filter(Boolean)).toEqual([{name:'Ada'}]);
+      expect(browserFetch).not.toHaveBeenCalled();
+
+      endDataStream(browser);
+      await browser.settle();
+      expect(browserFetch).toHaveBeenCalledTimes(1);
+      expect([user.data, team.data]).toContainEqual({name:'browser'});
+    } finally {
+      server.clear();
+      pending.clear();
+      browser.clear();
+    }
   });
 
   it('keeps serialization safety checks and excludes rich data without invoking getters', async () => {
