@@ -1,5 +1,9 @@
 # Performance work
 
+The current compiler, bundle and performance execution checklist is
+[Rearchitecture plan](./rearchitecture-plan.md). Historical reports below are
+evidence for individual revisions, not current-HEAD performance claims.
+
 The rearchitecture remains active. The 2026-10-06 initial-content/browser-program
 checkpoint verifies an implemented milestone, not completion of the architecture.
 `browser-bundle-architecture.md` records the remaining compiler separation,

@@ -21,6 +21,11 @@ them; they cannot be deleted merely because a small example does not exercise th
 
 ## Current checkpoint — 2026-10-07
 
+The active priorities and completion gates are in
+[Rearchitecture plan](./rearchitecture-plan.md). The tables below record an
+earlier fixture checkpoint; later production measurements are in
+[Merged delivery audit](./merged-delivery-audit.md).
+
 The first separation of HTML and browser execution is implemented. Proven static
 pages ship zero JavaScript. Supported interactive roots bind server/build HTML;
 closed static composition no longer adds browser factories. The linker emits
@@ -33,7 +38,7 @@ and navigation retain their semantics and browser program. Reducing their
 required code remains the goal; removing those features or forcing their pages
 to fit a zero-JavaScript subset is not the goal.
 
-Latest verified production SSR fixtures, all emitted browser chunks:
+Earlier verified production SSR fixtures, all emitted browser chunks:
 
 | Fixture | Browser JS B | Gzip sum B |
 |---|---:|---:|
@@ -61,17 +66,18 @@ envelope. Request-selected conditionals with one host root per alternative also
 bind their selected nodes. Fetched lists with fixed host rows in dedicated
 containers bind arbitrary initial row counts through the shared list engine. A
 single fetched list can also bind fixed siblings in the same host.
-Multiple unknown extents, nested regions, component rows and routing/Group retain
-general adoption and creation instructions.
-Their remaining cost needs deeper binding/reachability
-planning while preserving routing and data presentation.
+Subsequent batches through `7abcf55` also bind supported component rows,
+component-owned request structures, absent branches, closed nested structures
+and multiple variable sibling regions. Structural caller slots, broader render
+values and routing/Group delivery still need work. See the active checklist and
+merged delivery audit for the current scope and measured results.
 
 | Area | Status |
 |---|---|
 | Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
-| Initial host, conditional and list bindings | Implemented first supported shapes; uncertain/nested shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Noninteractive fetch pages, fixed interactive fetched layouts, single-host conditional branches and fetched lists with fixed siblings implemented; multiple unknown extents, nested/component rows and routed/Group shapes retain general adoption |
+| Initial host, conditional and list bindings | Supported host/component rows, absent branches, closed nested structures and multiple variable extents implemented; uncertain shapes retain creation |
+| Request-dependent HTML plus minimal browser bindings | Supported fetched layouts, component rows and nested/component-owned structures implemented; broader caller slots, render values and routed/Group shapes remain open |
 | Runtime capabilities | Shared data settlement, optional promise reads/payload/polling, unused cursor removal, lean markup adoption and lazy state-cell storage implemented |
 
 Callback props, escaping mutable values, hidden reads and unknown initialization

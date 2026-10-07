@@ -1,5 +1,10 @@
 # Compiler phase boundaries
 
+The current five-area execution checklist is maintained in
+[Rearchitecture plan](./rearchitecture-plan.md). Its completion gates include
+moving DOM-specific proofs and output into `packages/compiler/src/dom/` and
+enforcing the shared-analysis import boundary.
+
 ## Captured application handles — 2026-10-06
 
 Application entry discovery recognizes a top-level `mount()` call in a variable
