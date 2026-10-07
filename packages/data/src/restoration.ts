@@ -1,9 +1,9 @@
 /** Optional transfer consumer and hydration handoff on the existing fetch store. */
 import {getActiveEnvironment} from '@memoized-dom/runtime';
 import {RequestError, type RequestErrorKind} from './errors';
-import {fetchTransferContract} from './request';
+import {fetchTransferContract, fetchTransferIdentity} from './request-transfer';
 import type {FetchStore, FetchRestoration} from './resource';
-import {fetchStoreForRuntime, fetchRestorationForRuntime, type CoreDataRuntime} from './runtime-core';
+import {fetchStoreForRuntime, fetchRestorationForRuntime, installFetchTransferIdentity, type CoreDataRuntime} from './runtime-core';
 import type {DataRuntime, SerializedDataState, SerializedSourceRecord, SerializedSourceSnapshot} from './types';
 type FetchEntry = FetchStore['allEntries'] extends Set<infer Entry> ? Entry : never;
 
@@ -185,6 +185,7 @@ class RestoredFetchStore implements FetchRestoration {
 /** Public or SSR delivery enables transfer on the same runtime/cache boundary. */
 export function enableDataRestoration<T extends CoreDataRuntime>(runtime: T): T & Pick<DataRuntime, 'restoreState'> {
   if ('restoreState' in runtime) return runtime as T & Pick<DataRuntime, 'restoreState'>;
+  installFetchTransferIdentity(runtime, fetchTransferIdentity);
   const store = fetchStoreForRuntime(runtime);
   const restoration = new RestoredFetchStore();
   store.restoration = restoration;

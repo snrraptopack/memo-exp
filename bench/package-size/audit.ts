@@ -134,6 +134,15 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         output.text.includes('Serialized data state sources must be an array')) {
       throw new Error('Proved client-only fetches must not retain restoration validation');
     }
+    if (!hydration && graph === 'source' &&
+        ['request-group','request-routed-group','request-data','request-rebind','request-factory-rebind'].includes(fixture) &&
+        inputs.some(input => /\/request-(?:transfer|hash)\.ts$/.test(input.path))) {
+      throw new Error('Proved bodyless client-only fetches must not retain transfer fingerprints');
+    }
+    if (hydration && graph === 'source' && fixture.startsWith('request-') &&
+        !inputs.some(input => input.path.endsWith('/request-transfer.ts'))) {
+      throw new Error('SSR-capable fetches must retain transfer fingerprints');
+    }
     if (hydration && graph !== 'source-before' && fixture.startsWith('request-') &&
         !output.text.includes('Serialized data state sources must be an array')) {
       throw new Error('SSR-capable fetches must retain transfer restoration');

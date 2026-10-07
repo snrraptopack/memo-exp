@@ -27,12 +27,12 @@ import {
   abortReason,
   decodeResponse,
   fetchIdentity,
-  fetchTransferIdentity,
   normalizeFetchMethod,
   normalizedHeaders,
   type PreparedRequestBody,
   resolveRequestURL,
 } from './request';
+import type { fetchTransferIdentity } from './request-transfer';
 import type {
   FetchCache,
   FetchMethod,
@@ -66,6 +66,7 @@ export interface FetchEnvironment {
   readonly fetch: () => typeof globalThis.fetch;
   readonly baseURL: string | URL | undefined;
   prepareBody?: (input: unknown, headers: Headers) => PreparedRequestBody;
+  transferIdentity?: typeof fetchTransferIdentity;
 }
 
 interface MutableSnapshot<T> {
@@ -504,6 +505,11 @@ function fetchDescriptor(
   }
   const preparedBody = body === undefined ? {body:undefined,identity:'none'}
     : environment.prepareBody!(body, headers as Headers);
+  const key = options.key;
+  const schema = options.validate;
+  // Snapshot URL objects even when transfer support is installed later.
+  const transferTarget = target instanceof URL ? url : target;
+  let transferIdentity: string | null | undefined;
   const descriptor: FetchDescriptor = {
     url,
     method,
@@ -515,20 +521,19 @@ function fetchDescriptor(
       method,
       headers,
       preparedBody.identity,
-      options.key,
-      options.validate,
+      key,
+      schema,
     ),
-    transferIdentity: paused?null:fetchTransferIdentity(
-      target,
-      url,
-      method,
-      headers as Headers,
-      preparedBody.identity,
-      options.key,
-      options.validate,
-    ),
+    get transferIdentity() {
+      if (transferTarget === null || environment.transferIdentity === undefined) return null;
+      if (transferIdentity === undefined) {
+        transferIdentity = environment.transferIdentity(transferTarget, url, method,
+          headers as Headers, preparedBody.identity, key, schema);
+      }
+      return transferIdentity;
+    },
     cache: normalizedCache(options.cache, method),
-    schema: options.validate,
+    schema,
     signal: options.signal,
   };
   return { descriptor, paused };

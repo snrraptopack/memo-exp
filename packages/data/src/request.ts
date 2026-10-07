@@ -1,5 +1,6 @@
 import { isAbortError, RequestError } from './errors';
 import { validateValue } from './schema';
+import { bytesIdentity, createIdentityHash, finishIdentityHash, textIdentity, updateTextHash } from './request-hash';
 import type {
   FetchMethod,
   Query,
@@ -89,52 +90,6 @@ export function fetchIdentity(
   return `${method}|${url}|${normalizedHeaders(headers)}|body:${bodyIdentity}|schema:${schemaId(schema)}`;
 }
 
-export function fetchTransferContract(schema: StandardSchemaV1 | undefined): string {
-  if (schema === undefined) return 'mmd-fetch/v1:raw';
-  const standard = schema['~standard'];
-  const validator = textIdentity('schema', standard.validate.toString());
-  return `mmd-fetch/v1:validated:${standard.vendor}:${validator}`;
-}
-
-function transferableTarget(target: string | URL, url: string): string | null {
-  try {
-    const parsed = new URL(url, 'http://memoized-dom.invalid');
-    if (parsed.username !== '' || parsed.password !== '') return null;
-    // Generated GET functions transfer by their complete evaluated request.
-    // The public record contains only its fingerprint, never raw arguments.
-    // Other query-bearing fetches retain the conservative transfer policy.
-    if (parsed.search !== '' && !parsed.pathname.startsWith('/_fn/')) return null;
-    const path = parsed.pathname === '' ? '/' : parsed.pathname;
-    const absolute = target instanceof URL || /^[A-Za-z][A-Za-z\d+.-]*:/.test(target);
-    return absolute ? `${parsed.origin}${path}${parsed.search}` : `${path}${parsed.search}`;
-  } catch {
-    return null;
-  }
-}
-
-export function fetchTransferIdentity(
-  target: string | URL,
-  url: string,
-  method: FetchMethod,
-  headers: Headers,
-  bodyIdentity: string,
-  key: RequestKey | undefined,
-  schema: StandardSchemaV1 | undefined,
-): string | null {
-  const contract = fetchTransferContract(schema);
-  if (
-    key !== undefined ||
-    (method !== 'GET' && method !== 'HEAD') ||
-    [...headers].length > 0 ||
-    bodyIdentity !== 'none'
-  ) return null;
-  const transferTarget = transferableTarget(target, url);
-  return transferTarget === null ? null : textIdentity(
-    'transfer',
-    `${method}|target:${transferTarget}|${contract}`,
-  );
-}
-
 export function normalizeFetchMethod(method: FetchMethod | undefined): FetchMethod {
   const normalized = (method ?? 'GET').toUpperCase();
   if (
@@ -161,46 +116,6 @@ function opaqueBodyIdentity(body: object): string {
     opaqueBodyIds.set(body, id);
   }
   return `opaque:${id}`;
-}
-
-interface IdentityHash {
-  left: number;
-  right: number;
-  length: number;
-}
-
-function createIdentityHash(): IdentityHash {
-  return { left: 0x811c9dc5, right: 0x9e3779b9, length: 0 };
-}
-
-function updateIdentityHash(hash: IdentityHash, value: number): void {
-  hash.left = Math.imul(hash.left ^ value, 0x01000193);
-  hash.right = Math.imul(hash.right ^ value, 0x85ebca6b) + 0xc2b2ae35;
-  hash.length++;
-}
-
-function updateTextHash(hash: IdentityHash, value: string): void {
-  for (let index = 0; index < value.length; index++) {
-    const unit = value.charCodeAt(index);
-    updateIdentityHash(hash, unit & 0xff);
-    updateIdentityHash(hash, unit >>> 8);
-  }
-}
-
-function finishIdentityHash(kind: string, hash: IdentityHash): string {
-  return `${kind}:${hash.length}:${(hash.left >>> 0).toString(36)}:${(hash.right >>> 0).toString(36)}`;
-}
-
-function textIdentity(kind: string, value: string): string {
-  const hash = createIdentityHash();
-  updateTextHash(hash, value);
-  return finishIdentityHash(kind, hash);
-}
-
-function bytesIdentity(bytes: Uint8Array): string {
-  const hash = createIdentityHash();
-  for (const byte of bytes) updateIdentityHash(hash, byte);
-  return finishIdentityHash('bytes', hash);
 }
 
 export interface PreparedRequestBody {

@@ -2,9 +2,50 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCoreDataRuntime } from '../src/runtime-core';
 import { enableDataReads } from '../src/read-resource';
 import { exposeDataRuntime } from '../src/client';
+import { enableDataSerialization } from '../src/serialization';
+import { enableDataRestoration } from '../src/restoration';
 import { getActiveDataRuntime, runWithDataRuntime } from '../src';
 
 describe('optional data transfer producer', () => {
+  it('does not fingerprint validators for client requests without transfer support', async () => {
+    const validate = (value: unknown) => ({value});
+    const fingerprint = vi.fn(() => { throw new Error('client must not fingerprint'); });
+    validate.toString = fingerprint;
+    const runtime = createCoreDataRuntime({fetch: async () => Response.json('ready')});
+    try {
+      const source = runtime.$fetch('/user', {validate: {
+        '~standard': {version: 1, vendor: 'test', validate},
+      }});
+      await runtime.settle();
+      expect(source.data).toBe('ready');
+      expect(fingerprint).not.toHaveBeenCalled();
+    } finally {runtime.clear();}
+  });
+
+  it('transfers earlier URL requests through serialization-only installation', async () => {
+    const runtime = createCoreDataRuntime({fetch: async () => Response.json({id: 7})});
+    const target = new URL('https://app.test/_fn/stories/story?id=7');
+    const source = runtime.$fetch(target);
+    try {
+      await runtime.settle();
+      target.pathname = '/_fn/changed';
+      target.search = '?id=99';
+      const producer = enableDataSerialization(runtime);
+      expect(producer).toBe(runtime);
+      const state = producer.serializeState();
+      expect(state.sources).toHaveLength(1);
+      expect(state.sources[0]!.snapshot).toEqual({status:'success',data:{id:7},revalidate:false});
+      expect(source.data).toEqual({id:7});
+      const fetcher = vi.fn(async () => Response.json({id:99}));
+      const consumer = enableDataRestoration(createCoreDataRuntime({fetch: fetcher}));
+      try {
+        consumer.restoreState(state);
+        expect(consumer.$fetch(new URL('https://app.test/_fn/stories/story?id=7')).data).toEqual({id:7});
+        expect(fetcher).not.toHaveBeenCalled();
+      } finally {consumer.clear();}
+    } finally {runtime.clear();}
+  });
+
   it('exposes serialization on the same store after requests and reads already exist', async () => {
     const fetcher = vi.fn(async () => Response.json({name:'Ada'}));
     const core = createCoreDataRuntime({fetch:fetcher});

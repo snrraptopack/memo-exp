@@ -2641,3 +2641,37 @@ unchanged.
 Remaining opportunities include request cache and transfer fingerprint
 reachability, more structural extent proofs and the remaining general
 hydration/creation cost. They should continue within the same runtime engine.
+
+### Optional request transfer fingerprints — 2026-10-07
+
+The existing fetch store now gains transfer fingerprinting when serialization
+or restoration is enabled. Client-only requests keep the same cache, sharing,
+validation and cancellation behavior without computing transfer hashes.
+Descriptors snapshot their evaluated request and compute the fingerprint lazily,
+so enabling transfer later also works for already resolved stores. Serialization
+and restoration share one fingerprint implementation; request body encoding
+uses the same hash implementation when needed. No public API or second cache
+was added. The default active GET cache remains necessary for request sharing.
+
+Matched client-only Vite builds before and after the runtime change, with the
+same compiler (`b77b82e`), include all chunks, gzipped separately:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Interactive request | 30,152 | 29,148 | 10,441 | 10,010 |
+| Routed request with Group | 72,731 | 71,726 | 22,604 | 22,164 |
+| Counter | 8,613 | 8,613 | 3,483 | 3,483 |
+| Static | 0 | 0 | 0 | 0 |
+
+Each nonstatic fixture emits one chunk. HTML and transfer payload sizes are
+unchanged. The source audit rejects transfer/hash retention for proved bodyless
+client-only fetches. Universal graphs retain fingerprints and restoration;
+their source audit grows 186 raw B (77–83 gzip B), and the generic encoded-body
+control grows 185 raw B (62 gzip B). These graphs pay for late capability
+installation. This batch improves client-only reachability, with no CPU claim.
+
+Verification passes all 83 data tests, including no client-only schema
+fingerprinting, late serialization, URL snapshot preservation, restored cache
+sharing and replay contracts. Typechecking, data build and 24 Chrome source
+audit graphs pass. Audit graphs include client and universal request controls
+and generic request encoding. Examples and numbered docs are unchanged.

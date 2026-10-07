@@ -1,7 +1,7 @@
 /** Optional data transfer producer; browser restoration stays in FetchStore. */
-import { fetchTransferContract } from './request';
+import { fetchTransferContract, fetchTransferIdentity } from './request-transfer';
 import type { FetchStore } from './resource';
-import { fetchStoreForRuntime, type CoreDataRuntime } from './runtime-core';
+import { fetchStoreForRuntime, installFetchTransferIdentity, type CoreDataRuntime } from './runtime-core';
 import type { DataRuntime, SerializedSourceRecord, SerializedSourceSnapshot } from './types';
 
 type FetchEntry = FetchStore['allEntries'] extends Set<infer Entry> ? Entry : never;
@@ -85,6 +85,7 @@ export function enableDataSerialization<T extends CoreDataRuntime>(
   runtime: T,
 ): T & Pick<DataRuntime, 'serializeState'> {
   if ('serializeState' in runtime) return runtime as T & Pick<DataRuntime, 'serializeState'>;
+  installFetchTransferIdentity(runtime, fetchTransferIdentity);
   return Object.assign(runtime, {
     serializeState() {
       const sources: SerializedSourceRecord[] = [];

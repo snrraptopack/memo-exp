@@ -31,6 +31,15 @@ export function installFetchBodyPreparer(
   if (store !== undefined) store.environment.prepareBody = prepare;
 }
 
+/** Transfer support upgrades the existing store, including earlier requests. */
+export function installFetchTransferIdentity(
+  runtime: CoreDataRuntime,
+  identity: NonNullable<FetchEnvironment['transferIdentity']>,
+): void {
+  const store = stores.get(runtime);
+  if (store !== undefined) store.environment.transferIdentity = identity;
+}
+
 export function fetchStoreForRuntime(runtime: CoreDataRuntime): FetchStore {
   const store = stores.get(runtime);
   if (store === undefined) throw new TypeError('Runtime has no fetch store');
