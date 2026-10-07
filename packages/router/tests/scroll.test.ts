@@ -99,7 +99,7 @@ describe('scroll restoration coordinator', () => {
     coordinator.restore(new URL('http://localhost/waiting'), 'pop', 'waiting',
       new Promise<void>(resolve => { ready = resolve; }));
     window.dispatchEvent(new Event('scroll'));
-    window.dispatchEvent(new Event('beforeunload'));
+    window.dispatchEvent(new Event('pagehide'));
     coordinator.capture('waiting');
     frames.flush();
     ready();
@@ -107,6 +107,47 @@ describe('scroll restoration coordinator', () => {
     frames.flush();
     expect(frames.scrollTo).toHaveBeenCalledWith(0, 750);
     coordinator.dispose();
+  });
+
+  it('keeps scroll tracking in memory and persists only when the entry is left or hidden', () => {
+    const frames = deferredFrames();
+    const position = vi.spyOn(window, 'scrollY', 'get').mockReturnValue(300);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const coordinator = createScrollCoordinator();
+    coordinator.connect();
+    coordinator.restore(new URL('http://localhost/feed'), 'load', 'feed');
+    for (let index = 0; index < 5; index++) {
+      window.dispatchEvent(new Event('scroll'));
+      frames.flush();
+    }
+    expect(setItem).not.toHaveBeenCalled();
+
+    position.mockReturnValue(450);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(JSON.parse(sessionStorage.getItem('__mmd_scroll_feed')!)).toEqual({ x: 0, y: 450 });
+
+    position.mockReturnValue(500);
+    coordinator.capture('feed');
+    expect(JSON.parse(sessionStorage.getItem('__mmd_scroll_feed')!)).toEqual({ x: 0, y: 500 });
+    coordinator.dispose();
+  });
+
+  it('bounds persisted positions in session storage', () => {
+    deferredFrames();
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(10);
+    const coordinator = createScrollCoordinator();
+    for (let index = 0; index < 105; index++) coordinator.capture(`entry-${index}`);
+    const stored = Object.keys(sessionStorage).filter(key => key.startsWith('__mmd_scroll_'));
+    expect(stored).toHaveLength(100);
+    expect(sessionStorage.getItem('__mmd_scroll_entry-0')).toBeNull();
+    expect(sessionStorage.getItem('__mmd_scroll_entry-104')).not.toBeNull();
+    coordinator.dispose();
+
+    const reloaded = createScrollCoordinator();
+    reloaded.capture('entry-105');
+    expect(sessionStorage.getItem('__mmd_scroll_entry-5')).toBeNull();
+    expect(Object.keys(sessionStorage).filter(key => key.startsWith('__mmd_scroll_'))).toHaveLength(100);
+    reloaded.dispose();
   });
 
   it('keeps load and replace positions unchanged when there is no hash', () => {

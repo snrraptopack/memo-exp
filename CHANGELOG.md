@@ -4,6 +4,25 @@
 
 ### Fixed
 
+- Router: a pathname with repeated slashes (`/a//b`) no longer throws
+  from the generated route manifest; pathnames collapse repeated
+  slashes before matching.
+- Router: static route segments with non-ASCII characters
+  (`route="/café"`) now match the percent-encoded pathnames browsers
+  and servers deliver. `matchRoutePattern` and the route table share
+  one segment rule instead of a separate regex engine.
+- Router: a wildcard route matched at its own base (`/docs/*` at
+  `/docs`) reports `params['*'] === ''` from every matcher, including
+  `route.params`.
+- Router: `matchRoutePattern` results are frozen, so a caller can no
+  longer corrupt the memoized match returned to later callers.
+- Router: `navigate('/search?q=x')` and `buildRoutePath` throw a clear
+  error instead of silently dropping an embedded query or hash; use
+  the `query` and `hash` options.
+- Router: scroll restoration keeps positions in memory while scrolling
+  and writes `sessionStorage` only when an entry is left or the page
+  is hidden (`pagehide`/`visibilitychange` instead of `beforeunload`).
+  Stored positions are capped at 100 entries.
 - List-region suffixes can no longer collide with authored bindings
   (`let items1`, `let when0`) or with generated conditional/route
   region ids.

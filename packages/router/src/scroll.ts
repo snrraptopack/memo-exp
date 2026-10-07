@@ -12,6 +12,8 @@ export interface ScrollPosition {
 }
 
 const SESSION_STORAGE_PREFIX = '__mmd_scroll_';
+/** Outside the position prefix so it never collides with a history key. */
+const SESSION_STORAGE_INDEX = '__mmd_scroll#index';
 const MAX_SAVED_POSITIONS = 100;
 
 export interface ScrollCoordinatorOptions {
@@ -53,16 +55,14 @@ function readSessionStorage(storage: Storage | undefined, key: string): ScrollPo
   return undefined;
 }
 
-function writeSessionStorage(storage: Storage | undefined, key: string, position: ScrollPosition): void {
+function readSessionIndex(storage: Storage): string[] {
   try {
-    if (storage === undefined) return;
-    storage.setItem(
-      `${SESSION_STORAGE_PREFIX}${key}`,
-      JSON.stringify(position),
-    );
+    const parsed: unknown = JSON.parse(storage.getItem(SESSION_STORAGE_INDEX) ?? '[]');
+    if (Array.isArray(parsed)) return parsed.filter(key => typeof key === 'string');
   } catch {
-    // QuotaExceeded or restricted storage — fail silently.
+    // Restricted storage or a corrupted index starts a fresh index.
   }
+  return [];
 }
 
 function findHashElement(doc: Document, hash: string): Element | null {
@@ -87,6 +87,7 @@ export function createScrollCoordinator(
   try { storage = win?.sessionStorage; } catch { /* Restricted storage. */ }
 
   const memoryPositions = new Map<string, ScrollPosition>();
+  let storedKeys: string[] | null = null;
   let activeKey: string | null = null;
   let previousScrollRestoration: ScrollRestoration | undefined;
   let pendingFrame: number | null = null;
@@ -133,13 +134,31 @@ export function createScrollCoordinator(
     };
   }
 
-  function savePosition(key: string, pos: ScrollPosition): void {
+  /** Storage writes are synchronous, so they happen only when an entry is left or hidden. */
+  function persistPosition(key: string, pos: ScrollPosition): void {
+    if (storage === undefined) return;
+    storedKeys ??= readSessionIndex(storage);
+    const existing = storedKeys.indexOf(key);
+    if (existing !== -1) storedKeys.splice(existing, 1);
+    storedKeys.push(key);
+    try {
+      while (storedKeys.length > MAX_SAVED_POSITIONS) {
+        storage.removeItem(`${SESSION_STORAGE_PREFIX}${storedKeys.shift()!}`);
+      }
+      storage.setItem(`${SESSION_STORAGE_PREFIX}${key}`, JSON.stringify(pos));
+      storage.setItem(SESSION_STORAGE_INDEX, JSON.stringify(storedKeys));
+    } catch {
+      // QuotaExceeded or restricted storage — fail silently.
+    }
+  }
+
+  function savePosition(key: string, pos: ScrollPosition, persist: boolean): void {
     if (!memoryPositions.has(key) && memoryPositions.size >= MAX_SAVED_POSITIONS) {
       const oldestKey = memoryPositions.keys().next().value;
       if (oldestKey !== undefined) memoryPositions.delete(oldestKey);
     }
     memoryPositions.set(key, pos);
-    writeSessionStorage(storage, key, pos);
+    if (persist) persistPosition(key, pos);
   }
 
   function getPosition(key: string): ScrollPosition | undefined {
@@ -164,7 +183,7 @@ export function createScrollCoordinator(
       ran = true;
       pendingFrame = null;
       if (!disposed && key === activeKey && token === generation) {
-        savePosition(key, currentPosition());
+        savePosition(key, currentPosition(), false);
       }
     };
     const handle = win?.requestAnimationFrame !== undefined
@@ -173,10 +192,15 @@ export function createScrollCoordinator(
     if (!ran) pendingFrame = handle;
   }
 
-  function onBeforeUnload(): void {
-    if (activeKey !== null && !awaitingRestoration) {
-      savePosition(activeKey, currentPosition());
+  /** `pagehide` keeps back/forward cache eligibility, unlike `beforeunload`. */
+  function onPageHide(): void {
+    if (activeKey !== null && !awaitingRestoration && !disposed) {
+      savePosition(activeKey, currentPosition(), true);
     }
+  }
+
+  function onVisibilityChange(): void {
+    if (doc?.visibilityState === 'hidden') onPageHide();
   }
 
   function onScrollIntent(event: Event): void {
@@ -192,7 +216,7 @@ export function createScrollCoordinator(
       const targetKey = key ?? activeKey;
       if (awaitingRestoration && targetKey === activeKey) return;
       if (targetKey !== null && targetKey !== undefined) {
-        savePosition(targetKey, currentPosition());
+        savePosition(targetKey, currentPosition(), true);
       }
     },
 
@@ -278,12 +302,13 @@ export function createScrollCoordinator(
 
       if (win !== undefined) {
         win.addEventListener('scroll', onScroll, { passive: true });
-        win.addEventListener('beforeunload', onBeforeUnload, { passive: true });
+        win.addEventListener('pagehide', onPageHide);
         // User intent takes precedence over a target appearing much later.
         win.addEventListener('wheel', cancelRestore, { passive: true });
         win.addEventListener('touchstart', cancelRestore, { passive: true });
         win.addEventListener('keydown', onScrollIntent);
       }
+      doc?.addEventListener?.('visibilitychange', onVisibilityChange);
 
       disconnectListeners = () => {
         if (!connected) return;
@@ -310,11 +335,12 @@ export function createScrollCoordinator(
 
         if (win !== undefined) {
           win.removeEventListener('scroll', onScroll);
-          win.removeEventListener('beforeunload', onBeforeUnload);
+          win.removeEventListener('pagehide', onPageHide);
           win.removeEventListener('wheel', cancelRestore);
           win.removeEventListener('touchstart', cancelRestore);
           win.removeEventListener('keydown', onScrollIntent);
         }
+        doc?.removeEventListener?.('visibilitychange', onVisibilityChange);
       };
       return disconnectListeners;
     },
