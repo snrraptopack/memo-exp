@@ -5,6 +5,7 @@
  * same-origin in-memory `$fetch` bridge behind serve().
  */
 import { createStorage, rootFactoryStore } from '@memoized-dom/runtime/server';
+import { resolveRoutePath } from '@memoized-dom/router';
 import { RoutedPreparationRedirectError } from '@memoized-dom/router/internal';
 import {
   createServerRouter,
@@ -124,6 +125,12 @@ const activeServerContext = createStorage<ActiveServerContext>(
 );
 const MAX_DISPATCH_DEPTH = 8;
 const DEFAULT_TIMEOUT = 10_000;
+/**
+ * A browser attaches these to its own same-origin `fetch`. In-memory dispatch
+ * stands in for that request, so it carries them from the page request unless
+ * the call sets them explicitly.
+ */
+const FORWARDED_REQUEST_HEADERS = ['cookie', 'authorization', 'accept-language', 'user-agent'];
 
 /** Read the request context from middleware or a server-function body. */
 export function getServerContext<
@@ -218,6 +225,11 @@ function createServerFetch<
       (router.matches(url.pathname, request.method) ||
         router.allowedMethods(url.pathname).length > 0);
     if (!sameOriginRoute) return hostFetch(request);
+    const headers = new Headers(request.headers);
+    for (const name of FORWARDED_REQUEST_HEADERS) {
+      const value = parent.request.headers.get(name);
+      if (value !== null && !headers.has(name)) headers.set(name, value);
+    }
     const current = activeServerContext.getStore();
     const dispatchDepth = (current?.dispatchDepth ?? 0) + 1;
     if (dispatchDepth > MAX_DISPATCH_DEPTH) {
@@ -234,7 +246,7 @@ function createServerFetch<
         >,
         dispatchDepth,
       },
-      () => router.dispatch(request, {
+      () => router.dispatch(new Request(request, { headers }), {
         locals: parent.locals,
         ...(parent.platform === undefined ? {} : { platform: parent.platform }),
         services: parent.services,
@@ -352,12 +364,23 @@ async function renderPage<
       options.init,
     );
   } catch (error) {
-    report(failureOutcome(error, context.request), { error });
-    if (!(error instanceof RoutedPreparationRedirectError)) throw error;
-    return Response.redirect(
-      new URL(error.redirect.to, context.url),
-      302,
-    );
+    let failure = error;
+    let location: URL | undefined;
+    if (error instanceof RoutedPreparationRedirectError) {
+      // Same destination rules as client navigation: application-relative only.
+      const to = String(error.redirect.to);
+      try {
+        location = new URL(resolveRoutePath(context.url.pathname, to), context.url);
+      } catch (cause) {
+        failure = new TypeError(
+          `memo-dom: route preparation redirect '${to}' must stay on the application origin`,
+          { cause },
+        );
+      }
+    }
+    report(failureOutcome(failure, context.request), { error: failure });
+    if (location === undefined) throw failure;
+    return Response.redirect(location, 302);
   }
 }
 

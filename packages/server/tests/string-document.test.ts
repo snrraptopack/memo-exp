@@ -205,3 +205,45 @@ describe('StringDocument tree operations', () => {
     expect(large / small).toBeLessThan(40);
   });
 });
+
+describe('StringDocument HTML serialization', () => {
+  function element(doc: StringDocument, tag: string, ...children: (string | StringRenderableNode)[]) {
+    const node = doc.createElement(tag) as unknown as StringRenderableNode;
+    for (const child of children) {
+      node.appendChild(typeof child === 'string'
+        ? doc.createTextNode(child) as unknown as StringRenderableNode
+        : child);
+    }
+    return node;
+  }
+
+  it('writes raw text elements unescaped while keeping their end tag unforgeable', () => {
+    const doc = new StringDocument();
+    expect(element(doc, 'style', 'main > p::after { content: "&" }').toString(false))
+      .toBe('<style>main > p::after { content: "&" }</style>');
+    expect(element(doc, 'style', 'a{content:"</STYLE><b>"}').toString(false))
+      .toBe('<style>a{content:"\\3C /STYLE><b>"}</style>');
+    expect(element(doc, 'script', 'if (a < b && c > d) run("</script><img>", "<!--")').toString(false))
+      .toBe('<script>if (a < b && c > d) run("\\u003C/script><img>", "\\u003C!--")</script>');
+    expect(element(doc, 'title', 'a < b & c').toString(false)).toBe('<title>a &lt; b &amp; c</title>');
+  });
+
+  it('marks the option matching a select value as selected', () => {
+    const doc = new StringDocument();
+    const option = (value: string | null, text: string) => {
+      const node = element(doc, 'option', text);
+      if (value !== null) (node as unknown as Element).setAttribute('value', value);
+      return node;
+    };
+    const stale = option('a', 'A');
+    (stale as unknown as HTMLOptionElement).selected = true;
+    const select = element(doc, 'select', stale, element(doc, 'optgroup', option('b', 'B')), option(null, ' C '));
+    (select as unknown as HTMLSelectElement).value = 'b';
+    expect(select.toString(false)).toBe(
+      '<select><option value="a">A</option><optgroup><option value="b" selected>B</option></optgroup><option> C </option></select>',
+    );
+    expect((select as unknown as HTMLSelectElement).value).toBe('b');
+    (select as unknown as HTMLSelectElement).value = 'C';
+    expect(select.toString(false)).toContain('<option selected> C </option>');
+  });
+});

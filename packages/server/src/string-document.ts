@@ -30,6 +30,22 @@ function escapeAttribute(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
+/**
+ * `<script>` and `<style>` hold raw text that ends only at their own end tag,
+ * so entity escaping would corrupt them. Neutralize a forged end tag (and a
+ * script `<!--`) with the language's own escape for `<`.
+ */
+function rawText(tag: string, text: string): string {
+  return tag === 'style'
+    ? text.replace(/<(\/style)/gi, '\\3C $1')
+    : text.replace(/<(\/script|!--)/gi, '\\u003C$1');
+}
+
+function optionValue(option: StringElement): string {
+  return option.getAttribute('value') ??
+    option.textContent.replace(/[\t\n\f\r ]+/g, ' ').trim();
+}
+
 const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 const INVALID_ATTRIBUTE_NAME = /[\0-\x20\x7F"'`/<> =]/u;
 const INVALID_ELEMENT_NAME = /[\0-\x20\x7F"'`/<> =]/u;
@@ -289,6 +305,9 @@ export class StringElement extends StringContainer implements StringRenderableNo
   // Most elements carry neither attributes nor inline style; allocate lazily.
   private ownAttributes: Map<string, string> | null = null;
   private ownStyle: (Record<string, string> & { cssText?: string }) | null = null;
+  /** A `<select>` value has no attribute; it selects a descendant option. */
+  private selectValue: string | undefined;
+  private selectedBySelect: boolean | undefined;
 
   constructor(public readonly tagName: string, public readonly namespaceURI: string = HTML_NAMESPACE) {
     super();
@@ -359,13 +378,32 @@ export class StringElement extends StringContainer implements StringRenderableNo
    * (whose renderer also syncs non-reflecting booleans such as `checked`).
    */
   get value(): string {
-    return this.info.tag === 'textarea' ? this.textContent : this.getAttribute('value') ?? '';
+    const tag = this.info.tag;
+    if (tag === 'textarea') return this.textContent;
+    if (tag === 'select') return this.selectValue ?? '';
+    return this.getAttribute('value') ?? '';
   }
 
   set value(value: unknown) {
     const text = value == null ? '' : String(value);
-    if (this.info.tag === 'textarea') this.textContent = text;
+    const tag = this.info.tag;
+    if (tag === 'textarea') this.textContent = text;
+    else if (tag === 'select') this.selectValue = text;
     else this.setAttribute('value', text);
+  }
+
+  /** Like the browser, the first option whose value matches is selected. */
+  private selectOptions(value: string, matched = false): boolean {
+    for (let child = this.firstChild; child !== null; child = child.nextSibling) {
+      if (!(child instanceof StringElement)) continue;
+      if (child.info.tag === 'optgroup') {
+        matched = child.selectOptions(value, matched);
+      } else if (child.info.tag === 'option') {
+        child.selectedBySelect = !matched && optionValue(child) === value;
+        matched ||= child.selectedBySelect;
+      }
+    }
+    return matched;
   }
 
   get tabIndex(): number {
@@ -384,6 +422,7 @@ export class StringElement extends StringContainer implements StringRenderableNo
     clone.className = this.className;
     if (this.ownStyle !== null) clone.ownStyle = { ...this.ownStyle };
     clone.innerHTML = this.innerHTML;
+    clone.selectValue = this.selectValue;
     if (this.ownAttributes !== null && this.ownAttributes.size > 0) {
       clone.ownAttributes = new Map(this.ownAttributes);
     }
@@ -407,19 +446,25 @@ export class StringElement extends StringContainer implements StringRenderableNo
     if (cssText) {
       out += ' style="' + escapeAttribute(cssText) + '"';
     }
+    const selectedBySelect = this.selectedBySelect;
     if (this.ownAttributes !== null) {
       for (const [key, val] of this.ownAttributes) {
         if (key === 'class' && className !== '') continue;
         if (key === 'style' && cssText) continue;
+        if (key === 'selected' && selectedBySelect !== undefined) continue;
         out += val === '' ? ' ' + key : ' ' + key + '="' + escapeAttribute(val) + '"';
       }
     }
+    if (selectedBySelect === true) out += ' selected';
     out += '>';
 
     if (this.info.isVoid && this.firstChild === null) return out;
+    if (tag === 'select' && this.selectValue !== undefined) this.selectOptions(this.selectValue);
 
     if (this.innerHTML !== undefined) {
       out += this.innerHTML;
+    } else if (tag === 'script' || tag === 'style') {
+      out += rawText(tag, this.textContent);
     } else {
       for (let child = this.firstChild; child !== null; child = child.nextSibling) {
         out += child.toString(markers, initialTexts);

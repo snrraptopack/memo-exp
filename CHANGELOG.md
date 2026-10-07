@@ -23,6 +23,20 @@
   and writes `sessionStorage` only when an entry is left or the page
   is hidden (`pagehide`/`visibilitychange` instead of `beforeunload`).
   Stored positions are capped at 100 entries.
+- SSR: in-memory `$fetch` dispatch now carries the page request's
+  `cookie`, `authorization`, `accept-language`, and `user-agent`
+  headers, as a browser's same-origin fetch would. Cookie-authenticated
+  routes no longer fail during SSR while working in the browser. Headers
+  set on the `$fetch` call still win.
+- SSR: `<style>` and `<script>` text is written raw instead of
+  HTML-escaped, which corrupted CSS selectors and inline JSON. A forged
+  end tag inside the text is neutralized with the language's own escape.
+- SSR: `<select value={x}>` marks the matching `<option>` as `selected`
+  instead of emitting an ignored `value` attribute.
+- SSR: route preparation redirects resolve like client navigation and
+  must stay on the application origin; an external or protocol-relative
+  target is a render error instead of an open redirect. Relative targets
+  now resolve against the route path as they do in the browser.
 - List-region suffixes can no longer collide with authored bindings
   (`let items1`, `let when0`) or with generated conditional/route
   region ids.
