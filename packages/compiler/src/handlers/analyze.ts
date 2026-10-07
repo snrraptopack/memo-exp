@@ -23,7 +23,7 @@ import {
   componentPropProjectionOrigins,
 } from '../components/prop-projections';
 import { transparentListExpression } from '../lists/source-shapes';
-import { isCallToImported } from '../features/data-sources/discovery';
+import { isCallToImported } from '../analysis/source-calls';
 import { hasLinkedPropWrites, isPublishedPropCallback } from '../components/prop-effects';
 import {
   walkHandler,

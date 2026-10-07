@@ -31,7 +31,7 @@ import {
   validateCompilerRouteGraph,
   validateCompilerRoutePattern,
   type CompilerRouteDefinition,
-} from './router';
+} from './analysis/routes';
 import type { CompilerRoutedPreparation } from './routed';
 import { compilerError } from './errors';
 import type {

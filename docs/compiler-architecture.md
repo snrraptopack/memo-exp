@@ -41,10 +41,16 @@ in `planning/initial-content.ts`; native HTML extent and delivery proofs belong
 to the backend. Stable-source derivations carry authored replay contracts;
 the DOM backend chooses the data runtime calls.
 
-The boundary regression checks imports from shared analysis, planning and
-context. This is an incremental boundary: numeric reason allocation, remaining
-normalization, callback publication and journal contracts are still open in
-the execution checklist. Moving the coordinator does not complete those tasks.
+The boundary regression follows direct and transitive imports, including type
+imports, from shared analysis, planning and context. Authored routing graphs
+and destination validation live in `analysis/routes.ts`; DOM link creation,
+route manifests and module loading live in `dom/router.ts`.
+
+Source replay causes are symbolic; the DOM backend allocates numeric reasons.
+Backend callback publication is passed explicitly to pull-plan finalization.
+Native event and component callbacks share captured source/helper contracts.
+Remaining normalization, module callbacks and ownership work are tracked in
+the execution checklist; these migrations do not complete the rearchitecture.
 
 Separate authored-language meaning from the code a rendering target needs.
 Normalized JSX, lexical reads/writes, opaque and async provenance, component

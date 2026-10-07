@@ -6,7 +6,7 @@ import { cloneNode as cloneEstreeNode } from '../ast';
 import type { ComponentPath } from '../context';
 import type { DomContext as Ctx } from './context';
 import { generatedIdentifier, md, mr } from './identifiers';
-import type { CompilerRouteElement } from '../router';
+import type { CompilerRouteElement } from '../analysis/routes';
 import type { EmitScope } from './scope';
 import { registerStmt, renderDocument } from './scope';
 import type { NodeEmitter } from './node-emitter';

@@ -5,7 +5,7 @@ import type { BaseNode, ScopeAnalysis } from '../ast';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { OwnerListOperation } from '../analysis/owner-list-structure';
 import type { ComponentPropsPlan, ControlFlowDerivation, LocalDerivation } from '../components/props';
-import type { CompilerRouteDefinition, CompilerRouteElement } from '../router';
+import type { CompilerRouteDefinition, CompilerRouteElement } from '../analysis/routes';
 
 export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceDefinition[] = [
   {

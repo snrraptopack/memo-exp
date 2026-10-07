@@ -11,7 +11,7 @@ import { astBindingAt } from '../../context';
 import { type DomContext as Ctx } from '../../dom/context';
 import { generatedIdentifier } from '../../dom/identifiers';
 import { materializeTransparentPropBindings } from '../../dom/components/transparent-props';
-import { isCallToImported } from './discovery';
+import { isCallToImported } from '../../analysis/source-calls';
 
 const RENDER_FUNCTION_TYPES = new Set([
   'FunctionDeclaration',

@@ -14,7 +14,8 @@ import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
 import { normalizeConditionalJsxDirectives } from '../jsx/conditional-directives';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import { scanExternalReactiveImports } from '../external-reactivity';
-import { analyzeRouterJsx } from '../router';
+import { lowerRouterJsx } from './router';
+import {planRouterJsx} from '../analysis/routes';
 import { installCompilerIntrinsics } from '../intrinsics';
 import { scanTransparentSourceImports, lowerReadReplays, lowerTransparentGroups, lowerModuleSourceDeclarations, rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } from '../data-sources';
 
@@ -43,7 +44,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
     {sources: ctx.transparentSourceFactories, forms: ctx.transparentFormFactories, reads: ctx.transparentReadFactories,
       bodylessFetches, clientOnly:ctx.dataDelivery === 'client'}, programPath);
   lowerModuleSourceDeclarations(ctx, programPath.node, moduleSources);
-  analyzeRouterJsx(ctx, programPath);
+  lowerRouterJsx(ctx,planRouterJsx(programPath,ctx.moduleId,ctx.linkedRoutes));
   runAnalysis(ctx, programPath);
   allocateInstanceReasons(ctx);
   analyzeDomOnlyRows(ctx);

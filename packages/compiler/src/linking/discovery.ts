@@ -25,7 +25,7 @@ import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from '../context/model';
 import { renderPropReferenceName } from '../analysis/render-prop-reference';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { compilerError } from '../errors';
-import type { CompilerRouteDefinition } from '../router';
+import type { CompilerRouteDefinition } from '../analysis/routes';
 import { analyzeRoutedPreparations } from '../routed';
 import { compilerOptions } from './options';
 import type {

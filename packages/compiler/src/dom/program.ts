@@ -43,7 +43,7 @@ import {
 import {
   routeManifestStatements,
   initialRoutePreparationStatements,
-} from '../router';
+} from './router';
 import { analyzeRoutedPreparations } from '../routed';
 import {
   rewriteTransparentDataReads,

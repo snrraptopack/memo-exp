@@ -11,7 +11,7 @@ import {
 } from '../../ast';
 import { astBindingAt, type TransparentPresentationComponent } from '../../context';
 import { type Ctx } from '../../context';
-import { isCallToImported } from './discovery';
+import { isCallToImported } from '../../analysis/source-calls';
 
 export function jsxTagName(element: t.JSXElement): string | null {
   return astFactory.isJSXIdentifier(element.openingElement.name)

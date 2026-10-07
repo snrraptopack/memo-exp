@@ -53,7 +53,8 @@ import { summarizeHelper } from '../packages/compiler/src/helper-summaries';
 import { scanInstanceDerivations } from '../packages/compiler/src/analysis/instance';
 import { normalizeComponentJsxValues } from '../packages/compiler/src/components/jsx-values';
 import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
-import { analyzeRouterJsx } from '../packages/compiler/src/router';
+import { lowerRouterJsx } from '../packages/compiler/src/dom/router';
+import {planRouterJsx} from '../packages/compiler/src/analysis/routes';
 import { normalizeDynamicTags } from '../packages/compiler/src/jsx/dynamic-tags';
 import { liftModuleStateCells } from '../packages/compiler/src/cells';
 import {
@@ -1043,12 +1044,12 @@ describe('ESTree parser and printer boundary', () => {
       usesRouter: false,
     } as unknown as Ctx;
 
-    analyzeRouterJsx(context, {
-      node: parsed.program as unknown as Parameters<typeof analyzeRouterJsx>[1]['node'],
+    lowerRouterJsx(context,planRouterJsx({
+      node: parsed.program as unknown as Parameters<typeof planRouterJsx>[0]['node'],
       buildCodeFrameError(message) {
         return new Error(message);
       },
-    });
+    },context.moduleId,context.linkedRoutes));
 
     expect(context.localRoutes).toEqual([
       expect.objectContaining({

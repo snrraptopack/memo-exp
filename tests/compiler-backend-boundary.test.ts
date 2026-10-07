@@ -1,5 +1,5 @@
-import {readFileSync,readdirSync} from 'node:fs';
-import {join,resolve,relative} from 'node:path';
+import {readFileSync,readdirSync,existsSync} from 'node:fs';
+import {join,resolve,relative,dirname} from 'node:path';
 import {expect,it} from 'vitest';
 import {parseEstreeOrThrow,walkAst,childNode,stringValue} from '../packages/compiler/src/ast';
 import {createAnalysisCtx} from '../packages/compiler/src/context/model';
@@ -17,7 +17,12 @@ it('shared analysis, planning and context cannot import DOM lowering or runtime 
   const files=['analysis','planning','context'].flatMap(folder=>sourceFiles(join(sourceRoot,folder)));
   files.push(join(sourceRoot,'context.ts'));
   const violations:string[]=[];
-  for(const file of files) {
+  const visited=new Set<string>();
+  const pending=files.map(file=>({file,path:[relative(sourceRoot,file)]}));
+  while(pending.length) {
+    const {file,path}=pending.pop()!;
+    if(visited.has(file))continue;
+    visited.add(file);
     const program=parseEstreeOrThrow(readFileSync(file,'utf8'),{filename:file}).program;
     walkAst(program,{enter(node){
       if(!['ImportDeclaration','ExportNamedDeclaration','ExportAllDeclaration'].includes(node.type))return;
@@ -25,7 +30,12 @@ it('shared analysis, planning and context cannot import DOM lowering or runtime 
       if(source===null)return;
       const target=source.startsWith('.')?relative(sourceRoot,resolve(file,'..',source)).replaceAll('\\','/'):source;
       if(/^(dom|emission)(\/|$)/.test(target)||/^@memoized-dom\/runtime(?:\/|$)/.test(target))
-        violations.push(`${relative(sourceRoot,file)} -> ${source}`);
+        violations.push([...path,source].join(' -> '));
+      else if(source.startsWith('.')) {
+        const absolute=resolve(dirname(file),source);
+        const dependency=[`${absolute}.ts`,join(absolute,'index.ts')].find(existsSync);
+        if(dependency)pending.push({file:dependency,path:[...path,relative(sourceRoot,dependency)]});
+      }
     }});
   }
   expect(violations).toEqual([]);

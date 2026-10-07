@@ -1,26 +1,8 @@
-/**
- * Compiler-owned JSX routing analysis.
- *
- * `route` and `route-to` are universal compiler properties. They are removed
- * before ordinary JSX prop analysis, leaving no DOM attributes or component
- * props behind.
- */
-
-import type * as t from './ast/compiler-types';
-import * as astFactory from './ast/factory';
-import { cloneNode as cloneEstreeNode } from './ast';
-import {
-  ESTREE_VISITOR_KEYS,
-  childNode,
-  childNodes,
-  nodeFields as fields,
-  stringValue,
-  walkAst,
-  type BaseNode,
-} from './ast';
-import type { DomContext as Ctx } from './dom/context';
-import { generatedIdentifier, mr } from './dom/identifiers';
-import { jsxAttributeName } from './jsx/attributes';
+/** Authored JSX route graph, destination validation and source contracts. */
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import {cloneNode as cloneEstreeNode,ESTREE_VISITOR_KEYS,childNode,childNodes,nodeFields as fields,stringValue,walkAst,type BaseNode} from '../ast';
+import {jsxAttributeName} from '../jsx/attributes';
 
 const PARAMETER_SEGMENT = /^:([A-Za-z_$][A-Za-z0-9_$]*)$/;
 
@@ -51,22 +33,22 @@ export interface CompilerRouteDefinition {
 
 export interface CompilerRouteElement extends CompilerRouteDefinition {}
 
-interface RouteToTarget {
+export interface RouteToTarget {
   readonly path: string;
   readonly options: t.ObjectExpression | null;
 }
 
-interface ProgramContainer {
+export interface ProgramContainer {
   node: t.Program;
   buildCodeFrameError(message: string, at?: t.Node): Error;
 }
 
-interface DiagnosticNode<TNode> {
+export interface DiagnosticNode<TNode> {
   node: TNode;
   buildCodeFrameError(message: string): Error;
 }
 
-function attributeNamed(
+export function attributeNamed(
   element: t.JSXElement,
   name: string,
 ): t.JSXAttribute | undefined {
@@ -77,7 +59,7 @@ function attributeNamed(
   );
 }
 
-function staticAttributeString(attribute: t.JSXAttribute): string | null {
+export function staticAttributeString(attribute: t.JSXAttribute): string | null {
   const value = attribute.value as unknown as BaseNode | null;
   if (value?.type === 'JSXExpressionContainer') {
     return stringValue(childNode(value, 'expression'));
@@ -335,7 +317,7 @@ export function validateCompilerRouteGraph(
   }
 }
 
-function propertyName(property: t.ObjectProperty): string | null {
+export function propertyName(property: t.ObjectProperty): string | null {
   if (!property.computed && astFactory.isIdentifier(property.key)) return property.key.name;
   if (astFactory.isStringLiteral(property.key)) return property.key.value;
   return null;
@@ -477,279 +459,47 @@ function routeToTarget(
   return { path, options };
 }
 
-function buildRouteHref(ctx: Ctx, target: RouteToTarget): t.Expression {
-  if (target.options === null) return astFactory.stringLiteral(target.path);
-  const values = new Map<string, t.Expression>();
-  for (const property of target.options.properties) {
-    if (!astFactory.isObjectProperty(property) || !astFactory.isExpression(property.value)) continue;
-    const name = propertyName(property);
-    if (name !== null) values.set(name, property.value);
-  }
-  const value = (name: string): t.Expression =>
-    cloneEstreeNode(values.get(name) ?? astFactory.identifier('undefined'), true);
-  return astFactory.callExpression(mr(ctx, 'buildRoutePath'), [
-    astFactory.stringLiteral(target.path),
-    value('params'),
-    value('query'),
-    value('hash'),
-  ]);
+export interface RouterSourcePlan {
+  readonly routes:readonly {
+    readonly element:t.JSXElement;
+    readonly attribute:t.JSXAttribute;
+    readonly definition:CompilerRouteElement;
+  }[];
+  readonly links:readonly {
+    readonly element:t.JSXElement;
+    readonly attribute:t.JSXAttribute;
+    readonly diagnostic:DiagnosticNode<t.JSXAttribute>;
+    readonly target:RouteToTarget;
+  }[];
 }
 
-function installRouteTo(
-  ctx: Ctx,
-  element: t.JSXElement,
-  attributePath: DiagnosticNode<t.JSXAttribute>,
-  target: RouteToTarget,
-): void {
-  const opening = element.openingElement;
-  if (!astFactory.isJSXIdentifier(opening.name)) {
-    throw attributePath.buildCodeFrameError(
-      'memo-dom: route-to currently requires a statically named JSX element',
-    );
-  }
-  const tag = opening.name.name;
-  if (/^[A-Z]/.test(tag)) {
-    throw attributePath.buildCodeFrameError(
-      'memo-dom: route-to currently targets intrinsic elements; put it on the interactive host rendered by this component',
-    );
-  }
-  if (tag !== 'a') {
-    throw attributePath.buildCodeFrameError(
-      'memo-dom: route-to requires an anchor; use <a route-to="/path"> for navigation or call navigate() from an action handler',
-    );
-  }
-  if (opening.attributes.some((attribute) => astFactory.isJSXSpreadAttribute(attribute))) {
-    throw attributePath.buildCodeFrameError(
-      'memo-dom: route-to cannot be combined with JSX prop spreads because navigation ownership must be static',
-    );
-  }
-
-  if (attributeNamed(element, 'href') !== undefined) {
-    throw attributePath.buildCodeFrameError(
-      'memo-dom: an anchor using route-to must not also declare href',
-    );
-  }
-  const href = buildRouteHref(ctx, target);
-  opening.attributes.push(
-    astFactory.jsxAttribute(
-      astFactory.jsxIdentifier('href'),
-      astFactory.isStringLiteral(href)
-        ? href
-        : astFactory.jsxExpressionContainer(href),
-    ),
-  );
-}
-
-/** Analyze, validate, and erase compiler-owned route properties. */
-export function analyzeRouterJsx(
-  ctx: Ctx,
-  programPath: ProgramContainer,
-): void {
-  const localDefinitions: CompilerRouteDefinition[] = [];
-  const routeAncestors: Array<CompilerRouteElement | null> = [];
-  const program = programPath.node as unknown as BaseNode;
-  const sourceDefinitions = collectCompilerRoutes(programPath.node, ctx.moduleId);
-  walkAst<BaseNode>(program, {
-    enter(current) {
-      if (current.type !== 'JSXElement') return;
-      const element = current as unknown as t.JSXElement;
-      const parent = routeAncestors.at(-1) ?? null;
-      let active = parent;
-      const attribute = attributeNamed(element, 'route');
-      if (attribute === undefined) {
-        routeAncestors.push(active);
-        return;
-      }
-      const diagnostic: DiagnosticNode<t.JSXAttribute> = {
-        node: attribute,
-        buildCodeFrameError(message) {
-          return programPath.buildCodeFrameError(message, attribute);
-        },
-      };
-      const raw = staticAttributeString(attribute);
-      if (raw === null) {
-        throw diagnostic.buildCodeFrameError(
-          'memo-dom: route must be a static string beginning with /',
-        );
-      }
-      let pattern: string;
-      try {
-        pattern = validateCompilerRoutePattern(raw);
-      } catch (error) {
-        throw diagnostic.buildCodeFrameError(`memo-dom: ${(error as Error).message}`);
-      }
-      let fullPattern: string;
-      try {
-        fullPattern = parent === null
-          ? pattern
-          : joinRoutePattern(parent.fullPattern, pattern);
-      } catch (error) {
-        throw diagnostic.buildCodeFrameError(`memo-dom: ${(error as Error).message}`);
-      }
-      const inherited = new Set(
-        parent === null ? [] : routeParameterNames(parent.fullPattern),
-      );
-      for (const name of routeParameterNames(pattern)) {
-        if (inherited.has(name)) {
-          throw diagnostic.buildCodeFrameError(
-            `memo-dom: route '${fullPattern}' shadows active parameter '${name}'`,
-          );
-        }
-      }
-       const source = sourceDefinitions[localDefinitions.length];
-       if (source === undefined || source.pattern !== pattern || source.fullPattern !== fullPattern) {
-         throw diagnostic.buildCodeFrameError('memo-dom: route collection order changed during compilation');
-       }
-       const definition: CompilerRouteElement = source;
-      ctx.routeElements.set(element, definition);
-      localDefinitions.push(definition);
-      ctx.localRoutes.push(definition);
-      ctx.usesRouter = true;
-      element.openingElement.attributes = element.openingElement.attributes.filter(
-        (candidate) => candidate !== attribute,
-      );
-      active = definition;
-      routeAncestors.push(active);
-    },
-    leave(current) {
-      if (current.type === 'JSXElement') routeAncestors.pop();
-    },
-  });
-
-  const definitions = ctx.linkedRoutes ?? localDefinitions;
-  validateCompilerRouteGraph(definitions);
-  const knownRoutes = new Map(
-    definitions.map((definition) => [definition.fullPattern, definition]),
-  );
-
-  walkAst<BaseNode>(program, {
-    enter(current) {
-      if (current.type !== 'JSXElement') return;
-      const element = current as unknown as t.JSXElement;
-      const attribute = attributeNamed(element, 'route-to');
-      if (attribute === undefined) return;
-      const diagnostic: DiagnosticNode<t.JSXAttribute> = {
-        node: attribute,
-        buildCodeFrameError(message) {
-          return programPath.buildCodeFrameError(message, attribute);
-        },
-      };
-      const target = routeToTarget(diagnostic, knownRoutes);
-      ctx.usesRouter = true;
-      element.openingElement.attributes = element.openingElement.attributes.filter(
-        (candidate) => candidate !== attribute,
-      );
-      installRouteTo(ctx, element, diagnostic, target);
-    },
-  });
-}
-
-export function routeManifestStatements(ctx: Ctx): t.Statement[] {
-  if (!ctx.emitRouteManifest) return [];
-  const definitions = ctx.linkedRoutes ?? ctx.localRoutes;
-  if (definitions.length === 0) return [];
-  ctx.usesRouter = true;
-  const manifest = generatedIdentifier(ctx, 'routeManifest');
-  return [
-    astFactory.variableDeclaration('const', [
-      astFactory.variableDeclarator(
-        cloneEstreeNode(manifest),
-        astFactory.callExpression(mr(ctx, 'createRouteManifest'), [
-          astFactory.arrayExpression(
-            definitions.map((definition) =>
-              astFactory.objectExpression([
-                astFactory.objectProperty(astFactory.identifier('id'), astFactory.stringLiteral(definition.id)),
-                astFactory.objectProperty(astFactory.identifier('pattern'), astFactory.stringLiteral(definition.pattern)),
-                ...(definition.parentId === undefined
-                  ? []
-                  : [
-                      astFactory.objectProperty(
-                        astFactory.identifier('parentId'),
-                        astFactory.stringLiteral(definition.parentId),
-                      ),
-                    ]),
-                ...((definition.preparations === undefined ||
-                  definition.preparations.length === 0) &&
-                  definition.componentKey === undefined &&
-                  definition.lazyComponent === undefined
-                  ? []
-                  : [
-                      astFactory.objectProperty(
-                        astFactory.identifier('metadata'),
-                        astFactory.objectExpression([
-                          ...(definition.preparations === undefined ||
-                            definition.preparations.length === 0
-                            ? []
-                            : [astFactory.objectProperty(
-                                astFactory.identifier('preparations'),
-                                astFactory.arrayExpression(
-                                  definition.preparations.map(id =>
-                                    astFactory.stringLiteral(id)),
-                                ),
-                              )]),
-                          ...(definition.componentKey === undefined
-                            ? []
-                            : [astFactory.objectProperty(
-                                astFactory.identifier('componentKey'),
-                                astFactory.stringLiteral(definition.componentKey),
-                              ),
-                              astFactory.objectProperty(
-                                astFactory.identifier('componentModuleId'),
-                                astFactory.stringLiteral(definition.componentKey.slice(
-                                  0, definition.componentKey.lastIndexOf('#'),
-                                )),
-                              )]),
-                          ...(definition.lazyComponent === undefined
-                            ? []
-                            : [astFactory.objectProperty(
-                                astFactory.identifier('moduleLoader'),
-                                astFactory.arrowFunctionExpression([], astFactory.callExpression(
-                                  astFactory.memberExpression(
-                                    {
-                                      type: 'ImportExpression',
-                                      source: astFactory.stringLiteral(definition.lazyComponent.specifier),
-                                    },
-                                    astFactory.identifier('then'),
-                                  ),
-                                  [astFactory.arrowFunctionExpression(
-                                    [astFactory.identifier('module')],
-                                    astFactory.callExpression(mr(ctx, 'registerRouteComponent'), [
-                                      astFactory.stringLiteral(definition.componentKey!),
-                                      astFactory.memberExpression(
-                                        astFactory.identifier('module'),
-                                        astFactory.stringLiteral(definition.lazyComponent.exportName),
-                                        true,
-                                      ),
-                                    ]),
-                                  )],
-                                )),
-                              )]),
-                        ]),
-                      ),
-                    ]),
-              ]),
-            ),
-          ),
-        ]),
-      ),
-    ]),
-    astFactory.expressionStatement(
-      astFactory.callExpression(mr(ctx, 'replaceRouteResolver'), [
-        astFactory.memberExpression(cloneEstreeNode(manifest), astFactory.identifier('resolve')),
-      ]),
-    ),
-    astFactory.expressionStatement(astFactory.callExpression(mr(ctx, 'ensureRouterConnected'), [])),
-  ];
-}
-
-export function initialRoutePreparationStatements(ctx: Ctx): t.Statement[] {
-  if (!ctx.emitRouteManifest || ctx.routedEnvironment !== 'client') return [];
-  const definitions = ctx.linkedRoutes ?? ctx.localRoutes;
-  if (!definitions.some(definition => definition.lazyComponent !== undefined ||
-      (definition.preparations?.length ?? 0) > 0)) return [];
-  const preparesData = definitions.some(definition => (definition.preparations?.length ?? 0) > 0);
-  return [astFactory.expressionStatement({
-    type: 'AwaitExpression',
-    argument: astFactory.callExpression(mr(ctx, preparesData ? 'prepareInitialRoute' : 'prepareInitialRouteModules'), []),
-  })];
+/** Capture graph and destination contracts without erasing or generating JSX. */
+export function planRouterJsx(
+  program:ProgramContainer,moduleId:string,linkedRoutes:readonly CompilerRouteDefinition[]|null=null,
+):RouterSourcePlan {
+  const definitions=collectCompilerRoutes(program.node,moduleId);
+  const routes:RouterSourcePlan['routes'][number][]=[];
+  walkAst<BaseNode>(program.node as unknown as BaseNode,{enter(node){
+    if(node.type!=='JSXElement')return;
+    const element=node as unknown as t.JSXElement,attribute=attributeNamed(element,'route');
+    if(attribute===undefined)return;
+    if(staticAttributeString(attribute)===null)
+      throw program.buildCodeFrameError('memo-dom: route must be a static string beginning with /',attribute);
+    const definition=definitions[routes.length];
+    if(definition===undefined)
+      throw program.buildCodeFrameError('memo-dom: route collection order changed during compilation',attribute);
+    routes.push({element,attribute,definition});
+  }});
+  const graph=linkedRoutes??definitions;
+  validateCompilerRouteGraph(graph);
+  const known=new Map(graph.map(definition=>[definition.fullPattern,definition]));
+  const links:RouterSourcePlan['links'][number][]=[];
+  walkAst<BaseNode>(program.node as unknown as BaseNode,{enter(node){
+    if(node.type!=='JSXElement')return;
+    const element=node as unknown as t.JSXElement,attribute=attributeNamed(element,'route-to');
+    if(attribute===undefined)return;
+    const diagnostic={node:attribute,buildCodeFrameError:(message:string)=>program.buildCodeFrameError(message,attribute)};
+    links.push({element,attribute,diagnostic,target:routeToTarget(diagnostic,known)});
+  }});
+  return {routes,links};
 }

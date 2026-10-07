@@ -10,7 +10,7 @@ import {
   type Identifier,
 } from '../../ast';
 import { astBindingAt, refreshAstAnalysis, unwrapTypeExpression } from '../../context';
-import type {Ctx as AnalysisContext} from '../../context/model';
+import {isCallToImported} from '../../analysis/source-calls';
 import { type DomContext as Ctx } from '../../dom/context';
 import { generatedIdentifier } from '../../dom/identifiers';
 
@@ -24,31 +24,6 @@ function importedName(specifier: t.ImportSpecifier): string {
   return astFactory.isIdentifier(specifier.imported)
     ? specifier.imported.name
     : specifier.imported.value;
-}
-
-function importedProgramBinding(
-  ctx: AnalysisContext,
-  component: BaseNode,
-  name: string,
-): Binding | undefined {
-  const binding = astBindingAt(ctx, component, name);
-  return binding?.kind === 'import' ? binding : undefined;
-}
-
-export function isCallToImported(
-  ctx: AnalysisContext,
-  component: BaseNode,
-  call: t.Expression | null | undefined,
-  names: ReadonlySet<string>,
-): boolean {
-  if (
-    !astFactory.isCallExpression(call) ||
-    !astFactory.isIdentifier(call.callee) ||
-    !names.has(call.callee.name)
-  ) {
-    return false;
-  }
-  return importedProgramBinding(ctx, component, call.callee.name) !== undefined;
 }
 
 /** Resolve provider metadata to local import aliases before module analysis. */

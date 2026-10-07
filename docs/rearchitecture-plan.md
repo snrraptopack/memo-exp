@@ -187,6 +187,25 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
 - Module-owned and compiler-generated callbacks still need their own complete
   pre-lowering contracts. This sub-batch does not close area 1.
 
-Next in area 1: finish semantic normalization and module callbacks; remove
-transitive backend imports from shared facts and complete ownership inputs.
+### Shared routing and transitive dependency gate (parent `f934e27`)
+
+- Moved authored route types, graph collection, pattern/destination validation
+  and immutable JSX route plans into shared analysis. DOM link creation and
+  route runtime emission moved into `dom/router.ts`; deleted the former root
+  implementation and repeated backend graph/pattern validation.
+- Moved binding-aware source-call recognition out of the mixed data lowering
+  module. Its producer and all consumers now share the source implementation.
+- The boundary check now traverses the import graph, including type imports.
+  Shared analysis/planning/context has no direct or transitive DOM/runtime
+  dependency through local modules.
+- Type checking, compiler build and lint passed. Six affected suites passed
+  73 tests; lazy routing, Group, initial root and preparation passed another
+  31 tests. The 123-case generated-output/graph/delivery comparison matched.
+- Four paired production fixtures against `f934e27` retained identical HTML,
+  payload and JS bytes. Static remains zero JS; lazy routing remains three
+  chunks (67,988 raw / 21,987 gzip B); routed/Group remains 87,015 / 26,781 B.
+  This is a source-boundary change, with no browser performance claim.
+
+Next in area 1: finish semantic normalization and module callbacks; complete
+ownership inputs and move remaining generated ABI state out of source facts.
 These are prerequisites for the runtime-size and broader precision batches.
