@@ -2324,3 +2324,37 @@ duplicate client fetch, lazy route lifetimes and routed Group presentation.
 Data build, data test typecheck and root typecheck pass. Changed-file lint exits
 successfully with the existing snapshot-iteration warnings. Examples, numbered
 docs and dependency versions are unchanged.
+
+### Shared resolver publication and cleanup ownership — 2026-10-07
+
+Router installation and replacement now share their match publication and
+cleanup function. Their distinct public validation rules remain in place.
+Each successful publication has an ownership revision, so an older cleanup
+handle cannot remove a later installation of the same callback. The revision
+is assigned before notifying subscribers: replacing the resolver during that
+notification also keeps the newer installation alive. Failed resolver evaluation
+or match validation does not revoke the previous handle. No route engine,
+public API or capability registration was added.
+
+Two self-contained ownership regressions fail before this change and pass after
+it. Router verification passes 116 tests, including failed replacements, history,
+navigation blockers, readiness, preparation, scroll and cleanup. Four compiler/
+runtime routing suites pass another 14 tests. Two production Chrome cases retain
+lazy route lifetimes and routed Group request presentation. Router build and
+test typechecking pass; changed-file lint exits successfully with existing
+warnings.
+
+The matched esbuild program-hydration source graph against `1ee7b4d` shrinks
+from 84,704 to 84,518 raw bytes for routed fetch with Group. Gzip grows from
+27,015 to 27,041 bytes; this is not a compressed delivery improvement. Fixed
+fetch, counter and input/list control graphs are byte-identical. All 12 browser
+graphs pass their interaction checks. These source audits are distinct from
+Vite initial-HTML delivery, and this change makes no CPU speed claim.
+
+Request restoration remains reachable through the ambient bridge used by both
+general adoption and initial bindings. Removing it from ordinary client graphs
+requires explicit delivery capability ownership while retaining direct hydration
+and public `restoreState()` behavior. Dropping the bridge merely to shrink a
+fixture would break that contract. The larger router, request encoding, cache
+and restoration costs remain open; this batch removes duplicated resolver code
+and fixes cleanup ownership.

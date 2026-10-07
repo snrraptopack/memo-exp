@@ -384,6 +384,7 @@ export function createRouteRuntime(
   let connectionCount = 0;
   let disposed = false;
   let resolver: RouteResolver | null = options.resolver ?? null;
+  let resolverRevision = 0;
   if (resolver === null && options.routes !== undefined) {
     const manifest = createRouteManifest(options.routes);
     resolver = manifest.resolve.bind(manifest);
@@ -1307,26 +1308,7 @@ export function createRouteRuntime(
     if (resolver !== null) {
       throw new Error('A route runtime can only have one structural resolver');
     }
-    const prepared = runResolver(nextResolver);
-    resolver = nextResolver;
-    if (!sameMatches(matches, prepared.matches)) {
-      matches = prepared.matches;
-      params = prepared.params;
-      emit();
-    }
-
-    let installed = true;
-    return () => {
-      if (!installed) return;
-      if (resolving) throw new Error('Route resolvers must not mutate router state');
-      installed = false;
-      if (resolver !== nextResolver) return;
-      resolver = null;
-      if (disposed || matches.length === 0) return;
-      matches = Object.freeze([]);
-      params = Object.freeze({});
-      emit();
-    };
+    return publishResolver(nextResolver);
   }
 
   function replaceResolver(nextResolver: RouteResolver): () => void {
@@ -1334,8 +1316,15 @@ export function createRouteRuntime(
     if (resolving || blocking) {
       throw new Error('Route resolvers and blockers must not mutate router state');
     }
+    return publishResolver(nextResolver);
+  }
+
+  function publishResolver(nextResolver: RouteResolver): () => void {
     const prepared = runResolver(nextResolver);
     resolver = nextResolver;
+    // A callback can be installed repeatedly, including during emit(). The
+    // cleanup handle owns this publication, rather than the callback object.
+    const installedRevision = ++resolverRevision;
     if (!sameMatches(matches, prepared.matches)) {
       matches = prepared.matches;
       params = prepared.params;
@@ -1347,7 +1336,7 @@ export function createRouteRuntime(
       if (!installed) return;
       if (resolving) throw new Error('Route resolvers must not mutate router state');
       installed = false;
-      if (resolver !== nextResolver) return;
+      if (resolverRevision !== installedRevision) return;
       resolver = null;
       if (disposed || matches.length === 0) return;
       matches = Object.freeze([]);

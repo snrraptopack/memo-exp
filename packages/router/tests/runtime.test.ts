@@ -1417,4 +1417,59 @@ describe('route runtime', () => {
     expect(runtime.route.matches).toEqual([]);
     runtime.dispose();
   });
+
+  it('keeps a newer installation of the same resolver when the old handle is released', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    const resolver = (location: { pathname: string }) => [{
+      id: 'same', pattern: '/', pathname: location.pathname, params: {},
+    }];
+    try {
+      const first = runtime.installResolver(resolver);
+      const second = runtime.replaceResolver(resolver);
+      first();
+      expect(runtime.route.matched?.id).toBe('same');
+      runtime.setLocation('/next');
+      expect(runtime.route.matched?.pathname).toBe('/next');
+      second();
+      expect(runtime.route.matches).toEqual([]);
+    } finally { runtime.dispose(); }
+  });
+
+  it('retains the current resolver handle after a replacement fails validation', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    try {
+      const release = runtime.installResolver(location => [{
+        id: 'current', pattern: '/', pathname: location.pathname, params: {},
+      }]);
+      expect(() => runtime.replaceResolver(() => [{
+        id: 'bad', pattern: '/:id/:id', pathname: '/', params: {},
+      }])).toThrow('Duplicate route parameter');
+      expect(runtime.route.matched?.id).toBe('current');
+      release();
+      expect(runtime.route.matches).toEqual([]);
+    } finally { runtime.dispose(); }
+  });
+
+  it('preserves a resolver replaced during its installation notification', () => {
+    const runtime = createRouteRuntime({ environment: {} });
+    let id = 'first';
+    const resolver = (location: { pathname: string }) => [{
+      id, pattern: '/', pathname: location.pathname, params: {},
+    }];
+    let releaseLatest: (() => void) | undefined;
+    const unsubscribe = runtime.subscribe(snapshot => {
+      if (snapshot.matched?.id === 'first') {
+        id = 'second';
+        releaseLatest = runtime.replaceResolver(resolver);
+      }
+    });
+    try {
+      const releaseFirst = runtime.installResolver(resolver);
+      expect(runtime.route.matched?.id).toBe('second');
+      releaseFirst();
+      expect(runtime.route.matched?.id).toBe('second');
+      releaseLatest!();
+      expect(runtime.route.matches).toEqual([]);
+    } finally { unsubscribe(); runtime.dispose(); }
+  });
 });
