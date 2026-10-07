@@ -13,7 +13,7 @@ interface ModuleSourceBase {
 }
 
 export type ModuleSourcePlan = ModuleSourceBase & (
-  | {readonly kind: 'fetch'; readonly target?: SourceInput; readonly options?: SourceInput}
+  | {readonly kind: 'fetch'; readonly bodyless?: boolean; readonly target?: SourceInput; readonly options?: SourceInput}
   | {readonly kind: 'read'; readonly replay: t.Expression}
 );
 
@@ -26,7 +26,8 @@ export function planModuleSources(
   program: t.Program,
   analysis: ScopeAnalysis,
   moduleId: string,
-  factories: {readonly sources: ReadonlySet<string>; readonly forms: ReadonlySet<string>; readonly reads: ReadonlySet<string>},
+  factories: {readonly sources: ReadonlySet<string>; readonly forms: ReadonlySet<string>; readonly reads: ReadonlySet<string>;
+    readonly bodylessFetches?: ReadonlySet<string>},
   errorAt: {buildCodeFrameError(message: string, at?: t.Node): Error},
 ): readonly ModuleSourceStatementPlan[] {
   const plans: ModuleSourceStatementPlan[] = [];
@@ -92,6 +93,7 @@ export function planModuleSources(
         sources.push(Object.freeze({...base, kind: 'read', replay: cloneNode(options, true)}));
       } else {
         sources.push(Object.freeze({...base, kind: 'fetch',
+          ...(factories.bodylessFetches?.has(call.callee.name) ? {bodyless: true} : {}),
           ...(target === undefined ? {} : {target: cloneNode(target, true)}),
           ...(options === undefined ? {} : {options: cloneNode(options, true)})}));
       }

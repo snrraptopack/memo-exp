@@ -23,6 +23,7 @@
 
 import { getExtensionStore } from '@memoized-dom/runtime';
 import { getActiveDataRuntime } from './active-runtime';
+import { enableRequestEncoding } from './request-encoding';
 import { disposeFetchResource, rebindFetchResource } from './resource';
 import type { FetchOptions, FetchResource, ResolvedValue } from './types';
 import { enableDataReads, rebindReadResource } from './read-resource';
@@ -126,6 +127,15 @@ export function sourceRef(key: string): ModuleSourceRef {
 
 /** Create a fetch resource bound to the ACTIVE data runtime. */
 export function createSource<T>(
+  target: string | URL | null,
+  options?: FetchOptions,
+): ResolvedValue<T> {
+  enableRequestEncoding(getActiveDataRuntime());
+  return createBodylessSource(target, options);
+}
+
+/** Compiler-proved requests without body inputs share the same fetch engine. */
+export function createBodylessSource<T>(
   target: string | URL | null,
   options?: FetchOptions,
 ): ResolvedValue<T> {

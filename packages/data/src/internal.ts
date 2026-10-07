@@ -34,6 +34,7 @@ export {
 } from './transparent';
 export {
   createSource,
+  createBodylessSource,
   createReadSource,
   describeModuleSource,
   isModuleSourceRef,

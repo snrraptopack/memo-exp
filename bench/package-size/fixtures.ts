@@ -85,6 +85,12 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
   },
   'request-data': { './App.tsx': `export function App(){const user=$fetch('/api/user');
     return <main><p>{user?.name}</p></main>;}` },
+  'request-encoded-body': { './App.tsx': `export function App(){const user=$fetch('/api/encoded',{method:'POST',body:{name:'Ada'}});
+    return <main><p>{user?.name}</p></main>;}` },
+  'request-opaque-options': {
+    './App.tsx': `import {options} from './options';export function App(){const user=$fetch('/api/encoded',options());return <main><p>{user?.name}</p></main>;}`,
+    './options.ts': `export function options(){return {method:'POST' as const,body:{name:'Ada'}};}`,
+  },
   'request-markup': { './App.tsx': `export function App(){const user=$fetch('/api/user');
     return <main><p>{user?.name}</p><section>${Array.from({length:16},(_,index)=>
       `<article data-card="${index}"><h2>Card ${index}</h2><p>Ready &amp; waiting.</p></article>`).join('')}</section></main>;}` },

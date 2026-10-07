@@ -2,6 +2,7 @@ import { createCoreDataRuntime, type CoreDataRuntime } from './runtime-core';
 import { enableDataSerialization } from './serialization';
 import { enableDataReads } from './read-resource';
 import { enableDataWrites } from './resource-writes';
+import { enableRequestEncoding } from './request-encoding';
 import type { DataRuntime, DataRuntimeOptions } from './types';
 
 export { resumeDataHydration, cancelDataHydration } from './runtime-core';
@@ -13,5 +14,5 @@ export function createDataRuntime(options: DataRuntimeOptions = {}): DataRuntime
 
 /** Add public capabilities to the same lazily created internal runtime. */
 export function exposeDataRuntime(runtime: CoreDataRuntime): DataRuntime {
-  return enableDataSerialization(enableDataReads(enableDataWrites(runtime)));
+  return enableDataSerialization(enableDataReads(enableDataWrites(enableRequestEncoding(runtime))));
 }

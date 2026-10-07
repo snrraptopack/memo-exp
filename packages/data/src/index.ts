@@ -16,6 +16,7 @@ import {
 import { $forms, isFormSource, trackForm } from './forms';
 import { enableDataReads } from './read-resource';
 import { exposeDataRuntime } from './client';
+import { enableRequestEncoding } from './request-encoding';
 
 export { createDataRuntime } from './client';
 export const runWithDataRuntime: <T>(runtime: DataRuntime, fn: () => T) => T = withActiveRuntime;
@@ -30,7 +31,7 @@ export function setActiveDataRuntime(runtime: DataRuntime | null): DataRuntime {
 export const $fetch = ((
   target: string | URL | null,
   options?: FetchOptions,
-) => activeDataRuntime().$fetch(target, options)) as unknown as TransparentFetchFunction;
+) => enableRequestEncoding(activeDataRuntime()).$fetch(target, options)) as unknown as TransparentFetchFunction;
 export const $read = <T>(
   promise: PromiseLike<T>,
   replay?: () => PromiseLike<T>,

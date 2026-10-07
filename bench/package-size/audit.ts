@@ -1,5 +1,5 @@
 /** Attribute minified browser bytes to stable compiler-generated source graphs. */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
@@ -22,6 +22,7 @@ mkdirSync(directory, { recursive: true });
 const reference = args.find(arg => arg.startsWith('--before-ref='))?.slice(13);
 let baseline: string | undefined;
 let baselineRoot: string | undefined;
+let legacyBodylessAlias = false;
 if (reference !== undefined) {
   baseline = execFileSync('git', ['rev-parse', '--verify', '--end-of-options', `${reference}^{commit}`], { cwd: root, encoding: 'utf8' }).trim();
   if (!/^[a-f0-9]{40,64}$/.test(baseline)) throw new Error('Invalid runtime baseline');
@@ -33,6 +34,14 @@ if (reference !== undefined) {
     'packages/data/src', 'packages/data/package.json',
     'packages/router/src', 'packages/router/package.json'], { cwd: root });
   execFileSync('tar', ['-xf', archive, '-C', baselineRoot]);
+  const dataInternal = resolve(baselineRoot, 'packages/data/src/internal.ts');
+  const original = readFileSync(dataInternal, 'utf8');
+  if (!original.includes('createBodylessSource')) {
+    // Preserve the old implementation while adapting its compiler-hook ABI.
+    // A proved bodyless request previously used the generic source constructor.
+    writeFileSync(dataInternal, `${original}\nexport {createSource as createBodylessSource} from './transparent-module';\n`);
+    legacyBodylessAlias = true;
+  }
 }
 const rows: Array<{ fixture: string; graph: string; raw: number; gzip: number; brotli: number;
   inputs: Array<{ path: string; bytes: number }> }> = [];
@@ -117,6 +126,14 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       output.text.includes('Cannot rebind a disposed fetch resource')) {
       throw new Error('Fixed fetched pages must not retain optional request replay');
     }
+    if (['request-group','request-routed-group','request-data','request-rebind','request-factory-rebind'].includes(fixture) &&
+      graph !== 'source-before' && output.text.includes('Request body must be JSON-serializable')) {
+      throw new Error('Proved bodyless requests must not retain request body encoding');
+    }
+    if (['request-encoded-body','request-opaque-options'].includes(fixture) &&
+      !output.text.includes('Request body must be JSON-serializable')) {
+      throw new Error('Generic requests must retain request body encoding');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));
@@ -126,6 +143,7 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
 const lines = ['# Browser bundle audit', '',
   `HEAD: ${revision}. Working tree includes changes: ${status !== ''}.`, '',
   `Runtime/data/router source baseline: ${baseline ?? 'not requested'}. All graphs use the current compiler and identical authored fixtures.`, '',
+  `Legacy bodyless-hook alias: ${legacyBodylessAlias}. When required, the baseline exports its original generic createSource under the new compiler hook name; its request implementation is unchanged.`, '',
   'Stable authored fixtures compiled by the current compiler. Each graph includes mount and root metadata.', '',
   `Optional hydration included: ${hydration}; compiler-selected capabilities: ${programHydration}. Baseline hydration: ${programHydration?(baselineProgramHydration?'same program capabilities':'explicit general entry'):'same entry'}. Use --baseline-hydration=general only to compare older revisions without program hydration. Browser verification below checks client interactions; SSR adoption/recovery is covered by the hydration test suites.`, '',
   '`package` resolves published browser exports; `source` attributes the equivalent graph to runtime, data and router source modules. Each whole bundle is compressed once; input attribution is minified raw bytes, not additive gzip savings.', '',
@@ -143,6 +161,13 @@ if (process.argv.includes('--verify')) {
     const url = new URL(request.url);
     const name = url.searchParams.get('fixture') ?? url.pathname.slice(1);
     if (name === 'api/user') return Response.json({ name: url.searchParams.get('name') ?? 'Ada' });
+    if (name === 'api/encoded') {
+      if (request.method !== 'POST' || request.headers.get('content-type') !== 'application/json') {
+        return new Response('Wrong request encoding', {status:400});
+      }
+      return request.json().then(value => value?.name === 'Ada'
+        ? Response.json({name:'Ada'}) : new Response('Wrong request body', {status:400}));
+    }
     return allowed.has(name) ? new Response(Bun.file(resolve(directory, name))) : new Response('Not found', { status: 404 });
   } });
   try {
@@ -229,6 +254,6 @@ for (const row of rows.filter(row => row.graph !== 'package')) {
     ...row.inputs.map(input => `| ${input.path} | ${input.bytes} |`), '');
 }
 writeFileSync(resolve(directory, 'results.json'), JSON.stringify({ measuredAt: new Date().toISOString(),
-  revision, status, baseline, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
+  revision, status, baseline, legacyBodylessAlias, hydration, baselineProgramHydration, verified: process.argv.includes('--verify'), rows }, null, 2));
 writeFileSync(resolve(directory, 'results.md'), lines.join('\n') + '\n');
 console.log(`Report: ${resolve(directory, 'results.md')}`);

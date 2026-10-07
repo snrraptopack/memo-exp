@@ -34,7 +34,7 @@ import {
   fetchTransferIdentity,
   normalizeFetchMethod,
   normalizedHeaders,
-  prepareRequestBody,
+  type PreparedRequestBody,
   resolveRequestURL,
 } from './request';
 import type {
@@ -72,6 +72,7 @@ function createRequestId(): string {
 export interface FetchEnvironment {
   readonly fetch: () => typeof globalThis.fetch;
   readonly baseURL: string | URL | undefined;
+  prepareBody?: (input: unknown, headers: Headers) => PreparedRequestBody;
 }
 
 interface MutableSnapshot<T> {
@@ -658,7 +659,12 @@ function fetchDescriptor(
   }
   const url = paused?'':resolveRequestURL(target, options.query, environment.baseURL);
   const headers = paused?options.headers:new Headers(options.headers);
-  const preparedBody = paused?{body:undefined,identity:'none'}:prepareRequestBody(options.body, headers as Headers);
+  const body = paused ? undefined : options.body;
+  if (body !== undefined && environment.prepareBody === undefined) {
+    throw new TypeError('Request body encoding is not installed');
+  }
+  const preparedBody = body === undefined ? {body:undefined,identity:'none'}
+    : environment.prepareBody!(body, headers as Headers);
   const descriptor: FetchDescriptor = {
     url,
     method,

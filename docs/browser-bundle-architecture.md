@@ -19,7 +19,7 @@ those improvements. Correctness safeguards for arbitrary keys, getter reads,
 opaque calls, reentry, failed renders and cleanup belong to the paths that need
 them; they cannot be deleted merely because a small example does not exercise them.
 
-## Current checkpoint — 2026-10-06
+## Current checkpoint — 2026-10-07
 
 The first separation of HTML and browser execution is implemented. Proven static
 pages ship zero JavaScript. Supported interactive roots bind server/build HTML;
@@ -46,13 +46,13 @@ Latest verified production SSR fixtures, all emitted browser chunks:
 | Input / list | 17,140 | 6,443 |
 | Noninteractive fetched page | 0 | 0 |
 | Noninteractive fetched composition | 0 | 0 |
-| Interactive fetched page | 31,496 | 10,595 |
+| Interactive fetched page | 29,071 | 9,952 |
 | Interactive fetched page with request-selected host branches | 35,341 | 11,843 |
 | Interactive fetched page with a local conditional | 33,702 | 11,362 |
 | Interactive fetched list | 46,171 | 15,468 |
 | Interactive fetched list with fixed siblings | 46,687 | 15,546 |
 | Interactive local list beside fetched text | 46,913 | 15,763 |
-| Routed fetched page with Group | 85,056 | 26,209 |
+| Routed fetched page with Group | 82,720 | 25,632 |
 
 The static-card result demonstrates the architecture change: more static
 content grows HTML without growing the counter's browser program. Fixed
@@ -2388,3 +2388,69 @@ Against `2f7e324`, the matched routed program-hydration source graph grows from
 lifecycle handling cost more than the removed pattern matcher saves. This is a
 correctness and scroll-work improvement, not a bundle reduction or a measured
 CPU timing gain. Source graph audits do not measure Vite initial-HTML delivery.
+
+### Request encoding follows source input facts — 2026-10-07
+
+A pure source planner now proves named fetch imports whose references are all
+direct GET/HEAD calls without body inputs. It preserves lexical aliases and
+shadowing. Escaped providers, body fields, uncertain method/options expressions,
+spreads, computed properties, accessors and prototype overrides retain full
+encoding. Custom data runtime paths retain their existing provider imports.
+Lowering consumes the proof before ordinary source analysis; lazy module-source
+plans carry the same encoding fact into their request-local descriptions.
+
+The proved constructor delegates to the existing active runtime's fetch method.
+JSON, FormData, Blob and buffer preparation is an optional callback on that
+runtime's existing request environment. Public fetch facades and exposed public
+runtimes install it; uncertain compiled calls keep those facades. Installation
+does not replace a request, cache, controller or source subscription. A foreign
+runtime facade keeps its own fetch implementation rather than requiring another
+package copy's private store. GET body rejection, paused input evaluation,
+request identity, rebinding, factory adoption and SSR restoration retain their
+existing behavior. No authored API or package entry was added.
+
+Matched esbuild program-hydration source graphs against `495d32e`, with the
+current compiler held fixed and all reachable browser code counted:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Fixed fetch | 41,047 | 39,983 | 13,725 | 13,402 |
+| Fixed fetch with Group | 41,230 | 40,166 | 13,779 | 13,454 |
+| Routed fetch with Group | 84,811 | 83,741 | 27,103 | 26,789 |
+| Direct reactive query | 42,138 | 41,076 | 14,085 | 13,755 |
+| Imported reactive request factory | 42,593 | 41,530 | 14,249 | 13,918 |
+| JSON POST | 41,076 | 41,325 | 13,757 | 13,826 |
+| Opaque POST options | 41,103 | 41,352 | 13,769 | 13,839 |
+
+The older baseline exports its original generic source constructor under the
+new compiler hook name. This ABI alias does not change its request implementation;
+the audit records it explicitly. The whole source bundle is gzipped once.
+Generic graphs pay 249 raw bytes / 69–70 gzip bytes for capability installation;
+the reduction is specific to proved requests. Counter and input/list controls
+are byte-identical. Negative retention checks reject body encoders in the proved
+fixtures; positive checks and actual HTTP body validation cover generic fixtures.
+All 27 package/current-source/baseline-source browser graphs pass.
+
+A separate paired Vite production SSR audit against compiler/Vite `495d32e`
+holds the current runtime/data/server packages fixed on both sides and counts
+every emitted browser chunk, including future code. Each chunk is gzipped
+separately:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Interactive fetched page | 30,329 | 29,071 | 10,327 | 9,952 |
+| Routed fetched page with Group | 83,991 | 82,720 | 26,023 | 25,632 |
+
+HTML and data payload sizes are unchanged: 535/315 B and 783/315 B respectively.
+Static remains zero JavaScript and the counter remains 8,613 B / 3,483 B gzip.
+These are compiler delivery comparisons with the optional runtime present on
+both sides, rather than whole-revision or CPU performance comparisons.
+
+Verification passes 73 data tests, 123 focused root tests across eight suites
+and 135 server tests. Five production SSR tests, four using Chrome, cover zero
+JavaScript delivery, preserved fetched composition, restored data without a
+duplicate client request, lazy lifetimes and routed Group. Data/compiler builds,
+data test typechecking and root typechecking pass. Changed-file lint exits
+successfully with existing snapshot-iteration warnings. Fixtures are independent
+of examples; examples, numbered docs and dependency versions are unchanged.
+Request restoration, cache and broader router costs remain open.

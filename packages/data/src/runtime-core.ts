@@ -7,6 +7,7 @@ import {
   createFetchEnvironment,
   createFetchResource,
   FetchStore,
+  type FetchEnvironment,
 } from './resource';
 import type {
   DataRuntime,
@@ -19,6 +20,15 @@ import type {
 export type CoreDataRuntime = Omit<DataRuntime, '$read' | 'serializeState'>;
 
 const stores = new WeakMap<CoreDataRuntime, FetchStore>();
+
+/** Foreign public runtimes own their fetch implementation and need no installer. */
+export function installFetchBodyPreparer(
+  runtime: CoreDataRuntime,
+  prepare: NonNullable<FetchEnvironment['prepareBody']>,
+): void {
+  const store = stores.get(runtime);
+  if (store !== undefined) store.environment.prepareBody = prepare;
+}
 
 export function fetchStoreForRuntime(runtime: CoreDataRuntime): FetchStore {
   const store = stores.get(runtime);

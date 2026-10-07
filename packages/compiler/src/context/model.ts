@@ -26,6 +26,10 @@ import type {
 
 export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceDefinition[] = [
   {
+    module: '@memoized-dom/data/internal',
+    source: 'createBodylessSource',
+  },
+  {
     module: '@memoized-dom/data',
     source: '$fetch',
     track: '$track',
