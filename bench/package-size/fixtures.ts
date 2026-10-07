@@ -76,6 +76,13 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
       <nav><a class="home" route-to="/">Home</a><a class="about" route-to="/about">About</a></nav>
       <section route="/"><Group pending={Pending}><p>{user?.name}</p></Group></section>
       <section route="/about"><h2>About directory</h2></section></main>;}` },
+  'request-rebind': { './App.tsx': `export function App(){let name='Ada';const user=$fetch('/api/user',{query:{name}});
+    return <main><button onClick={()=>name=name==='Ada'?'Lin':'Ada'}>Next</button><p>{user?.name}</p></main>;}` },
+  'request-factory-rebind': {
+    './App.tsx': `import {getUser} from './user';export function App(){let name='Ada';const user=getUser(name);
+      return <main><button onClick={()=>name=name==='Ada'?'Lin':'Ada'}>Next</button><p>{user?.name}</p></main>;}`,
+    './user.ts': `export function getUser(name:string){return $fetch('/api/user',{query:{name},cache:false});}`,
+  },
   'request-data': { './App.tsx': `export function App(){const user=$fetch('/api/user');
     return <main><p>{user?.name}</p></main>;}` },
   'request-markup': { './App.tsx': `export function App(){const user=$fetch('/api/user');

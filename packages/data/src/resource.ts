@@ -533,7 +533,8 @@ class ResourceController<T> {
   descriptor: FetchDescriptor;
   paused: boolean;
 
-  private bindSignal(signal: AbortSignal | undefined): boolean {
+  /** Shared by initial construction and optional request replay. */
+  bindSignal(signal: AbortSignal | undefined): boolean {
     this.removeSignalListener?.();
     this.removeSignalListener = null;
     if (signal !== undefined) {
@@ -556,95 +557,6 @@ class ResourceController<T> {
       force,
       replace,
     );
-  }
-
-  rebind(descriptor: FetchDescriptor, paused: boolean): void {
-    if (this.disposed) {
-      throw new Error('Cannot rebind a disposed fetch resource');
-    }
-    const unchanged =
-      this.paused === paused &&
-      equalDescriptor(this.descriptor, descriptor);
-    if (unchanged) return;
-
-    this.operationId = createRequestId();
-
-    const replaceSharedIdentity =
-      !paused &&
-      this.descriptor.identity === descriptor.identity &&
-      !unchanged;
-    const previous = this.entry;
-    if (previous !== null) {
-      this.entry = null;
-      previous.remove(this as ResourceController<unknown>);
-    }
-    this.descriptor = descriptor;
-    this.paused = paused;
-    this.snapshot = idleSnapshot();
-
-    if (!this.bindSignal(descriptor.signal) || paused) {
-      this.notify();
-      return;
-    }
-    this.attach(false, replaceSharedIdentity);
-  }
-
-  /**
-   * Move a freshly-created source behind this stable public resource. Imported
-   * colorless factories own their argument-to-request mapping, so compiler
-   * replay adopts their result instead of interpreting those arguments as a
-   * raw fetch URL and options tuple.
-   */
-  adopt(candidate: ResourceController<T>): void {
-    if (candidate === this) return;
-    if (this.disposed || candidate.disposed) {
-      throw new Error('Cannot rebind a disposed fetch resource');
-    }
-    if (candidate.store !== this.store) {
-      candidate.dispose();
-      throw new TypeError('Cannot rebind fetch resources from different data runtimes');
-    }
-
-    const unchanged =
-      this.paused === candidate.paused &&
-      equalDescriptor(this.descriptor, candidate.descriptor);
-    if (unchanged) {
-      candidate.dispose();
-      return;
-    }
-
-    this.operationId = candidate.operationId;
-
-    const previous = this.entry;
-    if (previous !== null) {
-      this.entry = null;
-      previous.remove(this as ResourceController<unknown>);
-    }
-    this.descriptor = candidate.descriptor;
-    this.paused = candidate.paused;
-    this.snapshot = idleSnapshot();
-
-    if (!this.bindSignal(this.descriptor.signal) || this.paused) {
-      candidate.dispose();
-      this.notify();
-      return;
-    }
-
-    const next = candidate.entry;
-    if (next === null) {
-      candidate.dispose();
-      this.notify();
-      return;
-    }
-
-    // Attach the stable consumer before removing the temporary one. This is
-    // essential for cache:false requests: dropping the last consumer aborts
-    // the in-flight request.
-    this.entry = next;
-    next.add(this as ResourceController<unknown>);
-    next.remove(candidate as ResourceController<unknown>);
-    candidate.entry = null;
-    candidate.dispose();
   }
 
   receive(entry: FetchEntry, snapshot: MutableSnapshot<unknown>): void {
@@ -851,11 +763,42 @@ export function rebindFetchResource<T>(
   options: FetchOptions & { readonly validate?: StandardSchemaV1 } = {},
 ): void {
   const controller = resourceController(resource);
-  const next = fetchDescriptor(controller.store.environment, target, options);
-  controller.rebind(next.descriptor, next.paused);
+  const { descriptor, paused } = fetchDescriptor(controller.store.environment, target, options);
+  if (controller.disposed) {
+    throw new Error('Cannot rebind a disposed fetch resource');
+  }
+  const unchanged =
+    controller.paused === paused &&
+    equalDescriptor(controller.descriptor, descriptor);
+  if (unchanged) return;
+
+  controller.operationId = createRequestId();
+
+  const replaceSharedIdentity =
+    !paused &&
+    controller.descriptor.identity === descriptor.identity;
+  const previous = controller.entry;
+  if (previous !== null) {
+    controller.entry = null;
+    previous.remove(controller as ResourceController<unknown>);
+  }
+  controller.descriptor = descriptor;
+  controller.paused = paused;
+  controller.snapshot = idleSnapshot();
+
+  if (!controller.bindSignal(descriptor.signal) || paused) {
+    controller.notify();
+    return;
+  }
+  controller.attach(false, replaceSharedIdentity);
 }
 
-/** Adopt the active request created by another resource into a stable holder. */
+/**
+ * Move a freshly-created source behind this stable public resource. Imported
+ * colorless factories own their argument-to-request mapping, so compiler
+ * replay adopts their result instead of interpreting those arguments as a
+ * raw fetch URL and options tuple.
+ */
 export function rebindFetchResourceFrom<T>(
   resource: FetchResource<T>,
   candidate: FetchResource<T>,
@@ -864,7 +807,57 @@ export function rebindFetchResourceFrom<T>(
     adoptReadResource(resource, candidate);
     return;
   }
-  resourceController(resource).adopt(resourceController(candidate));
+  const controller = resourceController(resource);
+  const incoming = resourceController(candidate);
+  if (incoming === controller) return;
+  if (controller.disposed || incoming.disposed) {
+    throw new Error('Cannot rebind a disposed fetch resource');
+  }
+  if (incoming.store !== controller.store) {
+    incoming.dispose();
+    throw new TypeError('Cannot rebind fetch resources from different data runtimes');
+  }
+
+  const unchanged =
+    controller.paused === incoming.paused &&
+    equalDescriptor(controller.descriptor, incoming.descriptor);
+  if (unchanged) {
+    incoming.dispose();
+    return;
+  }
+
+  controller.operationId = incoming.operationId;
+
+  const previous = controller.entry;
+  if (previous !== null) {
+    controller.entry = null;
+    previous.remove(controller as ResourceController<unknown>);
+  }
+  controller.descriptor = incoming.descriptor;
+  controller.paused = incoming.paused;
+  controller.snapshot = idleSnapshot();
+
+  if (!controller.bindSignal(controller.descriptor.signal) || controller.paused) {
+    incoming.dispose();
+    controller.notify();
+    return;
+  }
+
+  const next = incoming.entry;
+  if (next === null) {
+    incoming.dispose();
+    controller.notify();
+    return;
+  }
+
+  // Attach the stable consumer before removing the temporary one. This is
+  // essential for cache:false requests: dropping the last consumer aborts
+  // the in-flight request.
+  controller.entry = next;
+  next.add(controller as ResourceController<unknown>);
+  next.remove(incoming as ResourceController<unknown>);
+  incoming.entry = null;
+  incoming.dispose();
 }
 
 export function fetchResourceSnapshot<T>(

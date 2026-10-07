@@ -2276,3 +2276,51 @@ update/swap with three samples in ABBA order. It checks retained identity after
 every timed sample. Browser artifacts are byte-identical, so the timings
 establish no DOM speed improvement. Resource/router capability costs, broader
 slot extents and nested structural adoption remain open.
+
+### Optional fetch replay — 2026-10-07
+
+The source audit attributes 11,064 minified bytes to `resource.ts` in the fixed
+fetch graph. Request rebinding and factory adoption were controller prototype
+methods, which stayed in every constructed controller even when no source
+inputs changed. Their bodies now live directly in the existing compiler replay
+helpers. Descriptor comparison drops with unused replay helpers; construction,
+refresh, abort, cache ownership and notification still use the same controller.
+The resource module contributes 9,642 bytes after this change. No controller,
+request engine, runtime entry or authored API was added.
+
+Matched esbuild browser source graphs against `6cfdc51`, with the current
+compiler and identical program hydration capabilities on both sides:
+
+| Stable fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Fixed fetch | 42,464 | 41,039 | 14,066 | 13,739 |
+| Fixed fetch with Group | 42,647 | 41,222 | 14,119 | 13,790 |
+| Routed fetch with Group | 86,133 | 84,704 | 27,355 | 27,015 |
+| Direct reactive query | 42,890 | 42,130 | 14,231 | 14,092 |
+| Imported reactive request factory | 43,047 | 42,585 | 14,307 | 14,257 |
+
+These graphs measure browser creation with mount and the selected hydration
+entry. The Vite initial-HTML measurements above use compiler-selected binding
+delivery. Each graph bundles all reachable
+browser code, including future operations, and compresses the whole bundle
+once. Runtime/data/router source snapshots provide the baseline without
+changing the checkout. The counter and input/list control graphs are identical.
+
+The audit now rejects replay retention in fixed fetch graphs and proves that
+its reactive fixtures actually exercise direct rebinding and imported factory
+adoption. All 21 package/current-source/baseline-source browser graphs pass,
+including query changes in both directions, routing, duplicate input values
+and retained list identity. Data tests cover uncached adoption without aborting
+the transferred request, late responses and rejection across runtime owners.
+
+The measured saving is about 1.4 KB for these fixed source graphs. The router
+module still contributes about 21.7 KB in the routed baseline; request encoding,
+restore/cache machinery, hydration and the kernel also remain substantial.
+This removes unused replay capability and establishes no DOM timing gain.
+
+Verification passes 69 data tests, 70 focused compiler/DOM tests and all 135
+server tests. Three production Chrome cases cover restored data without a
+duplicate client fetch, lazy route lifetimes and routed Group presentation.
+Data build, data test typecheck and root typecheck pass. Changed-file lint exits
+successfully with the existing snapshot-iteration warnings. Examples, numbered
+docs and dependency versions are unchanged.

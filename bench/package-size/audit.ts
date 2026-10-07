@@ -44,6 +44,12 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
     './main.ts': `${hydration ? `import '${programHydration ? hydrationVirtualId : '@memoized-dom/runtime/hydrate'}';` : ''}import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
   });
   const compiled = compilation.output;
+  if (fixture === 'request-factory-rebind' && !compiled['./App.tsx']?.includes('rebindResolvedValueFromFactory')) {
+    throw new Error('The factory fixture must exercise imported request adoption');
+  }
+  if (fixture === 'request-rebind' && !compiled['./App.tsx']?.includes('rebindResolvedValue(')) {
+    throw new Error('The direct fixture must exercise request rebinding');
+  }
   if (fixture === 'mixed-lists' && (!compiled['./App.tsx']?.includes('createListRegion') ||
       !compiled['./App.tsx']?.includes('createPositionalListRegion'))) throw new Error('The mixed fixture must exercise both list capabilities');
   if (fixture === 'request-markup' && !compiled['./App.tsx']?.includes('materializeMarkup')) {
@@ -107,6 +113,10 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       inputs.some(input => input.path.endsWith('/data/src/resource-writes.ts'))) {
       throw new Error('Read-only fetched pages must not retain the optional mutation implementation');
     }
+    if (['request-group','request-routed-group','request-data'].includes(fixture) && graph !== 'source-before' &&
+      output.text.includes('Cannot rebind a disposed fetch resource')) {
+      throw new Error('Fixed fetched pages must not retain optional request replay');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));
@@ -132,7 +142,7 @@ if (process.argv.includes('--verify')) {
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
     const url = new URL(request.url);
     const name = url.searchParams.get('fixture') ?? url.pathname.slice(1);
-    if (name === 'api/user') return Response.json({ name: 'Ada' });
+    if (name === 'api/user') return Response.json({ name: url.searchParams.get('name') ?? 'Ada' });
     return allowed.has(name) ? new Response(Bun.file(resolve(directory, name))) : new Response('Not found', { status: 404 });
   } });
   try {
@@ -145,6 +155,10 @@ if (process.argv.includes('--verify')) {
         await page.goto(`http://127.0.0.1:${server.port}/?fixture=${row.fixture}-${row.graph}.html`);
         await page.waitForSelector('#root>main', { timeout: 5000 });
         if (row.fixture.startsWith('request-') || row.fixture === 'promise-data') await page.waitForFunction(() => document.querySelector('#root main p')?.textContent === 'Ada');
+        if (row.fixture === 'request-rebind' || row.fixture === 'request-factory-rebind') {
+          await page.click('button'); await page.waitForFunction(() => document.querySelector('#root main p')?.textContent === 'Lin');
+          await page.click('button'); await page.waitForFunction(() => document.querySelector('#root main p')?.textContent === 'Ada');
+        }
         if (row.fixture === 'request-routed-group') {
           await page.click('.about'); await page.waitForSelector('h2');
           await page.click('.home'); await page.waitForFunction(() => document.querySelector('main p')?.textContent === 'Ada');
