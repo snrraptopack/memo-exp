@@ -65,6 +65,11 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
   check: (page: Page, apiRequests: string[]) => Promise<void>, pathname = '/demo/',
   apiData: () => unknown = () => ({name:'Unexpected client fetch'})): Promise<void> {
   const apiRequests: string[] = [];
+  // Capture the complete parsed server tree before deferred module execution.
+  // An observer firing when <main> first appears can see only a parser prefix.
+  const instrumentedHtml = html.replace('</body>',
+    `<script>window.initial = [...document.querySelectorAll('#root *')];</script></body>`);
+  if (instrumentedHtml === html) throw new Error('Browser fixture must have a closing body tag');
   const server = createServer(async (request, response) => {
     const path = request.url?.replace(/^\/demo\//, '');
     if (request.url?.startsWith('/api/')) apiRequests.push(request.url);
@@ -76,7 +81,7 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
       response.setHeader('content-type', asset.type === 'chunk' ? 'text/javascript' : 'text/css');
       response.end(asset.type === 'chunk' ? asset.code : asset.source);
     } else {
-      response.setHeader('content-type', 'text/html'); response.end(html);
+      response.setHeader('content-type', 'text/html'); response.end(instrumentedHtml);
     }
   });
   await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
@@ -93,9 +98,6 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
       document.createElement = ((...args: Parameters<Document['createElement']>) => {
         values.created.push(args[0]); return create(...args);
       }) as Document['createElement'];
-      new MutationObserver(() => {
-        if (document.querySelector('main')) values.initial ??= [...document.querySelectorAll('#root *')];
-      }).observe(document, { childList: true, subtree: true });
     });
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('No test address');
