@@ -122,12 +122,42 @@ it('uses ordinary future factories and lifecycle for an empty composed list',asy
   click('.append');app!.unmount();app=undefined;expect(log).toEqual(['mount','dispose','mount','dispose']);expect(registeredIds()).toEqual([]);
 });
 
+it.each([false,true].flatMap(owned=>[false,true].map(indexed=>({owned,indexed}))))('binds component rows with retained state and later creation (%j)',async({owned,indexed})=>{
+  const log:string[]=[];vi.stubGlobal('__componentRows',log);
+  await mount(`component-rows-${owned}-${indexed}`,`
+    function Row({item,index}){${owned?"let n=0;$effect(()=>{globalThis.__componentRows.push('mount');return ()=>globalThis.__componentRows.push('dispose');});":""}
+      return <li data-id={item.id}><span>{index}:{item.label}</span><button onClick={()=>${owned?'n++':'item.label+=\'!\''}}>${owned?'{n}':'{item.label}'}</button></li>;}
+    export function App(){let items=[{id:1,label:'one'},{id:2,label:'two'}];let next=3;return <main>
+      <button class="reverse" onClick={()=>items=items.toReversed()}>Reverse</button>
+      <button class="append" onClick={()=>items=[...items,{id:next++,label:'new'}]}>Append</button>
+      <button class="remove" onClick={()=>items=items.slice(1)}>Remove</button>
+      <ul>{items.map((${indexed?'item,index':'item'})=><Row key={item.id} item={item} index={${indexed?'index':'-1'}}/>)}</ul><footer>Kept</footer></main>;}`);
+  const original=rows();click('li button');
+  expect(original[0]!.querySelector('button')!.textContent).toBe(owned?'1':'one!');
+  click('.reverse');expect(rows()).toEqual(original.toReversed());
+  expect(rows().map(row=>row.querySelector('span')!.textContent)).toEqual([`${indexed?0:-1}:two`,`${indexed?1:-1}:${owned?'one':'one!'}`]);
+  expect(original[0]!.querySelector('button')!.textContent).toBe(owned?'1':'one!');
+  click('.remove');expect(original[1]!.isConnected).toBe(false);click('.append');
+  expect(rows()[0]).toBe(original[0]);expect(rows()[1]!.querySelector('span')!.textContent).toBe(`${indexed?1:-1}:new`);
+  rows()[1]!.querySelector<HTMLButtonElement>('button')!.click();
+  expect(rows()[1]!.querySelector('button')!.textContent).toBe(owned?'1':'new!');
+  app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
+  if(owned)expect(log.filter(value=>value==='mount')).toHaveLength(3);
+  if(owned)expect(log.filter(value=>value==='dispose')).toHaveLength(3);
+});
+
 it.each([
   `let items=getItems();`,
 ])('falls back for an unproved initial source: %s',setup=>{
   const result=compile(`function getItems(){return ['one'];}export function App(){${setup}return <main>
     <button onClick={()=>{items=['two'];}}>Replace</button>{items.map(item=><li>{item}</li>)}</main>;}`);
   expect(result.initialContent).toBe(false);
+});
+
+it('keeps ordinary rendering for component row slots without a caller adoption proof',()=>{
+  const result=compile(`function Row({children}){return <li>{children}</li>;}export function App(){let items=['one'];return <main>
+    <button onClick={()=>items=['two']}>Replace</button>{items.map(item=><Row key={item}><b>{item}</b></Row>)}</main>;}`);
+  expect(result.initialContent).toBe(false);expect(result.output['./App.tsx']).toMatch(/createElement|materializeMarkup/);
 });
 
 it.each([

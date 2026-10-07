@@ -136,7 +136,7 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
           return;
         }
         const first=node.requestRow ?? node.rows[0];
-        if (!first || first.length!==1 || first[0]?.kind!=='element' || !first[0].site) {valid=false;return;}
+        if (!first || first.length!==1 || !['element','component'].includes(first[0]!.kind) || !('site' in first[0]!) || !first[0].site) {valid=false;return;}
         const containerRow=planInitialDom({...plan,nodes:first,returnSite:first[0].site},factories,false,slotOwners);
         if (!containerRow) {valid=false;return;}
         const row=relativeInitialDom(containerRow);

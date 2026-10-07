@@ -2,7 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { initialSite } from '../planning/initial-render';
-import { initialNode, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
+import { initialNode, initialOrCreate, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
 import {
   type ComponentPath,
   type Ctx,
@@ -194,11 +194,11 @@ export function emitConditionalRegion(
           cloneEstreeNode(regionId),
           pick,
           astFactory.arrayExpression(branchFactories),
-          ...(initial ? [astFactory.identifier('undefined'),astFactory.objectExpression([
+          ...(initial ? [astFactory.identifier('undefined'),initialOrCreate(scope,astFactory.objectExpression([
             astFactory.objectProperty(astFactory.identifier('open'),initialNode(scope,initial.open,`#comment:mmd:initial:when:${initialSite(expression)}`)),
             astFactory.objectProperty(astFactory.identifier('end'),initialNode(scope,initial.end,'#comment:/mmd:initial:when')),
             ...(initial.branch===null ? [] : [astFactory.objectProperty(astFactory.identifier('index'),astFactory.numericLiteral(initial.branch))]),
-          ])] : []),
+          ]),astFactory.identifier('undefined'))] : []),
         ]),
       ),
     ]),

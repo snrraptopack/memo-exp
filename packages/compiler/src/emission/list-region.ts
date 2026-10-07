@@ -53,7 +53,7 @@ export function emitListRegion(
   const initial=scope.initialDom?.plan.lists[initialSite(call)];
   const serverPlacement=initialStructuralPlacement(ctx.initialServerComponents[componentName],initialSite(call))?.lists[initialSite(call)];
   if(serverPlacement) scope.creation.push(initialServerAnchor(ctx,scope,parentElementVariable,'list',initialSite(call),false));
-  if (scope.initialDom && (!initial || initial.row!==null && site.form!=='inline')) {
+  if (scope.initialDom && (!initial || initial.row!==null && site.form==='callback')) {
     throw new Error('memo-dom: initial list needs a host row placement');
   }
   const regionVariable = generatedIdentifier(
@@ -98,6 +98,7 @@ export function emitListRegion(
           ownerId,
           eventBindings,
           scope,
+          initial?.row ?? undefined,
         )
       : buildInlineRowCreate(
           ctx,

@@ -114,6 +114,57 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([0,2])('binds fetched component rows and retains local state in Chrome (%i)',async(count,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const sources=sizeFixtures['request-component-list']!;
+    const rows=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
+    const result=await production(`fetched-component-rows-${count}`,sources['./App.tsx']!,{'src/Row.tsx':sources['./Row.tsx']!,'src/Label.tsx':sources['./Label.tsx']!},{rows});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();expect(html).not.toMatch(/mmd:[rgl]:/);
+    let next=rows;
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>({created:(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'),
+        retained:(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)}))).toEqual({created:[],retained:true});
+      expect(requests).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('li')];});
+      if(count){await page.click('.row-next');await page.waitForFunction(()=>document.querySelector('.row-next')?.textContent==='1');}
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='Kept 1');
+      next=[{id:2,label:'changed'},{id:1,label:'one'},{id:3,label:'new'}];
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('li').length===3);
+      expect(await page.$$eval('li span',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:changed:1','1:one:1','2:new:1']);
+      if(count)expect(await page.evaluate(()=>{
+        const kept=(window as unknown as {kept:Element[]}).kept,rows=[...document.querySelectorAll('li')];
+        return rows[0]===kept[1]&&rows[1]===kept[0]&&rows[1]!.querySelector('button')?.textContent==='1';
+      })).toBe(true);
+      next=[{id:1,label:'one'},{id:4,label:'appended'}];await page.click('.reload');
+      await page.waitForFunction(()=>document.querySelectorAll('li').length===2);
+      expect(await page.$$eval('li span',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:one:1','1:appended:1']);
+      await page.click('li:last-child .row-next');await page.waitForFunction(()=>document.querySelector('li:last-child button')?.textContent==='1');
+      expect(requests).toEqual(['/api/user','/api/user']);
+    },'/demo/',()=>({rows:next}));
+  },120_000);
+
+  it('binds and recreates structural caller slots in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const sources=sizeFixtures['composition-recreated-structural-children']!;
+    const result=await production('recreated-structural-slots',sources['./App.tsx']!,{'src/Shell.tsx':sources['./Shell.tsx']!});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('li')];});
+      await page.click('.reverse');await page.waitForFunction(()=>document.querySelector('li')?.textContent==='0:two:1');
+      expect(await page.evaluate(()=>document.querySelector('li')===(window as unknown as {kept:Element[]}).kept[1])).toBe(true);
+      await page.click('.toggle');await page.waitForFunction(()=>!document.querySelector('section'));
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='2');
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelector('b')?.textContent==='2');
+      expect(await page.$$eval('li',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:two:2','1:one:2']);
+      expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept.every(node=>!node.isConnected))).toBe(true);
+      await page.click('.shown');await page.waitForFunction(()=>!document.querySelector('b'));
+      await page.click('.shown');await page.waitForFunction(()=>document.querySelector('b')?.textContent==='2');
+      expect(requests).toEqual([]);
+    });
+  },120_000);
   it.each([0,2].flatMap(count=>['component','module'].map(placement=>({count,placement}))))('binds nested fetched lists and reconciles retained keys in Chrome (%j)',async({count,placement},context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const groups=[{id:1,name:'One',rows:[]},{id:2,name:'Two',rows:[{id:21,label:'first'},{id:22,label:'second'}]}].slice(0,count);

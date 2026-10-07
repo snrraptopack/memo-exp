@@ -34,6 +34,26 @@ async function bind(name:string,source:string,modules:Record<string,string>={}) 
 }
 function click(selector:string){document.querySelector<HTMLButtonElement>(selector)!.click();}
 
+it.each([false,true])('binds recreated conditional and list caller slots (open=%s)',async open=>{
+  await bind(`recreated-structural-${open}`,`import {Shell} from './Shell';export function App(){let open=${open};let shown=true;let n=1;let items=[{id:1,label:'one'},{id:2,label:'two'}];
+    return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button><button class="next" onClick={()=>n++}>Next</button>
+      <button class="shown" onClick={()=>shown=!shown}>Shown</button><button class="reverse" onClick={()=>items=items.toReversed()}>Reverse</button>
+      <button class="append" onClick={()=>items=[...items,{id:3,label:'new'}]}>Append</button>
+      {open&&<Shell>{shown&&<b>{n}</b>}{items.map((item,index)=><li key={item.id}>{index}:{item.label}:{n}</li>)}</Shell>}<p>{n}</p></main>;}`,{
+    './Shell.tsx':`import {Frame} from './Frame';export function Shell({children}){return <section><h2>Before</h2>{children}<Frame>{children}</Frame></section>;}`,
+    './Frame.tsx':`export function Frame({children}){return <aside><i>Prefix</i>{children}<footer>After</footer></aside>;}`,
+  });
+  if(!open)click('.toggle');const initial=[...document.querySelectorAll('li')];click('.reverse');
+  expect([...document.querySelectorAll('li')]).toEqual([initial[1],initial[0],initial[3],initial[2]]);
+  click('.next');expect([...document.querySelectorAll('b')].map(node=>node.textContent)).toEqual(['2','2']);
+  click('.shown');expect(document.querySelectorAll('b')).toHaveLength(0);
+  click('.toggle');expect(document.querySelectorAll('li')).toHaveLength(0);click('.next');click('.append');click('.shown');click('.toggle');
+  expect([...document.querySelectorAll('b')].map(node=>node.textContent)).toEqual(['3','3']);
+  expect([...document.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['0:two:3','1:one:3','2:new:3','0:two:3','1:one:3','2:new:3']);
+  expect(initial.every(node=>!node.isConnected)).toBe(true);
+  application!.unmount();application=undefined;expect(registeredIds()).toEqual([]);
+});
+
 it.each([
   `<Shell>{open&&<ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>}</Shell>`,
   `<Shell>{user?.rows?.map(row=><li key={row.id}>{row.label}</li>)}</Shell>`,

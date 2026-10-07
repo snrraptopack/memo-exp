@@ -7,6 +7,23 @@ function compile(source:string,options:Parameters<typeof compileModulesDetailed>
   return compileModulesDetailed({'./main.ts':entry,'./App.tsx':source},{initialContent:true,...options});
 }
 
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('proves fetched component row factories with future creation (%s)',frontend=>{
+  const sources={
+    './main.ts':entry,
+    './App.tsx':`import {Row} from './Row';export function App(){const user=$fetch('/api/user');let n=0;return <main>
+      <button onClick={()=>n++}>Next</button><ul>{user?.rows?.map((item,index)=><Row key={item.id} item={item} index={index} suffix={n}/>)}</ul></main>;}`,
+    './Row.tsx':`export function Row({item,index,suffix}){let n=0;return <li><span>{index}:{item.label}:{suffix}</span><button onClick={()=>n++}>{n}</button></li>;}`,
+  };
+  const client=compileModulesDetailed(sources,{initialContent:true,frontend});
+  const server=compileModulesDetailed(sources,{initialContent:true,frontend,routedEnvironment:'server',moduleStateCells:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  expect(client.output['./App.tsx']).toContain('bindInitialList');
+  expect(client.output['./App.tsx']).not.toMatch(/materializeMarkup|createElement|createTextNode/);
+  expect(client.output['./Row.tsx']).toContain('bindInitialNodes');
+  expect(client.output['./Row.tsx']).toMatch(/materializeMarkup|createElement/);
+  expect(server.output['./App.tsx']).toContain('mmd:initial:list:');
+});
+
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('proves request-only composition without inventing initial data (%s)',frontend=>{
   const result=compile(`import {$fetch as request} from '@memoized-dom/data';
     function Card({name}){return <section><h2 title={name}>{'Hello '+name}</h2></section>;}
@@ -125,11 +142,17 @@ it('retains metadata presentation and shadowed tracking calls on ordinary browse
 it.each([
   `{user?.rows?.map(item=><li>{item.label}</li>)}{user?.rows?.map(item=><li>{item.label}</li>)}`,
   `<ul>{user?.rows?.map(item=><li>{show&&<b>{item.label}</b>}</li>)}</ul>`,
-  `<ul>{user?.rows?.map(item=><li><Card text={item.label}/></li>)}</ul>`,
   `<ul>{user?.rows?.map(({label})=><li>{label}</li>)}</ul>`,
 ])('retains general creation for unproved fetched row placement: %s',children=>{
   expect(compile(`function Card({text}){return <b>{text}</b>;}export function App(){const user=$fetch('/api/user');let show=true;
     return <main><button onClick={()=>show=!show}>Toggle</button>${children}</main>;}`).initialDelivery).toBeUndefined();
+});
+
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds component descendants inside fetched host rows (%s)',frontend=>{
+  const result=compile(`function Card({text}){return <b>{text}</b>;}export function App(){const user=$fetch('/api/user');let n=0;
+    return <main><button onClick={()=>n++}>{n}</button><ul>{user?.rows?.map(item=><li><Card text={item.label}/></li>)}</ul></main>;}`,{frontend});
+  expect(result.initialDelivery?.browser).toBe('bindings');
+  expect(result.output['./App.tsx']).toContain('bindInitialList');
 });
 
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed siblings around a variable fetched extent (%s)',frontend=>{

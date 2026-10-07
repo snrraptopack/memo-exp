@@ -2675,3 +2675,49 @@ fingerprinting, late serialization, URL snapshot preservation, restored cache
 sharing and replay contracts. Typechecking, data build and 24 Chrome source
 audit graphs pass. Audit graphs include client and universal request controls
 and generic request encoding. Examples and numbered docs are unchanged.
+
+### Component rows and recreated structural caller slots — 2026-10-07
+
+Initial lists now accept component rows and component descendants with one
+proved host root. Request row collection includes the unknown row template,
+so its component factories and composed descendants retain future creation.
+The existing list factory forwards the adopted row host to the existing
+component factory. A callback that omits its index still reserves the runtime's
+index argument before the adoption host. Later inserts use normal creation;
+retained keyed rows keep their DOM, local state and lifetime.
+
+Recreated callees can now mount caller slots containing closed initial
+conditional and list extents. The lexical slot has its own placement plan;
+repeated forwarding retains caller ownership and each mount's offset. The
+conditional receives its server anchors only during adoption, just as lists
+do. A later mount creates fresh regions through the same factories. Component
+row content slots still need a caller adoption scope. Request lists with
+conditional descendants, unknown extents in recreated slots,
+multiple variable extents per host and varying nested closed rows remain
+unproved and keep ordinary rendering. No runtime engine or public ABI was added.
+
+Matched Vite production builds against compiler/Vite `41c9fc3`, with identical
+current runtime packages, include every browser chunk, gzipped separately:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Fetched component rows | 60,410 | 49,077 | 19,854 | 16,437 |
+| Recreated structural caller slots | 36,629 | 27,992 | 12,590 | 9,838 |
+| Counter | 8,613 | 8,613 | 3,483 | 3,483 |
+| Static | 0 | 0 | 0 | 0 |
+
+Each nonstatic fixture emits one chunk. Fetched HTML falls from 990 to 882 B;
+its 370 B transfer payload is unchanged. Recreated-slot HTML falls from 722 to
+597 B, and its empty 78 B general hydration payload is omitted. These are
+delivery measurements, with no CPU claim. Reproduce with
+`bun run bench:size:ssr --before-ref=41c9fc3 --fixture=request-component-list --fixture=composition-recreated-structural-children --fixture=counter --fixture=static`.
+
+All 239 initial-binding checks across fifteen suites pass. New checks cover
+both frontends, matching server/browser contracts, light and stateful component
+rows, omitted indexes, keyed reorder, insertion/removal, cleanup, inactive
+initial slots, repeated forwarding and caller updates while hidden.
+The additional component-row slot fallback check passes. Three production
+Chrome checks pass individually: empty fetched component rows, populated
+fetched component rows and recreated structural caller slots. They verify
+adopted node identity, no duplicate fetch or node creation, retained local
+state, reload/reorder, insertion/removal, remount and interaction.

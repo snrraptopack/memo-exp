@@ -1,5 +1,19 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-component-list': {
+    './App.tsx':`import {Row} from './Row';export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;
+      return <main><button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+        <ul>{user?.rows?.map((item,index)=><Row key={item.id} item={item} index={index} suffix={n}/>)}</ul><footer>Kept {n}</footer></main>;}`,
+    './Row.tsx':`import {Label} from './Label';export function Row({item,index,suffix}){let count=0;return <li data-id={item.id}><span>{index}:<Label text={item.label}/>:{suffix}</span><button class="row-next" onClick={()=>count++}>{count}</button></li>;}`,
+    './Label.tsx':`export function Label({text}){return <b>{text}</b>;}`,
+  },
+  'composition-recreated-structural-children': {
+    './App.tsx':`import {Shell} from './Shell';export function App(){let open=true;let shown=true;let n=1;let items=[{id:1,label:'one'},{id:2,label:'two'}];
+      return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button><button class="next" onClick={()=>n++}>Next</button>
+        <button class="shown" onClick={()=>shown=!shown}>Shown</button><button class="reverse" onClick={()=>items=items.toReversed()}>Reverse</button>
+        {open&&<Shell>{shown&&<b>{n}</b>}{items.map((item,index)=><li key={item.id}>{index}:{item.label}:{n}</li>)}</Shell>}<p>{n}</p></main>;}`,
+    './Shell.tsx':`export function Shell({children}){return <section><h2>Before</h2>{children}<footer>After</footer></section>;}`,
+  },
   'route-lazy': {
     './App.tsx':`import {Detail} from './Detail';export function App(){return <main route="/"><nav><a class="home" route-to="/">Home</a><a class="about" route-to="/about">Detail</a></nav><section route="/"><h2>Home</h2></section><Detail route="/about"/></main>;}`,
     './Detail.tsx':`export function Detail(){let n=0;return <article><h2>Detail</h2><button onClick={()=>n++}>{n}</button></article>;}`,

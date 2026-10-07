@@ -52,6 +52,7 @@ import {
 } from '../handlers';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { isImplicitPolicyProp, transparentCallPolicyArgument } from '../data-sources';
+import type { InitialDomRoot } from './initial-dom';
 
 interface ComponentRowFactoryPlan {
   ctx: Ctx;
@@ -72,6 +73,7 @@ interface ComponentRowFactoryPlan {
   callProps: t.Expression[];
   updateStatements: t.Statement[];
   dataPolicies: t.Expression | null;
+  initialRoot: t.Identifier | null;
 }
 
 function buildComponentRowFactory({
@@ -93,6 +95,7 @@ function buildComponentRowFactory({
   callProps,
   updateStatements,
   dataPolicies,
+  initialRoot,
 }: ComponentRowFactoryPlan): t.ArrowFunctionExpression {
   const entryProperties: t.ObjectProperty[] = lightweight
     ? [
@@ -151,7 +154,10 @@ function buildComponentRowFactory({
     [
       cloneEstreeNode(site.itemPattern, true),
       cloneEstreeNode(rowId),
-      ...(site.indexParam === null ? [] : [astFactory.identifier(site.indexParam)]),
+      ...(site.indexParam === null
+        ? initialRoot ? [generatedIdentifier(ctx, 'unusedIndex')] : []
+        : [astFactory.identifier(site.indexParam)]),
+      ...(initialRoot ? [initialRoot] : []),
     ],
     astFactory.blockStatement([
       ...site.prelude.map(statement => cloneEstreeNode(statement)),
@@ -173,6 +179,7 @@ function buildComponentRowFactory({
                 ...[...eventBindings.values()].map((binding) =>
                   cloneEstreeNode(binding),
                 ),
+                ...(initialRoot ? [cloneEstreeNode(initialRoot)] : []),
               ])
             : astFactory.callExpression(astFactory.identifier(rowComponent), [
                 cloneEstreeNode(rowId),
@@ -181,6 +188,7 @@ function buildComponentRowFactory({
                   ? [astFactory.arrayExpression(callProps)]
                   : []),
                 ...(dataPolicies === null ? [] : [cloneEstreeNode(dataPolicies)]),
+                ...(initialRoot ? [cloneEstreeNode(initialRoot)] : []),
               ]),
         ),
       ]),
@@ -266,6 +274,7 @@ export function buildComponentRowCreate(
   ownerId: t.Expression = componentId(ctx, componentName),
   eventBindings: ReadonlyMap<string, t.Identifier> = new Map(),
   sources: RegionSourcePlans | null = null,
+  initial?: InitialDomRoot,
 ): t.ArrowFunctionExpression {
   const rowComponent = site.rowComp!;
   const rowId = generatedIdentifier(ctx, 'rowId');
@@ -670,5 +679,6 @@ export function buildComponentRowCreate(
     callProps,
     updateStatements,
     dataPolicies: transparentCallPolicyArgument(ctx, componentName, site.jsx!),
+    initialRoot: initial ? generatedIdentifier(ctx, 'initialRow') : null,
   });
 }

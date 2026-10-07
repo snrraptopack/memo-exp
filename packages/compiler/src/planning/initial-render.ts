@@ -159,13 +159,15 @@ export function planInitialRendering(
 
   function fixedSlotHosts(nodes: readonly InitialRenderNode[]): boolean {
     return nodes.every(node => node.kind === 'text' ||
-      (node.kind === 'element' || node.kind === 'slot') && fixedSlotHosts(node.children));
+      (node.kind === 'element' || node.kind === 'slot' || node.kind === 'component') && fixedSlotHosts(node.children) ||
+      node.kind === 'conditional' && node.branch !== null && fixedSlotHosts(node.children) ||
+      node.kind === 'list' && !node.requestRow && node.rows.every(fixedSlotHosts));
   }
 
   /** Request rows share a host shape while each nested list owns its extent. */
   function requestRowHosts(nodes: readonly InitialRenderNode[]): boolean {
     return nodes.every(node => node.kind === 'text' ||
-      node.kind === 'element' && requestRowHosts(node.children) ||
+      (node.kind === 'element' || node.kind === 'component') && requestRowHosts(node.children) ||
       node.kind === 'list' && node.requestRow !== undefined && requestRowHosts(node.requestRow));
   }
 
@@ -206,7 +208,8 @@ export function planInitialRendering(
         return jsx(callback.jsx!, row);
       });
       if (!bindings) return {kind: 'content', nodes: rows.flat()};
-      if (rows.some(row => row.length !== 1 || row[0]?.kind !== 'element')) need(scope, 'Initial lists need one host root per row');
+      if (rows.some(row => row.length !== 1 || !['element','component'].includes(row[0]!.kind))) need(scope, 'Initial lists need one host root per row');
+      if (rows.some(row => row[0]?.kind === 'component' && !requestRowHosts(row))) need(scope, 'Component row content slots need a caller adoption scope');
       if (unknown && !requestRowHosts(rows[0]!)) need(scope, 'Request list rows need proved host descendants');
       return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows:unknown?[]:rows,
         ...(unknown ? {requestRow:rows[0]!} : {})}]};
@@ -684,7 +687,12 @@ export function planInitialRendering(
       const regionCount = regions.length;
       const childEventCount = bindingEventCount;
       const childOwnerCount = ownerSiteCount;
-      const nodes = children();
+      // Caller slots have their own placement plan. A future callee mount does
+      // not put their closed structural regions inside its surrounding branch.
+      const surroundingStructure = inStructure;
+      inStructure = false;
+      let nodes: readonly InitialRenderNode[];
+      try { nodes = children(); } finally { inStructure = surroundingStructure; }
       const authoredChildren = bindings && nodes.length > 0;
       const staticChildren = authoredChildren && childEventCount === bindingEventCount &&
         childOwnerCount === ownerSiteCount && closedContent(nodes);
@@ -855,7 +863,7 @@ export function planInitialRendering(
             continue;
           }
           if ('children' in node) collect(node.children,owner);
-          if (node.kind==='list') for(const row of node.rows)collect(row,owner);
+          if (node.kind==='list') for(const row of node.requestRow?[node.requestRow]:node.rows)collect(row,owner);
         }
       }
       collect(nodes);
@@ -883,18 +891,18 @@ export function planInitialRendering(
       // A future parent creates its composed descendants too. Keep one factory
       // for binding and creation; only factories proved fixed in shape qualify.
       for (const key of creationComponents) for (const child of descendants.get(key)??[]) creationComponents.add(child);
-      function retain(nodes:readonly InitialRenderNode[], creating=false):readonly InitialRenderNode[] {
+      function retain(nodes:readonly InitialRenderNode[], creating=false, slotStructure=false):readonly InitialRenderNode[] {
         return nodes.map(node=>{
           if (node.kind==='component') {
             const creation=creationComponents.has(`${node.moduleId}#${node.component}`);
             return {...node, ...(creation?{static:false}:{}), children:retain(node.children,creation)};
           }
-          if (creating && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');
+          if (creating && !slotStructure && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');
           if (node.kind==='element') return {...node,
             attributes:creating?node.attributes.map(attribute=>({...attribute,live:true})):node.attributes,
-            children:retain(node.children,creating)};
+            children:retain(node.children,creating,slotStructure)};
           if (node.kind==='text') return creating?{...node,live:true}:node;
-          if (node.kind==='slot') return {...node,...(creating?{static:undefined,creation:true as const}:{}),children:retain(node.children,creating)};
+          if (node.kind==='slot') return {...node,...(creating?{static:undefined,creation:true as const}:{}),children:retain(node.children,creating,true)};
           if (node.kind==='conditional') return {...node,children:retain(node.children)};
           if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row)),
             ...(node.requestRow?{requestRow:retain(node.requestRow)}:{})};
