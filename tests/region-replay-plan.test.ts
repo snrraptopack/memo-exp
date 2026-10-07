@@ -7,7 +7,7 @@ import { createCtx } from '../packages/compiler/src/dom/context';
 import { planRegionReplays } from '../packages/compiler/src/planning/region-replay';
 import { matchMapCall } from '../packages/compiler/src/lists';
 import { captureOwnerListWrites } from '../packages/compiler/src/analysis/owner-list-structure';
-import { instanceSourceReasons } from '../packages/compiler/src/context';
+import { instanceSourceReasons } from '../packages/compiler/src/dom/instance-reasons';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source, { filename:'./region-replay.tsx' }).program as unknown as t.Program;
@@ -105,16 +105,14 @@ it('captures closed owner replay reasons only for the original lexical list call
   const before = JSON.stringify(program);
   const facts = planRegionReplays(ctx).get('View')!;
   const source = {...list(), sourceLocal:true};
-  const reason = ctx.instanceReasonIds.get('View')!.get('items');
-  expect(reason).toBeTypeOf('number');
-  expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
-  expect(facts.listFor(cloneNode(call!),source).ownerStructuralReason).toBeUndefined();
-  expect(facts.listFor(call!,{...source,hasPrelude:true}).ownerStructuralReason).toBeUndefined();
-  expect(facts.listFor(call!,{...source,sourceExpr:expression('other')}).ownerStructuralReason).toBeUndefined();
-  expect(facts.listFor(call!,list()).ownerStructuralReason).toBeUndefined();
+  expect(facts.listFor(call!,source).ownerStructuralCause).toBe('items');
+  expect(facts.listFor(cloneNode(call!),source).ownerStructuralCause).toBeUndefined();
+  expect(facts.listFor(call!,{...source,hasPrelude:true}).ownerStructuralCause).toBeUndefined();
+  expect(facts.listFor(call!,{...source,sourceExpr:expression('other')}).ownerStructuralCause).toBeUndefined();
+  expect(facts.listFor(call!,list()).ownerStructuralCause).toBeUndefined();
   expect(JSON.stringify(program)).toBe(before);
-  ctx.ownerListStructureSources=new WeakMap();ctx.instanceReasonIds.clear();ctx.astAnalysis=null;
-  expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
+  ctx.ownerListStructureSources=new WeakMap();ctx.instanceReasonSources.clear();ctx.instanceReasonIds.clear();ctx.astAnalysis=null;
+  expect(facts.listFor(call!,source).ownerStructuralCause).toBe('items');
 });
 
 it('captures a separate cause and transfers write facts only from original owner nodes', () => {
@@ -126,7 +124,9 @@ it('captures a separate cause and transfers write facts only from original owner
   let call:t.Node|undefined;
   walkAst(program,{enter(node){if(matchMapCall(node)!==null)call=node;}});
   const facts=planRegionReplays(ctx).get('View')!,source={...list(),sourceLocal:true};
-  const reason=facts.listFor(call!,source).ownerStructuralReason!;
+  const cause=facts.listFor(call!,source).ownerStructuralCause!;
+  expect(cause).toBe('items\0memo-dom:owner-list-structure');
+  const reason=ctx.instanceReasonIds.get('View')!.get(cause);
   expect(reason).toBeTypeOf('number');
   expect(reason).not.toBe(ctx.instanceReasonIds.get('View')!.get('items'));
   expect(instanceSourceReasons(ctx,'View','items')).toContain(reason);
@@ -138,8 +138,8 @@ it('captures a separate cause and transfers write facts only from original owner
   walkAst(copy,{enter(node){if(copied.get(node)==='items')count++;expect(unrelated.has(node)).toBe(false);}});
   expect(count).toBe(1);
   walkAst(again,{enter(node){expect(unproven.has(node)).toBe(false);}});
-  ctx.ownerListStructureReasonKeys.clear();ctx.instanceReasonIds.clear();ctx.ownerListStructureSources=new WeakMap();
-  expect(facts.listFor(call!,source).ownerStructuralReason).toBe(reason);
+  ctx.ownerListStructureReasonKeys.clear();ctx.instanceReasonSources.clear();ctx.instanceReasonIds.clear();ctx.ownerListStructureSources=new WeakMap();
+  expect(facts.listFor(call!,source).ownerStructuralCause).toBe(cause);
 });
 
 it('captures native-operation guards as source facts without a generated binding', () => {

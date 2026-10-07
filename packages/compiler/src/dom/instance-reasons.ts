@@ -1,4 +1,12 @@
-import type { Ctx } from './model';
+import type { DomContext as Ctx } from './context';
+
+/** Deterministic ABI indices are allocated only after source analysis is complete. */
+export function allocateInstanceReasons(ctx:Ctx):void {
+  ctx.instanceReasonIds.clear();
+  for(const [component,sources] of ctx.instanceReasonSources) {
+    ctx.instanceReasonIds.set(component,new Map([...sources].sort().map((source,index)=>[source,index])));
+  }
+}
 
 /** Both ordinary and proven structural writes invalidate a source reader. */
 export function instanceSourceReasons(ctx: Ctx, component: string, source: string): number[] | null {

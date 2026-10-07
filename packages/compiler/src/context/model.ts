@@ -578,8 +578,8 @@ export interface Ctx {
   instanceControlFlow: Map<string, ControlFlowDerivation[]>;
   /** All bindings introduced by local derivations, for locality and writes. */
   instanceDerivedBindings: Map<string, Set<string>>;
-  /** Numeric dirty reasons for exact local write roots. */
-  instanceReasonIds: Map<string, Map<string, number>>;
+  /** Exact local write roots eligible for selective replay. Backend allocates reasons. */
+  instanceReasonSources: Map<string, Set<string>>;
   /** Components whose local dependency graph has skippable work. */
   selectiveDerivationComponents: Set<string>;
   /** Components whose rendered output reads state controlled by opaque code. */
@@ -603,16 +603,10 @@ export interface Ctx {
   /** Pure exhaustive module-level if/switch calculations. */
   moduleControlFlow: ModuleControlFlowDerivation[];
 
-  /** Function nodes whose handler analysis already ran (shared declarations). */
-  analyzedFunctions: WeakSet<t.Node>;
-  /** Authored callback boundaries with successfully emitted normal-exit publication. */
-  callbackPublications:Set<BaseNode>;
   /** Pure callbacks synthesized and owned by compiler derivation/read helpers. */
   compilerOwnedCallbacks: WeakSet<t.Node>;
   /** Generated lifecycle calls keep their identity despite authored shadows. */
   compilerLifecycleCalls: WeakMap<BaseNode, 'effect' | 'cleanup'>;
-  /** Whether a shared handler already emits a commit in its event scope. */
-  handlerHasRootCommit: WeakMap<t.Node, boolean>;
   /**
    * Effects a component-local helper performs on its own parameters, keyed by
    * the helper's function node. Callers fold these through their arguments so
@@ -854,7 +848,7 @@ export function createAnalysisCtx(opts: AnalysisOptions = {}): Ctx {
     instanceDerivations: new Map(),
     instanceControlFlow: new Map(),
     instanceDerivedBindings: new Map(),
-    instanceReasonIds: new Map(),
+    instanceReasonSources: new Map(),
     selectiveDerivationComponents: new Set(),
     volatileComponents: new Set(),
     opaqueBindings: new Map(),
@@ -862,11 +856,8 @@ export function createAnalysisCtx(opts: AnalysisOptions = {}): Ctx {
     moduleEffects: [],
     computeds: new Map(),
     moduleControlFlow: [],
-    analyzedFunctions: new WeakSet(),
-    callbackPublications:new Set(),
     compilerOwnedCallbacks: new WeakSet(),
     compilerLifecycleCalls: new WeakMap(),
-    handlerHasRootCommit: new WeakMap(),
     localParamEffects: new WeakMap(),
   };
 }

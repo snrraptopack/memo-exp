@@ -9,7 +9,7 @@
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../../ast';
-import { instanceSourceReasons } from '../../context';
+import { instanceSourceReasons } from '../instance-reasons';
 import type {DomContext as Ctx} from '../context';
 import {
   type ControlFlowDerivation,

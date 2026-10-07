@@ -248,10 +248,12 @@ export function emitListRegion(
     dependency,
     cache: generatedIdentifier(ctx, `${dependency.value}ListKey`).name,
   }));
-  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralReason, ownerGuarded } = scope.regionReplay!.listFor(call, {
+  const { structuralSource, fixedPositions, moduleIndices, ownerStructuralCause, ownerGuarded } = scope.regionReplay!.listFor(call, {
     sourceExpr: site.sourceExpr, sourceKey: site.sourceKey, sourceLocal: site.sourceLocal,
     hasPrelude: site.prelude.length > 0,
   });
+  const ownerStructuralReason = ownerStructuralCause === undefined ? undefined :
+    ctx.instanceReasonIds.get(componentName)?.get(ownerStructuralCause);
   if (dependencyCaches.length > 0) {
     scope.creation.push(
       astFactory.variableDeclaration(

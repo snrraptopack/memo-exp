@@ -614,12 +614,7 @@ export function scanInstanceDerivations(ctx: Ctx): void {
       ...exactSources,
       ...derivations.flatMap((derivation) => derivation.sources),
     ]);
-    ctx.instanceReasonIds.set(
-      componentName,
-      new Map(
-        [...reasonSources].sort().map((source, index) => [source, index]),
-      ),
-    );
+    ctx.instanceReasonSources.set(componentName,reasonSources);
     ctx.selectiveDerivationComponents.add(componentName);
   }
 }

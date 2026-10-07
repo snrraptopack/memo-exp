@@ -18,9 +18,9 @@ export function planRegionReplays(ctx: Ctx): ReadonlyMap<string, ComponentRegion
       const structuralSource = ctx.ownerListStructureSources.get(call);
       const structuralReasonKey = structuralSource === undefined ? undefined :
         ctx.ownerListStructureReasonKeys.get(name)?.get(structuralSource) ?? structuralSource;
-      const structuralReason = structuralReasonKey === undefined ? undefined : ctx.instanceReasonIds.get(name)?.get(structuralReasonKey);
-      if (structuralSource !== undefined && structuralReason !== undefined) {
-        ownerStructures.set(call, { source: structuralSource, reason: structuralReason,
+      if (structuralSource !== undefined && structuralReasonKey !== undefined &&
+        ctx.instanceReasonSources.get(name)?.has(structuralReasonKey)) {
+        ownerStructures.set(call, { source: structuralSource, cause: structuralReasonKey,
           guarded: ctx.ownerListGuards.get(name)?.has(structuralSource) });
       }
       const callee = call.callee as t.MemberExpression | t.OptionalMemberExpression;

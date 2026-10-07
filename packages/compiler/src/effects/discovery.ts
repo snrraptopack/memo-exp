@@ -664,21 +664,14 @@ export function scanEffects(
     ctx.effects.set(compName, sites);
 
     const reasonSources = new Set<string>([
-      ...(ctx.instanceReasonIds.get(compName)?.keys() ?? []),
+      ...(ctx.instanceReasonSources.get(compName) ?? []),
       ...(ctx.instanceState.get(compName) ?? []),
       ...(ctx.componentProps.get(compName)?.bindings ?? []),
       ...sites.flatMap((site) => [...site.localReads]),
       ...sites.flatMap((site) => [...site.conditionLocalReads]),
     ]);
     if (reasonSources.size > 0) {
-      ctx.instanceReasonIds.set(
-        compName,
-        new Map(
-          [...reasonSources]
-            .sort()
-            .map((source, index) => [source, index]),
-        ),
-      );
+      ctx.instanceReasonSources.set(compName,reasonSources);
     }
   }
 }

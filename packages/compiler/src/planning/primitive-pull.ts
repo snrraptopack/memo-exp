@@ -104,7 +104,7 @@ export function planComponentPull(ctx: Ctx, component: string): ComponentPullPla
 export function planComponentPulls(ctx: Ctx): ReadonlyMap<string, ComponentPullPlan> {
   const plans = new Map<string, ComponentPullPlan>();
   for (const component of ctx.compPaths.keys()) {
-    if (ctx.volatileComponents.has(component) && ctx.instanceReasonIds.has(component)) {
+    if (ctx.volatileComponents.has(component) && ctx.instanceReasonSources.has(component)) {
       plans.set(component, planComponentPull(ctx, component));
     }
   }

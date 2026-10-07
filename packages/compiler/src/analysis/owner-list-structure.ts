@@ -445,7 +445,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         }
       }
       for (const call of calls) ctx.ownerListStructureSources.set(call, source);
-      const sources = new Set([...(ctx.instanceReasonIds.get(owner)?.keys() ?? []), source]);
+      const sources = new Set([...(ctx.instanceReasonSources.get(owner) ?? []), source]);
       if (mutableContents) {
         const reasonKey = `${source}\0memo-dom:owner-list-structure`;
         let reasons = ctx.ownerListStructureReasonKeys.get(owner);
@@ -453,7 +453,7 @@ export function analyzeOwnerListStructure(ctx: Ctx): void {
         reasons.set(source, reasonKey); sources.add(reasonKey);
         for (const write of structuralWrites) ctx.ownerListStructureWriteSources.set(write as t.Node, { owner, source });
       }
-      ctx.instanceReasonIds.set(owner, new Map([...sources].sort().map((name, index) => [name, index])));
+      ctx.instanceReasonSources.set(owner,sources);
     }
   }
 }

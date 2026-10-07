@@ -15,7 +15,7 @@ export interface ListReplayFacts {
   readonly fixedPositions: boolean;
   readonly moduleIndices: boolean;
   /** Ordinary cause for wholly structural sources, otherwise a dedicated safe-write cause. */
-  readonly ownerStructuralReason?: number;
+  readonly ownerStructuralCause?: string;
   readonly ownerGuarded?: boolean;
 }
 
@@ -25,7 +25,7 @@ export interface ComponentRegionReplay {
 }
 export interface OwnerListReplay {
   readonly source: string;
-  readonly reason: number;
+  readonly cause: string;
   readonly guarded?: boolean;
 }
 
@@ -56,7 +56,7 @@ export function createRegionReplayFacts(environment: RegionReplayEnvironment): C
         moduleIndices: !source.hasPrelude && !source.sourceLocal && identifier !== null &&
           moduleIndexSources.has(identifier),
         ...(source.sourceLocal && !source.hasPrelude && identifier === ownerStructure?.source
-          ? { ownerStructuralReason: ownerStructure.reason, ownerGuarded: ownerStructure.guarded } : {}),
+          ? { ownerStructuralCause: ownerStructure.cause, ownerGuarded: ownerStructure.guarded } : {}),
       };
     },
     conditionFromOwner(expression) {

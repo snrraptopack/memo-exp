@@ -7,6 +7,7 @@ import { planModuleSources } from '../planning/module-sources';
 import { planBodylessFetchImports } from '../planning/fetch-encoding';
 import { lowerBodylessFetchImports } from '../features/data-sources/fetch-encoding';
 import { runAnalysis } from './analyze';
+import {allocateInstanceReasons} from './instance-reasons';
 import { analyzeDomOnlyRows } from './row-eligibility';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
@@ -44,6 +45,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   lowerModuleSourceDeclarations(ctx, programPath.node, moduleSources);
   analyzeRouterJsx(ctx, programPath);
   runAnalysis(ctx, programPath);
+  allocateInstanceReasons(ctx);
   analyzeDomOnlyRows(ctx);
   rejectNonGetServerFunctionRenderCalls(ctx, programPath);
   scanEventSourceAssignments(ctx);

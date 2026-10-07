@@ -3,6 +3,8 @@ import {join,resolve,relative} from 'node:path';
 import {expect,it} from 'vitest';
 import {parseEstreeOrThrow,walkAst,childNode,stringValue} from '../packages/compiler/src/ast';
 import {createAnalysisCtx} from '../packages/compiler/src/context/model';
+import {createCtx} from '../packages/compiler/src/dom/context';
+import {allocateInstanceReasons} from '../packages/compiler/src/dom/instance-reasons';
 
 const sourceRoot=resolve(import.meta.dirname,'../packages/compiler/src');
 function sourceFiles(directory:string):string[] {
@@ -32,5 +34,21 @@ it('shared analysis, planning and context cannot import DOM lowering or runtime 
 it('source analysis can be constructed without a DOM allocator or host plans',()=>{
   const context=createAnalysisCtx({moduleId:'./source-only.tsx'});
   expect(context.stateKeys.size).toBe(0);
-  expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly)/.test(key))).toEqual([]);
+  expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly|instanceReasonIds|analyzedFunctions|callbackPublications|handlerHasRootCommit)/.test(key))).toEqual([]);
+});
+
+it('allocates deterministic runtime reasons from complete source facts in the backend',()=>{
+  const context=createCtx();
+  context.instanceReasonSources.set('View',new Set(['z','items\0memo-dom:owner-list-structure','items']));
+  context.instanceReasonSources.set('Other',new Set());
+  const sources=[...context.instanceReasonSources.get('View')!];
+  allocateInstanceReasons(context);
+  expect([...context.instanceReasonIds.get('View')!]).toEqual([
+    ['items',0],['items\0memo-dom:owner-list-structure',1],['z',2],
+  ]);
+  expect([...context.instanceReasonSources.get('View')!]).toEqual(sources);
+  expect(context.instanceReasonIds.get('Other')!.size).toBe(0);
+  context.instanceReasonSources.delete('Other');
+  allocateInstanceReasons(context);
+  expect(context.instanceReasonIds.has('Other')).toBe(false);
 });

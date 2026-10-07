@@ -563,7 +563,7 @@ export function scanInstanceControlFlow(ctx: Ctx): void {
   }
 }
 
-/** Resolve transitive sources and allocate selective invalidation reasons. */
+/** Resolve transitive sources and collect selective replay causes. */
 export function finalizeInstancePreludes(ctx: Ctx): void {
   for (const [componentName] of ctx.compPaths) {
     const locals = ctx.instanceDerivations.get(componentName) ?? [];
@@ -576,12 +576,7 @@ export function finalizeInstancePreludes(ctx: Ctx): void {
       // No prelude to gate, but JSX slots still split by source: a write to
       // one exact source can skip slots that read only the others.
       if (exactSources.size < 2) continue;
-      ctx.instanceReasonIds.set(
-        componentName,
-        new Map(
-          [...exactSources].sort().map((source, index) => [source, index]),
-        ),
-      );
+      ctx.instanceReasonSources.set(componentName,exactSources);
       continue;
     }
 
@@ -633,20 +628,13 @@ export function finalizeInstancePreludes(ctx: Ctx): void {
         work.some((derivation) => !derivation.sources.includes(source)),
       );
     ctx.selectiveDerivationComponents.delete(componentName);
-    ctx.instanceReasonIds.delete(componentName);
+    ctx.instanceReasonSources.delete(componentName);
     if (!selective) continue;
     const reasonSources = new Set<string>([
       ...exactSources,
       ...work.flatMap((derivation) => derivation.sources),
     ]);
-    ctx.instanceReasonIds.set(
-      componentName,
-      new Map(
-        [...reasonSources]
-          .sort()
-          .map((source, index) => [source, index]),
-      ),
-    );
+    ctx.instanceReasonSources.set(componentName,reasonSources);
     ctx.selectiveDerivationComponents.add(componentName);
   }
 }

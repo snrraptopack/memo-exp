@@ -66,17 +66,10 @@ function addInstanceReasons(
   additions: Iterable<string>,
 ): void {
   const sources = new Set([
-    ...(ctx.instanceReasonIds.get(component)?.keys() ?? []),
+    ...(ctx.instanceReasonSources.get(component) ?? []),
     ...additions,
   ]);
-  ctx.instanceReasonIds.set(
-    component,
-    new Map(
-      [...sources]
-        .sort()
-        .map((source, index) => [source, index]),
-    ),
-  );
+  ctx.instanceReasonSources.set(component,sources);
 }
 
 function registerKeyedListMutationPlan(

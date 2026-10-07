@@ -157,7 +157,21 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
 - Replaced an obsolete closed nested-slot fallback assertion with a real DOM
   test covering initial binding, keyed reversal, hide/recreate and stable host identity.
 
-Next in area 1: move numeric cause allocation and emitted callback-publication
-storage out of shared context; extend authored callback contracts to native
-events and remaining normalization; finish explicit journal/ownership inputs.
+### Source causes and backend allocation (parent `352f1d0`)
+
+- Shared analysis now collects symbolic source causes. The DOM backend alone
+  allocates sorted numeric runtime reasons after analysis. Structural replay
+  contracts carry source names rather than runtime indices.
+- Moved callback instrumentation/publication storage and reason lookup out of
+  shared context. Deleted its former numeric allocator/lookup implementation.
+- Type checking, compiler build and lint passed. Eight affected suites passed
+  128 tests, including source-only construction, deterministic allocation,
+  structural/content writes, effects and selective slot updates.
+- Compared 123 stable fixture/target combinations with `a09eded`: generated
+  code, graph metadata, initial plans and delivery contracts were unchanged.
+  Source maps were excluded; the earlier replay relocation changes mappings
+  for two request-rebinding fixtures without changing emitted behavior.
+
+Next in area 1: extend authored callback contracts to native events and
+remaining normalization; finish explicit journal/ownership inputs.
 These are prerequisites for the runtime-size and broader precision batches.

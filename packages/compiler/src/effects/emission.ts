@@ -9,7 +9,8 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import { refreshAstAnalysis, instanceSourceReasons, type EffectSite, type ModuleEffectSite, type ProgramPath } from '../context';
+import { refreshAstAnalysis, type EffectSite, type ModuleEffectSite, type ProgramPath } from '../context';
+import { instanceSourceReasons } from '../dom/instance-reasons';
 import { type DomContext as Ctx } from '../dom/context';
 import { generatedIdentifier, md } from '../dom/identifiers';
 import type { EmitScope } from '../dom/scope';
