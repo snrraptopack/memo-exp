@@ -53,6 +53,18 @@ it('keeps authored row facts separate from its backend refresh and owner binding
   expect(JSON.stringify(handler)).toContain('_rowRefresh');
 });
 
+it('allocates a journal from its captured source contract after analysis storage is discarded',()=>{
+  const {ctx,handler}=preparedHandler(`export function App(){let items=[{id:1,label:'one'}];
+    return <main><ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>
+      <button onClick={()=>{items[0].label='new';}}/></main>;}`);
+  const plan=planHandlerWrites(ctx,handler,'App');
+  expect(plan.mutationSites).toHaveLength(1);
+  ctx.keyedListMutationSources.clear();
+  emitHandlerWrites(ctx,plan);
+  const variable=mutationJournalVariable(ctx,'App','items');
+  expect(JSON.stringify(handler)).toContain(variable);
+});
+
 it('captures a native-operation write without mutating authored code or emitting runtime calls', () => {
   const program = parseEstreeOrThrow(`export function App(){
     let items=[{id:1,label:'one'},{id:2,label:'two'}];

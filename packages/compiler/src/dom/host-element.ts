@@ -238,6 +238,7 @@ if (hasSpread) {
         componentName,
         rowContext,
         eventOriginId,
+        scope.callbacks,
       );
       const binding = generatedIdentifier(ctx, `${name}Handler`);
       scope.creation.push(
@@ -339,6 +340,7 @@ if (hasSpread) {
       componentName,
       rowContext,
       eventOriginId,
+      scope.callbacks,
     );
     const delegatedBinding = scope.delegatedEventBindings.get(attrName);
     scope.creation.push(

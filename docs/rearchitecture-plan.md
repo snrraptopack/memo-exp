@@ -172,6 +172,21 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
   Source maps were excluded; the earlier replay relocation changes mappings
   for two request-rebinding fixtures without changing emitted behavior.
 
-Next in area 1: extend authored callback contracts to native events and
-remaining normalization; finish explicit journal/ownership inputs.
+### Native events and captured mutation writes (parent `c9a0726`)
+
+- Native DOM events consume the same authored callback snapshots as component
+  callbacks. Event completion is an explicit plan input. Removed the DOM
+  backend's separate reachable-helper traversal; shared contracts retain
+  helper identities, cycles, deferred writes and original return expressions.
+- Handler lowering allocates journal bindings from captured write-source
+  contracts, or explicit backend bindings, without rereading mutable analysis
+  storage. Regression coverage discards that storage before lowering.
+- Type checking, compiler build and lint passed. Eight focused suites passed
+  128 tests; six callback/event/form integration suites passed 50 tests.
+  The 123-case output/graph/delivery comparison remained identical.
+- Module-owned and compiler-generated callbacks still need their own complete
+  pre-lowering contracts. This sub-batch does not close area 1.
+
+Next in area 1: finish semantic normalization and module callbacks; remove
+transitive backend imports from shared facts and complete ownership inputs.
 These are prerequisites for the runtime-size and broader precision batches.

@@ -46,3 +46,36 @@ it('accepts semantic row facts without retaining renderer identifiers',()=>{
   expect(plan.row).toEqual(facts);expect(plan.owner).toBe('App');
   expect(JSON.stringify(plan.copy)).not.toMatch(/markDirty|refreshRow|commitWrites|createElement/);
 });
+
+it('captures native event completion and deferred helpers before backend mutation',()=>{
+  const {callbacks,arrows,path}=fixture(`function App(){let n=0;
+    function later(){queueMicrotask(()=>{n++;});}
+    return <button onClick={event=>{if(event.altKey)return n;later();return n++;}}/>;}`);
+  const event=arrows.at(-1)!;
+  const source=callbacks.forEvent(event,true)!;
+  expect(source.helpers).toHaveLength(1);
+  event.body=astFactory.blockStatement([]);
+  path.node=astFactory.functionDeclaration(astFactory.identifier('Replaced'),[],astFactory.blockStatement([]));
+  const native=source.writesFor(undefined,true);
+  const ordinary=source.writesFor(undefined,false);
+  expect(native.eventBoundary).toBe(true);
+  expect(native.executionAwareRoot).toBe(true);
+  expect(ordinary.eventBoundary).toBe(false);
+  expect(JSON.stringify(native.copy)).toContain('altKey');
+  expect([...native.scopes.values()].some(scope=>scope.instanceWrites.has('n'))).toBe(true);
+  const helper=source.helpers[0]!.writesFor();
+  expect([...helper.scopes.values()].some(scope=>scope.instanceWrites.has('n'))).toBe(true);
+  expect(JSON.stringify(native.copy)).not.toMatch(/markDirty|commitWrites|createElement/);
+});
+
+it('keeps authored concise native returns and separates render callback eligibility',()=>{
+  const {callbacks,arrows}=fixture('function App(){let n=0;return <button onClick={()=>n++}/>;}');
+  const source=callbacks.forEvent(arrows[0]!)!;
+  const writes=source.writesFor(undefined,true);
+  expect(writes.copy.body.type).toBe('UpdateExpression');
+  expect(writes.executionAwareRoot).toBe(false);
+  expect(writes.eventBoundary).toBe(true);
+  const jsx=fixture('function App(){let n=0;return <button onClick={()=>{n++;return <p/>;}}/>;}');
+  expect(jsx.callbacks.forValue(jsx.arrows[0]!)).toBeNull();
+  expect(jsx.callbacks.forEvent(jsx.arrows[0]!)).not.toBeNull();
+});

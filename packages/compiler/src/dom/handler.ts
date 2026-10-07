@@ -18,9 +18,9 @@ export function emitHandlerWrites(ctx: Ctx, plan: HandlerWritePlan, target: {
   }
   applyListOperations(ctx, plan.listWrites);
   for (const site of plan.mutationSites) {
-    const journal = plan.owner === null ? undefined : ctx.keyedListMutationSources.get(plan.owner)?.get(site.source);
-    const variable = target.journals?.get(site.source) ??
-      (journal === undefined ? undefined : mutationJournalVariable(ctx,plan.owner!,journal.source));
+    const variable = target.journals === undefined
+      ? (plan.owner === null ? undefined : mutationJournalVariable(ctx,plan.owner,site.source))
+      : target.journals.get(site.source);
     if (variable === undefined) throw new Error(`memo-dom: missing mutation journal for '${site.source}'`);
     const original=cloneNode(site.path.node as t.Expression, true);
     site.path.replaceWith(astFactory.sequenceExpression([

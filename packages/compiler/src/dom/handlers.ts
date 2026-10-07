@@ -23,7 +23,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode, type BaseNode } from '../ast';
 import { generatedIdentifier } from './identifiers';
-import { astBindingAt, memberRootName, variableDeclaratorFor, walkNodes, type ComponentPath, type RowCtx } from '../context';
+import { astBindingAt, memberRootName, variableDeclaratorFor, type ComponentPath, type RowCtx } from '../context';
 import { type DomContext as Ctx } from './context';
 import {
   buildScopeCommit,
@@ -43,11 +43,13 @@ import { emitHandlerWrites } from './handler';
 import { mutationJournalVariable } from './list-bindings';
 import { callsOnlyCommittedLocalHelpers } from '../handlers/local-calls';
 import {hasConditionalRootExecution,resolveLocalHelper} from '../planning/component-callbacks';
+import type {CallbackSourcePlan,ComponentCallbacks} from '../planning/component-callbacks';
+import {emitComponentCallback} from './component-callback';
 
 /** The coordinator owns the transition from captured writes to DOM lowering. */
 function analyzeHandler(
   ctx:Ctx, target:HandlerFn, owner:string|null, row?:RowCtx,
-  eventBoundary=false, eventOriginId?:t.Expression, executionAwareRoot=false,
+  eventBoundary=false, eventOriginId?:t.Expression, executionAwareRoot=false,source?:CallbackSourcePlan|null,
 ): void {
   const rowFacts:RowWriteFacts|undefined = row === undefined ? undefined : {
     itemParam:row.itemParam, itemPath:[...row.itemPath], keyPath:row.keyPath === null ? null : [...row.keyPath],
@@ -56,7 +58,9 @@ function analyzeHandler(
   const journals = owner === null ? undefined : new Map(
     [...ctx.keyedListMutationSources.get(owner)?.keys() ?? []].map(source=>[source,mutationJournalVariable(ctx,owner,source)]),
   );
-  emitHandlerWrites(ctx, planHandlerWrites(ctx,target,owner,rowFacts,eventBoundary,executionAwareRoot), {row,eventOriginId,journals});
+  const writes=source?source.writesFor(rowFacts,eventBoundary):
+    planHandlerWrites(ctx,target,owner,rowFacts,eventBoundary,executionAwareRoot);
+  emitHandlerWrites(ctx,writes,{row,eventOriginId,journals});
 }
 
 export type HandlerFn =
@@ -84,47 +88,6 @@ export function instrumentSharedCallback(
 }
 
 /**
- * Instrument component-local helpers reachable from a handler. This closes
- * the stale-timer gap where `onClick={() => start()}` called
- * `start = () => setInterval(() => local++, 1000)`: the write lives in a
- * different function AST, so analyzing only the JSX handler cannot see it.
- */
-function instrumentReachableLocalHelpers(
-  ctx: Ctx,
-  compPath: ComponentPath,
-  root: HandlerFn,
-  compName: string,
-  rowCtx?: RowCtx,
-): void {
-  const names = new Set<string>();
-  walkNodes(root.body, (node) => {
-    if (astFactory.isCallExpression(node) && astFactory.isIdentifier(node.callee)) {
-      names.add(node.callee.name);
-    }
-  });
-  for (const name of names) {
-    const helper = resolveLocalHelper(ctx, compPath, name);
-    if (helper === null || ctx.analyzedFunctions.has(helper)) continue;
-    ctx.analyzedFunctions.add(helper); // cycle guard
-    instrumentReachableLocalHelpers(ctx, compPath, helper, compName, rowCtx);
-    // Helpers resolve from component scope, so their bodies are emitted at
-    // component scope — the caller's row context (rowId/refresh identifiers)
-    // does not exist there. Row-relative item writes from helpers therefore
-    // cannot be row-routed; analyzing without the row context keeps the
-    // emitted commits sound (instance/module writes are unaffected).
-    analyzeHandler(
-      ctx,
-      helper,
-      compName,
-      undefined,
-      false,
-      undefined,
-      hasConditionalRootExecution(helper),
-    );
-  }
-}
-
-/**
  * Resolve a JSX handler attribute to an analyzable function, augmenting
  * named `const` handlers in place. Returns the expression to assign.
  */
@@ -136,6 +99,7 @@ export function buildHandler(
   compName: string,
   rowCtx?: RowCtx,
   eventOriginId?: t.Expression,
+  callbacks?:ComponentCallbacks|null,
 ): t.Expression {
   let target:
     | t.ArrowFunctionExpression
@@ -234,8 +198,10 @@ export function buildHandler(
     );
   }
 
-  // Keep the authored return value when normalizing concise event handlers.
-  if (!astFactory.isBlockStatement(target.body)) {
+  const source=!forceTable?callbacks?.forEvent(value,hasConditionalRootExecution(target)):null;
+  // Module/generated callbacks are planned here. Authored native callbacks
+  // keep their captured body until the backend consumes its source contract.
+  if (!source && !astFactory.isBlockStatement(target.body)) {
     target.body = astFactory.blockStatement([
       astFactory.returnStatement(target.body as t.Expression),
     ]);
@@ -244,7 +210,7 @@ export function buildHandler(
   // a shared declaration (used by several attributes) is analyzed once
   if (!ctx.analyzedFunctions.has(target)) {
     if (!forceTable) {
-      instrumentReachableLocalHelpers(ctx, compPath, target, compName, rowCtx);
+      for(const helper of source?.helpers??[])emitComponentCallback(ctx,helper);
     }
     const committedLocalDelegation =
       !forceTable &&
@@ -276,6 +242,7 @@ export function buildHandler(
       directEventBoundary,
       eventOriginId,
       !forceTable && hasConditionalRootExecution(target),
+      source,
     );
   }
   if (forceTable) {

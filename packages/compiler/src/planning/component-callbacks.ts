@@ -11,10 +11,11 @@ type Callback = t.ArrowFunctionExpression | t.FunctionExpression | t.FunctionDec
 export interface CallbackSourcePlan {
   readonly target: Callback;
   readonly helpers: readonly CallbackSourcePlan[];
-  readonly writesFor: (row?:RowWriteFacts) => HandlerWritePlan;
+  readonly writesFor: (row?:RowWriteFacts,eventBoundary?:boolean) => HandlerWritePlan;
 }
 export interface ComponentCallbacks {
   readonly forValue: (value:t.Expression,executionAware?:boolean) => CallbackSourcePlan | null;
+  readonly forEvent: (value:t.Expression,executionAware?:boolean) => CallbackSourcePlan | null;
 }
 
 /** Resolve a factory-local declaration, excluding module and nested bindings. */
@@ -81,11 +82,19 @@ export function planComponentCallbacks(ctx:Ctx,name:string,path:ComponentPath):C
       const helperSource=sources.get(identity(helper)!);
       reachable.push(sourceFor(helper,helperSource?.conditional??hasConditionalRootExecution(helper),seen));
     }
-    return {target,helpers:reachable,writesFor:row=>planHandlerWrites(sourceCtx,target,name,row,false,executionAware,source.copy)};
+    return {target,helpers:reachable,writesFor:(row,eventBoundary=false)=>
+      planHandlerWrites(sourceCtx,target,name,row,eventBoundary,executionAware,source.copy)};
   }
-  return {forValue:(value,executionAware=true)=>{
+  const resolve=(value:t.Expression,executionAware:boolean)=>{
     const target=astFactory.isArrowFunctionExpression(value)||astFactory.isFunctionExpression(value) ? value :
       astFactory.isIdentifier(value)?helpers.get(value.name):undefined;
-    return target&&!nodeHasJsx(target.body)?sourceFor(target,executionAware,new Set([target])):null;
-  }};
+    return target?sourceFor(target,executionAware,new Set([target])):null;
+  };
+  return {
+    forValue:(value,executionAware=true)=>{
+      const source=resolve(value,executionAware);
+      return source&&!nodeHasJsx(source.target.body)?source:null;
+    },
+    forEvent:(value,executionAware=false)=>resolve(value,executionAware),
+  };
 }
