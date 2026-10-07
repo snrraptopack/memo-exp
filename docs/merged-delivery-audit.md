@@ -87,3 +87,23 @@ identity after refresh/reorder, repeated slot updates, local row state, branch
 replacement and later row creation. Unit tests additionally verify balanced
 cleanup and empty initial lists. These measurements establish delivery size
 reductions, not update timing gains.
+
+### Alternative descendant creation check
+
+Final review found that factory collection visited only the first symbolic
+alternative of a request-selected conditional. The two parser regressions
+failed before the correction: the other alternative's descendant component
+was missing from `creationComponents`. Collection and retained-creation
+rewriting now visit every alternative. The existing shape checks continue to
+reject incompatible repeated factories.
+
+The focused request, conditional and composition suites pass 96 checks. A new
+production Chrome case binds the initial descendant without creating DOM or
+refetching, swaps through both request-selected alternatives, exercises each
+component's counter, and verifies fresh state on recreation. Both composed
+fetched-list Chrome cases continue to pass. This is a correctness correction
+to the new branch proof, not a measured performance gain.
+The first combined browser run exceeded this case's 60-second outer timeout;
+an isolated rerun passed in 25 seconds with a 120-second outer limit. Browser
+assertions and operation wait limits were preserved. Build, typecheck and lint
+also pass.

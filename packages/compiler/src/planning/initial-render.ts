@@ -861,7 +861,9 @@ export function planInitialRendering(
             collect(node.children,key);
             continue;
           }
-          if ('children' in node) collect(node.children,owner);
+          if (node.kind==='conditional' && node.alternatives) {
+            for(const branch of node.alternatives)collect(branch,owner);
+          } else if ('children' in node) collect(node.children,owner);
           if (node.kind==='list') for(const row of node.requestRow?[node.requestRow]:node.rows)collect(row,owner);
         }
       }
@@ -902,7 +904,8 @@ export function planInitialRendering(
             children:retain(node.children,creating,slotStructure)};
           if (node.kind==='text') return creating?{...node,live:true}:node;
           if (node.kind==='slot') return {...node,...(creating?{static:undefined,creation:true as const}:{}),children:retain(node.children,creating,true)};
-          if (node.kind==='conditional') return {...node,children:retain(node.children)};
+          if (node.kind==='conditional') return {...node,children:retain(node.children),
+            ...(node.alternatives?{alternatives:node.alternatives.map(branch=>retain(branch))}:{})};
           if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row)),
             ...(node.requestRow?{requestRow:retain(node.requestRow)}:{})};
           return node;

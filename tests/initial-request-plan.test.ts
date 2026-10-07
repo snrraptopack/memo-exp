@@ -166,6 +166,16 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('plans fixed reques
   expect(server.output['./App.tsx']).toContain('mmd:initial:when:');
 });
 
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('retains every request-selected descendant factory for later creation (%s)',frontend=>{
+  const result=compile(`function Active({name}){let n=0;return <div><p>{name}</p><button onClick={()=>n++}>{n}</button></div>;}
+    function Closed({name}){let n=0;return <article><p>{name}</p><button onClick={()=>n++}>{n}</button></article>;}
+    export function App(){const user=$fetch('/api/user');const request=$track(user);return <main><button onClick={()=>request.refresh()}>Reload</button>
+      {user?.active?<section><Active name={user.name}/></section>:<aside><Closed name={user?.name}/></aside>}</main>;}`,{frontend});
+  expect(result.initialRender.kind).toBe('bindings');
+  if(result.initialRender.kind!=='bindings')throw Error('Missing request branches');
+  expect(result.initialRender.creationComponents).toEqual(expect.arrayContaining(['./App.tsx#Active','./App.tsx#Closed']));
+});
+
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed siblings around a variable fetched extent (%s)',frontend=>{
   const source=`export function App(){const user=$fetch('/api/user');let n=0;
     return <main><h1>Before</h1>{user?.rows?.map(item=><li key={item.id}>{item.label}</li>)}

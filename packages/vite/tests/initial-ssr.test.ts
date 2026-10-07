@@ -138,6 +138,30 @@ describe('production initial SSR bootstrap', () => {
     });
   },120_000);
 
+  it('creates descendant components from either request-selected branch in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('request-branch-descendants',`function Active({name}){let n=0;return <div><p>{name}</p><button class="active" onClick={()=>n++}>{n}</button></div>;}
+      function Closed({name}){let n=0;return <article><p>{name}</p><button class="closed" onClick={()=>n++}>{n}</button></article>;}
+      export function App(){const user=$fetch('/api/user');const request=$track(user);return <main><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+        {user?.active?<section><Active name={user.name}/></section>:<aside><Closed name={user?.name}/></aside>}<footer>Kept</footer></main>;}`,{}, {active:true,name:'Ada'});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    let next={active:false,name:'Grace'};
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      expect(requests).toEqual([]);
+      await page.click('.active');await page.waitForFunction(()=>document.querySelector('.active')?.textContent==='1');
+      await page.click('.reload');await page.waitForSelector('.closed');
+      expect(await page.$eval('aside p',node=>node.textContent)).toBe('Grace');
+      await page.click('.closed');await page.waitForFunction(()=>document.querySelector('.closed')?.textContent==='1');
+      next={active:true,name:'Lin'};await page.click('.reload');await page.waitForSelector('.active');
+      expect(await page.$eval('.active',node=>node.textContent)).toBe('0');
+      next={active:false,name:'Fresh'};await page.click('.reload');await page.waitForSelector('.closed');
+      expect(await page.$eval('.closed',node=>node.textContent)).toBe('0');expect(await page.$eval('aside p',node=>node.textContent)).toBe('Fresh');
+      expect(requests).toEqual(['/api/user','/api/user','/api/user']);
+    },'/demo/',()=>next);
+  },120_000);
+
   it.each(['request-row-children','request-conditional-list'])('binds composed fetched lists and updates retained nodes in Chrome (%s)',async(name,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const sources=sizeFixtures[name]!;
