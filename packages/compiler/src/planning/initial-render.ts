@@ -160,13 +160,13 @@ export function planInitialRendering(
       node.kind === 'list' && !node.requestRow && node.rows.every(fixedSlotHosts));
   }
 
-  /** Request rows share a host shape while each nested list owns its extent. */
+  /** Regions own their extent; each populated branch or row has one host. */
   function requestRowHosts(nodes: readonly InitialRenderNode[]): boolean {
     return nodes.every(node => node.kind === 'text' ||
       (node.kind === 'element' || node.kind === 'slot' || node.kind === 'component') && requestRowHosts(node.children) ||
-      node.kind === 'conditional' && node.branch === null && node.alternatives !== undefined &&
-        node.alternatives.every(branch => branch.length === 1 && branch[0]?.kind === 'element' && requestRowHosts(branch)) ||
-      node.kind === 'list' && node.requestRow !== undefined && requestRowHosts(node.requestRow));
+      node.kind === 'conditional' && (node.alternatives ?? [node.children]).every(branch =>
+        branch.length === 0 || branch.length === 1 && ['element','component'].includes(branch[0]!.kind) && requestRowHosts(branch)) ||
+      node.kind === 'list' && (node.requestRow ? requestRowHosts(node.requestRow) : node.rows.every(requestRowHosts)));
   }
 
   function list(node: BaseNode, scope: Scope): Value | undefined {
@@ -176,19 +176,19 @@ export function planInitialRendering(
     const input = expression(childNode(callee, 'object'), scope);
     const unknown = bindings && input === requestValue;
     if (!unknown && (input === null || typeof input !== 'object' || input.kind !== 'array')) return undefined;
-    if (bindings && inStructure && !unknown) need(scope, 'Nested closed list bindings need a shared row extent proof');
+    const nested = bindings && inStructure;
     const fn=childNodes(node,'arguments')[0];
     if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
     const callback = planListCallback(node as MapCallExpression, message => need(scope, message));
     const items = unknown ? [requestValue] : (input as ValueArray).items;
-    if (!callback.jsx || items.length>0 && (callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier')) {
+    if (!callback.jsx || (items.length>0 || nested) && (callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier')) {
       need(scope, 'Initial lists need a closed JSX row callback');
     }
     const previous = inStructure;
     inStructure = true;
     try {
       const keys = new Set<Value>();
-      const rows = items.map((item, index) => {
+      const buildRow = (item: Value, index: number, checkKey = true) => {
         const row: Scope = {...scope, values: new Map(scope.values), unstable: new Set(scope.unstable)};
         bind(callback.itemPattern, item, row);
         if (callback.indexParam) row.values.set(callback.indexParam, index);
@@ -201,16 +201,20 @@ export function planInitialRendering(
           identifierLikeName(childNode(attribute, 'name')) === 'key');
         const value = key && childNode(key, 'value');
         const identity = value ? expression(value.type === 'JSXExpressionContainer' ? childNode(value, 'expression') : value, row) : item;
-        if (keys.has(identity)) need(scope, 'Duplicate initial list keys need browser diagnostics');
-        keys.add(identity);
+        if (checkKey && keys.has(identity)) need(scope, 'Duplicate initial list keys need browser diagnostics');
+        if (checkKey) keys.add(identity);
         return jsx(callback.jsx!, row);
-      });
+      };
+      const rows = items.map((item,index)=>buildRow(item,index));
       if (!bindings) return {kind: 'content', nodes: rows.flat()};
       if (rows.some(row => row.length !== 1 || !['element','component'].includes(row[0]!.kind))) need(scope, 'Initial lists need one host root per row');
       if (rows.some(row => row[0]?.kind === 'component' && !requestRowHosts(row))) need(scope, 'Component rows need proved caller slot extents');
-      if (unknown && !requestRowHosts(rows[0]!)) need(scope, 'Request list rows need proved host descendants');
+      const requestRow = unknown ? rows[0]! : nested ? buildRow(requestValue,0,false) : undefined;
+      if (requestRow && (requestRow.length!==1 || !['element','component'].includes(requestRow[0]!.kind) || !requestRowHosts(requestRow))) {
+        need(scope, 'Variable list rows need proved host descendants');
+      }
       return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows:unknown?[]:rows,
-        ...(unknown ? {requestRow:rows[0]!} : {})}]};
+        ...(requestRow ? {requestRow} : {})}]};
     } finally { inStructure = previous; }
   }
 
@@ -221,9 +225,9 @@ export function planInitialRendering(
       buildCodeFrameError(message) { return new NeedsBrowser({moduleId: scope.moduleId, kind: 'unknown', detail: message}); },
     });
     const selected = expression(plan.pickExpr, scope);
-    const branch = selected === requestValue ? null : primitive(selected, scope);
-    if (branch !== null && typeof branch !== 'number') need(scope, 'Initial conditional needs a closed selector');
-    if (inStructure && branch !== null) need(scope, 'Nested structural bindings need a placement proof');
+    const selectedBranch = selected === requestValue ? null : primitive(selected, scope);
+    if (selectedBranch !== null && typeof selectedBranch !== 'number') need(scope, 'Initial conditional needs a closed selector');
+    const branch = inStructure && !staysClosed(plan.pickExpr,scope) ? null : selectedBranch;
     const previous = inStructure;
     inStructure = true;
     try {
@@ -233,15 +237,13 @@ export function planInitialRendering(
         return jsx(input, scope);
       });
       if (branch === null) {
-        // Runtime data chooses the branch, but every alternative must occupy
-        // one host position. Descendant request lists own their extent inside
-        // that host; absent branches still need a different extent proof.
-        if (alternatives.some(nodes => nodes.length !== 1 || nodes[0]?.kind !== 'element' || !requestRowHosts(nodes))) {
-          need(scope, 'Request conditionals need one fixed host extent per branch');
+        if (alternatives.some(nodes => nodes.length > 1 || nodes.length===1 &&
+          (!['element','component'].includes(nodes[0]!.kind) || !requestRowHosts(nodes)))) {
+          need(scope, 'Request conditionals need one host extent per populated branch');
         }
       }
       return {kind: 'content', nodes: [{kind: 'conditional', site, branch,
-        children: alternatives[branch ?? 0] ?? [], ...(branch === null ? {alternatives} : {})}]};
+        children: alternatives[selectedBranch ?? 0] ?? [], ...(branch === null ? {alternatives} : {})}]};
     } finally { inStructure = previous; }
   }
 
@@ -853,6 +855,8 @@ export function planInitialRendering(
             if (!node.staticChildren) {
               const shape=JSON.stringify(node.children,(key,value)=>value?.kind==='slot'
                 ? {kind:'slot',width:initialNodeExtent(value)}
+                : value?.kind==='conditional' && value.alternatives ? {kind:value.kind,site:value.site,branch:null,alternatives:value.alternatives}
+                : value?.kind==='list' && value.requestRow ? {kind:value.kind,site:value.site,requestRow:value.requestRow}
                 : ['value','live','static','creation'].includes(key)?undefined:value);
               if (shapes.has(key) && shapes.get(key)!==shape) need(rootScope,'Repeated component initial extents need a shared binding shape');
               shapes.set(key,shape);

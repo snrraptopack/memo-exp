@@ -2,7 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { initialSite } from '../planning/initial-render';
-import { initialNode, initialOrCreate, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
+import { initialNode, initialOrCreate, initialServerAnchor, initialStructuralPlacement, initialBindingHelper } from './initial-dom';
 import {
   type ComponentPath,
   type Ctx,
@@ -269,7 +269,7 @@ export function buildConditionalBranchCreate(
   );
   if (initialTarget && initial?.adopting) branchScope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(initial.variable),astFactory.conditionalExpression(
-      cloneEstreeNode(initial.adopting),astFactory.callExpression(md(ctx,initial.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
+      cloneEstreeNode(initial.adopting),astFactory.callExpression(md(ctx,initialBindingHelper(initial.plan)),[
         initialTarget,astFactory.arrayExpression(initial.descriptors),
       ]),astFactory.arrayExpression([]))),
   ]));

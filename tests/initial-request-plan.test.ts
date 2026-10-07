@@ -18,12 +18,21 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds recreated co
   expect(client.output['./Row.tsx']).toContain('bindInitialList');
   expect(server.output['./Row.tsx']).toContain('mmd:initial:when:');
 });
-it.each(['missing branch','variable siblings'])('keeps ordinary creation for unproved component request extents (%s)',shape=>{
+it.each(['missing branch','variable siblings'])('binds component request extents (%s)',shape=>{
   const sources={...sizeFixtures['request-component-structures']!};
   sources['./Row.tsx']=shape==='missing branch'
     ? sources['./Row.tsx']!.replace(':<aside>Hidden</aside>',':null')
     : sources['./Row.tsx']!.replace('</div><small>','{item.tags.map(tag=><strong key={tag.id}>{tag.label}</strong>)}</div><small>');
-  expect(compileModulesDetailed({'./main.ts':entry,...sources},{initialContent:true}).initialDelivery).toBeUndefined();
+  expect(compileModulesDetailed({'./main.ts':entry,...sources},{initialContent:true}).initialDelivery?.browser).toBe('bindings');
+});
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds variable siblings and closed nested structures (%s)',frontend=>{
+  for(const name of ['request-variable-extents','closed-nested-structures']) {
+    const sources={'./main.ts':entry,...sizeFixtures[name]!};
+    const client=compileModulesDetailed(sources,{initialContent:true,frontend});
+    const server=compileModulesDetailed(sources,{initialContent:true,frontend,routedEnvironment:'server',moduleStateCells:true});
+    expect(client.initialDelivery,JSON.stringify(client.initialRender)).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+    expect(client.output['./App.tsx']).toContain('bindInitialRegionNodes');
+  }
 });
 function compile(source:string,options:Parameters<typeof compileModulesDetailed>[1]={}) {
   return compileModulesDetailed({'./main.ts':entry,'./App.tsx':source},{initialContent:true,...options});
@@ -61,7 +70,6 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('proves request-onl
 
 it.each([
   `export function App(){const user=$fetch('/api/user');return <h1>{format(user)}</h1>;}`,
-  `export function App(){const user=$fetch('/api/user');return <main>{user?.show?<h1>One</h1>:null}</main>;}`,
   `export function App(){const user=$fetch('/api/user',{method:'POST',body:{}});return <h1>{user?.name}</h1>;}`,
   `export function App(){const user=$fetch('/api/user',{validate:{'~standard':{validate(){window.alert('side effect');}}}});return <h1>{user?.name}</h1>;}`,
   `function $fetch(){return {name:'fake'};}export function App(){return <h1>{$fetch().name}</h1>;}`,
@@ -162,8 +170,6 @@ it('retains metadata presentation and shadowed tracking calls on ordinary browse
 });
 
 it.each([
-  `{user?.rows?.map(item=><li>{item.label}</li>)}{user?.rows?.map(item=><li>{item.label}</li>)}`,
-  `<ul>{user?.rows?.map(item=><li>{show&&<b>{item.label}</b>}</li>)}</ul>`,
   `<ul>{user?.rows?.map(({label})=><li>{label}</li>)}</ul>`,
 ])('retains general creation for unproved fetched row placement: %s',children=>{
   expect(compile(`function Card({text}){return <b>{text}</b>;}export function App(){const user=$fetch('/api/user');let show=true;
@@ -208,7 +214,7 @@ it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds fixed siblin
   expect(server.output['./App.tsx']).not.toContain('bindInitialListNodes');
   if(client.initialRender.kind!=='bindings')throw new Error('Missing bindings');
   const plan=planInitialDom(client.initialRender)!;
-  expect(plan.dynamicPaths).toBe(true);
+  expect(plan.pathMode).toBe('end');
   expect(Object.values(plan.lists)[0]!.end).toEqual([0,-4]);
 });
 
@@ -235,9 +241,9 @@ it.each([
   `{group.rows.map(row=><li>{row.label}</li>)}{group.rows.map(row=><li>{row.label}</li>)}`,
   `{fixed.map(row=><li>{row.label}</li>)}`,
   `{group.rows.map(row=><li>{show&&<b>{row.label}</b>}</li>)}`,
-])('retains general rendering for unproved nested row shape: %s',children=>{
+])('binds nested variable and closed row extents: %s',children=>{
   expect(compile(`export function App(){const user=$fetch('/api/user');let show=true;const fixed=[{label:'one'}];
-    return <main><button onClick={()=>show=!show}>Toggle</button><ul>{user?.groups?.map(group=><li><ol>${children}</ol></li>)}</ul></main>;}`).initialDelivery).toBeUndefined();
+    return <main><button onClick={()=>show=!show}>Toggle</button><ul>{user?.groups?.map(group=><li><ol>${children}</ol></li>)}</ul></main>;}`).initialDelivery?.browser).toBe('bindings');
 });
 
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds request-selected host branches with one retained extent (%s)',frontend=>{
@@ -279,9 +285,7 @@ it('merges live and empty bindings in request-selected branches of repeated fact
 });
 
 it.each([
-  `{user?.active?<p>Shown</p>:null}`,
   `{user?.active?<p>Shown</p>:<><p>One</p><p>Two</p></>}`,
-  `{user?.active?<p>{other&&<b>Nested</b>}</p>:<p>Hidden</p>}`,
 ])('retains general adoption for unproved request extents: %s',children=>{
   expect(compile(`export function App(){const user=$fetch('/api/user');let other=true;
     return <main><button onClick={()=>other=!other}>Toggle</button>${children}</main>;}`).initialDelivery).toBeUndefined();

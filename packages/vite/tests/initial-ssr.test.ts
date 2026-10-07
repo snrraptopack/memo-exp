@@ -114,6 +114,80 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([false,true])('binds an optional component branch and recreates its state in Chrome (%s)',async(active,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production(`optional-component-${active}`,`function Card({name}){let n=0;return <article><p>{name}</p><button class="card" onClick={()=>n++}>{n}</button></article>;}
+      export function App(){const user=$fetch('/api/user');const request=$track(user);return <main><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+        {user?.active&&<Card name={user.name}/>}<footer>Kept</footer></main>;}`,{},{name:'Ada',active});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();let next={name:'Grace',active:!active};
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      expect(requests).toEqual([]);
+      if(active){await page.click('.card');await page.waitForFunction(()=>document.querySelector('.card')?.textContent==='1');}
+      const reload=async()=>{const response=page.waitForResponse(response=>response.url().endsWith('/api/user'));await page.click('.reload');await response;};
+      await reload();await page.waitForFunction(present=>document.querySelectorAll('article').length===(present?1:0),{},!active);
+      if(!active){expect(await page.$eval('.card',node=>node.textContent)).toBe('0');await page.click('.card');await page.waitForFunction(()=>document.querySelector('.card')?.textContent==='1');}
+      next={name:'Empty',active:false};await reload();await page.waitForFunction(()=>!document.querySelector('article'));
+      next={name:'Fresh',active:true};await reload();await page.waitForFunction(()=>document.querySelector('article p')?.textContent==='Fresh');
+      expect(await page.$eval('.card',node=>node.textContent)).toBe('0');
+      await page.click('.card');await page.waitForFunction(()=>document.querySelector('.card')?.textContent==='1');
+      expect(requests).toEqual(['/api/user','/api/user','/api/user']);
+    },'/demo/',()=>next);
+  },120_000);
+
+  it.each([false,true])('binds absent branches beside independent request lists in Chrome (%s)',async(active,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const source=sizeFixtures['request-variable-extents']!['./App.tsx']!;
+    const initial={name:'Ada',active,rows:[{id:1,label:'one',active:true},{id:2,label:'two',active:false}],tags:[{id:11,label:'first'}]};
+    const result=await production(`variable-extents-${active}`,source,{},initial);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();let next=initial;
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>({created:(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'),
+        retained:(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)}))).toEqual({created:[],retained:true});
+      expect(requests).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('li,em')];});
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='Kept 1');
+      expect(await page.$eval('h3',node=>node.textContent)).toBe('Between 1');expect(await page.$eval('p',node=>node.textContent)).toBe('Middle 1');
+      next={name:'Grace',active:!active,rows:[{id:2,label:'changed',active:true},{id:1,label:'one',active:false}],
+        tags:[{id:12,label:'added'},{id:11,label:'retained'}]};
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelector('li b')?.textContent==='changed'&&document.querySelectorAll('em').length===2);
+      expect(await page.evaluate(()=>{const kept=(window as unknown as {kept:Element[]}).kept;
+        return document.querySelector('li')===kept[1]&&document.querySelectorAll('li')[1]===kept[0]&&document.querySelectorAll('em')[1]===kept[2];})).toBe(true);
+      expect(await page.$$eval('em',nodes=>nodes.map(node=>node.textContent))).toEqual(['added:1','retained:1']);
+      expect(await page.$$('section')).toHaveLength(active?0:1);
+      next={name:'Empty',active:false,rows:[],tags:[]};await page.click('.reload');
+      await page.waitForFunction(()=>document.querySelectorAll('section,li,em').length===0);
+      next={name:'Fresh',active:true,rows:[{id:3,label:'fresh',active:true}],tags:[{id:31,label:'fresh tag'}]};
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelector('h2')?.textContent==='Fresh:1'&&document.querySelector('em')?.textContent==='fresh tag:1');
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='Kept 2');
+      expect(await page.$eval('li',node=>node.textContent)).toBe('fresh2');expect(await page.$eval('h3',node=>node.textContent)).toBe('Between 2');
+      expect(requests).toEqual(['/api/user','/api/user','/api/user']);
+    },'/demo/',()=>next);
+  },120_000);
+
+  it('binds closed nested structures with varying initial row extents in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const result=await production('closed-nested-structures',sizeFixtures['closed-nested-structures']!['./App.tsx']!);
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('article'),...document.querySelectorAll('em')];});
+      await page.click('.reverse');await page.waitForFunction(()=>document.querySelector('h2')?.textContent==='0:3');
+      expect(await page.evaluate(()=>{const kept=(window as unknown as {kept:Element[]}).kept;
+        return document.querySelector('article')===kept[2]&&document.querySelector('em')===kept[3];})).toBe(true);
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('em').length===0);
+      await page.click('.append');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='103');
+      expect(await page.$$eval('em',nodes=>nodes.map(node=>node.textContent))).toEqual(['new']);
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('em').length===4);
+      expect(await page.$$eval('em',nodes=>nodes.map(node=>node.textContent))).toEqual(['new','one','two','new']);
+      expect(await page.$$eval('small',nodes=>nodes.map(node=>node.textContent))).toEqual(['After','After']);
+      expect(requests).toEqual([]);
+    });
+  },120_000);
+
   it.each([0,2])('binds and recreates component-owned request structures in Chrome (%i)',async(count,context)=>{
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const sources=sizeFixtures['request-component-structures']!;

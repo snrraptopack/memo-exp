@@ -1,10 +1,33 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { bindInitialNodes } from '../packages/runtime/src/initial-bindings';
+import { bindInitialRegionNodes } from '../packages/runtime/src/initial-region-bindings';
 import { mountInitial, register, registerRootFactory, has, cleanup } from '@memoized-dom/runtime/testing';
 
 afterEach(() => document.body.replaceChildren());
 
 describe('initial DOM bindings', () => {
+  it.each([false,true])('resolves absent/present regions and independent variable siblings (%s)',present=>{
+    document.body.innerHTML=`<main><p><!--mmd:empty--></p><!--mmd:initial:when:1:1-->${present?'<section>Shown</section>':''}<!--/mmd:initial:when-->
+      <b>Between</b><!--mmd:initial:list:2:2--><em>One</em><em>Two</em><!--/mmd:initial:list--><footer>End</footer></main>`;
+    const main=document.querySelector('main')!;
+    const nodes=bindInitialRegionNodes(main,[
+      [[0,0],'#text'],[[['mmd:initial:when:1:1',0]],'#comment:mmd:initial:when:1:1'],
+      [[['mmd:initial:when:1:1',0,true]],'#comment:/mmd:initial:when'],
+      [[['mmd:initial:list:2:2',0,true]],'#comment:/mmd:initial:list'],
+      [[['mmd:initial:list:2:2',1,true]],'footer'],
+    ]);
+    expect(nodes[0]!.nodeType).toBe(3);expect(nodes[4]).toBe(main.querySelector('footer'));
+    expect(nodes[1]!.nextSibling===nodes[2]).toBe(!present);
+  });
+  it.each(['missing','unclosed','mismatch','duplicate'])('rejects %s region addresses before replacing text markers',shape=>{
+    const content=shape==='unclosed'?'<!--mmd:initial:when:1:1--><b/>':shape==='mismatch'
+      ?'<!--mmd:initial:when:1:1--><!--/mmd:initial:list-->':shape==='duplicate'
+      ?'<!--mmd:initial:when:1:1--><!--/mmd:initial:when--><!--mmd:initial:when:1:1--><!--/mmd:initial:when-->':'';
+    document.body.innerHTML=`<main><p><!--mmd:empty--></p>${content}</main>`;
+    const main=document.querySelector('main')!,marker=main.firstChild!.firstChild,html=main.innerHTML;
+    expect(()=>bindInitialRegionNodes(main,[[[0,0],'#text'],[[['mmd:initial:when:1:1',0,true]],'#comment:/mmd:initial:when']])).toThrow(/initial region/);
+    expect(main.innerHTML).toBe(html);expect(main.firstChild!.firstChild).toBe(marker);
+  });
   it('validates structural comment identities without replacing them',()=>{
     document.body.innerHTML='<div id="root"><main><!--mmd:initial:when:1:2--><p>Ready</p><!--/mmd:initial:when--></main></div>';
     const main=document.querySelector('main')!;

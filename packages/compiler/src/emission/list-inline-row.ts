@@ -19,7 +19,7 @@ import {
 } from './scope';
 import type { NodeEmitter } from './node-emitter';
 import { applyRepeatedDomTemplate } from './dom-template';
-import type { InitialDomRoot } from './initial-dom';
+import { initialBindingHelper, type InitialDomRoot } from './initial-dom';
 
 export function buildInlineRowCreate(
   ctx: Ctx,
@@ -87,7 +87,7 @@ export function buildInlineRowCreate(
   if (!initial) applyRepeatedDomTemplate(ctx, rowScope, rootVariable);
   if (initial) rowScope.prelude.unshift(astFactory.variableDeclaration('const',[
     astFactory.variableDeclarator(astFactory.identifier(rowScope.initialDom!.variable),
-      astFactory.conditionalExpression(initialRoot!,astFactory.callExpression(md(ctx,rowScope.initialDom!.plan.dynamicPaths?'bindInitialListNodes':'bindInitialNodes'),[
+      astFactory.conditionalExpression(initialRoot!,astFactory.callExpression(md(ctx,initialBindingHelper(rowScope.initialDom!.plan)),[
         initialRoot!,
         astFactory.arrayExpression(rowScope.initialDom!.descriptors),
       ]),astFactory.arrayExpression([]))),

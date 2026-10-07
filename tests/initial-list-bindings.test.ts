@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
+import {sizeFixtures} from '../bench/package-size/fixtures';
 import { mountInitial, registeredIds, unregisterSubtree, resetScheduler, setScheduler,
   type MountedApplication } from '@memoized-dom/runtime/testing';
 
@@ -35,6 +36,21 @@ async function mount(name:string,source:string) {
 }
 function click(selector:string) {document.querySelector<HTMLButtonElement>(selector)!.click();}
 function rows() {return [...document.querySelectorAll('li')];}
+
+it('binds closed nested row structures with different initial widths and selections',async()=>{
+  await mount('closed-nested',sizeFixtures['closed-nested-structures']!['./App.tsx']!);
+  const initial=[...document.querySelectorAll('article')],tags=[...document.querySelectorAll('em')];
+  expect(tags.map(node=>node.textContent)).toEqual(['one','two']);
+  click('.reverse');expect([...document.querySelectorAll('article')]).toEqual(initial.toReversed());
+  expect([...document.querySelectorAll('em')]).toEqual(tags);
+  click('.toggle');expect(document.querySelectorAll('em')).toHaveLength(0);
+  click('.append');expect([...document.querySelectorAll('em')].map(node=>node.textContent)).toEqual(['new']);
+  click('.toggle');expect([...document.querySelectorAll('em')].map(node=>node.textContent)).toEqual(['new','one','two','new']);
+  expect([...document.querySelectorAll('small')].map(node=>node.textContent)).toEqual(['After','After']);
+  expect([...document.querySelectorAll('article')]).toEqual(initial.toReversed());
+  expect(document.querySelector('footer')!.textContent).toBe('103');
+  app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
+});
 
 it('retains row ref ownership for bound and later-created rows',async()=>{
   const refs:Node[]=[],disposed:Node[]=[];vi.stubGlobal('__initialRowRefs',refs);vi.stubGlobal('__initialRowDisposed',disposed);
@@ -176,7 +192,6 @@ it.each([0,2])('binds forwarded component-row caller slots and creates later row
 });
 
 it.each([
-  `<li>{show?<b>{item}</b>:null}</li>`,
   `<li>{Date.now()}</li>`, `<li {...{title:item}}>{item}</li>`,
 ])('falls back for unproved row semantics: %s',row=>{
   const result=compile(`export function App(){let items=['one'];let show=true;return <main>

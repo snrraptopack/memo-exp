@@ -17,7 +17,7 @@ import {
 } from '../data-sources';
 import { cachedTextConcat } from './text-concat';
 import { cachedTextValue } from './text-value';
-import { initialNode, initialOrCreate, freshInitialStatement } from './initial-dom';
+import { initialNode, initialOrCreate, freshInitialStatement, type InitialDomPath } from './initial-dom';
 
 // ---------------------------------------------------------------------
 // component transform
@@ -28,7 +28,7 @@ export function emitText(
   scope: EmitScope,
   expr: t.Expression,
   ownerId: t.Expression,
-  initialPath?: readonly number[],
+  initialPath?: InitialDomPath,
   initialStatic = false,
   initialEmpty = false,
 ): string {

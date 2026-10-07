@@ -68,6 +68,7 @@ export { materializeMarkup } from './markup';
 export { adoptInitialRoot } from './initial-root';
 export { bindInitialNodes } from './initial-bindings';
 export { bindInitialListNodes } from './initial-list-bindings';
+export { bindInitialRegionNodes } from './initial-region-bindings';
 export { bindInitialList } from './initial-list';
 export { bindInitialInputValue } from './initial-input';
 

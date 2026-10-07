@@ -262,12 +262,14 @@ it.each([false,true])('propagates retained creation through descendants (importe
   expect(document.querySelector('section')).toBe(first);
 });
 
-it('retains ordinary rendering when a recreated factory has unproved structural shape',()=>{
-  const result=compile(`function Card({show}){return <section>{show?<b>One</b>:<i>Two</i>}</section>;}
+it('binds a fixed factory and creates its later alternate branch',async()=>{
+  await bind('future-branch',`function Card({show}){return <section>{show?<b>One</b>:<i>Two</i>}</section>;}
     export function App(){let open=false;return <main><button onClick={()=>open=!open}>Toggle</button>
       <Card show={true}/>{open&&<Card show={false}/>}</main>;}`);
-  expect(result.initialContent).toBe(false);
-  expect(result.output['./App.tsx']).toMatch(/materializeMarkup|createElement/);
+  const first=document.querySelector('section');click('button');
+  expect([...document.querySelectorAll('section')].map(node=>node.textContent)).toEqual(['One','Two']);
+  click('button');click('button');expect(document.querySelector('section')).toBe(first);
+  expect(document.querySelector('i')!.textContent).toBe('Two');
 });
 
 it.each([false,true])('clones retained creation markup without touching adopted nodes (show=%s)',async show=>{

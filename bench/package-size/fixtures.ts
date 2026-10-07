@@ -1,5 +1,22 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'request-variable-extents': {
+    './App.tsx': `export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
+      <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+      {user?.active&&<section><h2>{user.name}:{n}</h2></section>}<h3>Between {n}</h3>
+      {user?.rows?.map(item=><li key={item.id}>{item.active&&<b>{item.label}</b>}<span>{n}</span></li>)}<p>Middle {n}</p>
+      {user?.tags?.map(tag=><em key={tag.id}>{tag.label}:{n}</em>)}<footer>Kept {n}</footer></main>;}`,
+  },
+  'closed-nested-structures': {
+    './App.tsx': `export function App(){let n=100;let groups=[{id:1,active:true,rows:[{id:11,label:'one'},{id:12,label:'two'}]},
+      {id:2,active:false,rows:[]},{id:3,active:true,rows:[]}];return <main>
+      <button class="reverse" onClick={()=>groups=groups.toReversed()}>Reverse</button>
+      <button class="toggle" onClick={()=>groups=groups.map(group=>({...group,active:!group.active}))}>Toggle</button>
+      <button class="append" onClick={()=>groups=groups.map(group=>({...group,rows:[...group.rows,{id:n++,label:'new'}]}))}>Append</button>
+      {groups.map((group,index)=><article key={group.id}><h2>{index}:{group.id}</h2>
+        {group.active&&<section><b>Before</b>{group.rows.map(row=><em key={row.id}>{row.label}</em>)}<small>After</small></section>}
+        <p>Group end</p></article>)}<footer>{n}</footer></main>;}`,
+  },
   'request-component-structures': {
     './App.tsx': `import {Row} from './Row';export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
       <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>

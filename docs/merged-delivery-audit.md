@@ -146,3 +146,59 @@ Eligibility still requires proved row hosts and branch extents. Missing
 request branches, incompatible repeated component shapes, closed nested
 structural rows and multiple variable sibling extents remain separate proof
 work. This batch adds no new hydration path or compatibility API.
+
+## Variable region extents — 2026-10-07
+
+The next batch completes the three extent cases listed above: absent request
+branches, closed nested row structures and independent variable sibling regions.
+Empty alternatives retain their opening/closing anchors. Populated alternatives
+can bind a host element or composed component. Following siblings use anchor
+offsets when their positions cannot be expressed by one fixed/end-relative
+index. Nested closed lists retain their actual initial rows for HTML and also
+prove a symbolic row factory for later binding/creation. Closed outer row plans
+are merged across every row, including empty scalar slots and different initial
+branch selections; incompatible shapes cannot silently reuse row zero's plan.
+
+Anchor lookup is an optional runtime module. It scans each needed parent once
+per binding call, validates balanced and unique source anchors, and passes
+resolved paths to the shared binder. Every address/shape is validated before
+empty text markers are replaced. The existing conditional/list engines and
+creation factories remain responsible for updates and cleanup. One `pathMode`
+fact selects fixed, end-relative or anchor-relative addressing; the old boolean
+representation is removed rather than retained as an alias.
+
+Production compiler/Vite comparison with `31567b2`, using the same current
+runtime on both sides:
+
+| Fixture | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Absent branches and independent request lists | 65,813 / 20,772 | 54,805 / 17,633 |
+| Closed nested lists and conditional rows | 38,266 / 13,039 | 29,712 / 10,204 |
+| Existing component-owned request structures | 55,047 / 18,074 | 55,047 / 18,074 |
+| Existing request list with fixed siblings | 47,597 / 15,810 | 47,597 / 15,810 |
+| Counter | 8,613 / 3,483 | 8,613 / 3,483 |
+| Todo | 17,140 / 6,443 | 17,140 / 6,443 |
+| Static production HTML | 0 / 0 | 0 / 0 |
+
+The request fixture's 448-byte payload is unchanged. The closed nested fixture
+no longer needs its former 78-byte hydration payload. The new optional anchor
+module is included in the after measurements. Extending the shared end-relative
+binder adds 121 raw / 55 gzip bytes when that module is measured in isolation
+with identical esbuild settings; this is a runtime-module cost, not a complete
+application delta, and is excluded from the compiler-only comparison above.
+Programs that only use fixed binding paths do not retain either address resolver.
+
+Re-run `bench:size:ssr --before-ref=31567b2` with the fixture names
+`request-variable-extents`, `closed-nested-structures` and the controls above.
+These are delivery size measurements, not update timing improvements.
+
+Seven production Chrome checks pass: present/absent optional component branches,
+independent request list siblings, closed nested structures and the preceding
+component-owned structural controls. They verify initial binding without DOM
+creation/refetch, retained keyed nodes on reorder, branch removal/recreation,
+nested updates and fresh component state. Runtime checks reject missing,
+unclosed, mismatched and duplicate region anchors before changing the DOM.
+Nine initial-delivery regression suites pass 205 checks. Compiler/runtime builds,
+root typechecking and changed-file lint pass.
+Multi-host fragment branches and variable caller-slot mount extents still use
+ordinary creation; the public rendering API and developer workflow are unchanged.

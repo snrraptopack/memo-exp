@@ -718,3 +718,20 @@ rows, fetched row children, conditional fetched lists and routed Group. The
 composition reductions recorded in [the delivery audit](./merged-delivery-audit.md)
 are preserved. Callback separation establishes no runtime timing gain and adds
 no browser mechanism or compatibility path.
+
+### Initial region extents — 2026-10-07
+
+The shared initial plan separates a conditional's authored alternatives from
+the actual initial selection. Nested closed lists keep initial HTML rows and a
+symbolic row proof, so different initial lengths do not become a factory ABI.
+Every closed outer row contributes to the merged binding shape. Future-creation
+requirements propagate through those row/branch plans before backend lowering.
+
+DOM lowering chooses fixed, end-relative or anchor-relative paths from one
+`pathMode` fact. Empty branches and independent variable sibling regions bind
+through their source anchors; branch factories retain relative host plans.
+Anchor resolution is an optional input to the existing address/shape validator,
+not another hydration or reconciliation engine. Existing conditional/list owners
+still control updates and disposal. Parser-safe host requirements, lexical slot
+mount proofs and incompatible-factory rejection remain explicit boundaries.
+Measurements and browser checks are recorded in the delivery audit.

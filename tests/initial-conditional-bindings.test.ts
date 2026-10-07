@@ -75,7 +75,6 @@ it('retains module-state routing for the bound region entity',async()=>{
 });
 
 it.each([
-  `<section><div>{show?<p>nested</p>:null}</div></section>`,
   `<section>{Date.now()}</section>`,
   `<section {...{title:'spread'}}>spread</section>`,
 ])('retains general creation for unproved branch semantics: %s',branch=>{
