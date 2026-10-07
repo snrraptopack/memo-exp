@@ -7,15 +7,9 @@ import {
   type BaseNode,
   type Identifier as AstIdentifier,
 } from '../../ast';
-import type {
-  Ctx,
-  TransparentPresentationComponent,
-  TransparentPresentationPolicy,
-} from '../../context';
-import {
-  generatedComponentIdentifier,
-  generatedIdentifier,
-} from '../../identifiers';
+import type { DomContext as Ctx } from '../../dom/context';
+import type { TransparentPresentationComponent, TransparentPresentationPolicy } from '../../context';
+import { generatedComponentIdentifier, generatedIdentifier } from '../../dom/identifiers';
 import {
   componentSourceProps,
   jsxTagName,

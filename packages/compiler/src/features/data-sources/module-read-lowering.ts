@@ -10,10 +10,11 @@ import {
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
 } from '../../ast';
-import { astBindingAt, type Ctx } from '../../context';
-import { generatedIdentifier, mdd } from '../../identifiers';
+import { astBindingAt } from '../../context';
+import { type DomContext as Ctx } from '../../dom/context';
+import { generatedIdentifier, mdd } from '../../dom/identifiers';
 import {annotateAsyncRead} from '../../planning/async-reads';
-import {initialReadPlacement} from '../../emission/initial-dom';
+import { initialReadPlacement } from '../../dom/initial-dom';
 import {
   isActionRefreshTarget,
   isBoundTo,

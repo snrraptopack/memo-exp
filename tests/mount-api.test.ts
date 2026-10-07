@@ -80,7 +80,7 @@ describe('application mount boundary', () => {
     const compiled = compileModulesDetailed({
       './entry.ts': `
         import { mount } from '@memoized-dom/runtime';
-        import { App as Application } from './App';
+        import {App as Application} from './App';
         mount('root', Application);
       `,
       './App.tsx': `
@@ -111,7 +111,7 @@ describe('application mount boundary', () => {
   ])('recognizes a captured mount in a %s declaration', (_name, entry) => {
     const result = compileModulesDetailed({
       './entry.ts': `import {mount as start} from '@memoized-dom/runtime';
-        import {App as Application} from './App';${entry}`,
+        import { App as Application } from './App';${entry}`,
       './App.tsx': `export function App(){return <main>Ready</main>;}`,
     });
     expect(result.applicationRoot?.key).toBe('./App.tsx#App');
@@ -150,7 +150,7 @@ describe('application mount boundary', () => {
       compileModulesDetailed({
         './entry.ts': `
           import { mount } from '@memoized-dom/runtime';
-          import { App } from './App';
+          import {App} from './App';
           mount('one', App);
           mount('two', App);
         `,
@@ -159,7 +159,7 @@ describe('application mount boundary', () => {
     ).toThrow(/only one top-level mount/);
 
     expect(() => compileModulesDetailed({
-      './entry.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';
+      './entry.ts': `import {mount} from '@memoized-dom/runtime';import { App } from './App';
         const rendered=mount('one',App);mount('two',App);`,
       './App.tsx': `export function App(){return <main/>;}`,
     })).toThrow(/only one top-level mount/);

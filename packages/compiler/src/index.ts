@@ -1,5 +1,5 @@
 /** Public compiler package entry. */
-export type { InitialDelivery } from './planning/initial-delivery';
+export type { InitialDelivery } from './dom/delivery-plan';
 
 export {
   compile,
@@ -67,5 +67,5 @@ export {
 } from './errors';
 export type { CompilerRoutedPreparation } from './routed';
 export type { ExternalReactiveSourceDefinition } from './context';
-export type { InitialRenderNode, InitialRenderAttribute, InitialRenderPlan, BrowserRequirement } from './planning/initial-render';
-export { emitInitialHtml } from './emission/initial-html';
+export type { InitialRenderNode, InitialRenderAttribute, InitialRenderPlan, BrowserRequirement } from './planning/initial-content';
+export { emitInitialHtml } from './dom/initial-html';

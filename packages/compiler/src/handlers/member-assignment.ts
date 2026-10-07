@@ -8,7 +8,8 @@ import {
   type BaseNode,
   type Scope,
 } from '../ast';
-import { astBindingAt, variableDeclaratorFor, type Ctx } from '../context';
+import { astBindingAt, variableDeclaratorFor } from '../context';
+import { type Ctx } from '../context';
 import { boundedListIndex } from '../analysis/bounded-list-index';
 
 function assignedObject(

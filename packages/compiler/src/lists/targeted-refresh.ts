@@ -7,7 +7,8 @@ import {
   type BaseNode,
   type Identifier,
 } from '../ast';
-import { astBindingAt, keyPathOf, type Ctx, type MapCallExpression } from '../context';
+import { astBindingAt, keyPathOf, type MapCallExpression } from '../context';
+import { type Ctx } from '../context';
 import type { MapSite } from './map-site';
 
 const EQUALITY_OPERATORS = new Set(['===']);

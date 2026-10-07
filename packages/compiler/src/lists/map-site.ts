@@ -2,7 +2,8 @@
 import type * as t from '../ast/compiler-types';
 import {walkAst, type BaseNode} from '../ast';
 export {matchMapCall} from './source-shapes';
-import type {Ctx, MapCallExpression} from '../context';
+import type { Ctx } from '../context';
+import type { MapCallExpression } from '../context';
 import {planListSite, type ListSitePlan} from './site-plan';
 import {captureListSiteInputs} from '../planning/list-sites';
 

@@ -9,13 +9,10 @@ import {
   type Binding,
   type Identifier,
 } from '../../ast';
-import {
-  astBindingAt,
-  refreshAstAnalysis,
-  unwrapTypeExpression,
-  type Ctx,
-} from '../../context';
-import { generatedIdentifier } from '../../identifiers';
+import { astBindingAt, refreshAstAnalysis, unwrapTypeExpression } from '../../context';
+import type {Ctx as AnalysisContext} from '../../context/model';
+import { type DomContext as Ctx } from '../../dom/context';
+import { generatedIdentifier } from '../../dom/identifiers';
 
 const COLORLESS_DESTRUCTURING_ERROR =
   'memo-dom: [MMD-S004] Colorless server function and $fetch sources cannot be destructured. Destructuring copies values before the source settles. Bind the source and read properties at the use site, or destructure a settled plain value.';
@@ -30,7 +27,7 @@ function importedName(specifier: t.ImportSpecifier): string {
 }
 
 function importedProgramBinding(
-  ctx: Ctx,
+  ctx: AnalysisContext,
   component: BaseNode,
   name: string,
 ): Binding | undefined {
@@ -39,7 +36,7 @@ function importedProgramBinding(
 }
 
 export function isCallToImported(
-  ctx: Ctx,
+  ctx: AnalysisContext,
   component: BaseNode,
   call: t.Expression | null | undefined,
   names: ReadonlySet<string>,

@@ -3,8 +3,9 @@ import {
   childNode, childNodes, cloneNode, identifierName, jsxIdentifierName,
   nodeField, replaceNode, walkAst, type BaseNode,
 } from '../ast';
-import { astBindingAt, refreshAstAnalysis, type Ctx, type ProgramPath } from '../context';
-import { generatedIdentifier } from '../identifiers';
+import { astBindingAt, refreshAstAnalysis, type ProgramPath } from '../context';
+import { type DomContext as Ctx } from '../dom/context';
+import { generatedIdentifier } from '../dom/identifiers';
 import { isListLightweightCandidate } from '../analysis/component-graph';
 import { analyzeComponentProps } from './props';
 

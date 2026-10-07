@@ -9,7 +9,8 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import type { Ctx, MapCallExpression } from '../context';
+import type { Ctx } from '../context';
+import type { MapCallExpression } from '../context';
 import { attrExpr, keyPathOf } from '../context/ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
 import {matchMapCall} from '../lists/source-shapes';

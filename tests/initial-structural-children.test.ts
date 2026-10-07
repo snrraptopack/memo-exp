@@ -54,8 +54,22 @@ it.each([false,true])('binds recreated conditional and list caller slots (open=%
   application!.unmount();application=undefined;expect(registeredIds()).toEqual([]);
 });
 
+it('binds nested closed list content inside a conditional caller slot',async()=>{
+  await bind('closed-nested-caller-slot',`import {Shell} from './Shell';export function App(){let open=true;
+    let items=[{id:1,label:'one'},{id:2,label:'two'}];return <main>
+    <button class="toggle" onClick={()=>open=!open}>Toggle</button>
+    <button class="reverse" onClick={()=>items=items.toReversed()}>Reverse</button>
+    <Shell>{open&&<ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>}</Shell></main>;}`);
+  const host=document.querySelector('section'),initial=[...document.querySelectorAll('li')];
+  click('.reverse');expect([...document.querySelectorAll('li')]).toEqual([initial[1],initial[0]]);
+  click('.toggle');expect(document.querySelector('ul')).toBeNull();
+  expect(initial.every(node=>!node.isConnected)).toBe(true);
+  click('.reverse');click('.toggle');
+  expect([...document.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['one','two']);
+  expect(document.querySelector('section')).toBe(host);
+});
+
 it.each([
-  `<Shell>{open&&<ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>}</Shell>`,
   `<Shell>{user?.rows?.map(row=><li key={row.id}>{row.label}</li>)}</Shell>`,
 ])('retains general creation for unproved nested or recreated slot extents: %s',content=>{
   const result=compileModulesDetailed({

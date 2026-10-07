@@ -4,8 +4,9 @@ import type * as t from '../packages/compiler/src/ast/compiler-types';
 import * as factory from '../packages/compiler/src/ast/factory';
 import {AliasTracker,bindingScopeIsProgram,moduleOrigin} from '../packages/compiler/src/mutation-analysis';
 import {annotateAsyncRead} from '../packages/compiler/src/planning/async-reads';
-import {createCtx,refreshAstAnalysis} from '../packages/compiler/src/context';
-import {initializeGeneratedIdentifiers,mdd} from '../packages/compiler/src/identifiers';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { refreshAstAnalysis } from '../packages/compiler/src/context';
+import { initializeGeneratedIdentifiers, mdd } from '../packages/compiler/src/dom/identifiers';
 import {isGeneratedDataCall} from '../packages/compiler/src/features/data-sources/read-analysis';
 
 function fixture(expression:string,parameter='') {

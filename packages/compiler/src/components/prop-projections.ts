@@ -4,12 +4,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import type { BaseNode } from '../ast';
-import {
-  memberKey,
-  memberRootName,
-  unwrapTypeExpression,
-  type Ctx,
-} from '../context';
+import { memberKey, memberRootName, unwrapTypeExpression } from '../context';
+import { type Ctx } from '../context';
 import {
   extendOrigin,
   type ReactiveOrigin,

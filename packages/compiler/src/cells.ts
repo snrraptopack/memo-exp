@@ -13,14 +13,9 @@ import {
   type BaseNode,
   type Binding,
 } from './ast';
-import {
-  astBindingAt,
-  refreshAstAnalysis,
-  unwrapTypeExpression,
-  variableDeclaratorFor,
-  type Ctx,
-} from './context';
-import { generatedIdentifier, md } from './identifiers';
+import { astBindingAt, refreshAstAnalysis, unwrapTypeExpression, variableDeclaratorFor } from './context';
+import { type DomContext as Ctx } from './dom/context';
+import { generatedIdentifier, md } from './dom/identifiers';
 
 type ReactiveKind = 'let' | 'store';
 

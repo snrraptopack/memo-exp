@@ -1,7 +1,8 @@
 import {expect,it} from 'vitest';
 import {analyzeScope,parseEstreeOrThrow,walkAst,type BaseNode} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import {createCtx,type ComponentPath} from '../packages/compiler/src/context';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { type ComponentPath } from '../packages/compiler/src/context';
 import {planComponentCallbacks} from '../packages/compiler/src/planning/component-callbacks';
 import * as astFactory from '../packages/compiler/src/ast/factory';
 

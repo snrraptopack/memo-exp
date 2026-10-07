@@ -3,8 +3,8 @@ import {
   analyzeScope, findNode, parseEstreeOrThrow, printEstree, type BaseNode,
 } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import {createCtx} from '../packages/compiler/src/context';
-import {initializeGeneratedIdentifiers} from '../packages/compiler/src/identifiers';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
 import {planReadReplays} from '../packages/compiler/src/planning/read-replay';
 import {lowerReadReplays} from '../packages/compiler/src/features/data-sources/read-replay';
 

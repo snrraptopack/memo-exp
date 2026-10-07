@@ -4,9 +4,9 @@ import * as astFactory from '../../ast/factory';
 import {
   cloneNode,
 } from '../../ast';
-import type { Ctx } from '../../context';
-import { generatedIdentifier, md, mdd } from '../../identifiers';
-import { registerStmt, type EmitScope } from '../../emission/scope';
+import type { DomContext as Ctx } from '../../dom/context';
+import { generatedIdentifier, md, mdd } from '../../dom/identifiers';
+import { registerStmt, type EmitScope } from '../../dom/scope';
 import {transparentExpressionSources} from '../../planning/async-reads';
 export {transparentExpressionSources} from '../../planning/async-reads';
 

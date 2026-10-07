@@ -10,7 +10,7 @@ import {
   type ComponentPath,
   type Ctx,
 } from '../context';
-import { renderPropReferenceName } from '../components/children';
+import { renderPropReferenceName } from './render-prop-reference';
 import { subtreeHasJsx } from './module-discovery';
 import { resolveRenderUsage, type ComponentPropUsage } from '../components/render-usage';
 

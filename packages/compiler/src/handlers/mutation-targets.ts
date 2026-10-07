@@ -1,11 +1,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
-import {
-  writeTouchesKey,
-  type Ctx,
-  type KeyedListMutationPlan,
-} from '../context';
+import { writeTouchesKey, type KeyedListMutationPlan } from '../context';
+import { type Ctx } from '../context';
 import type { RowWriteFacts } from './write-facts';
 import { directItemWrite } from '../lists/item-write';
 

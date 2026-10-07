@@ -1,11 +1,12 @@
 import { expect, it } from 'vitest';
 import { childNode, parseEstreeOrThrow, walkAst, isFunctionNode, type BaseNode } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { createCtx, refreshAstAnalysis } from '../packages/compiler/src/context';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { refreshAstAnalysis } from '../packages/compiler/src/context';
 import { planComponentPull } from '../packages/compiler/src/planning/primitive-pull';
 import {planComponentCallbacks} from '../packages/compiler/src/planning/component-callbacks';
-import {emitComponentCallback} from '../packages/compiler/src/emission/component-callback';
-import {initializeGeneratedIdentifiers} from '../packages/compiler/src/identifiers';
+import { emitComponentCallback } from '../packages/compiler/src/dom/component-callback';
+import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source,{filename:'./pull-plan.tsx'}).program as unknown as t.Program;

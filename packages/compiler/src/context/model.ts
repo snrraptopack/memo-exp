@@ -1,28 +1,11 @@
-/**
- * context.ts — shared compiler state and pure AST helpers.
- *
- * Every module (analysis / handlers / lists / emit) takes the same Ctx, so
- * the plugin shell in plugin.ts stays a thin visitor wiring layer. One Ctx
- * is created per compiled module.
- */
+/** Shared source facts and language configuration. DOM output is owned by dom/context. */
 
 import type * as t from '../ast/compiler-types';
 import type { BaseNode, ScopeAnalysis } from '../ast';
-import type { InitialBrowserRoot } from '../planning/initial-browser';
-import type { InitialDelivery } from '../planning/initial-delivery';
-import type { InitialDomRoot } from '../emission/initial-dom';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { OwnerListOperation } from '../analysis/owner-list-structure';
-import type {
-  ComponentPropsPlan,
-  ControlFlowDerivation,
-  LocalDerivation,
-} from '../components/props';
-import {createDomEmissionState,type DomEmissionState} from '../emission/state';
-import type {
-  CompilerRouteDefinition,
-  CompilerRouteElement,
-} from '../router';
+import type { ComponentPropsPlan, ControlFlowDerivation, LocalDerivation } from '../components/props';
+import type { CompilerRouteDefinition, CompilerRouteElement } from '../router';
 
 export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceDefinition[] = [
   {
@@ -156,17 +139,7 @@ export interface TransparentPresentationComponent {
 }
 
 /** Compiler/linker-only root facts derived from an authored mount() call. */
-export interface InternalMemoDomOptions extends MemoDomOptions {
-  /** Emitted helper requirements, including retained future factories. */
-  onRuntimeHelpers?: (helpers: ReadonlySet<string>) => void;
-  initialDelivery?: InitialDelivery;
-  /** Placements selected before emitting the document's browser program. */
-  initialBrowserRoot?: InitialBrowserRoot;
-  initialDomRoot?: InitialDomRoot;
-  initialDomComponents?: Readonly<Record<string,InitialDomRoot>>;
-  /** Source anchors for request contracts; server creation remains ordinary. */
-  initialServerComponents?: Readonly<Record<string,InitialDomRoot>>;
-  initialMount?: { readonly payload: boolean };
+export interface AnalysisOptions extends MemoDomOptions {
   rootId?: string;
   rootComponent?: string;
   /** Application-wide route graph supplied by compileModules(). */
@@ -411,11 +384,6 @@ export type HelperPath = CompilerPath<
 >;
 
 export interface Ctx {
-  initialDelivery: InternalMemoDomOptions['initialDelivery'];
-  initialBrowserRoot: InitialBrowserRoot | null;
-  initialDomRoot: InitialDomRoot | null;
-  initialDomComponents: Readonly<Record<string,InitialDomRoot>>;
-  initialServerComponents: Readonly<Record<string,InitialDomRoot>>;
   runtimePath: string;
   hotRuntimePath: string;
   routerPath: string;
@@ -573,8 +541,6 @@ export interface Ctx {
   listSources: Set<string>;
   /** Components owning a keyed list updater. */
   listComponents: Set<string>;
-  /** Authored ownership proof retained before JSX emission mutates factories. */
-  domOnlyRowComponents: Set<string>;
   /** Component -> non-local collection sources owned by its list updaters. */
   componentListSources: Map<string, Set<string>>;
   /** Component -> source root -> journal plan, for handler write analysis. */
@@ -637,8 +603,6 @@ export interface Ctx {
   /** Pure exhaustive module-level if/switch calculations. */
   moduleControlFlow: ModuleControlFlowDerivation[];
 
-  /** Backend-owned output, names and deduplication; no mirrored facade fields. */
-  emission:DomEmissionState;
   /** Function nodes whose handler analysis already ran (shared declarations). */
   analyzedFunctions: WeakSet<t.Node>;
   /** Authored callback boundaries with successfully emitted normal-exit publication. */
@@ -658,7 +622,7 @@ export interface Ctx {
   localParamEffects: WeakMap<t.Node, ParameterWrite[]>;
 }
 
-export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
+export function createAnalysisCtx(opts: AnalysisOptions = {}): Ctx {
   const moduleId = opts.moduleId ?? './component.tsx';
   const state = new Map<string, StateKind>();
   const stateKeys = new Map<string, string>();
@@ -757,11 +721,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
   );
   const runtimePath = opts.runtimePath ?? '@memoized-dom/runtime';
   return {
-    initialDelivery: opts.initialDelivery,
-    initialBrowserRoot: opts.initialBrowserRoot ?? null,
-    initialDomRoot: opts.initialDomRoot ?? null,
-    initialDomComponents: opts.initialDomComponents ?? {},
-    initialServerComponents: opts.initialServerComponents ?? {},
     runtimePath,
     hotRuntimePath: opts.hotRuntimePath ?? `${runtimePath}/hot`,
     routerPath: opts.routerPath ?? '@memoized-dom/router/internal',
@@ -881,7 +840,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     targetedListComponents: new Set(),
     listSources: new Set(),
     listComponents: new Set(),
-    domOnlyRowComponents: new Set(),
     componentListSources: new Map(),
     keyedListMutationSources: new Map(),
     ownerListStructureSources: new WeakMap(),
@@ -904,7 +862,6 @@ export function createCtx(opts: InternalMemoDomOptions = {}): Ctx {
     moduleEffects: [],
     computeds: new Map(),
     moduleControlFlow: [],
-    emission:createDomEmissionState(),
     analyzedFunctions: new WeakSet(),
     callbackPublications:new Set(),
     compilerOwnedCallbacks: new WeakSet(),

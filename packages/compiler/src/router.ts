@@ -18,8 +18,8 @@ import {
   walkAst,
   type BaseNode,
 } from './ast';
-import type { Ctx } from './context';
-import { generatedIdentifier, mr } from './identifiers';
+import type { DomContext as Ctx } from './dom/context';
+import { generatedIdentifier, mr } from './dom/identifiers';
 import { jsxAttributeName } from './jsx/attributes';
 
 const PARAMETER_SEGMENT = /^:([A-Za-z_$][A-Za-z0-9_$]*)$/;

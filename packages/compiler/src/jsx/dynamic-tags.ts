@@ -18,18 +18,10 @@ import {
   type Binding,
   type ScopeAnalysis,
 } from '../ast';
-import {
-  astBindingAt,
-  attrExpr,
-  memberKey,
-  memberRootName,
-  nodeHasJsx,
-  refreshAstAnalysis,
-  type ComponentPath,
-  type Ctx,
-} from '../context';
+import { astBindingAt, attrExpr, memberKey, memberRootName, nodeHasJsx, refreshAstAnalysis, type ComponentPath } from '../context';
+import { type DomContext as Ctx } from '../dom/context';
 import type { ComponentPropsPlan } from '../components/props';
-import { generatedIdentifier } from '../identifiers';
+import { generatedIdentifier } from '../dom/identifiers';
 
 interface DynamicTagCandidate {
   compare: t.Expression;

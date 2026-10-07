@@ -15,6 +15,8 @@ import type { MapCallExpression } from '../context/model';
 import { matchMapCall } from '../lists/source-shapes';
 import { combineTextExpressions } from '../components/text-expression';
 
+export type JsxChild = t.JSXElement['children'][number];
+
 export type JsxNode = t.JSXElement | t.JSXFragment;
 
 export type DirectChildPlan =

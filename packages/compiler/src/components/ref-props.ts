@@ -15,7 +15,7 @@ import {
   type BaseNode,
 } from '../ast';
 import type { Ctx } from '../context';
-import { renderPropReferenceName } from './children';
+import { renderPropReferenceName } from '../analysis/render-prop-reference';
 
 /** Mark every declared prop that a component forwards into a JSX ref slot. */
 export function scanRefProps(ctx: Ctx): void {

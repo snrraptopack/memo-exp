@@ -6,7 +6,7 @@ const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
 
 function compile(app: string, modules: Record<string, string> = {}, entry = '') {
   return compileInitial({
-    './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './App'; ${entry} mount('root', App);`,
+    './main.ts': `import { mount } from '@memoized-dom/runtime'; import {App} from './App'; ${entry} mount('root', App);`,
     './App.tsx': app,
     ...modules,
   });
@@ -40,7 +40,7 @@ describe('initial content and browser requirements', () => {
 
   it('plans cross-module composition, closed props, defaults and children', () => {
     const result = compile(`
-      import { Card } from './Card'; import { title } from './copy';
+      import {Card} from './Card'; import { title } from './copy';
       export function App() { const label = title; return <main><Card title={label}><em>Body</em></Card><Card /></main>; }
     `, {
       './Card.tsx': `export function Card({title = 'Default', children}) { return <section><h2>{title}</h2>{children}</section>; }`,
@@ -140,7 +140,7 @@ describe('initial content and browser requirements', () => {
   });
 
   it('retains events in a descendant under a static parent', () => {
-    const result = compile(`import { Counter } from './Counter'; export function App(){ return <main><h1>Static</h1><Counter/></main>; }`, {
+    const result = compile(`import {Counter} from './Counter'; export function App(){ return <main><h1>Static</h1><Counter/></main>; }`, {
       './Counter.tsx': `export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
     expect(result.initialRender.kind).toBe('bindings');
@@ -151,7 +151,7 @@ describe('initial content and browser requirements', () => {
   });
 
   it('preserves an interactive instance identity after an omitted static instance of the same component', () => {
-    const result=compile(`import {Card} from './Card';export function App(){return <main><Card live={false}/><Card live={true}/></main>;}`, {
+    const result=compile(`import { Card } from './Card';export function App(){return <main><Card live={false}/><Card live={true}/></main>;}`, {
       './Card.tsx': `export function Card({live}){let n=0;return <section>{live?<button onClick={()=>n++}>{n}</button>:<span>Static card</span>}</section>;}`,
     });
     expect(emitInitialHtml(result.initialRender)).toBe('<main><section><span>Static card</span></section><!--mmd:initial:0--></main>');
@@ -179,7 +179,7 @@ describe('initial content and browser requirements', () => {
   });
 
   it('retains creation for an initially composed conditional child',()=>{
-    const result=compile(`import {Counter} from './Counter';export function App(){return <main>{true&&<Counter/>}</main>;}`,{
+    const result=compile(`import { Counter } from './Counter';export function App(){return <main>{true&&<Counter/>}</main>;}`,{
       './Counter.tsx':`export function Counter(){let n=0;return <button onClick={()=>n++}>{n}</button>;}`,
     });
     expect(result.initialRender.kind).toBe('bindings');expect(result.initialContent).toBe(true);
@@ -212,7 +212,7 @@ describe('initial content and browser requirements', () => {
 
   it('does not remove mount options', () => {
     const result = compileInitial({
-      './main.ts': `import {mount} from '@memoized-dom/runtime'; import {App} from './App'; mount('root',App,{onHydrateError:console.error});`,
+      './main.ts': `import {mount} from '@memoized-dom/runtime'; import { App } from './App'; mount('root',App,{onHydrateError:console.error});`,
       './App.tsx': `export function App(){return <h1>Hello</h1>;}`,
     });
     expect(result.initialRender.kind).toBe('browser');

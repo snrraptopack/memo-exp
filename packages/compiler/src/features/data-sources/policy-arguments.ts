@@ -5,13 +5,10 @@ import {
   cloneNode,
   isValidIdentifier,
 } from '../../ast';
-import {
-  type Ctx,
-  type TransparentPresentationComponent,
-  type TransparentPresentationPolicy,
-} from '../../context';
-import { orderCallProps } from '../../components/calls';
-import { generatedIdentifier, md, mdd } from '../../identifiers';
+import { type DomContext as Ctx } from '../../dom/context';
+import { type TransparentPresentationComponent, type TransparentPresentationPolicy } from '../../context';
+import { orderCallProps } from '../../dom/components/calls';
+import { generatedIdentifier, md, mdd } from '../../dom/identifiers';
 
 function policyComponentRenderer(
   ctx: Ctx,

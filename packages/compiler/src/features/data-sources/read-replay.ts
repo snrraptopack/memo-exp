@@ -2,7 +2,7 @@
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
 import {cloneNode} from '../../ast';
-import {generatedIdentifier, type IdentifierOwner} from '../../identifiers';
+import { generatedIdentifier, type IdentifierOwner } from '../../dom/identifiers';
 import type {ReadReplayPlan} from '../../planning/read-replay';
 
 export function lowerReadReplays(owner: IdentifierOwner, plans: readonly ReadReplayPlan[]): void {

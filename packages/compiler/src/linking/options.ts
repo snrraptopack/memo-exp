@@ -1,4 +1,4 @@
-import type { InternalMemoDomOptions } from '../context';
+import type { InternalMemoDomOptions } from '../dom/context';
 import type { CompileModulesOptions } from './model';
 
 export function compilerOptions(

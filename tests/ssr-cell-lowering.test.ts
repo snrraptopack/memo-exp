@@ -152,7 +152,7 @@ describe('module-state cell lowering', () => {
 
     expect(compiled).toContain('describeModuleSource');
     expect(compiled).toMatch(
-      /createSource\('\/api\/users',[\s\S]*?search: _MD\.readCell\(_cell_search\)/,
+      /createBodylessSource\('\/api\/users',[\s\S]*?search: _MD\.readCell\(_cell_search\)/,
     );
     expect(compiled).toMatch(
       /rebindModuleSource\([\s\S]*?search: _MD\.readCell\(_cell_search\)/,

@@ -15,8 +15,8 @@ import {
 import {
   transformEstreeProgram,
   type MemoDomOptions,
-} from './plugin';
-import type { InternalMemoDomOptions } from './context';
+} from './dom/program';
+import type { InternalMemoDomOptions } from './dom/context';
 import { compilerError } from './errors';
 
 export type { MemoDomOptions };

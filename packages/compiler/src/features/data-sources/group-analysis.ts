@@ -9,11 +9,8 @@ import {
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
 } from '../../ast';
-import {
-  astBindingAt,
-  type Ctx,
-  type TransparentPresentationComponent,
-} from '../../context';
+import { astBindingAt, type TransparentPresentationComponent } from '../../context';
+import { type Ctx } from '../../context';
 import { isCallToImported } from './discovery';
 
 export function jsxTagName(element: t.JSXElement): string | null {

@@ -1,10 +1,11 @@
 import { expect, it } from 'vitest';
 import { parseEstreeOrThrow } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { createCtx, canonicalStateKey } from '../packages/compiler/src/context';
-import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { canonicalStateKey } from '../packages/compiler/src/context';
+import { prepareProgramAnalysis } from '../packages/compiler/src/dom/prepare';
 import { planAccessReaders } from '../packages/compiler/src/analysis/access-table';
-import { emitAccessTable } from '../packages/compiler/src/emission/access-table';
+import { emitAccessTable } from '../packages/compiler/src/dom/access-table';
 
 function prepared(source: string) {
   const program=parseEstreeOrThrow(source,{filename:'./reader-plan.tsx'}).program as unknown as t.Program;

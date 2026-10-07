@@ -2,8 +2,9 @@
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
 import {cloneNode} from '../../ast';
-import type {Ctx,TransparentPresentationComponent} from '../../context';
-import {generatedComponentIdentifier,generatedIdentifier} from '../../identifiers';
+import type { DomContext as Ctx } from '../../dom/context';
+import type { TransparentPresentationComponent } from '../../context';
+import { generatedComponentIdentifier, generatedIdentifier } from '../../dom/identifiers';
 import type {PresentationCapture,PresentationComponentPlan} from '../../planning/presentation-policy';
 
 export function presentationCaptureProps(captures:readonly PresentationCapture[]) {

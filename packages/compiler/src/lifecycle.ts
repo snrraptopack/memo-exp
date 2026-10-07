@@ -14,20 +14,15 @@ import {
   walkAst,
   type BaseNode,
 } from './ast';
-import {
-  astBindingAt,
-  nodeHasJsx,
-  type ComponentPath,
-  type Ctx,
-  type RowCtx,
-} from './context';
+import { astBindingAt, nodeHasJsx, type ComponentPath, type RowCtx } from './context';
+import { type DomContext as Ctx } from './dom/context';
 import { extractPatternIdentifiers } from './ast';
 import {
   instrumentSharedCallback,
-} from './handlers';
+} from './dom/handlers';
 import type {ComponentCallbacks} from './planning/component-callbacks';
-import {emitComponentCallback} from './emission/component-callback';
-import { md } from './identifiers';
+import { emitComponentCallback } from './dom/component-callback';
+import { md } from './dom/identifiers';
 import { isIntrinsicLifecycleCall } from './intrinsics';
 
 interface ProgramContainer {

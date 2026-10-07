@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 import { cloneNode, parseEstreeOrThrow, walkAst } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
+import { prepareProgramAnalysis } from '../packages/compiler/src/dom/prepare';
 import { createRegionReplayFacts, type ListReplaySource } from '../packages/compiler/src/analysis/region-replay';
-import { createCtx } from '../packages/compiler/src/context';
+import { createCtx } from '../packages/compiler/src/dom/context';
 import { planRegionReplays } from '../packages/compiler/src/planning/region-replay';
 import { matchMapCall } from '../packages/compiler/src/lists';
 import { captureOwnerListWrites } from '../packages/compiler/src/analysis/owner-list-structure';

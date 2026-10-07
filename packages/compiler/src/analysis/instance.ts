@@ -26,7 +26,6 @@ import {
 } from '../components/props';
 import { jsxAttributeName } from '../jsx/attributes';
 import { summarizeHelper } from '../helper-summaries';
-import { mdd } from '../identifiers';
 
 interface LocalDerivationHelperSummary {
   reads: Set<string>;
@@ -571,27 +570,10 @@ export function scanInstanceDerivations(ctx: Ctx): void {
             ?.get(componentName)
             ?.has(declaration.id.name) === true;
         const replay = stableFetchTarget && astFactory.isCallExpression(declaration.init)
-          ? astFactory.expressionStatement(
-              ctx.transparentProviderFactories.has(
-                  (declaration.init.callee as t.Identifier).name,
-                )
-                ? astFactory.callExpression(mdd(ctx, 'rebindResolvedValue'), [
-                    astFactory.identifier((declaration.id as t.Identifier).name),
-                    ...declaration.init.arguments.map(cloneNode),
-                  ])
-                : astFactory.callExpression(
-                    mdd(ctx, 'rebindResolvedValueFromFactory'),
-                    [
-                      astFactory.identifier(
-                        (declaration.id as t.Identifier).name,
-                      ),
-                      astFactory.arrowFunctionExpression(
-                        [],
-                        cloneNode(declaration.init),
-                      ),
-                    ],
-                  ),
-            )
+          ? { kind: ctx.transparentProviderFactories.has(
+                (declaration.init.callee as t.Identifier).name,
+              ) ? 'provider' as const : 'factory' as const,
+              call: cloneNode(declaration.init) }
           : undefined;
         derivations.push({
           declaration: statement,

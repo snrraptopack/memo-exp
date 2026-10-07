@@ -6,8 +6,8 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import { planAccessReaders } from '../analysis';
-import { prepareProgramAnalysis } from '../analysis/prepare';
+import { planAccessReaders } from '../analysis/access-table';
+import { prepareProgramAnalysis } from '../dom/prepare';
 import {
   analyzedComponentDeclarations,
   analyzedComponentExport,
@@ -19,19 +19,10 @@ import {
   moduleFunctionStringCandidates,
   moduleStateStringCandidates,
 } from '../analysis/type-candidates';
-import {
-  canonicalStateKey,
-  createCtx,
-  isConstObjectState,
-  isStoreObject,
-  nodeHasJsx,
-  unwrapTypeExpression,
-  type LinkedImport,
-  type StateKind,
-  type TransparentSourceMethod,
-} from '../context';
+import { canonicalStateKey, isConstObjectState, isStoreObject, nodeHasJsx, unwrapTypeExpression, type LinkedImport, type StateKind, type TransparentSourceMethod } from '../context';
+import { createCtx } from '../dom/context';
 import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from '../context/model';
-import { renderPropReferenceName } from '../components/children';
+import { renderPropReferenceName } from '../analysis/render-prop-reference';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../router';

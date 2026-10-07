@@ -23,13 +23,9 @@ import {
 } from '../packages/compiler/src/analysis/type-candidates';
 import { hostJsxEventNames } from '../packages/compiler/src/jsx/events';
 import { callsOnlyCommittedLocalHelpers } from '../packages/compiler/src/handlers/local-calls';
-import { renderPropReferenceName } from '../packages/compiler/src/components/children';
-import {
-  createCtx,
-  refreshAstAnalysis,
-  registerState,
-  type Ctx,
-} from '../packages/compiler/src/context';
+import { renderPropReferenceName } from '../packages/compiler/src/analysis/render-prop-reference';
+import { createCtx, type DomContext as Ctx } from '../packages/compiler/src/dom/context';
+import { refreshAstAnalysis, registerState } from '../packages/compiler/src/context';
 import { scanEffects } from '../packages/compiler/src/effects';
 import {
   isStaticListExpression,
@@ -39,18 +35,15 @@ import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
 import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
 import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
-import {
-  GeneratedIdentifiers,
-  initializeGeneratedIdentifiers,
-} from '../packages/compiler/src/identifiers';
-import { runAnalysis } from '../packages/compiler/src/analysis';
+import { GeneratedIdentifiers, initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
+import { runAnalysis } from '../packages/compiler/src/dom/analyze';
 import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
 import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
 import { analyzeComponentReturns } from '../packages/compiler/src/components/return-plan';
 import { collectComponentPropSources } from '../packages/compiler/src/components/prop-origins';
 import { scanInstanceControlFlow } from '../packages/compiler/src/analysis/instance-control-flow';
 import { scanOpaqueVolatility } from '../packages/compiler/src/analysis/opaque-volatility';
-import { resolveLocalHelper } from '../packages/compiler/src/handlers';
+import { resolveLocalHelper } from '../packages/compiler/src/planning/component-callbacks';
 import {
   AliasTracker,
   bindingScopeIsProgram,
@@ -67,7 +60,7 @@ import {
   discoverTopLevelFunctions,
   findUnlinkedValueImports,
 } from '../packages/compiler/src/analysis/module-discovery';
-import { transformEstreeProgram } from '../packages/compiler/src/plugin';
+import { transformEstreeProgram } from '../packages/compiler/src/dom/program';
 
 describe('ESTree parser and printer boundary', () => {
   it('transforms adapter and direct Yuku programs through one ESTree core', () => {

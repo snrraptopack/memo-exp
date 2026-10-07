@@ -1,8 +1,8 @@
 import {expect, it} from 'vitest';
 import {analyzeScope, cloneNode, findNode, parseEstreeOrThrow, printEstree, type BaseNode} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import {createCtx} from '../packages/compiler/src/context';
-import {initializeGeneratedIdentifiers} from '../packages/compiler/src/identifiers';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
 import {planModuleSources} from '../packages/compiler/src/planning/module-sources';
 import {lowerModuleSourceDeclarations} from '../packages/compiler/src/features/data-sources/module-sources';
 import {sourceEffectInputs} from '../packages/compiler/src/effects/source-inputs';

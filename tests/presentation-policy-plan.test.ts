@@ -2,8 +2,8 @@ import {expect,it} from 'vitest';
 import {analyzeScope,findNode,parseEstreeOrThrow,printEstree,type BaseNode} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import {planGroupPresentations,planPresentationCaptures,planPresentationComponent} from '../packages/compiler/src/planning/presentation-policy';
-import {createCtx} from '../packages/compiler/src/context';
-import {initializeGeneratedIdentifiers} from '../packages/compiler/src/identifiers';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
 import {emitPresentationComponent} from '../packages/compiler/src/features/data-sources/group-policy-components';
 import {lowerTransparentGroups} from '../packages/compiler/src/features/data-sources/group-lowering';
 

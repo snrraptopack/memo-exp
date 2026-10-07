@@ -882,7 +882,7 @@ export function CanvasView(_id, _parent, _dataPolicies) {
 exports[`emission golden snapshots (emission-spec.md) > Transparent data — $fetch lowers to availability-gated reads 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 import * as _MDD from "@memoized-dom/data/internal";
-import { $fetch } from '@memoized-dom/data';
+import { createBodylessSource as $fetch } from "@memoized-dom/data/internal";
 
 export function Profile(_id, _parent, _dataPolicies) {
 	let _value;

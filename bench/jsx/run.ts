@@ -71,8 +71,8 @@ Object.assign(globalThis, {
 });
 setScheduler((commit) => commit());
 
-const { App: ExplicitApp } = await import('./dist/explicit.compiled.ts');
-const { App: SpreadApp } = await import('./dist/spread.compiled.ts');
+const { App: ExplicitApp } = await import('./dist/explicit.compiled');
+const { App: SpreadApp } = await import('./dist/spread.compiled');
 const SAMPLE_COUNT = 9;
 const MOUNT_ITERATIONS = 500;
 const UPDATE_ITERATIONS = 5_000;

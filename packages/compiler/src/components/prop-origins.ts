@@ -4,17 +4,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { extractPatternIdentifiers, walkAst, type BaseNode } from '../ast';
-import {
-  astBindingAt,
-  canonicalStateKey,
-  collectStateIds,
-  memberKey,
-  memberRootName,
-  unwrapTypeExpression,
-  variableDeclaratorFor,
-  walkNodes,
-  type Ctx,
-} from '../context';
+import { astBindingAt, canonicalStateKey, collectStateIds, memberKey, memberRootName, unwrapTypeExpression, variableDeclaratorFor, walkNodes } from '../context';
+import { type Ctx } from '../context';
 import {
   objectBindingName,
   propNameForBinding,

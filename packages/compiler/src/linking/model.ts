@@ -4,8 +4,8 @@ import type { ComponentGraphNode } from '../component-linker';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { ComponentExportInfo } from '../components/manifest';
 import type { CompilerRoutedPreparation } from '../routed';
-import type { InitialRenderPlan } from '../planning/initial-render';
-import type { InitialDelivery } from '../planning/initial-delivery';
+import type { InitialRenderPlan } from '../planning/initial-content';
+import type { InitialDelivery } from '../dom/delivery-plan';
 import type { ComponentPropUsage } from '../components/render-usage';
 import type {
   ParameterWrite,

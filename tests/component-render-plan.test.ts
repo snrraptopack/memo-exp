@@ -3,10 +3,10 @@ import { parseEstreeOrThrow, type BaseNode } from '../packages/compiler/src/ast'
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import type { ComponentPath } from '../packages/compiler/src/context';
 import { planComponentRendering } from '../packages/compiler/src/planning/component-render';
-import { transformEstreeProgram } from '../packages/compiler/src/plugin';
+import { transformEstreeProgram } from '../packages/compiler/src/dom/program';
 import { createExpressionSourceFacts } from '../packages/compiler/src/analysis/expression-sources';
 import type { ComponentPlacement } from '../packages/compiler/src/planning/component-placement';
-import {createCtx} from '../packages/compiler/src/context';
+import { createCtx } from '../packages/compiler/src/dom/context';
 import {planComponentListSites} from '../packages/compiler/src/planning/list-sites';
 import { createRegionReplayFacts } from '../packages/compiler/src/analysis/region-replay';
 import {planComponentCallbacks} from '../packages/compiler/src/planning/component-callbacks';

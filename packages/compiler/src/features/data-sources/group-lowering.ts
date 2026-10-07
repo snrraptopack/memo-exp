@@ -8,19 +8,15 @@
  */
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
-import {
-  refreshAstAnalysis,
-  nodeHasJsx,
-  type Ctx,
-  type TransparentPresentationPolicy,
-} from '../../context';
+import { refreshAstAnalysis, nodeHasJsx, type TransparentPresentationPolicy } from '../../context';
+import { type DomContext as Ctx } from '../../dom/context';
 import {
   childNode,
   replaceNode,
   walkAst,
   type BaseNode,
 } from '../../ast';
-import { generatedIdentifier } from '../../identifiers';
+import { generatedIdentifier } from '../../dom/identifiers';
 import { wrapAutomaticSite } from './automatic-sites';
 import { atomicSite, markAtomicRoute } from './atomic-sites';
 import {

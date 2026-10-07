@@ -24,15 +24,8 @@ import {
 import {
   linkComponentGraph,
 } from './component-linker';
-import {
-  createCtx,
-  type InternalMemoDomOptions,
-  type LinkedComponentRowUse,
-  type MemoDomOptions,
-  type ParameterWrite,
-  type StateKind,
-  type TransparentSourceMethod,
-} from './context';
+import { createCtx, type InternalMemoDomOptions } from './dom/context';
+import { type LinkedComponentRowUse, type MemoDomOptions, type ParameterWrite, type StateKind, type TransparentSourceMethod } from './context';
 import {
   collectCompilerRoutes,
   validateCompilerRouteGraph,
@@ -59,10 +52,11 @@ import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
 import { installCompilerIntrinsics } from './intrinsics';
 import { resolveRenderUsage } from './components/render-usage';
-import { planInitialRendering, type InitialRenderPlan } from './planning/initial-render';
-import { planInitialDom } from './emission/initial-dom';
-import { emitInitialHtml } from './emission/initial-html';
-import { planInitialDelivery, type InitialDelivery } from './planning/initial-delivery';
+import { planInitialRendering } from './dom/render-plan';
+import { type InitialRenderPlan } from './planning/initial-content';
+import { planInitialDom } from './dom/initial-dom';
+import { emitInitialHtml } from './dom/initial-html';
+import { planInitialDelivery, type InitialDelivery } from './dom/delivery-plan';
 
 export interface CompiledComponentExport {
   exported: string;

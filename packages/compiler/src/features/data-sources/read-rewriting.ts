@@ -11,15 +11,11 @@ import {
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
 } from '../../ast';
-import {
-  astBindingAt,
-  nodeHasJsx,
-  refreshAstAnalysis,
-  type Ctx,
-} from '../../context';
-import { mdd } from '../../identifiers';
+import { astBindingAt, nodeHasJsx, refreshAstAnalysis } from '../../context';
+import { type DomContext as Ctx } from '../../dom/context';
+import { mdd } from '../../dom/identifiers';
 import {annotateAsyncRead} from '../../planning/async-reads';
-import {initialReadPlacement} from '../../emission/initial-dom';
+import { initialReadPlacement } from '../../dom/initial-dom';
 import { wrapAutomaticSite } from './automatic-sites';
 import { lowerModuleRefReadsEstree } from './module-read-lowering';
 import {

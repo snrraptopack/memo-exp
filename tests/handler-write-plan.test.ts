@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest';
 import { parseEstreeOrThrow, walkAst } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { createCtx } from '../packages/compiler/src/context';
-import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { prepareProgramAnalysis } from '../packages/compiler/src/dom/prepare';
 import { planHandlerWrites } from '../packages/compiler/src/handlers/analyze';
-import { emitHandlerWrites } from '../packages/compiler/src/emission/handler';
-import { listProvenanceVariable, mutationJournalVariable } from '../packages/compiler/src/emission/list-bindings';
+import { emitHandlerWrites } from '../packages/compiler/src/dom/handler';
+import { listProvenanceVariable, mutationJournalVariable } from '../packages/compiler/src/dom/list-bindings';
 
 function preparedHandler(source:string) {
   const program=parseEstreeOrThrow(source,{filename:'./plan.tsx'}).program as unknown as t.Program;

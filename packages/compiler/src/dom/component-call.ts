@@ -1,0 +1,425 @@
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import { cloneNode as cloneEstreeNode, walkAst, type BaseNode } from '../ast';
+import { attrExpr, exprReadsState, nodeHasJsx, type ComponentPath, type RowCtx } from '../context';
+import { type DomContext as Ctx } from './context';
+import { generatedIdentifier, md, mr } from './identifiers';
+import type { EmitScope } from './scope';
+import { initialNode, initialOrCreate } from './initial-dom';
+import { initialSite } from '../planning/initial-content';
+import { hasComponentChildren, isRenderPropReference } from './components/children';
+import { planOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
+import { emitOrderedAttributes } from './ordered-attributes';
+import { buildSpreadComponentPropUpdate, callPropsFromObject, orderCallProps } from './components/calls';
+import { isInlineScalarCallback, stabilizeInlineCallbackProp } from './components/callback-props';
+import { emitComponentCallback } from './component-callback';
+import { buildRenderCallbackAdapter } from './render-callback';
+import { compileRefValue } from './refs';
+import { isImplicitPolicyProp, preparationRead, registerTransparentDataSite, transparentCallPolicyArgument, transparentExpressionSources } from '../data-sources';
+import type { NodeEmitter } from './node-emitter';
+import type { AuthoredChildrenSlotBuilder, AuthoredRenderValueSlotBuilder } from './authored-slots';
+
+function expressionReadsBinding(node: t.Node, name: string): boolean {
+  let found = false;
+  walkAst<BaseNode>(node as unknown as BaseNode, {
+    enter(child) {
+      if (
+        child.type === 'Identifier' &&
+        (child as unknown as { name: string }).name === name
+      ) {
+        found = true;
+        return false;
+      }
+    },
+  });
+  return found;
+}
+
+export function emitComponentCall(
+  ctx: Ctx,
+  scope: EmitScope,
+  element: t.JSXElement,
+  componentName: string,
+  componentPath: ComponentPath,
+  nestedIn: 'row' | 'cond' | null,
+  rowContext: RowCtx | undefined,
+  eventOriginId: t.Expression | undefined,
+  inSvg: boolean,
+  ownerId: t.Expression,
+  emitNode: NodeEmitter,
+  buildAuthoredChildrenSlot: AuthoredChildrenSlotBuilder,
+  buildAuthoredRenderValueSlot: AuthoredRenderValueSlotBuilder,
+): string | null {
+  const open = element.openingElement;
+  const tag = (open.name as t.JSXIdentifier).name;
+  if (!/^[A-Z]/.test(tag)) return null;
+  const initial=scope.initialDom?.plan.components[initialSite(element)];
+  if (scope.initialDom && !initial) throw new Error('memo-dom: initial component has no binding placement');
+  // repeated children of the same type need distinct variables AND
+  // distinct entity ids: 'App/Tag', 'App/Tag[1]', …
+  const seen = scope.childCounts.get(tag) ?? 0;
+  scope.childCounts.set(tag, seen + 1);
+  if (initial?.static) return 'undefined';
+  const base = tag.charAt(0).toLowerCase() + tag.slice(1);
+  const candidate = seen === 0 ? base : `${base}${seen}`;
+  // A generated child result must never shadow a user/module binding. The
+  // old `const count = Count(..., [count])` both hit the TDZ in its own
+  // initializer and changed every later `count` reference in the factory.
+  const varName = generatedIdentifier(ctx, candidate).name;
+  const idSuffix = seen === 0 ? `/${tag}` : `/${tag}[${seen}]`;
+  const propEntries: Array<{ name: string; value: t.Expression }> = [];
+  const targetPlan = ctx.componentProps.get(tag);
+  if (
+    hasComponentChildren(element.children) &&
+    open.attributes.some(
+      (attribute) =>
+        astFactory.isJSXAttribute(attribute) &&
+        jsxAttributeName(attribute.name) === 'children',
+    )
+  ) {
+    throw componentPath.buildCodeFrameError(
+      `memo-dom: <${tag}> cannot use both a children prop and nested JSX children`,
+    );
+  }
+  const componentHasSpread = open.attributes.some((attribute) =>
+    astFactory.isJSXSpreadAttribute(attribute),
+  );
+  let orderedPropObject: t.ObjectExpression | null = null;
+  let needsPush = false;
+  const dataPropSources = new Set<string>();
+  if (componentHasSpread) {
+    const attributePlan = planOrderedAttributes(open.attributes, {
+      fail: (message) => { throw componentPath.buildCodeFrameError(message); },
+    });
+    const ordered = emitOrderedAttributes(attributePlan, {
+      attributeValue: (name, value) =>
+        name === 'ref' || targetPlan?.refProps.includes(name) === true
+          ? compileRefValue(ctx, componentPath, componentName, value)
+          : value,
+    });
+    orderedPropObject = ordered;
+    for (const property of orderedPropObject.properties) {
+      if (
+        !astFactory.isObjectProperty(property) ||
+        property.computed ||
+        !astFactory.isExpression(property.value)
+      ) {
+        continue;
+      }
+      const propName = astFactory.isIdentifier(property.key)
+        ? property.key.name
+        : astFactory.isStringLiteral(property.key)
+          ? property.key.value
+          : null;
+      if (propName === null) continue;
+      if (targetPlan?.renderCallbacks.includes(propName) === true) {
+        property.value = buildRenderCallbackAdapter(
+          ctx,
+          scope,
+          scope.regionShapes!.renderCallbackFor(property.value),
+          componentName,
+          componentPath,
+          emitNode,
+          inSvg,
+          ownerId,
+        );
+      } else if (targetPlan?.renderProps.includes(propName) === true) {
+        if (isRenderPropReference(ctx, componentName, property.value)) continue;
+        if (!nodeHasJsx(property.value)) {
+          throw componentPath.buildCodeFrameError(
+            `memo-dom: render prop '${propName}' on <${tag}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
+          );
+        }
+        property.value = buildAuthoredRenderValueSlot(
+          ctx,
+          scope,
+          property.value,
+          componentName,
+          componentPath,
+          nestedIn,
+          rowContext,
+          eventOriginId,
+          inSvg,
+          ownerId,
+        );
+      } else if (nodeHasJsx(property.value)) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
+        );
+      } else if (
+        propName !== 'ref' &&
+        targetPlan?.refProps.includes(propName) !== true &&
+        isInlineScalarCallback(property.value)
+      ) {
+        emitComponentCallback(ctx,scope.callbacks!.forValue(property.value),rowContext);
+        property.value = stabilizeInlineCallbackProp(
+          ctx,
+          scope,
+          property.value,
+          `${propName}Callback`,
+        );
+      }
+    }
+    needsPush =
+      exprReadsState(ctx, orderedPropObject, componentName) ||
+      (rowContext !== undefined &&
+        expressionReadsBinding(orderedPropObject, rowContext.itemParam));
+  } else {
+  for (const attr of open.attributes) {
+    const a = attr as t.JSXAttribute;
+    const propName = jsxAttributeName(a.name);
+    if (isImplicitPolicyProp(a) && targetPlan !== undefined &&
+      !targetPlan.acceptsUnknown && !targetPlan.names.includes(propName)) continue;
+    const v =
+      a.value == null ? astFactory.booleanLiteral(true) : attrExpr(a.value);
+    if (v == null) {
+      throw componentPath.buildCodeFrameError(
+        `memo-dom: prop '${jsxAttributeName(
+          a.name,
+        )}' on <${tag}> must be an expression`,
+      );
+    }
+    if (targetPlan?.renderCallbacks.includes(propName) === true) {
+      propEntries.push({
+        name: propName,
+        value: buildRenderCallbackAdapter(
+          ctx,
+          scope,
+          scope.regionShapes!.renderCallbackFor(v),
+          componentName,
+          componentPath,
+          emitNode,
+          inSvg,
+          ownerId,
+        ),
+      });
+      continue;
+    }
+    if (
+      propName === 'ref' ||
+      targetPlan?.refProps.includes(propName) === true
+    ) {
+      propEntries.push({
+        name: propName,
+        value: compileRefValue(ctx, componentPath, componentName, v),
+      });
+      continue;
+    }
+    if (targetPlan?.renderProps.includes(propName) === true) {
+      if (isRenderPropReference(ctx, componentName, v)) {
+        propEntries.push({
+          name: propName,
+          value: cloneEstreeNode(v),
+        });
+        continue;
+      }
+      if (!nodeHasJsx(v)) {
+        throw componentPath.buildCodeFrameError(
+          `memo-dom: render prop '${propName}' on <${tag}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
+        );
+      }
+      propEntries.push({
+        name: propName,
+        value: buildAuthoredRenderValueSlot(
+          ctx,
+          scope,
+          v,
+          componentName,
+          componentPath,
+          nestedIn,
+          rowContext,
+          eventOriginId,
+          inSvg,
+          ownerId,
+        ),
+      });
+      continue;
+    }
+    if (nodeHasJsx(v)) {
+      throw componentPath.buildCodeFrameError(
+        `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
+      );
+    }
+    const inlineCallback = isInlineScalarCallback(v);
+    if (!inlineCallback) {
+      for (const source of transparentExpressionSources(v)) {
+        dataPropSources.add(source);
+      }
+      if (dataPropSources.size > 0) needsPush = true;
+    }
+    // R12: instance-state reads also need re-push (parent re-renders on
+    // instance writes → this updater re-syncs the child's props box)
+    if (
+      !inlineCallback &&
+      (exprReadsState(ctx, v, componentName) ||
+        (rowContext !== undefined &&
+          expressionReadsBinding(v, rowContext.itemParam)))
+    ) {
+      needsPush = true;
+    }
+    // Instrument function-valued props so writes to parent instance state
+    // inside them produce the correct markDirty call. This is the same
+    // treatment that callbacks passed to setInterval/addEventListener get
+    // via transformComponentLifecycle — component prop functions that close
+    // over parent state need identical treatment (R12 local invalidation).
+    const callback=scope.callbacks!.forValue(v);
+    emitComponentCallback(ctx,callback,inlineCallback?rowContext:undefined);
+    propEntries.push({
+      name: propName,
+      value: inlineCallback
+        ? stabilizeInlineCallbackProp(
+            ctx,
+            scope,
+            v,
+            `${propName}Callback`,
+          )
+        : preparationRead(ctx, scope, ownerId, cloneEstreeNode(v)),
+    });
+  }
+  }
+  if (hasComponentChildren(element.children)) {
+    if (
+      open.attributes.some(
+        (attribute) =>
+          astFactory.isJSXAttribute(attribute) &&
+          jsxAttributeName(attribute.name) === 'children',
+      )
+    ) {
+      throw componentPath.buildCodeFrameError(
+        `memo-dom: <${tag}> cannot use both a children prop and nested JSX children`,
+      );
+    }
+    const childrenSlot = buildAuthoredChildrenSlot(
+      ctx,
+      scope,
+      element.children,
+      componentName,
+      componentPath,
+      nestedIn,
+      rowContext,
+      eventOriginId,
+      inSvg,
+      ownerId,
+      initialSite(element),
+    );
+    if (orderedPropObject !== null) {
+      orderedPropObject.properties.push(
+        astFactory.objectProperty(
+          astFactory.identifier('children'),
+          cloneEstreeNode(childrenSlot),
+        ),
+      );
+    } else {
+      propEntries.push({
+        name: 'children',
+        value: cloneEstreeNode(childrenSlot),
+      });
+    }
+  }
+  // Props are matched BY NAME against the callee's declared params — JSX
+  // attribute order is irrelevant (positional matching silently misaligned
+  // props when attribute order and declaration order disagreed).
+  let props: t.Expression[];
+  const preparedPropObject = orderedPropObject === null ? null
+    : preparationRead(ctx, scope, ownerId, orderedPropObject);
+  if (orderedPropObject !== null) {
+    for (const source of transparentExpressionSources(orderedPropObject)) dataPropSources.add(source);
+    if (dataPropSources.size > 0) needsPush = true;
+  }
+  if (orderedPropObject !== null) {
+    const propObject = generatedIdentifier(ctx, `${base}Props`);
+    scope.creation.push(
+      astFactory.variableDeclaration('const', [
+        astFactory.variableDeclarator(
+          cloneEstreeNode(propObject),
+          cloneEstreeNode(preparedPropObject!),
+        ),
+      ]),
+    );
+    props = callPropsFromObject(ctx, tag, propObject);
+  } else {
+    props = orderCallProps(ctx, tag, propEntries);
+  }
+  const childId = astFactory.binaryExpression(
+    '+',
+    cloneEstreeNode(ownerId),
+    astFactory.stringLiteral(idSuffix),
+  );
+  const dataPolicies = transparentCallPolicyArgument(
+    ctx,
+    componentName,
+    element,
+  );
+  const contextName = ctx.routeContextParams.get(componentName);
+  const callsiteRouteId = ctx.routeCallsiteIds.get(element);
+  const calleeKey = ctx.importedComponents.get(tag)?.key ?? `${ctx.moduleId}#${tag}`;
+  const lazyKey = ctx.lazyRouteImports[tag];
+  if (lazyKey !== undefined) ctx.usesRouter = true;
+  const calleeOwnsRoutes = (ctx.linkedRoutes ?? ctx.localRoutes).some(route =>
+    route.ownerComponent !== undefined &&
+    `${route.moduleId}#${route.ownerComponent}` === calleeKey);
+  const inheritedContext = contextName === undefined
+    ? astFactory.identifier('undefined')
+    : astFactory.identifier(contextName);
+  const childRouteContext = callsiteRouteId === undefined
+    ? inheritedContext
+    : astFactory.conditionalExpression(
+        cloneEstreeNode(inheritedContext),
+        astFactory.binaryExpression(
+          '+',
+          cloneEstreeNode(inheritedContext),
+          astFactory.stringLiteral(`>>${callsiteRouteId}`),
+        ),
+        astFactory.stringLiteral(callsiteRouteId),
+      );
+  scope.creation.push(
+    astFactory.variableDeclaration('const', [
+      astFactory.variableDeclarator(
+        astFactory.identifier(varName),
+        astFactory.callExpression(lazyKey === undefined
+          ? astFactory.identifier(tag)
+          : astFactory.callExpression(mr(ctx, 'readRouteComponent'), [
+              astFactory.stringLiteral(lazyKey),
+            ]), [
+          childId,
+          cloneEstreeNode(ownerId),
+          ...(props.length > 0 ? [astFactory.arrayExpression(props)] : []),
+          ...(dataPolicies === null ? [] : [dataPolicies]),
+          ...(calleeOwnsRoutes ? [childRouteContext] : []),
+          ...(initial ? [initialOrCreate(scope,initialNode(scope,initial.path,initial.tag),astFactory.identifier('undefined'))] : []),
+        ]),
+      ),
+    ]),
+  );
+  scope.disposableEntities.push(cloneEstreeNode(childId));
+  // R10: re-push state-reading props inside the parent's update — the box
+  // flows down through setProps (shallow-compare → no-op when unchanged)
+  const pushProps = (): t.Statement =>
+    orderedPropObject === null
+      ? astFactory.expressionStatement(
+          astFactory.callExpression(md(ctx, 'setProps'), [
+            astFactory.binaryExpression(
+              '+',
+              cloneEstreeNode(ownerId),
+              astFactory.stringLiteral(idSuffix),
+            ),
+            astFactory.arrayExpression(props.map((p) => cloneEstreeNode(p))),
+          ]),
+        )
+      : buildSpreadComponentPropUpdate(
+          ctx,
+          tag,
+          ownerId,
+          idSuffix,
+          preparedPropObject!,
+        );
+  registerTransparentDataSite(
+    ctx,
+    scope,
+    [...dataPropSources].sort(),
+    ownerId,
+    pushProps(),
+  );
+  if (needsPush) scope.updaters.push(pushProps);
+  return varName;
+}

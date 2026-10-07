@@ -3,13 +3,9 @@
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import { cloneNode as cloneEstreeNode, walkAst, type BaseNode } from './ast';
-import {
-  astBindingAt,
-  refreshAstAnalysis,
-  type Ctx,
-  type ProgramPath,
-} from './context';
-import { mdd, mr } from './identifiers';
+import { astBindingAt, refreshAstAnalysis, type ProgramPath } from './context';
+import { type DomContext as Ctx } from './dom/context';
+import { mdd, mr } from './dom/identifiers';
 
 const ROUTER_MODULE = '@memoized-dom/router';
 const SERVER_CONTEXT_FIELDS = new Set([

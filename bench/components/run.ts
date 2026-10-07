@@ -68,8 +68,8 @@ Object.assign(globalThis, {
 });
 setScheduler((commit) => commit());
 
-const { App: SameApp } = await import('./dist/same.ts');
-const { App: SplitApp } = await import('./dist/app.ts');
+const { App: SameApp } = await import('./dist/same');
+const { App: SplitApp } = await import('./dist/app');
 
 const SAMPLE_COUNT = 11;
 const MOUNT_ITERATIONS = 2_000;

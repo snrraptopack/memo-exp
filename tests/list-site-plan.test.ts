@@ -1,14 +1,15 @@
 import {expect, it} from 'vitest';
 import {cloneNode, parseEstreeOrThrow, printEstree, walkAst} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import {createCtx, type MapCallExpression, type StateKind} from '../packages/compiler/src/context';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { type MapCallExpression, type StateKind } from '../packages/compiler/src/context';
 import {matchMapCall, allocateMapSite} from '../packages/compiler/src/lists/map-site';
 import {planListCallback} from '../packages/compiler/src/lists/callback-plan';
 import {planListSite, type ListSiteInputs} from '../packages/compiler/src/lists/site-plan';
 import {captureListSiteInputs, planComponentListSites} from '../packages/compiler/src/planning/list-sites';
 import {captureRenderCallbackProps} from '../packages/compiler/src/components/render-callbacks';
 import {analyzeComponentProps} from '../packages/compiler/src/components/props';
-import {prepareProgramAnalysis} from '../packages/compiler/src/analysis/prepare';
+import { prepareProgramAnalysis } from '../packages/compiler/src/dom/prepare';
 import {annotateAsyncRead} from '../packages/compiler/src/planning/async-reads';
 
 function parse(source: string): t.Program {

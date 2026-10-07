@@ -1,12 +1,7 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import {
-  memberKey,
-  memberRootName,
-  writeTouchesKey,
-  type Ctx,
-  type KeyedListMutationPlan,
-} from '../context';
+import { memberKey, memberRootName, writeTouchesKey, type KeyedListMutationPlan } from '../context';
+import { type Ctx } from '../context';
 import {
   createScopeWrites,
   recordInstanceWrite,

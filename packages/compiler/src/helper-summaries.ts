@@ -19,15 +19,8 @@ import {
   type Identifier,
   type Scope,
 } from './ast';
-import {
-  astBindingAt,
-  astScopeAt,
-  memberKey,
-  refreshAstAnalysis,
-  variableDeclaratorFor,
-  type Ctx,
-  type FnSummary,
-} from './context';
+import { astBindingAt, astScopeAt, memberKey, refreshAstAnalysis, variableDeclaratorFor, type FnSummary } from './context';
+import { type Ctx } from './context';
 import {
   AliasTracker,
   bindingScopeIsProgram,

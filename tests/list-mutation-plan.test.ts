@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 import { cloneNode, parseEstreeOrThrow, printEstree, walkAst } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { createCtx } from '../packages/compiler/src/context';
-import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
+import { createCtx } from '../packages/compiler/src/dom/context';
+import { prepareProgramAnalysis } from '../packages/compiler/src/dom/prepare';
 import {
   collectComponentItemWrites,
   planListMutationCandidate,
@@ -11,7 +11,7 @@ import { directItemWrite } from '../packages/compiler/src/lists/item-write';
 import { directListItemMutationKey } from '../packages/compiler/src/handlers/mutation-targets';
 import { matchMapCall } from '../packages/compiler/src/lists/source-shapes';
 import { planComponentListSites } from '../packages/compiler/src/planning/list-sites';
-import { listProvenanceVariable, mutationJournalVariable } from '../packages/compiler/src/emission/list-bindings';
+import { listProvenanceVariable, mutationJournalVariable } from '../packages/compiler/src/dom/list-bindings';
 
 function parse(source: string): t.Program {
   return parseEstreeOrThrow(source, { filename: './mutation-plan.tsx' }).program as unknown as t.Program;

@@ -7,9 +7,10 @@ import {
   type BaseNode,
   type Identifier,
 } from '../../ast';
-import { astBindingAt, type Ctx } from '../../context';
-import { generatedIdentifier } from '../../identifiers';
-import { materializeTransparentPropBindings } from '../../components/transparent-props';
+import { astBindingAt } from '../../context';
+import { type DomContext as Ctx } from '../../dom/context';
+import { generatedIdentifier } from '../../dom/identifiers';
+import { materializeTransparentPropBindings } from '../../dom/components/transparent-props';
 import { isCallToImported } from './discovery';
 
 const RENDER_FUNCTION_TYPES = new Set([

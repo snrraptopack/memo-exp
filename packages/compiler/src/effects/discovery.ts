@@ -14,19 +14,8 @@ import {
   type Binding,
   type Identifier,
 } from '../ast';
-import {
-  astBindingAt,
-  memberKey,
-  memberRootName,
-  nodeHasJsx,
-  variableDeclaratorFor,
-  type CompilerPath,
-  type ComponentPath,
-  type Ctx,
-  type EffectSite,
-  type ModuleEffectSite,
-  type ProgramPath,
-} from '../context';
+import { astBindingAt, memberKey, memberRootName, nodeHasJsx, variableDeclaratorFor, type CompilerPath, type ComponentPath, type EffectSite, type ModuleEffectSite, type ProgramPath } from '../context';
+import { type Ctx } from '../context';
 import { summarizeHelper } from '../helper-summaries';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
 import {sourceEffectInputs} from './source-inputs';

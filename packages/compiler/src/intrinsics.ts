@@ -7,12 +7,8 @@ import {
   walkAst,
   type BaseNode,
 } from './ast';
-import {
-  astBindingAt,
-  refreshAstAnalysis,
-  type Ctx,
-  type ProgramPath,
-} from './context';
+import { astBindingAt, refreshAstAnalysis, type ProgramPath } from './context';
+import { type Ctx } from './context';
 
 const providers: Readonly<Record<string, string>> = {
   $fetch: '@memoized-dom/data',

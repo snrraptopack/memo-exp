@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { parseEstreeOrThrow } from '../packages/compiler/src/ast';
-import { GeneratedIdentifiers } from '../packages/compiler/src/identifiers';
-import { emittedRuntimeHelpers } from '../packages/compiler/src/emission/runtime-requirements';
+import { GeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
+import { emittedRuntimeHelpers } from '../packages/compiler/src/dom/runtime-requirements';
 
 it('does not retain capabilities from discarded emitter expressions', () => {
   const program = parseEstreeOrThrow('export const n=0;', {filename:'./output.ts'}).program;

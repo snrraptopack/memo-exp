@@ -5,13 +5,8 @@ import {
   extractPatternIdentifiers,
   type BaseNode,
 } from '../ast';
-import {
-  astBindingAt,
-  memberKey,
-  memberRootName,
-  variableDeclaratorFor,
-  type Ctx,
-} from '../context';
+import { astBindingAt, memberKey, memberRootName, variableDeclaratorFor } from '../context';
+import { type Ctx } from '../context';
 import { recordRoutedWrite, type RowWriteFacts } from './write-facts';
 import {
   AliasTracker,

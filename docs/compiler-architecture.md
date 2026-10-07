@@ -27,6 +27,25 @@ are documented in [Browser JavaScript architecture](./browser-bundle-architectur
 
 ## Direction
 
+### DOM directory and source context
+
+DOM program preparation/finalization, node and region emission, component ABI
+builders, refs, attributes, SVG handling and initial HTML/address proofs now
+live under `packages/compiler/src/dom/`. Their former root/emission files are
+removed; callers import their actual owner rather than compatibility re-exports.
+
+`context/model.ts` constructs source facts without an emission allocator or
+initial host plans. `dom/context.ts` extends those facts with DOM output state
+and host plans. Shared initial-content structure and source identities remain
+in `planning/initial-content.ts`; native HTML extent and delivery proofs belong
+to the backend. Stable-source derivations carry authored replay contracts;
+the DOM backend chooses the data runtime calls.
+
+The boundary regression checks imports from shared analysis, planning and
+context. This is an incremental boundary: numeric reason allocation, remaining
+normalization, callback publication and journal contracts are still open in
+the execution checklist. Moving the coordinator does not complete those tasks.
+
 Separate authored-language meaning from the code a rendering target needs.
 Normalized JSX, lexical reads/writes, opaque and async provenance, component
 composition and control-flow plans belong to shared analysis/planning. Node

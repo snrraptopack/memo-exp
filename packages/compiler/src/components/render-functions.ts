@@ -18,13 +18,8 @@ import {
   type Binding,
   type ScopeAnalysis,
 } from '../ast';
-import {
-  astBindingAt,
-  nodeHasJsx,
-  refreshAstAnalysis,
-  type ComponentPath,
-  type Ctx,
-} from '../context';
+import { astBindingAt, nodeHasJsx, refreshAstAnalysis, type ComponentPath } from '../context';
+import { type Ctx } from '../context';
 
 type RenderFunction =
   | t.FunctionDeclaration

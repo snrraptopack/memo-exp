@@ -4,12 +4,8 @@
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
 import type { BaseNode } from './ast';
-import {
-  astBindingAt,
-  registerState,
-  type ComputedAnalysis,
-  type Ctx,
-} from './context';
+import { astBindingAt, registerState, type ComputedAnalysis } from './context';
+import { type Ctx } from './context';
 
 interface ProgramContainer {
   node: BaseNode;

@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 import { parseEstreeOrThrow, walkAst, type BaseNode } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { prepareProgramAnalysis } from '../packages/compiler/src/analysis/prepare';
+import { prepareProgramAnalysis } from '../packages/compiler/src/dom/prepare';
 import { analyzeComponentRouteSelectors } from '../packages/compiler/src/analysis/route-selectors';
-import { createCtx } from '../packages/compiler/src/context';
+import { createCtx } from '../packages/compiler/src/dom/context';
 import { planComponentPlacements } from '../packages/compiler/src/planning/component-placement';
 
 function prepare(source: string) {

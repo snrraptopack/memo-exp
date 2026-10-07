@@ -9,7 +9,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { walkAst, type BaseNode } from '../ast';
-import type { JsxChild } from '../components/children';
+import type { JsxChild } from './children';
 
 type ConditionalParent = t.JSXElement | t.JSXFragment;
 type DirectiveKind = 'if' | 'else-if' | 'else';

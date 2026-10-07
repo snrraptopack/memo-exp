@@ -8,9 +8,10 @@ import {
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
 } from '../../ast';
-import { astBindingAt, type Ctx } from '../../context';
+import { astBindingAt } from '../../context';
+import { type Ctx } from '../../context';
 import { jsxAttributeName } from '../../jsx/attributes';
-import { isGeneratedDataMember } from '../../identifiers';
+import { isGeneratedDataMember } from '../../dom/identifiers';
 
 export interface TransparentDerivation {
   binding: AstBinding;

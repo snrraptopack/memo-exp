@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { parseEstreeOrThrow, printEstree } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { planOrderedAttributes } from '../packages/compiler/src/jsx/attributes';
-import { emitOrderedAttributes } from '../packages/compiler/src/emission/ordered-attributes';
+import { emitOrderedAttributes } from '../packages/compiler/src/dom/ordered-attributes';
 
 const fail = (message:string):never => {throw new Error(message);};
 function attributes(source:string) {

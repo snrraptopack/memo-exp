@@ -2,8 +2,9 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { registerState, type Ctx } from './context';
-import { generatedIdentifier } from './identifiers';
+import { registerState } from './context';
+import { type DomContext as Ctx } from './dom/context';
+import { generatedIdentifier } from './dom/identifiers';
 
 interface ProgramContainer {
   node: t.Program;

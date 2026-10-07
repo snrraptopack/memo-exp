@@ -60,8 +60,8 @@ Object.assign(globalThis, {
 });
 setScheduler((commit) => commit());
 
-const { App: DirectApp } = await import('./dist/direct.compiled.ts');
-const { App: SlottedApp } = await import('./dist/slotted.compiled.ts');
+const { App: DirectApp } = await import('./dist/direct.compiled');
+const { App: SlottedApp } = await import('./dist/slotted.compiled');
 
 const SAMPLE_COUNT = 11;
 const MOUNT_ITERATIONS = 2_000;

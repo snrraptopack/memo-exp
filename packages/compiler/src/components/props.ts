@@ -118,8 +118,8 @@ export interface LocalDerivation {
    * case: subscribers must keep the original resource identity.
    */
   stableTarget?: boolean;
-  /** Compiler-owned replay used instead of assigning `source` to `target`. */
-  replay?: t.Statement;
+  /** Stable source identity and authored call; a backend chooses its replay ABI. */
+  replay?: { readonly kind: 'provider' | 'factory'; readonly call: t.CallExpression };
 }
 
 export interface ControlFlowDerivation {
@@ -182,22 +182,6 @@ export function buildPropReplay(
         assignmentTarget(parameterTarget(param)),
         inputWithDefault(param, sources[index] ?? astFactory.identifier('undefined')),
       ),
-    ),
-  );
-}
-
-/** Assignment used by ordered body derivations such as `{ value } = props`. */
-export function buildDerivationReplay(
-  derivation: LocalDerivation,
-): t.Statement {
-  if (derivation.replay !== undefined) {
-    return cloneCompilerNode(derivation.replay);
-  }
-  return astFactory.expressionStatement(
-    astFactory.assignmentExpression(
-      '=',
-      assignmentTarget(derivation.target),
-      cloneCompilerNode(derivation.source),
     ),
   );
 }
@@ -355,7 +339,7 @@ function declarationTarget(target: PropTarget): PropTarget {
   return cloned;
 }
 
-function assignmentTarget(target: PropTarget): PropTarget {
+export function assignmentTarget(target: PropTarget): PropTarget {
   const cloned = cloneCompilerNode(target);
   stripTypeSyntax(cloned);
   return cloned;

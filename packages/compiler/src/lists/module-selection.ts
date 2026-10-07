@@ -2,7 +2,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { FUNCTION_NODE_TYPES, isReferenceIdentifier, nodeFields, walkAst, type BaseNode } from '../ast';
-import { astBindingAt, attrExpr, keyPathOf, type Ctx } from '../context';
+import { astBindingAt, attrExpr, keyPathOf } from '../context';
+import { type Ctx } from '../context';
 import { localBindingForProp, objectBindingName } from '../components/props';
 import { findKeyComparisons } from './targeted-refresh';
 import type { MapSite } from './map-site';

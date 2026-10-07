@@ -7,12 +7,9 @@
  */
 
 import { walkAst, type BaseNode } from '../ast';
-import { isListLightweightCandidate } from '../analysis';
-import {
-  canonicalStateKey,
-  keyPathOf,
-  type Ctx,
-} from '../context';
+import { isListLightweightCandidate } from '../analysis/component-graph';
+import { canonicalStateKey, keyPathOf } from '../context';
+import { type DomContext as Ctx } from '../dom/context';
 import {
   type ComponentGraphEdge,
   type ComponentGraphNode,

@@ -7,8 +7,9 @@ import {
   overwriteNode,
   type BaseNode,
 } from '../../ast';
-import type { Ctx, TransparentPresentationPolicy, TransparentPresentationComponent } from '../../context';
-import { md, mdd } from '../../identifiers';
+import type { DomContext as Ctx } from '../../dom/context';
+import type { TransparentPresentationPolicy, TransparentPresentationComponent } from '../../context';
+import { md, mdd } from '../../dom/identifiers';
 import { annotateTransparentSources, sourceArray } from './subscriptions';
 
 interface TransparentPolicyRenderer {

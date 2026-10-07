@@ -2,8 +2,8 @@
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
 import {cloneNode} from '../../ast';
-import type {Ctx} from '../../context';
-import {mdd, type IdentifierOwner} from '../../identifiers';
+import type { DomContext as Ctx } from '../../dom/context';
+import { mdd, type IdentifierOwner } from '../../dom/identifiers';
 import type {ModuleSourceStatementPlan} from '../../planning/module-sources';
 import {carrySourceEffectInputs, sourceReplayConsumption} from '../../effects/source-inputs';
 

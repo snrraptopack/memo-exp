@@ -72,7 +72,7 @@ Object.assign(globalThis, {
 });
 setScheduler((commit) => commit());
 
-const { App } = await import('./dist/app.ts');
+const { App } = await import('./dist/app');
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);

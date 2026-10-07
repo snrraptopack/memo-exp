@@ -131,4 +131,33 @@ An item is complete only when implementation, cleanup and verification pass.
 
 ## Batch evidence
 
-No implementation batch from this plan has passed its completion gate yet.
+### DOM directory and source context sub-batch
+
+Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
+
+- Moved DOM program coordination/finalization, node/region emission, component
+  ABI builders, refs, attributes/SVG handling, native HTML shape proofs and
+  initial address/delivery planning into `src/dom/`; removed their former files.
+- Shared context no longer allocates DOM output state or host plans. Shared
+  initial-content types/source identities have their own planning module.
+- Stable-source replay analysis now records an authored call contract; runtime
+  calls are lowered in the DOM backend. Render-prop identity lookup is shared.
+- Added the shared analysis/planning/context import guard and a source-only
+  context construction check. No compatibility re-exports were added.
+- Compiler build, root type checking and changed-source lint passed.
+- Full root run: 2,427 passed, five failed. Four failures were stale expectations
+  or a former helper import already present in the baseline; one import needed
+  updating after extracting render-prop identity. All five were addressed, and
+  the eight affected suites passed 114 checks afterward. The entire root suite
+  was not rerun after those corrections.
+- Compared 124 source-compiler cases with `a09eded`: emitted code, initial plans
+  and delivery contracts were identical. Six paired production SSR fixtures
+  retained identical HTML/payload/raw/gzip bytes, including zero-JS static,
+  counter (8,613/3,483 B), todo (17,140/6,443 B) and routing/Group.
+- Replaced an obsolete closed nested-slot fallback assertion with a real DOM
+  test covering initial binding, keyed reversal, hide/recreate and stable host identity.
+
+Next in area 1: move numeric cause allocation and emitted callback-publication
+storage out of shared context; extend authored callback contracts to native
+events and remaining normalization; finish explicit journal/ownership inputs.
+These are prerequisites for the runtime-size and broader precision batches.
