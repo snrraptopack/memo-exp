@@ -333,6 +333,7 @@ describe('Vite 8 adapter', () => {
     const functions = resolve(root, 'server/functions');
     await mkdir(functions, { recursive: true });
     await writeFile(resolve(functions, 'stories.ts'), `
+      /** @GET */
       export async function getStories() { return []; }
     `);
     await writeFile(resolve(temporarySource, 'App.tsx'), `
@@ -846,6 +847,7 @@ describe('Vite 8 adapter', () => {
     const functions = resolve(root, 'server/functions');
     await mkdir(functions, { recursive: true });
     await writeFile(resolve(functions, 'stories.ts'), `
+      /** @GET */
       export async function getStory(id: number) {
         return { id, title: 'Story ' + id };
       }

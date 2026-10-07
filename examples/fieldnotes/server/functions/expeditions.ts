@@ -1,6 +1,7 @@
 import { getServerContext } from '@memoized-dom/server';
 import { delay } from '#server/latency';
 
+/** @GET */
 export async function getExpeditions() {
   const { services } = getServerContext();
   await delay(900);
@@ -13,6 +14,7 @@ export async function getExpeditions() {
   }));
 }
 
+/** @POST */
 export async function postNote(expeditionId: string, text: string) {
   const { locals, services } = getServerContext();
   if (text.trim() === '') {
@@ -25,6 +27,7 @@ export async function postNote(expeditionId: string, text: string) {
   return services.notes.add(expeditionId, text, locals.visitor);
 }
 
+/** @DELETE */
 export async function deleteNote(expeditionId: string, noteId: string) {
   const { services } = getServerContext();
   await delay(700);

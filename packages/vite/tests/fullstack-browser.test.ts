@@ -79,12 +79,15 @@ describe('fullstack browser integration', () => {
         { id: 1, title: 'First', votes: 3 },
         { id: 2, title: 'Second', votes: 5 },
       ];
+      /** @GET */
       export async function getStories() {
         return stories;
       }
+      /** @GET */
       export async function getStory(id: number) {
         return stories.find(story => story.id === id) ?? null;
       }
+      /** @POST */
       export async function postVote(id: number) {
         const story = stories.find(candidate => candidate.id === id);
         if (story === undefined) throw new Error('Missing story');

@@ -106,15 +106,6 @@ export function serverFunctionModuleName(
     .join('/');
 }
 
-function methodFromName(name: string): ServerFunctionMethod | null {
-  if (name.startsWith('get')) return 'GET';
-  if (name.startsWith('post')) return 'POST';
-  if (name.startsWith('put')) return 'PUT';
-  if (name.startsWith('patch')) return 'PATCH';
-  if (name.startsWith('delete')) return 'DELETE';
-  return null;
-}
-
 function functionBindings(program: t.Program): Map<string, FunctionBinding> {
   const functions = new Map<string, FunctionBinding>();
   for (const statement of program.body) {
@@ -532,17 +523,16 @@ export function analyzeServerFunctionModule(
     const binding = bindings.get(exported.local);
     if (binding === undefined) {
       throw compilerError(
-        `memo-dom: [MMD-S003] Server function module export '${exported.exported}' must be an async function; only annotated or verb-prefixed async functions and 'middleware' may cross the client boundary`,
+        `memo-dom: [MMD-S003] Server function module export '${exported.exported}' must be an async function; only annotated async functions and 'middleware' may cross the client boundary`,
         options.moduleId,
         exported.at,
       );
     }
     const annotations = functionAnnotations(source, parsed.comments, binding, names, options.moduleId);
-    const inferredMethod = methodFromName(exported.exported);
-    const method = annotations.method ?? inferredMethod;
-    if (method === null) {
+    const method = annotations.method;
+    if (method === undefined) {
       throw compilerError(
-        `memo-dom: [MMD-S011] Server function '${exported.exported}' needs @GET, @POST, @PUT, @PATCH, or @DELETE, or a matching verb prefix`,
+        `memo-dom: [MMD-S011] Server function '${exported.exported}' needs @GET, @POST, @PUT, @PATCH, or @DELETE`,
         options.moduleId,
         exported.at,
       );

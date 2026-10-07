@@ -58,15 +58,18 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** @GET */
 export async function getStories() {
   return stories;
 }
 
+/** @GET */
 export async function getStory(id: number) {
   await delay(3000);
   return stories.find((story) => story.id === id) ?? null;
 }
 
+/** @POST */
 export async function postVote(id: number) {
   const { locals } = getServerContext();
   const story = stories.find((candidate) => candidate.id === id)!;
@@ -79,6 +82,7 @@ export async function postVote(id: number) {
   return { id: story.id, votes: story.votes, by: locals.user ?? 'anonymous' };
 }
 
+/** @DELETE */
 export async function deleteStory(id: number) {
   const { request } = getServerContext();
   if (request.headers.get('x-admin') !== 'yes') {

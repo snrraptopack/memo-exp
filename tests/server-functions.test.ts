@@ -40,12 +40,22 @@ describe('named HTTP server functions', () => {
     expect(client).not.toContain('voteInput');
   });
 
-  it('uses the explicit method even when the function name starts with a legacy verb', () => {
+  it('uses the annotation independently of the function name', () => {
     const module = analyzeServerFunctionModule('/** @POST */ export async function getAccessToken() {}', {
       moduleId: '/app/server/functions/auth.ts',
     });
     expect(module.functions[0]?.method).toBe('POST');
   });
+
+  it.each(['get', 'post', 'put', 'patch', 'delete'])(
+    'rejects unannotated %s-prefixed functions and export aliases', prefix => {
+      const options = { moduleId: '/app/server/functions/stories.ts' };
+      expect(() => analyzeServerFunctionModule(`export async function ${prefix}Story() {}`, options))
+        .toThrow(/MMD-S011/);
+      expect(() => analyzeServerFunctionModule(`const story = async () => 1; export { story as ${prefix}Story };`, options))
+        .toThrow(/MMD-S011/);
+    },
+  );
 
   it('does not interpret tag-looking strings in middleware configuration as annotations', () => {
     const module = analyzeServerFunctionModule(`
@@ -86,9 +96,11 @@ describe('named HTTP server functions', () => {
     const module = analyzeServerFunctionModule(`
       import { database } from '../../database';
       export const middleware = [requireAuth()];
+      /** @GET */
       export async function getStory(id: number, preview = false) {
         return database.story(id, preview);
       }
+      /** @POST */
       const vote = async (id: number) => database.vote(id);
       export { vote as postVote };
     `, {
@@ -123,9 +135,9 @@ describe('named HTTP server functions', () => {
 
   it('generates a small $fetch-only client facade', () => {
     const module = analyzeServerFunctionModule(`
-      export async function getStories() { return []; }
-      export async function getStory(id: number) { return { id }; }
-      export async function deleteStory(id: number) { return { id }; }
+      /** @GET */ export async function getStories() { return []; }
+      /** @GET */ export async function getStory(id: number) { return { id }; }
+      /** @DELETE */ export async function deleteStory(id: number) { return { id }; }
     `, { moduleId: '/app/server/functions/stories.ts' });
 
     const client = generateServerFunctionClient(module);
@@ -141,12 +153,12 @@ describe('named HTTP server functions', () => {
   it('generates a declaration barrel that keeps ResolvedValue semantics', () => {
     const first = analyzeServerFunctionModule(`
       export const middleware = [requireAuth()];
-      export async function getStories() { return []; }
-      export async function getStory(id: number, preview = false) { return { id }; }
-      export async function postVote(id: number) { return { id }; }
+      /** @GET */ export async function getStories() { return []; }
+      /** @GET */ export async function getStory(id: number, preview = false) { return { id }; }
+      /** @POST */ export async function postVote(id: number) { return { id }; }
     `, { moduleId: '/app/server/functions/stories.ts' });
     const second = analyzeServerFunctionModule(`
-      export async function getMe() { return {}; }
+      /** @GET */ export async function getMe() { return {}; }
     `, { moduleId: '/app/server/functions/me.ts' });
 
     const declarations = generateServerFunctionDeclarations(
@@ -189,11 +201,11 @@ describe('named HTTP server functions', () => {
 
   it('rejects duplicate exported names across the barrel', () => {
     const first = analyzeServerFunctionModule(
-      'export async function getStory(id: number) { return { id }; }',
+      '/** @GET */ export async function getStory(id: number) { return { id }; }',
       { moduleId: '/app/server/functions/news/stories.ts' },
     );
     const second = analyzeServerFunctionModule(
-      'export async function getStory(id: number) { return { id }; }',
+      '/** @GET */ export async function getStory(id: number) { return { id }; }',
       { moduleId: '/app/server/functions/shop/stories.ts' },
     );
 
@@ -209,17 +221,17 @@ describe('named HTTP server functions', () => {
     )).toThrow(/\[MMD-S011\].*authenticate/);
 
     expect(() => analyzeServerFunctionModule(
-      'export function getSession() {}',
+      '/** @GET */ export function getSession() {}',
       { moduleId: '/app/server/functions/auth.ts' },
     )).toThrow(/\[MMD-S003\].*must be async/);
 
     expect(() => analyzeServerFunctionModule(
-      'export async function postStory({ title }: { title: string }) {}',
+      '/** @POST */ export async function postStory({ title }: { title: string }) {}',
       { moduleId: '/app/server/functions/stories.ts' },
     )).toThrow(/\[MMD-S013\].*named identifiers/);
 
     expect(() => analyzeServerFunctionModule(
-      'export async function getValue(value: string | number) { return value; }',
+      '/** @GET */ export async function getValue(value: string | number) { return value; }',
       { moduleId: '/app/server/functions/values.ts' },
     )).toThrow(/\[MMD-S003\].*parameter 'value'.*query type/s);
 
@@ -241,7 +253,7 @@ describe('named HTTP server functions', () => {
 
   it('rejects non-GET server functions during render but allows handlers', () => {
     const metadata = analyzeServerFunctionModule(`
-      export async function postVote(id: number) { return { id, votes: 4 }; }
+      /** @POST */ export async function postVote(id: number) { return { id, votes: 4 }; }
     `, { moduleId: '/app/server/functions/stories.ts' });
     const facade = generateServerFunctionClient(metadata);
 
@@ -270,8 +282,8 @@ describe('named HTTP server functions', () => {
 
   it('replays facade calls through the factory and resolves event-created values', () => {
     const metadata = analyzeServerFunctionModule(`
-      export async function getStory(id: number) { return { id }; }
-      export async function postVote(id: number) { return { id }; }
+      /** @GET */ export async function getStory(id: number) { return { id }; }
+      /** @POST */ export async function postVote(id: number) { return { id }; }
     `, { moduleId: '/app/server/functions/stories.ts' });
     const facade = generateServerFunctionClient(metadata);
     const output = compileModules({

@@ -54,7 +54,7 @@ change a parameter and the client call sites fail typecheck, not runtime.
 
 ## What a server function is
 
-A file in `functions/` whose **annotated or verb-prefixed async exports** become HTTP
+A file in `functions/` whose **annotated async exports** become HTTP
 endpoints — the filename is the route namespace, the export name finishes
 the path (`/_fn/<file>/<name>`):
 
@@ -72,9 +72,8 @@ export async function vote(id: number) {    // POST /_fn/stories/vote
 ```
 
 `@GET`, `@POST`, `@PUT`, `@PATCH`, and `@DELETE` select the method independently
-of the function name. Existing `get`, `post`, `put`, `patch`, and `delete`
-prefixes remain supported as a fallback; an explicit annotation takes precedence
-so function names are unrestricted. Attach the JSDoc to the function declaration or its single
+of the function name. Every endpoint requires an explicit method annotation;
+names such as `getStory` do not select a method. Attach the JSDoc to the function declaration or its single
 variable declaration; local export aliases are supported.
 
 ### Function middleware and input validation
@@ -164,8 +163,7 @@ export function App() {
 
 ## The rules
 
-- **The annotation or legacy prefix picks the HTTP method**: `@GET` / `get*`→GET, `@POST` / `post*`→POST,
-  `put*`→PUT, `patch*`→PATCH, `delete*`→DELETE. Anything else is a
+- **The annotation picks the HTTP method**: `@GET`, `@POST`, `@PUT`, `@PATCH`, or `@DELETE`. A missing method is a
   compile error (`[MMD-S011]`).
 - **Exports must be async functions** — sync functions, constants,
   default exports, and re-exports can't cross the boundary (`[MMD-S003]`).
@@ -178,12 +176,12 @@ export function App() {
 
 ## What the call becomes
 
-- **`get*` → a data source.** Args go in the query string
+- **`@GET` → a data source.** Args go in the query string
   (`getStory(7)` → `/_fn/stories/getStory?id=7`). The return is the same
   transparent `ResolvedValue<T>` as `$fetch` — read it directly in markup,
   `$track` it, put it under a `Group`. It's a derivation: reactive args
   refire it.
-- **`post*`/`put*`/`patch*`/`delete*` → a mutation.** Args go in the JSON
+- **`@POST`/`@PUT`/`@PATCH`/`@DELETE` → a mutation.** Args go in the JSON
   body. These **cannot be called during render or module evaluation** —
   the compiler rejects it (`[MMD-S010]`); call them from event handlers,
   effects, or deferred callbacks.
@@ -203,6 +201,7 @@ The optional `json()` helper is a short, typed way to create one:
 ```ts
 import { json } from '@memoized-dom/server';
 
+/** @POST */
 export async function postLogin(email: string, password: string) {
   const session = await authenticate(email, password);
   if (session === null) {

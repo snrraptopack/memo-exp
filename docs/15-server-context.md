@@ -9,6 +9,7 @@ don't (their signature is the HTTP contract), so they read it through
 import { getServerContext } from '@memoized-dom/server';
 
 // server/functions/stories.ts
+/** @POST */
 export async function postVote(id: number) {
   const context = getServerContext();
   // …the active request's context
@@ -32,6 +33,7 @@ export async function postVote(id: number) {
 the function just reads it:
 
 ```ts
+/** @GET */
 export async function getProfile() {
   const { locals } = getServerContext();
   if (locals.user === undefined) throw new Error('Not signed in');
@@ -43,6 +45,7 @@ export async function getProfile() {
 `server/config/services.ts`, typed by `ServerTypes`:
 
 ```ts
+/** @POST */
 export async function postComment(storyId: number, text: string) {
   const { services, locals } = getServerContext();
   return services.database.comments.create({
@@ -56,6 +59,7 @@ export async function postComment(storyId: number, text: string) {
 **Headers/cookies via `request`** — for things locals doesn't capture:
 
 ```ts
+/** @DELETE */
 export async function deleteStory(id: number) {
   const { request } = getServerContext();
   if (request.headers.get('x-admin') !== 'yes') {
@@ -69,6 +73,7 @@ export async function deleteStory(id: number) {
 host bindings:
 
 ```ts
+/** @GET */
 export async function getUsage() {
   const { url, platform } = getServerContext();
   const verbose = url.searchParams.has('verbose');

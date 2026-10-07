@@ -95,6 +95,7 @@ const logCalls: ServerMiddleware = (context, next) => {
 
 export const middleware = [logCalls];      // wraps getStories, postVote, …
 
+/** @GET */
 export async function getStories() { /* … */ }
 ```
 
