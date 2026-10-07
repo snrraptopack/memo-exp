@@ -73,9 +73,12 @@ const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 
 export function parserClosesAncestor(tag: string, ancestors: string[]): boolean {
   if (P_CLOSERS.has(tag) && ancestors.includes('p')) return true;
-  if (['a', 'button', 'form', 'li'].includes(tag) && ancestors.includes(tag)) {
+  if (['a', 'button', 'form'].includes(tag) && ancestors.includes(tag)) {
     return true;
   }
+  // A nested list container stops the parser's scan for a preceding li.
+  const item=ancestors.lastIndexOf('li');
+  if (tag==='li' && item>=0 && !ancestors.slice(item+1).some(tag=>tag==='ul'||tag==='ol')) return true;
   if ((tag === 'dt' || tag === 'dd') &&
       ancestors.some(ancestor => ancestor === 'dt' || ancestor === 'dd')) {
     return true;

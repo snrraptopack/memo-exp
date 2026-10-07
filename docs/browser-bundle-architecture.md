@@ -2582,5 +2582,60 @@ graphs. Checks include cancellation, retry, metadata read order, atomic gate
 publication, lazy navigation and direct SSR adoption without creating elements.
 Builds and typechecks pass. Examples, numbered docs and dependencies are unchanged.
 
-Next: extend binding proofs for nested lists and recreated slots. Request cache
-and transfer fingerprint reachability remain opportunities within the same engine.
+### Nested request lists and recreated caller slots — 2026-10-07
+
+The initial plan now proves nested fetched lists whose rows have one host root
+and host descendants. Every nested region owns its extent; each host permits one
+variable list beside fixed siblings. Binding lookup follows nested row plans so
+server emission and browser adoption use matching source anchors. A new outer
+row creates its inner region through the existing factory instead of looking
+for server anchors. Keyed reconciliation, events and disposal use the existing
+list engine. The HTML shape proof also recognizes a nested `ul`/`ol` boundary,
+which stops the parser from closing an outer `li` under the
+[HTML parsing rules](https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody).
+
+Fixed host content slots can now retain creation alongside initial binding.
+The same lexical slot program receives its callee's adoption state, binds the
+initial nodes, and creates nodes on subsequent mounts. Updates retain caller
+state; teardown removes the old updates and runs child ref and owner cleanup.
+Repeated forwarding preserves each mount's offset and ownership. A metadata
+flag used only by the former rejection was removed. No runtime engine or public
+API was added.
+
+Nested closed lists with varying row extents, structural authored children in
+recreated callees, conditional/component descendants of fetched rows and multiple
+variable extents in one host remain unproved. They use ordinary rendering and
+adoption rather than guessed addresses. This batch expands proved coverage; it
+does not remove the fallback for arbitrary JavaScript and composition.
+
+Matched Vite production delivery against compiler/Vite `91127d3`, holding current
+runtime packages fixed, includes every emitted browser chunk and gzips chunks
+separately. These fixtures each emit one chunk:
+
+| Fixture | Before JS B | After JS B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Nested fetched lists | 61,668 | 50,654 | 20,015 | 16,642 |
+| Recreated caller children | 22,890 | 14,878 | 8,014 | 5,534 |
+| Permanent live children | 9,925 | 9,925 | 3,955 | 3,955 |
+| Counter | 8,613 | 8,613 | 3,483 | 3,483 |
+| Static | 0 | 0 | 0 | 0 |
+
+Nested-list HTML falls from 1,386 to 1,200 B with the same 429 B transfer payload.
+Recreated-slot HTML falls from 628 to 541 B, and its empty 78 B general hydration
+payload is omitted. Counter, static and permanent live-slot controls are
+unchanged. These are delivery measurements, with no CPU or DOM speed claim.
+Reproduce with
+`bun run bench:size:ssr --before-ref=91127d3 --fixture=request-nested-list --fixture=composition-recreated-children --fixture=composition-live-children --fixture=counter --fixture=static`.
+
+Verification passes 230 initial binding tests across fifteen suites, 135 server
+tests and ten production Chrome checks. Both frontends prove matching server
+contracts. Chrome covers empty and populated lists in module/component state,
+refresh, nested insert/remove, reorder, selection and retained keyed nodes.
+Slot tests cover inactive initial branches, repeated forwarding, caller updates
+while hidden, ref cleanup, effect cleanup and unmount. Builds, root typechecking,
+lint and whitespace checks pass. Examples, numbered docs and dependencies are
+unchanged.
+
+Remaining opportunities include request cache and transfer fingerprint
+reachability, more structural extent proofs and the remaining general
+hydration/creation cost. They should continue within the same runtime engine.

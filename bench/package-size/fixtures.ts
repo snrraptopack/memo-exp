@@ -47,6 +47,18 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
   'request-list-siblings': { './App.tsx': `export function App(){const user=$fetch('/api/user');let n=0;
     return <main><h1>{user?.name}</h1>{user?.rows?.map((item,index)=><li key={item.id}>{index}:{item.label}</li>)}
       <button onClick={()=>n++}>{n}</button>{n}<footer>After</footer></main>;}` },
+  'request-nested-list': { './App.tsx': `export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;let selected='';
+    return <main><button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>
+      <ul>{user?.groups?.map(group=><li key={group.id} class="group" data-id={group.id}><h2>{group.name}</h2><ol>Before
+        {group.rows.map((row,index)=><li key={row.id} class="row" data-id={row.id}><button class="select" onClick={()=>selected=row.label}>{index}:{row.label}:{n}</button></li>)}
+        <footer>After {n}</footer></ol></li>)}</ul><p>{selected}</p></main>;}` },
+  'composition-recreated-children': {
+    './App.tsx': `import {Shell} from './Shell';export function App(){let open=true;let n=1;return <main>
+      <button class="toggle" onClick={()=>open=!open}>Toggle</button><button class="next" onClick={()=>n++}>Next</button>
+      {open&&<Shell><b>Fixed caller text</b><button class="inside" title={'n'+n} onClick={()=>n++}>{n}</button></Shell>}<p>{n}</p></main>;}`,
+    './Shell.tsx': `import {Frame} from './Frame';export function Shell({children}){return <section><h2>Before</h2>{children}<Frame>{children}</Frame></section>;}`,
+    './Frame.tsx': `export function Frame({children}){return <aside><i>Prefix</i>{children}<footer>After</footer></aside>;}`,
+  },
   'request-list': { './App.tsx': `export function App(){const user=$fetch('/api/user');let suffix='!';return <main>
     <h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
     <ul>{user?.rows?.map((item,index)=><li key={item.id} title={item.label}>{index}:{item.label}{suffix}</li>)}</ul><footer>Kept</footer></main>;}` },

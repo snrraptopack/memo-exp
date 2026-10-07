@@ -30,7 +30,7 @@ import {
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
 import { preparationRead } from '../data-sources';
 import { initialSite } from '../planning/initial-render';
-import { initialNode, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
+import { initialNode, initialOrCreate, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
 
 export function emitListRegion(
   ctx: Ctx,
@@ -224,7 +224,7 @@ export function emitListRegion(
   const runtimeArgs=positional ? args.slice(0,3) : args;
   if (initialArgument) {
     if (!positional && runtimeArgs.length===6) runtimeArgs.push(astFactory.booleanLiteral(false));
-    runtimeArgs.push(initialArgument);
+    runtimeArgs.push(initialOrCreate(scope,initialArgument,astFactory.identifier('undefined')));
   }
   scope.creation.push(
     astFactory.variableDeclaration('const', [

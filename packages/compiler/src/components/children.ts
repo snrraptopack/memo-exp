@@ -25,7 +25,7 @@ import { generatedIdentifier, md } from '../identifiers';
 import type { MapCallExpression } from '../lists';
 import { planDirectChildren } from '../jsx/children';
 import { materializeDirectChildren } from '../emission/direct-children';
-import { initialBindingsDeclaration, type InitialDomSlot } from '../emission/initial-dom';
+import { initialBindingsDeclaration, freshInitialStatement, type InitialDomSlot } from '../emission/initial-dom';
 import { initialSite, initialSlotMountKey } from '../planning/initial-render';
 import {
   objectBindingName,
@@ -132,6 +132,7 @@ export function buildChildrenSlot(
   const parentNode = generatedIdentifier(ctx, 'childrenParent');
   const mountOwner = generatedIdentifier(ctx, 'childrenOwner');
   const mountKey = generatedIdentifier(ctx, 'childrenKey');
+  const adopting = initial?.plan.retainCreation ? generatedIdentifier(ctx, 'initialChildrenHost') : null;
   const slotOwner = generatedIdentifier(ctx, 'childrenSlot');
   const nextUpdate = generatedIdentifier(ctx, 'childrenNextUpdate');
   const active = generatedIdentifier(ctx, 'childrenActive');
@@ -140,7 +141,7 @@ export function buildChildrenSlot(
   const varyingOffset = initial && Object.values(initial.mounts).some(offset=>offset!==initial.offset);
   const offset = varyingOffset ? generatedIdentifier(ctx,'childrenOffset') : null;
   if (initial) childScope.initialDom={plan:initial.plan,variable:generatedIdentifier(ctx,'initialChildrenNodes').name,
-    descriptors:[],...(offset?{offset}: {})};
+    descriptors:[],...(offset?{offset}: {}),...(adopting?{adopting}: {})};
   emit(childScope, parentNode, slotOwner);
   if (initial?.static && childScope.updaters.length === 0 && childScope.mounts.length === 0 &&
       childScope.disposableEntities.length === 0 && childScope.disposableRegions.length === 0 &&
@@ -179,6 +180,7 @@ export function buildChildrenSlot(
             cloneEstreeNode(parentNode),
             cloneEstreeNode(mountOwner),
             cloneEstreeNode(mountKey),
+            ...(adopting?[cloneEstreeNode(adopting)]:[]),
           ],
           astFactory.blockStatement([
             astFactory.variableDeclaration('const', [
@@ -406,6 +408,7 @@ export function emitForwardedSlotMount(
             cloneEstreeNode(ownerId, true),
             astFactory.stringLiteral(scope.initialDom
               ? initialSlotMountKey(ctx.moduleId,scope.initialDom.plan.component,initialSite(expression)) : String(key)),
+            ...(scope.initialDom?.adopting?[scope.initialDom.adopting]:[]),
           ]),
         ),
       ),
@@ -422,9 +425,9 @@ export function emitChildrenIntoParent(
   emitters: ChildContentEmitters,
 ): void {
   const append = (childVar: string): void => {
-    if (scope.initialDom) return;
+    if (scope.initialDom && !scope.initialDom.adopting) return;
     scope.creation.push(
-      astFactory.expressionStatement(
+      freshInitialStatement(scope,astFactory.expressionStatement(
         astFactory.callExpression(
           astFactory.memberExpression(
             astFactory.identifier(parentVar),
@@ -432,7 +435,7 @@ export function emitChildrenIntoParent(
           ),
           [astFactory.identifier(childVar)],
         ),
-      ),
+      )),
     );
   };
 

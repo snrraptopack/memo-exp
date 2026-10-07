@@ -153,6 +153,27 @@ it('uses ordinary addresses when the fetched list follows fixed siblings',()=>{
   expect(result.output['./App.tsx']).not.toContain('bindInitialListNodes');
 });
 
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('proves nested fetched row extents and matching server anchors (%s)',frontend=>{
+  const source=`export function App(){const user=$fetch('/api/user');let n=0;return <main><button onClick={()=>n++}>{n}</button>
+    <ul>{user?.groups?.map(group=><li key={group.id}><h2>{group.name}</h2><ol>Before
+      {group.rows.map((row,index)=><li key={row.id}>{index}:{row.label}:{n}</li>)}<footer>After {n}</footer></ol></li>)}</ul></main>;}`;
+  const client=compile(source,{frontend}),server=compile(source,{frontend,routedEnvironment:'server',moduleStateCells:true});
+  expect(client.initialDelivery).toMatchObject({browser:'bindings',key:server.initialDelivery?.key});
+  if(client.initialRender.kind!=='bindings')throw new Error('Missing nested bindings');
+  const outer=Object.values(planInitialDom(client.initialRender)!.lists)[0]!;
+  expect(outer.count).toBeNull();expect(Object.values(outer.row!.lists)[0]).toMatchObject({count:null,end:[1,-2]});
+  expect(server.output['./App.tsx'].match(/mmd:initial:list:/g)).toHaveLength(2);
+});
+
+it.each([
+  `{group.rows.map(row=><li>{row.label}</li>)}{group.rows.map(row=><li>{row.label}</li>)}`,
+  `{fixed.map(row=><li>{row.label}</li>)}`,
+  `{group.rows.map(row=><li>{show&&<b>{row.label}</b>}</li>)}`,
+])('retains general rendering for unproved nested row shape: %s',children=>{
+  expect(compile(`export function App(){const user=$fetch('/api/user');let show=true;const fixed=[{label:'one'}];
+    return <main><button onClick={()=>show=!show}>Toggle</button><ul>{user?.groups?.map(group=><li><ol>${children}</ol></li>)}</ul></main>;}`).initialDelivery).toBeUndefined();
+});
+
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds request-selected host branches with one retained extent (%s)',frontend=>{
   const source=`export function App(){const user=$fetch('/api/user');let show=true;
     return <main><h1>{user?.name}</h1><button onClick={()=>show=!show}>Toggle</button>

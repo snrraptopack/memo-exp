@@ -9,6 +9,7 @@ import puppeteer, { type Page } from 'puppeteer-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MountedApplication } from '@memoized-dom/runtime';
 import memoizedDom from '../src';
+import {sizeFixtures} from '../../../bench/package-size/fixtures';
 import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, checkRoutedLifecycles } from './fixtures/routed-lifecycles';
 
 let fixture: string | undefined;
@@ -111,6 +112,64 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
+  it.each([0,2].flatMap(count=>['component','module'].map(placement=>({count,placement}))))('binds nested fetched lists and reconciles retained keys in Chrome (%j)',async({count,placement},context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const groups=[{id:1,name:'One',rows:[]},{id:2,name:'Two',rows:[{id:21,label:'first'},{id:22,label:'second'}]}].slice(0,count);
+    const authored=sizeFixtures['request-nested-list']!['./App.tsx']!;
+    const source=placement==='module'?`const user=$fetch('/api/user');${authored.replace("const user=$fetch('/api/user');",'')}`:authored;
+    const result=await production(`nested-fetched-list-${placement}-${count}`,source,{},{groups});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();expect(html).not.toMatch(/mmd:[rgl]:/);
+    let next=groups;
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      await page.waitForFunction(()=>!!document.querySelector('.reload'));
+      expect(await page.evaluate(()=>({created:(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'),
+        retained:(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)})))
+        .toEqual({created:[],retained:true});expect(requests).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('.group,.row,footer')];});
+      await page.click('.next');
+      await page.waitForFunction(()=>[...document.querySelectorAll('footer')].every(node=>node.textContent==='After 1'));
+      if(count){await page.click('.select');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='first');}
+      next=[{id:2,name:'Renamed',rows:[{id:22,label:'changed'},{id:21,label:'first'},{id:23,label:'new'}]},
+        {id:1,name:'One',rows:[{id:11,label:'added'}]}];
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('.row').length===4);
+      expect(await page.$$eval('.group',nodes=>nodes.map(node=>node.querySelector('h2')?.textContent))).toEqual(['Renamed','One']);
+      expect(await page.$$eval('.select',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:changed:1','1:first:1','2:new:1','0:added:1']);
+      if(count)expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept.every(node=>node.isConnected &&
+        (!node.hasAttribute('data-id') || document.querySelector(`.${node.className}[data-id="${node.getAttribute('data-id')}"]`)===node)))).toBe(true);
+      await page.click('.select');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='changed');
+      next=[{id:2,name:'Renamed',rows:[{id:21,label:'first'},{id:24,label:'appended'}]}];
+      await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('.row').length===2);
+      expect(await page.$$eval('.select',nodes=>nodes.map(node=>node.textContent))).toEqual(['0:first:1','1:appended:1']);
+      next=[];await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('.group').length===0);
+      expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept.every(node=>!node.isConnected))).toBe(true);
+      next=[{id:3,name:'Fresh',rows:[{id:31,label:'fresh'}]}];await page.click('.reload');
+      await page.waitForFunction(()=>document.querySelector('.select')?.textContent==='0:fresh:1');
+      await page.click('.select');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='fresh');
+      expect(requests).toEqual(['/api/user','/api/user','/api/user','/api/user']);
+    },'/demo/',()=>({groups:next}));
+  },60_000);
+
+  it('recreates repeated caller-owned slots after SSR binding in Chrome',async context=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const sources=sizeFixtures['composition-recreated-children']!;
+    const result=await production('recreated-caller-slots',sources['./App.tsx']!,{'src/Shell.tsx':sources['./Shell.tsx']!,'src/Frame.tsx':sources['./Frame.tsx']!});
+    expect(result.html).toContain('mmd:initial-delivery:');
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'))).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {section:Element}).section=document.querySelector('section')!;});
+      await page.click('.inside');await page.waitForFunction(()=>[...document.querySelectorAll('.inside')].every(node=>node.textContent==='2'));
+      await page.click('.toggle');await page.waitForFunction(()=>!document.querySelector('section'));
+      await page.click('.next');await page.waitForFunction(()=>document.querySelector('p')?.textContent==='3');
+      await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('.inside').length===2);
+      expect(await page.$$eval('.inside',nodes=>nodes.map(node=>[node.textContent,node.getAttribute('title')]))).toEqual([['3','n3'],['3','n3']]);
+      expect(await page.$$eval('b',nodes=>nodes.map(node=>node.textContent))).toEqual(['Fixed caller text','Fixed caller text']);
+      expect(await page.evaluate(()=>(window as unknown as {section:Element}).section.isConnected)).toBe(false);
+      await page.click('aside .inside');await page.waitForFunction(()=>[...document.querySelectorAll('.inside')].every(node=>node.textContent==='4'));
+      expect(requests).toEqual([]);
+    });
+  },60_000);
   it('keeps lazy-only navigation and direct SSR adoption without routed data code in Chrome', async context => {
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
     const result=await production('lazy-module-only',`import {Detail} from './Detail';export function App(){return <main route="/">

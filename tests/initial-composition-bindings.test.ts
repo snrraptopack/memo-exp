@@ -71,12 +71,15 @@ it('keeps two mounts of the same closed slot as distinct retained nodes',async()
 it.each([
   ['future slot', `let show=false;return <main><button onClick={()=>show=!show}>Toggle</button><Shell><b>One</b></Shell>{show&&<Shell><b>Two</b></Shell>}</main>;`],
   ['future ancestor', `let show=false;return <main><button onClick={()=>show=!show}>Toggle</button><Card/>{show&&<Card/>}</main>;`],
-])('retains the ordinary slot program for %s ownership',(_name,body)=>{
-  const result=compile(`function Shell({children}){return <section>{children}</section>;}
+])('retains slot creation alongside initial binding for %s ownership',async(name,body)=>{
+  const result=await bind(`future-static-slot-${name}`,`function Shell({children}){return <section>{children}</section>;}
     function Card(){return <article><Shell><b>Later</b></Shell></article>;}
     export function App(){${body}}`);
-  expect(result.initialContent).toBe(false);
-  expect(result.output['./App.tsx']).toContain('childrenMountSequence');
+  expect(result.initialContent).toBe(true);
+  const first=document.querySelector('section');click('button');
+  expect([...document.querySelectorAll('section')].map(node=>node.textContent)).toEqual(name==='future slot'?['One','Two']:['Later','Later']);
+  click('button');expect(document.querySelectorAll('section')).toHaveLength(1);click('button');
+  expect(document.querySelectorAll('section')).toHaveLength(2);expect(document.querySelector('section')).toBe(first);
 });
 
 it('binds caller-owned live text and events inside a callee host',async()=>{

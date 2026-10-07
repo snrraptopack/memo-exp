@@ -10,11 +10,18 @@ import {initialSite, initialNodeExtent, initialSlotMountKey} from '../planning/i
 import type {BaseNode} from '../ast';
 import { md } from '../identifiers';
 
-/** Resolve an authored structural site through its lexical slot placement. */
+/** Resolve a structural site through lexical slots and nested region plans. */
 export function initialStructuralPlacement(plan:InitialDomRoot|null|undefined,site:string):InitialDomRoot|undefined {
   if (!plan) return undefined;
-  const structural=(root:InitialDomRoot)=>root.conditions[site]!==undefined || root.lists[site]!==undefined;
-  return structural(plan) ? plan : Object.values(plan.slots??{}).find(slot=>structural(slot.plan))?.plan;
+  if (plan.conditions[site]!==undefined || plan.lists[site]!==undefined) return plan;
+  const nested=[...Object.values(plan.slots??{}).map(slot=>slot.plan),
+    ...Object.values(plan.lists).flatMap(list=>list.row?[list.row]:[]),
+    ...Object.values(plan.conditions).flatMap(condition=>condition.branches??[])];
+  for (const child of nested) {
+    const placement=initialStructuralPlacement(child,site);
+    if (placement) return placement;
+  }
+  return undefined;
 }
 
 /** DOM read lowering preserves every region with a proved source placement. */
@@ -89,8 +96,9 @@ export function planInitialDom(plan: Extract<InitialRenderPlan,{kind:'bindings'}
       const current=addresses[offset]!;
       if (node.kind === 'slot') {
         if (!node.mount?.site) {valid=false;return;}
-        const nested=planInitialDom({...plan, nodes:node.children, rootLocal:node.component,
+        const slotPlan=planInitialDom({...plan, nodes:node.children, rootLocal:node.component,
           rootModuleId:node.moduleId, returnSite:''}, factories, false, slotOwners, current);
+        const nested=slotPlan && {...slotPlan,...(node.creation?{retainCreation:true as const}:{})};
         if (!nested) {valid=false;return;}
         const owner=`${node.moduleId}#${node.component}`;
         const slots=slotOwners[owner] ??= {};

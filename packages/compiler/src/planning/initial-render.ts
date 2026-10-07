@@ -20,11 +20,11 @@ export type InitialRenderNode =
   | { readonly kind: 'browser'; readonly id: number; readonly site: string }
   | { readonly kind: 'component'; readonly site: string; readonly moduleId: string; readonly callModuleId: string; readonly component: string;
       readonly children: readonly InitialRenderNode[]; readonly static?: boolean; readonly creation?: true;
-      readonly authoredChildren?: true;
       /** Authored content slots are omitted only with an entirely static callee. */
       readonly staticChildren?: true }
   | { readonly kind: 'slot'; readonly site: string; readonly moduleId: string; readonly component: string;
       readonly children: readonly InitialRenderNode[]; readonly static?: true;
+      readonly creation?: true;
       readonly mount?: { readonly moduleId: string; readonly component: string; readonly site: string } }
   | { readonly kind: 'conditional'; readonly site: string; readonly branch: number | null;
       readonly children: readonly InitialRenderNode[]; readonly alternatives?: readonly (readonly InitialRenderNode[])[] }
@@ -157,6 +157,18 @@ export function planInitialRendering(
     return nodes.every(node => node.kind === 'text' || node.kind === 'element' && hostsOnly(node.children));
   }
 
+  function fixedSlotHosts(nodes: readonly InitialRenderNode[]): boolean {
+    return nodes.every(node => node.kind === 'text' ||
+      (node.kind === 'element' || node.kind === 'slot') && fixedSlotHosts(node.children));
+  }
+
+  /** Request rows share a host shape while each nested list owns its extent. */
+  function requestRowHosts(nodes: readonly InitialRenderNode[]): boolean {
+    return nodes.every(node => node.kind === 'text' ||
+      node.kind === 'element' && requestRowHosts(node.children) ||
+      node.kind === 'list' && node.requestRow !== undefined && requestRowHosts(node.requestRow));
+  }
+
   function list(node: BaseNode, scope: Scope): Value | undefined {
     const callee = childNode(node, 'callee');
     if (callee?.type !== 'MemberExpression' || nodeField(callee, 'computed') ||
@@ -164,7 +176,7 @@ export function planInitialRendering(
     const input = expression(childNode(callee, 'object'), scope);
     const unknown = bindings && input === requestValue;
     if (!unknown && (input === null || typeof input !== 'object' || input.kind !== 'array')) return undefined;
-    if (bindings && inStructure) need(scope, 'Nested list bindings need a placement proof');
+    if (bindings && inStructure && !unknown) need(scope, 'Nested closed list bindings need a shared row extent proof');
     const fn=childNodes(node,'arguments')[0];
     if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
     const callback = planListCallback(node as MapCallExpression, message => need(scope, message));
@@ -195,7 +207,7 @@ export function planInitialRendering(
       });
       if (!bindings) return {kind: 'content', nodes: rows.flat()};
       if (rows.some(row => row.length !== 1 || row[0]?.kind !== 'element')) need(scope, 'Initial lists need one host root per row');
-      if (unknown && !hostsOnly(rows[0]!)) need(scope, 'Request list rows need fixed host descendants');
+      if (unknown && !requestRowHosts(rows[0]!)) need(scope, 'Request list rows need proved host descendants');
       return {kind: 'content', nodes: [{kind: 'list', site: initialSite(node), rows:unknown?[]:rows,
         ...(unknown ? {requestRow:rows[0]!} : {})}]};
     } finally { inStructure = previous; }
@@ -676,7 +688,7 @@ export function planInitialRendering(
       const authoredChildren = bindings && nodes.length > 0;
       const staticChildren = authoredChildren && childEventCount === bindingEventCount &&
         childOwnerCount === ownerSiteCount && closedContent(nodes);
-      if (authoredChildren && (inStructure || !scope.component)) need(scope,'Structural authored children need a creation placement proof');
+      if (authoredChildren && (!scope.component || inStructure && !fixedSlotHosts(nodes))) need(scope,'Structural authored children need a fixed creation shape');
       if (mixed && regions.length !== regionCount) need(scope, 'Interactive content slots need a placement proof');
       if (nodes.length) props.set('children', { kind: 'content', nodes: authoredChildren ? [{
         kind:'slot', moduleId:scope.moduleId, component:scope.component!, site:initialSite(node), children:nodes,
@@ -691,7 +703,6 @@ export function planInitialRendering(
           eventCount===bindingEventCount && liveProps.size===0 && closedContent(children);
         return [{kind:'component',site:initialSite(node),moduleId:component.scope.moduleId,callModuleId:scope.moduleId,component:component.local!,children,
           static:isStatic,
-          ...(authoredChildren ? {authoredChildren:true as const} : {}),
           ...(staticChildren && isStatic ? {staticChildren:true as const} : {}),
           ...(inStructure ? {creation:true as const} : {})}];
       }
@@ -876,7 +887,6 @@ export function planInitialRendering(
         return nodes.map(node=>{
           if (node.kind==='component') {
             const creation=creationComponents.has(`${node.moduleId}#${node.component}`);
-            if (creation && node.authoredChildren) need(rootScope,'Recreated authored children need their slot ownership program');
             return {...node, ...(creation?{static:false}:{}), children:retain(node.children,creation)};
           }
           if (creating && (node.kind==='list' || node.kind==='conditional')) need(rootScope,'Recreated composition needs a fixed host shape');
@@ -884,7 +894,8 @@ export function planInitialRendering(
             attributes:creating?node.attributes.map(attribute=>({...attribute,live:true})):node.attributes,
             children:retain(node.children,creating)};
           if (node.kind==='text') return creating?{...node,live:true}:node;
-          if (node.kind==='conditional' || node.kind==='slot') return {...node,children:retain(node.children)};
+          if (node.kind==='slot') return {...node,...(creating?{static:undefined,creation:true as const}:{}),children:retain(node.children,creating)};
+          if (node.kind==='conditional') return {...node,children:retain(node.children)};
           if (node.kind==='list') return {...node,rows:node.rows.map(row=>retain(row)),
             ...(node.requestRow?{requestRow:retain(node.requestRow)}:{})};
           return node;

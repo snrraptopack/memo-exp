@@ -36,7 +36,6 @@ function click(selector:string){document.querySelector<HTMLButtonElement>(select
 
 it.each([
   `<Shell>{open&&<ul>{items.map(item=><li key={item.id}>{item.label}</li>)}</ul>}</Shell>`,
-  `{open&&<Shell><b>Later</b></Shell>}`,
   `<Shell>{user?.rows?.map(row=><li key={row.id}>{row.label}</li>)}</Shell>`,
 ])('retains general creation for unproved nested or recreated slot extents: %s',content=>{
   const result=compileModulesDetailed({
@@ -46,6 +45,34 @@ it.each([
     './Shell.tsx':shell,
   },{initialContent:true});
   expect(result.initialContent).toBe(false);expect(result.output['./App.tsx']).toContain('createElement');
+});
+
+it.each([false,true])('binds and recreates fixed caller slots through repeated forwarding (open=%s)',async open=>{
+  const log:string[]=[];vi.stubGlobal('__slotLifetime',log);
+  const refs:string[]=[];vi.stubGlobal('__slotRefs',refs);
+  await bind(`recreated-slot-${open}`,`import {Shell} from './Shell';export function App(){let open=${open};let n=1;
+    return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button><button class="next" onClick={()=>n++}>Next</button>
+      {open&&<Shell><b>Fixed caller text</b><button class="inside" ref={node=>{globalThis.__slotRefs.push(node.localName);return ()=>{globalThis.__slotRefs.push('clear');};}} title={'n'+n} onClick={()=>n++}>{n}</button></Shell>}<p>{n}</p></main>;}`,{
+    './Shell.tsx':`import {Frame} from './Frame';export function Shell({children}){let node=null;
+      $effect(()=>{globalThis.__slotLifetime.push(node?.isConnected?'mount':'detached');return ()=>globalThis.__slotLifetime.push('dispose');});
+      return <section ref={node}><h2>Before</h2>{children}<Frame>{children}</Frame></section>;}`,
+    './Frame.tsx':`export function Frame({children}){return <aside><i>Prefix</i>{children}<footer>After</footer></aside>;}`,
+  });
+  if(!open)click('.toggle');
+  const initial=document.querySelector('section');expect(log).toEqual(['mount']);
+  await expect.poll(()=>refs).toEqual(['button','button']);
+  click('.inside');expect([...document.querySelectorAll('.inside')].map(node=>node.textContent)).toEqual(['2','2']);
+  click('.toggle');expect(initial!.isConnected).toBe(false);expect(log).toEqual(['mount','dispose']);
+  expect(refs.filter(value=>value==='clear')).toHaveLength(2);
+  click('.next');expect(document.querySelector('p')!.textContent).toBe('3');
+  click('.toggle');expect(document.querySelector('section')).not.toBe(initial);
+  await expect.poll(()=>refs.filter(value=>value==='button').length).toBe(4);
+  expect([...document.querySelectorAll('.inside')].map(node=>[node.textContent,node.getAttribute('title')])).toEqual([['3','n3'],['3','n3']]);
+  expect([...document.querySelectorAll('b')].map(node=>node.textContent)).toEqual(['Fixed caller text','Fixed caller text']);
+  document.querySelectorAll<HTMLButtonElement>('.inside')[1]!.click();
+  expect([...document.querySelectorAll('.inside')].map(node=>node.textContent)).toEqual(['4','4']);
+  application!.unmount();application=undefined;expect(log).toEqual(['mount','dispose','mount','dispose']);expect(registeredIds()).toEqual([]);
+  expect(refs.filter(value=>value==='button')).toHaveLength(4);expect(refs.filter(value=>value==='clear')).toHaveLength(4);
 });
 
 it.each([false,true])('binds conditional children and creates later branches (open=%s)',async open=>{
