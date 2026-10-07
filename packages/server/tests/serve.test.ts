@@ -256,6 +256,76 @@ describe('serve', () => {
     expect(redirected.headers.get('location')).toBe('https://app.test/login');
   });
 
+  it('forwards the page request credentials to in-memory $fetch like a browser would', async () => {
+    const fixture = await compileFixture('serve-credentials', `
+      import { $fetch } from '@memoized-dom/data';
+      export function App() {
+        const me = $fetch('/api/me');
+        const localized = $fetch('/api/whoami', { headers: { 'accept-language': 'de' } });
+        return <main><p>{me.name}</p><p>{localized.name}</p></main>;
+      }
+    `);
+    const seen: string[] = [];
+    const app = serve();
+    app.use('/api', (context, next) => {
+      seen.push(`${context.url.pathname}:${context.request.headers.get('cookie') ?? 'none'}`);
+      return next();
+    });
+    app.get('/api/me', context => {
+      const cookie = context.request.headers.get('cookie');
+      return cookie === 'sid=abc'
+        ? { name: `Ada (${context.request.headers.get('accept-language')})` }
+        : new Response('unauthorized', { status: 401 });
+    });
+    app.get('/api/whoami', context => ({
+      name: `${context.request.headers.get('cookie')}/${context.request.headers.get('accept-language')}`,
+    }));
+    app.ssr(fixture.serverModule.App, { delivery: 'buffer', markers: false });
+    internals(app).installDocumentTemplate(
+      '<!doctype html><body><!--ssr-outlet--></body>',
+    );
+
+    const response = await app.fetch(new Request('https://app.test/', {
+      headers: { cookie: 'sid=abc', 'accept-language': 'fr' },
+    }));
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain('<p>Ada (fr)</p>');
+    expect(html).toContain('<p>sid=abc/de</p>');
+    expect(seen.sort()).toEqual(['/api/me:sid=abc', '/api/whoami:sid=abc']);
+  });
+
+  it('keeps route preparation redirects on the application origin', async () => {
+    const fixture = await compileFixture('serve-redirect-origin', `
+      import { $routed, redirectRoute } from '@memoized-dom/router';
+
+      export function Login() {
+        const page = $routed(({ query }) => redirectRoute(query.get('next') ?? 'welcome'));
+        return <main route="/account/login"><h1>{String(page)}</h1></main>;
+      }
+    `, { routedEnvironment: 'server' });
+    const app = serve();
+    app.ssr(fixture.serverModule.Login);
+    internals(app).installDocumentTemplate(
+      '<!doctype html><body><!--ssr-outlet--></body>',
+    );
+    const visit = (search: string) =>
+      app.fetch(new Request(`https://app.test/account/login${search}`));
+
+    const local = await visit('?next=/dashboard');
+    expect(local.status).toBe(302);
+    expect(local.headers.get('location')).toBe('https://app.test/dashboard');
+
+    const relative = await visit('');
+    expect(relative.headers.get('location')).toBe('https://app.test/account/login/welcome');
+
+    for (const next of ['https://evil.test/phish', '//evil.test/phish']) {
+      const response = await visit(`?next=${encodeURIComponent(next)}`);
+      expect(response.status).toBe(500);
+      expect(response.headers.get('location')).toBeNull();
+    }
+  });
+
   it('rejects duplicate SSR fallbacks and ambiguous scoped registrations', () => {
     const app = serve();
     const component = vi.fn();
