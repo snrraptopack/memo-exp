@@ -257,11 +257,19 @@ With `serve()`, choose it per root or application-wide through the render
 policy:
 
 ```ts
-app.ssr(App, {
-  mode: 'stream',
-  nonce: request => request.headers.get('x-csp-nonce') ?? undefined,
-});
+app.ssr(App, { mode: 'stream', nonce: request => request.headers.get('x-csp-nonce') ?? undefined });
 ```
+
+`nonce` is only needed with a strict Content Security Policy; return the same
+nonce the response's CSP header uses. Streamed regions need JavaScript to
+appear, so keep `resolve` (the default) for pages that must be complete
+without it.
+
+Hydration recovers per region: if one region's server DOM no longer matches
+(for example, a browser extension rewrote it), only that region renders on
+the client and `mount(..., { onHydrateError(error, scope) })` reports
+`scope === 'region'`. A mismatch outside every region still replaces the
+whole root (`scope === 'root'`). See `docs/09-ssr.md`.
 
 ```ts
 import { render } from '@memoized-dom/server';

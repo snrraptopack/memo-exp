@@ -74,15 +74,18 @@ function adoptApplication(
   host: Element,
   definition: RootFactoryDefinition,
   hydrate: NonNullable<HydrationRuntimeBridge['hydrate']>,
+  options: MountOptions,
 ): MountedApplication {
-  return hydrate(host, definition, adopted =>
-    createMountedApplication(
+  return hydrate(host, definition, adopted => {
+    const mounted = createMountedApplication(
       host,
       definition,
       rootNodes(adopted.root),
       adopted.disposeMarkers,
-    ),
-  );
+    );
+    for (const error of adopted.recovered) options.onHydrateError?.(error, 'region');
+    return mounted;
+  });
 }
 
 /**
@@ -115,10 +118,10 @@ export function mount(
         `<!--mmd:r:${serverRootId}-->`,
       );
     }
-    return adoptApplication(host, definition, hydrate);
+    return adoptApplication(host, definition, hydrate, options);
   } catch (error) {
     if (!(error instanceof HydrationMismatchError)) throw error;
-    options.onHydrateError?.(error);
+    options.onHydrateError?.(error, 'root');
     host.innerHTML = '';
     return createApplication(host, definition);
   }

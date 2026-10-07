@@ -178,6 +178,40 @@ describe('out-of-order region streaming', () => {
     expect(String((clientFetch.mock.calls[0] as unknown[])[0])).toContain('/api/slow');
   });
 
+  it('re-renders only the mismatched region and keeps the rest of the server DOM', async () => {
+    const server = gatedFetch();
+    const { app, reader } = await render(server.fetch);
+    const host = hostFor(app);
+    appendStreamed(host, (await nextChunk(reader))!);
+    await server.open('/api/slow');
+    await server.open('/api/fast');
+    for (const chunk of await remaining(reader)) appendStreamed(host, chunk);
+
+    // Something outside the program (an extension, a proxy) rewrote the
+    // content of one region; its markers survived.
+    const fast = host.querySelector('#fast')!;
+    const text = [...fast.childNodes].find(node => node.nodeType === 3)!;
+    const tampered = document.createElement('b');
+    tampered.textContent = 'tampered';
+    text.replaceWith(tampered);
+    const header = host.querySelector('#static');
+    const slowText = host.querySelector('#slow')!.textContent;
+    const slowNode = [...host.querySelector('#slow')!.childNodes].find(node => node.nodeType === 3);
+
+    const clientFetch = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', clientFetch);
+    const onHydrateError = vi.fn();
+    mounted = mount('root', app.App, { onHydrateError });
+    expect(onHydrateError).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: 'HydrationMismatchError' }), 'region');
+    expect(host.querySelector('#static')).toBe(header);
+    expect(host.querySelector('#fast')).toBe(fast);
+    expect([...host.querySelector('#slow')!.childNodes].find(node => node.nodeType === 3)).toBe(slowNode);
+    expect(host.querySelector('#slow')!.textContent).toBe(slowText);
+    expect(fast.querySelector('b')).toBeNull();
+    await vi.waitFor(() => expect(fast.textContent).toBe('fast title'));
+  });
+
   it('stops at the settle budget and leaves undelivered sources to the browser', async () => {
     const server = gatedFetch();
     const { app, reader } = await render(server.fetch, 50);

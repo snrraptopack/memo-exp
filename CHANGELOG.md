@@ -15,6 +15,10 @@
   CSP nonce for the inline scripts.
 - Data: serialized pending sources may be marked `streamed`; the browser
   waits for the streaming response to deliver them instead of fetching.
+- Hydration: a mismatch inside a data region (conditional or atomic
+  `Group` range) now discards and client-renders only that region; the rest
+  of the root keeps its server DOM. `onHydrateError(error, scope)` receives
+  `'region'` for these and `'root'` before a whole-root fallback.
 
 ### Fixed
 
