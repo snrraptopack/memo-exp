@@ -6,7 +6,7 @@
  * slots across parameter shapes, structural regions, rows, spreads, dynamic
  * tags, aliases, and module links.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compile, compileModules } from '@memoized-dom/compiler';
 
 describe('JSX paradigm matrix', () => {

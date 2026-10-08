@@ -4,7 +4,10 @@
   "description": "Optional utilities for memoized-dom applications",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,11 +17,15 @@
   },
   "scripts": {
     "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
-    "test": "vitest run --config vitest.config.ts && tsc -p tsconfig.test.json"
+    "test": "bun test --isolate ./tests && bun check -p tsconfig.test.json"
   },
   "peerDependencies": {
     "@memoized-dom/data": "workspace:*"
   },
-  "engines": { "node": ">=24.11.0" },
-  "publishConfig": { "access": "public" }
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

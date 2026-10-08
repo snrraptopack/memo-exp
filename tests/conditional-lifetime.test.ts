@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it } from 'bun:test';
 import { createCondRegion } from '@memoized-dom/runtime';
 
 afterEach(()=>document.body.replaceChildren());

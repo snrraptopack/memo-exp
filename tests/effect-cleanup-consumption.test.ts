@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -18,14 +19,14 @@ const compile = (text: string) => compileModules({ './App.tsx': text })['./App.t
 
 beforeEach(() => {
   document.body.replaceChildren(); resetAccessTable(); setScheduler(run => run());
-  vi.stubGlobal('__cleanupRecord', vi.fn());
+  stubGlobal('__cleanupRecord', vi.fn());
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, 'external.mjs'), `export function record(value){globalThis.__cleanupRecord(value);}
     export function sink(){return {consume:record};}`);
 });
 afterEach(() => {
   for (const id of [..._internals().registry.keys()]) unregister(id);
-  resetScheduler(); resetAccessTable(); vi.unstubAllGlobals();
+  resetScheduler(); resetAccessTable(); unstubAllGlobals();
 });
 
 it.each(Object.entries(cleanups))('does not publish a false write from %s opaque cleanup', async (name, cleanup) => {

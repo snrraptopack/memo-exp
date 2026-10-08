@@ -3,7 +3,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compile } from '@memoized-dom/compiler';
 
 const root = resolve(import.meta.dirname, '..');
@@ -37,7 +37,7 @@ describe('workspace package boundaries', () => {
 
   it('keeps compiler source independent from runtime source', () => {
     const compiler = manifest('compiler');
-    expect(compiler.dependencies).not.toHaveProperty('@memoized-dom/runtime');
+    expect(Object.hasOwn(compiler.dependencies, '@memoized-dom/runtime')).toBe(false);
     expect(compiler.dependencies).toHaveProperty(
       '@memoized-dom/router',
       'workspace:*',
@@ -67,13 +67,13 @@ describe('workspace package boundaries', () => {
   });
 
   it('publishes production and testing runtime subpaths separately', () => {
-    expect(manifest('runtime').exports).toHaveProperty('.');
-    expect(manifest('runtime').exports).toHaveProperty('./testing');
-    expect(manifest('compiler').exports).toHaveProperty('.');
-    expect(manifest('data').exports).toHaveProperty('.');
-    expect(manifest('data').exports).toHaveProperty('./internal');
-    expect(manifest('router').exports).toHaveProperty('.');
-    expect(manifest('router').exports).toHaveProperty('./internal');
+    expect(Object.hasOwn(manifest('runtime').exports, '.')).toBe(true);
+    expect(Object.hasOwn(manifest('runtime').exports, './testing')).toBe(true);
+    expect(Object.hasOwn(manifest('compiler').exports, '.')).toBe(true);
+    expect(Object.hasOwn(manifest('data').exports, '.')).toBe(true);
+    expect(Object.hasOwn(manifest('data').exports, './internal')).toBe(true);
+    expect(Object.hasOwn(manifest('router').exports, '.')).toBe(true);
+    expect(Object.hasOwn(manifest('router').exports, './internal')).toBe(true);
   });
 
   it('publishes scoped data creation separately from generated-code hooks', async () => {

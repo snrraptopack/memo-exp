@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { compileModulesDetailed, emitInitialHtml, yukuEstreeFrontend, experimentalTsrxEstreeFrontend } from '@memoized-dom/compiler';
 import { planInitialDom } from '../packages/compiler/src/dom/initial-dom';
 import {sizeFixtures} from '../bench/package-size/fixtures';

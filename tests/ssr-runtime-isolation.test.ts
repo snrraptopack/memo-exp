@@ -7,7 +7,7 @@
  * create, activate, and dispose one per request. These tests prove two
  * runtimes cannot observe each other's state.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   cleanup,
   commit,

@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../test-support/helpers';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'bun:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -55,13 +56,13 @@ describe('transparent source destructuring', () => {
     resolveRequest!(new Response(JSON.stringify({name:'Ada'}), {
       status:200,headers:{'content-type':'application/json'},
     }));
-    await vi.waitFor(() => expect(document.querySelector('p')?.textContent).toBe('Ada:fallback'));
+    await waitFor(() => expect(document.querySelector('p')?.textContent).toBe('Ada:fallback'));
     const original = document.querySelector('p');
     document.querySelector('button')!.click();
-    await vi.waitFor(() => expect(document.querySelector('button')?.textContent).toBe('1'));
+    await waitFor(() => expect(document.querySelector('button')?.textContent).toBe('1'));
     expect(document.querySelector('p')).toBe(original);
     expect(original?.textContent).toBe('Ada:fallback');
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('keeps aliases, nested fields, arrays, rest, and defaults live', async () => {
@@ -85,7 +86,7 @@ describe('transparent source destructuring', () => {
       headers: { 'content-type': 'application/json' },
     }));
 
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(document.querySelector('#name')?.textContent).toBe('Ada');
     });
     expect(document.querySelector('#city')?.textContent).toBe('London');
@@ -94,7 +95,7 @@ describe('transparent source destructuring', () => {
     expect(document.querySelector('#missing')?.textContent).toBe('fallback');
 
     document.querySelector('button')!.click();
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(document.querySelector('#name')?.textContent).toBe('Grace');
     });
   });

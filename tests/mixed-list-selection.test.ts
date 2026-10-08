@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
+import { afterEach, beforeAll, beforeEach, expect, it } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compileModules } from '@memoized-dom/compiler';
@@ -95,9 +96,9 @@ beforeEach(() => {
   setScheduler(fn => fn());
   document.body.innerHTML = '';
   replayed.length = 0;
-  vi.stubGlobal('recordRow', (id: number) => replayed.push(id));
+  stubGlobal('recordRow', (id: number) => replayed.push(id));
 });
-afterEach(() => { resetScheduler(); vi.unstubAllGlobals(); });
+afterEach(() => { resetScheduler(); unstubAllGlobals(); });
 
 async function mount(name: string) {
   const specifier = `./fixtures/out/mixed-list-selection/${name}.ts`;

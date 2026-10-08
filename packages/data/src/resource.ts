@@ -63,7 +63,7 @@ function createRequestId(): string {
 }
 
 export interface FetchEnvironment {
-  readonly fetch: () => typeof globalThis.fetch;
+  readonly fetch: () => NonNullable<import('./types').DataRuntimeOptions['fetch']>;
   readonly baseURL: string | URL | undefined;
   prepareBody?: (input: unknown, headers: Headers) => PreparedRequestBody;
   transferIdentity?: typeof fetchTransferIdentity;
@@ -730,7 +730,7 @@ export function fetchResourceOperationId<T>(
 }
 
 export function createFetchEnvironment(
-  fetcher: typeof globalThis.fetch | undefined,
+  fetcher: import('./types').DataRuntimeOptions['fetch'],
   baseURL: string | URL | undefined,
 ): FetchEnvironment {
   const resolvedBaseURL = baseURL ?? (

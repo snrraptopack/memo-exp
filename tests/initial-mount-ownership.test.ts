@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { mountInitial, registerRootFactory, type MountedApplication } from '../packages/runtime/src/mount-core';
 import { mount } from '../packages/runtime/src/mount';
 import { cleanup } from '../packages/runtime/src/cleanup';

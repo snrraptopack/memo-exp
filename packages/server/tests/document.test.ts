@@ -1,5 +1,5 @@
-// @vitest-environment node
-import { describe, expect, it } from 'vitest';
+// Runs with Bun globals; no DOM preload.
+import { describe, expect, it } from 'bun:test';
 import { composeDocumentStream } from '../src/document';
 import { splitDocumentTemplate } from '../src/document';
 import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';

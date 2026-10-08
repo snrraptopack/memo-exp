@@ -9,7 +9,7 @@
  * This suite is also the parity oracle that future ESTree frontends diff
  * against (spec: both frontends implement the same document).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compile, compileModules } from '@memoized-dom/compiler';
 
 interface GoldenCase {

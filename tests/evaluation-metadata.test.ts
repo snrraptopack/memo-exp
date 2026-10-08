@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 
 const graph = {
@@ -43,8 +43,7 @@ describe('evaluation metadata', () => {
     const result = compileModulesDetailed(graph, {
       linkFunctionSummaries: false,
     });
-    expect(result.metadata['./derived.ts']!.readers)
-      .toHaveProperty('./state.ts#model.value');
+    expect(Object.hasOwn(result.metadata['./derived.ts']!.readers, './state.ts#model.value')).toBe(true);
     expect(result.output['./view.tsx']).toMatch(/markDirtySubtree\("App", _id\d*\)/);
   });
 });

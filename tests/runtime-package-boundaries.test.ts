@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 import { compileModules, compileModulesDetailed } from '@memoized-dom/compiler';
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 
 async function bundle(source: string) {
   const result = await build({ stdin: { contents: compileModules({'./App.tsx':source})['./App.tsx']!, resolveDir: process.cwd(), loader: 'ts' },

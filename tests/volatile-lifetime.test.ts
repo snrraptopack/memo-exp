@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { register } from '../packages/runtime/src/volatile';
 import {
   createApplicationRuntime, runWithApplicationRuntime, registerEntity, setScheduler,

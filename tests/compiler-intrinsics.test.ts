@@ -1,7 +1,8 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import {
   compile,
   compileModules,
@@ -20,7 +21,7 @@ afterEach(() => {
   document.body.replaceChildren();
   resetAccessTable();
   resetScheduler();
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 describe('implicit compiler intrinsics', () => {
@@ -83,7 +84,7 @@ describe('implicit compiler intrinsics', () => {
     mkdirSync(directory, { recursive: true });
     const path = join(directory, 'lifecycle.ts');
     const events: Array<string | number> = [];
-    vi.stubGlobal('__intrinsicLog', (value: string | number) => {
+    stubGlobal('__intrinsicLog', (value: string | number) => {
       events.push(value);
     });
     writeFileSync(

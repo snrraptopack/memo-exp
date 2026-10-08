@@ -1,3 +1,4 @@
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 /**
  * Regression coverage for opaque-rooted reactivity.
  *
@@ -29,7 +30,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   _internals,
@@ -187,7 +188,7 @@ describe('opaque-derived reactivity regressions', () => {
     resetAccessTable();
     setScheduler(run => run());
     frames.length = 0;
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
     });
@@ -198,7 +199,7 @@ describe('opaque-derived reactivity regressions', () => {
     _internals().registry.forEach((_, id) => unregister(id));
     while (frames.length > 0) frames.shift()!(performance.now());
     resetScheduler();
-    vi.unstubAllGlobals();
+    unstubAllGlobals();
   });
 
   async function pullFrame(): Promise<void> {
@@ -215,14 +216,14 @@ describe('opaque-derived reactivity regressions', () => {
     const mod = await importFixture();
     document.body.appendChild(mod.TaskBoard('App', null));
 
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     mod.resolveRequest(0, {
       todos: [
         { id: 1, todo: 'Alpha', completed: false },
         { id: 2, todo: 'Beta', completed: true },
       ],
     });
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(document.querySelector('#status')?.textContent).toBe('success');
     });
@@ -251,7 +252,7 @@ describe('opaque-derived reactivity regressions', () => {
     const mod = await importFixture();
     document.body.appendChild(mod.TaskBoard('App', null));
 
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     mod.resolveRequest(0, { todos: [{ id: 1, todo: 'Alpha', completed: false }] });
 
     // Several volatile pull frames must not construct new resources.
@@ -288,12 +289,12 @@ describe('opaque-derived reactivity regressions', () => {
     const mod = await importFixture();
     document.body.appendChild(mod.HelperBoard('HelperApp', null));
 
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     mod.resolveRequest(0, [
       { id: 1, done: false },
       { id: 2, done: false },
     ]);
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(document.querySelectorAll('button').length).toBe(2);
     });
@@ -308,7 +309,7 @@ describe('opaque-derived reactivity regressions', () => {
     // because the helper's row-relative commit referenced a row-factory
     // identifier from component scope.
     document.querySelectorAll('button')[0]!.click();
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(buttons()).toEqual(['done', 'open']);
     });

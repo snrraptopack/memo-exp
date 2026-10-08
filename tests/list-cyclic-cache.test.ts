@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'bun:test';
 import { createListRegion } from '@memoized-dom/runtime';
 
 it.each([1, 3, 8, 10, 19])('validates all keys while avoiding repeated cache hashing for a shift of %i', offset => {

@@ -1,3 +1,5 @@
+import '../../../test-support/dom';
+import { waitFor } from '../../../test-support/helpers';
 /**
  * Phase 1.5 — CSR-equivalence corpus.
  *
@@ -11,7 +13,7 @@
  * Route regions and async data states need request-local router/data
  * wiring and are covered in their own slice.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   resetScheduler,
   setScheduler,
@@ -469,7 +471,7 @@ describe('CSR-equivalence corpus', () => {
       expect(tiers.clientModule.effectRuns).toBe(1);
       expect(tiers.clientModule.refRuns).toBe(0);
       result.clientRoot.ownerDocument.body.appendChild(result.clientRoot);
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(tiers.clientModule.refRuns).toBeGreaterThanOrEqual(1);
       });
 

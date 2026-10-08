@@ -1,4 +1,4 @@
-import {expect,it} from 'vitest';
+import { expect, it } from 'bun:test';
 import {analyzeScope,findNode,parseEstreeOrThrow,printEstree,type BaseNode} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import {planGroupPresentations,planPresentationCaptures,planPresentationComponent} from '../packages/compiler/src/planning/presentation-policy';

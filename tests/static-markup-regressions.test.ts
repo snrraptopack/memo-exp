@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { compileModules } from '../packages/compiler/src';
 import * as runtime from '@memoized-dom/runtime';
 import { renderToString } from '@memoized-dom/server';

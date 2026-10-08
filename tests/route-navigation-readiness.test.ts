@@ -1,7 +1,8 @@
+import { waitFor, stubGlobal, unstubAllGlobals, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import {
@@ -61,7 +62,7 @@ describe('navigation completion follows destination DOM readiness', () => {
     events = [];
     router.subscribeNavigation(event => events.push(event));
     requests = [];
-    data = createDataRuntime({ fetch: (() => new Promise<Response>(resolve => requests.push({ resolve }))) as typeof fetch });
+    data = createDataRuntime({ fetch: (() => new Promise<Response>(resolve => requests.push({ resolve }))) as FetchStub });
     previousData = setActiveDataRuntime(data);
     setScheduler(run => run());
     document.body.append(App('App', null));
@@ -74,7 +75,7 @@ describe('navigation completion follows destination DOM readiness', () => {
     setActiveDataRuntime(previousData);
     resetScheduler();
     document.body.replaceChildren();
-    vi.unstubAllGlobals();
+    unstubAllGlobals();
   });
   function resolve(index: number, name: string, status = 200) {
     requests[index]!.resolve(new Response(JSON.stringify({ name }), { status, headers: { 'content-type': 'application/json' } }));
@@ -87,7 +88,7 @@ describe('navigation completion follows destination DOM readiness', () => {
   it('publishes the URL but does not complete when only an atomic pending arm is visible', async () => {
     const result = router.navigate('/plain/one');
     const completion = finished(result);
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(router.route.pathname).toBe('/plain/one');
     expect(document.querySelector('.loading')).not.toBeNull();
     expect(events.map(event => event.phase)).toEqual(['start', 'prepare']);
@@ -99,7 +100,7 @@ describe('navigation completion follows destination DOM readiness', () => {
   it('awaits destination discovery through the default scheduler', async () => {
     resetScheduler();
     const completion = finished(router.navigate('/plain/one'));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(events.some(event => event.phase === 'complete')).toBe(false);
     resolve(0, 'Scheduled');
     await completion;
@@ -109,11 +110,11 @@ describe('navigation completion follows destination DOM readiness', () => {
   it('rejects an abandoned completion and never emits its stale success', async () => {
     const first = router.navigate('/plain/one');
     const firstFinished = finished(first);
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     const second = router.navigate('/plain/two');
     const secondFinished = finished(second);
     await expect(firstFinished).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     resolve(0, 'Stale');
     resolve(1, 'Current');
     await secondFinished;
@@ -122,7 +123,7 @@ describe('navigation completion follows destination DOM readiness', () => {
   });
   it('keeps waiting for the same atomic instance through query and hash changes', async () => {
     const initial = finished(router.navigate('/plain/one'));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     const query = finished(router.navigate('/plain/one', { query: { tab: 'notes' } }));
     await expect(initial).rejects.toMatchObject({ name: 'AbortError' });
     const hash = finished(router.navigate('/plain/one', { query: { tab: 'notes' }, hash: 'target' }));
@@ -137,16 +138,16 @@ describe('navigation completion follows destination DOM readiness', () => {
   });
   it('reports an atomic request failure without replaying successful entry or creating history on local retry', async () => {
     const completion = finished(router.navigate('/plain/one'));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     resolve(0, 'Unavailable', 503);
     await expect(completion).rejects.toMatchObject({ status: 503 });
     expect(events.at(-1)?.phase).toBe('error');
     expect(events.at(-1)?.retry).toBeUndefined();
     expect(document.querySelector('.failed')?.textContent).toBe('request');
     document.querySelector<HTMLButtonElement>('.failed')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     resolve(1, 'Recovered');
-    await vi.waitFor(() => expect(document.querySelector('#detail')?.textContent).toBe('Recovered'));
+    await waitFor(() => expect(document.querySelector('#detail')?.textContent).toBe('Recovered'));
     expect(events.filter(event => event.phase === 'start')).toHaveLength(1);
     expect(router.back()?.status).toBe('completed');
     expect(router.route.pathname).toBe('/');
@@ -154,12 +155,12 @@ describe('navigation completion follows destination DOM readiness', () => {
   });
   it('finishes memory history traversal only after the selected atomic destination mounts', async () => {
     const initial = finished(router.navigate('/plain/one'));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     resolve(0, 'First');
     await initial;
     router.navigate('/');
     const traversal = finished(router.back()!);
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(events.at(-1)?.phase).toBe('prepare');
     resolve(1, 'Returned');
     await traversal;
@@ -169,14 +170,14 @@ describe('navigation completion follows destination DOM readiness', () => {
   });
   it('keeps $routed as a pre-entry gate and then waits separately for owned atomic reads', async () => {
     let allow!: (value: string) => void;
-    vi.stubGlobal('__mmdEntry', vi.fn(() => new Promise<string>(resolve => { allow = resolve; })));
+    stubGlobal('__mmdEntry', vi.fn(() => new Promise<string>(resolve => { allow = resolve; })));
     const completion = finished(router.navigate('/guarded/private'));
-    await vi.waitFor(() => expect(allow).toBeTypeOf('function'));
+    await waitFor(() => expect(allow).toBeTypeOf('function'));
     expect(requests).toHaveLength(0);
     expect(document.querySelector('#guarded')).toBeNull();
     expect(router.route.pathname).toBe('/');
     allow('Authorized');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(router.route.pathname).toBe('/guarded/private');
     expect(document.querySelector('#guarded')).toBeNull();
     expect(events.some(event => event.phase === 'complete')).toBe(false);
@@ -187,7 +188,7 @@ describe('navigation completion follows destination DOM readiness', () => {
   });
   it('rejects pending completion immediately when its router is disposed', async () => {
     const completion = finished(router.navigate('/plain/one'));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     router.dispose();
     await expect(completion).rejects.toMatchObject({ name: 'AbortError' });
     expect(events.some(event => event.phase === 'complete')).toBe(false);

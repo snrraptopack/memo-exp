@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { bindInitialNodes } from '../packages/runtime/src/initial-bindings';
 import { bindInitialRegionNodes } from '../packages/runtime/src/initial-region-bindings';
 import { mountInitial, register, registerRootFactory, has, cleanup } from '@memoized-dom/runtime/testing';

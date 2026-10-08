@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectCalledOnceWith } from '../test-support/helpers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import {
   cleanup, createApplicationRuntime, createPreparedRegion, getActiveEnvironment,
   mount, mountRef, refAssign, register, registerEffect, registerRootFactory,
@@ -79,8 +80,8 @@ describe('atomic prepared-range hydration', () => {
     expect(root.querySelector('p')).toBe(original);
     expect(mutations.some(record => [...record.removedNodes].includes(original))).toBe(false);
     expect(fixture.pending).not.toHaveBeenCalled();
-    expect(fixture.refs).toHaveBeenCalledExactlyOnceWith(original);
-    expect(fixture.effects).toHaveBeenCalledExactlyOnceWith(original);
+    expectCalledOnceWith((fixture.refs), original);
+    expectCalledOnceWith((fixture.effects), original);
     inRuntime(() => runtime.state.registry.get('App')!.render(null));
     expect(original.textContent).toBe('Updated');
     inRuntime(() => mounted!.unmount());
@@ -95,15 +96,14 @@ describe('atomic prepared-range hydration', () => {
     const mismatch = vi.fn();
     mounted = inRuntime(() => mount(root, fixture.App, { onHydrateError: mismatch }));
     await Promise.resolve();
-    expect(mismatch).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ name: 'HydrationMismatchError' }), 'region');
+    expectCalledOnceWith((mismatch), expect.objectContaining({ name: 'HydrationMismatchError' }), 'region');
     expect(root.querySelector('span')).toBeNull();
     expect(root.querySelectorAll('p')).toHaveLength(1);
     // The adopted range markers stay; only their content was rendered again.
     expect(open.parentNode).toBe(root);
     expect(open.nextSibling).toBe(root.querySelector('p'));
     expect(fixture.pending).not.toHaveBeenCalled();
-    expect(fixture.refs).toHaveBeenCalledExactlyOnceWith(root.querySelector('p'));
+    expectCalledOnceWith((fixture.refs), root.querySelector('p'));
     expect(fixture.effects).toHaveBeenCalledTimes(1);
     inRuntime(() => runtime.state.registry.get('App')!.render(null));
     expect(root.querySelector('p')!.textContent).toBe('Updated');
@@ -115,7 +115,7 @@ describe('atomic prepared-range hydration', () => {
     const mismatch = vi.fn();
     mounted = inRuntime(() => mount(root, fixture.App, { onHydrateError: mismatch }));
     await Promise.resolve();
-    expect(mismatch).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'region');
+    expectCalledOnceWith((mismatch), expect.anything(), 'region');
     expect(mismatch.mock.calls[0]![0]).toMatchObject({ boundary: 'App/atomic/inner' });
     expect(root.querySelectorAll('span')).toHaveLength(0);
     expect(root.querySelectorAll('p')).toHaveLength(1);

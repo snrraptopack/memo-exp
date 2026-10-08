@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { build, type Rollup } from 'vite';
 import puppeteer, { type Page } from 'puppeteer-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import type { MountedApplication } from '@memoized-dom/runtime';
 import memoizedDom from '../src';
 import {sizeFixtures} from '../../../bench/package-size/fixtures';
@@ -62,8 +62,8 @@ function chromeExecutable(): string | undefined {
 }
 
 describe('retained caller slot markup',()=>{
-  it.each(['composition','request'])('adopts and recreates %s slots in production Chrome',async(kind,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each(['composition','request'])('adopts and recreates %s slots in production Chrome',async(kind)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const sources=sizeFixtures[`${kind}-recreated-slot-24`]!;
     const extras=Object.fromEntries(Object.entries(sources).filter(([id])=>id!=='./App.tsx').map(([id,source])=>['src/'+id.slice(2),source]));
     const rows=[{id:1,label:'one'},{id:2,label:'two'}];
@@ -154,8 +154,8 @@ async function browserPage(result: Awaited<ReturnType<typeof production>>, html:
 }
 
 describe('production initial SSR bootstrap', () => {
-  it.each([false,true])('binds an optional component branch and recreates its state in Chrome (%s)',async(active,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([false,true])('binds an optional component branch and recreates its state in Chrome (%s)',async(active)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production(`optional-component-${active}`,`function Card({name}){let n=0;return <article><p>{name}</p><button class="card" onClick={()=>n++}>{n}</button></article>;}
       export function App(){const user=$fetch('/api/user');const request=$track(user);return <main><button class="reload" onClick={()=>request.refresh()}>Reload</button>
         {user?.active&&<Card name={user.name}/>}<footer>Kept</footer></main>;}`,{},{name:'Ada',active});
@@ -176,8 +176,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>next);
   },120_000);
 
-  it.each([false,true])('binds absent branches beside independent request lists in Chrome (%s)',async(active,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([false,true])('binds absent branches beside independent request lists in Chrome (%s)',async(active)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const source=sizeFixtures['request-variable-extents']!['./App.tsx']!;
     const initial={name:'Ada',active,rows:[{id:1,label:'one',active:true},{id:2,label:'two',active:false}],tags:[{id:11,label:'first'}]};
     const result=await production(`variable-extents-${active}`,source,{},initial);
@@ -207,8 +207,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>next);
   },120_000);
 
-  it('binds closed nested structures with varying initial row extents in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('binds closed nested structures with varying initial row extents in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('closed-nested-structures',sizeFixtures['closed-nested-structures']!['./App.tsx']!);
     expect(result.html).toContain('mmd:initial-delivery:');
     const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
@@ -228,8 +228,8 @@ describe('production initial SSR bootstrap', () => {
     });
   },120_000);
 
-  it.each([0,2])('binds and recreates component-owned request structures in Chrome (%i)',async(count,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([0,2])('binds and recreates component-owned request structures in Chrome (%i)',async(count)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const sources=sizeFixtures['request-component-structures']!;
     const extras=Object.fromEntries(Object.entries(sources).filter(([id])=>id!=='./App.tsx').map(([id,source])=>['src/'+id.slice(2),source]));
     const rows=[{id:1,label:'one',active:true,tags:[{id:11,label:'first'},{id:12,label:'second'}]},
@@ -270,8 +270,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>({rows:next}));
   },120_000);
 
-  it('parses streamed regions and adopts their DOM in Chrome', async context => {
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('parses streamed regions and adopts their DOM in Chrome', async () => {
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('streamed-region-browser',`
       import {Group} from '@memoized-dom/data';
       function Pending(){return <i class="pending">Loading</i>;}
@@ -294,8 +294,8 @@ describe('production initial SSR bootstrap', () => {
     });
   },120_000);
 
-  it('creates descendant components from either request-selected branch in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('creates descendant components from either request-selected branch in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('request-branch-descendants',`function Active({name}){let n=0;return <div><p>{name}</p><button class="active" onClick={()=>n++}>{n}</button></div>;}
       function Closed({name}){let n=0;return <article><p>{name}</p><button class="closed" onClick={()=>n++}>{n}</button></article>;}
       export function App(){const user=$fetch('/api/user');const request=$track(user);return <main><button class="reload" onClick={()=>request.refresh()}>Reload</button>
@@ -318,8 +318,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>next);
   },120_000);
 
-  it.each(['request-row-children','request-conditional-list'])('binds composed fetched lists and updates retained nodes in Chrome (%s)',async(name,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each(['request-row-children','request-conditional-list'])('binds composed fetched lists and updates retained nodes in Chrome (%s)',async(name)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const sources=sizeFixtures[name]!;
     const extras=Object.fromEntries(Object.entries(sources).filter(([id])=>id!=='./App.tsx').map(([id,source])=>['src/'+id.slice(2),source]));
     const rows=[{id:1,label:'one',active:true},{id:2,label:'two',active:false}];
@@ -349,8 +349,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>next);
   },60_000);
 
-  it.each([0,2])('binds fetched component rows and retains local state in Chrome (%i)',async(count,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([0,2])('binds fetched component rows and retains local state in Chrome (%i)',async(count)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const sources=sizeFixtures['request-component-list']!;
     const rows=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
     const result=await production(`fetched-component-rows-${count}`,sources['./App.tsx']!,{'src/Row.tsx':sources['./Row.tsx']!,'src/Label.tsx':sources['./Label.tsx']!},{rows});
@@ -379,8 +379,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>({rows:next}));
   },120_000);
 
-  it('binds and recreates structural caller slots in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('binds and recreates structural caller slots in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const sources=sizeFixtures['composition-recreated-structural-children']!;
     const result=await production('recreated-structural-slots',sources['./App.tsx']!,{'src/Shell.tsx':sources['./Shell.tsx']!});
     expect(result.html).toContain('mmd:initial-delivery:');
@@ -400,8 +400,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   },120_000);
-  it.each([0,2].flatMap(count=>['component','module'].map(placement=>({count,placement}))))('binds nested fetched lists and reconciles retained keys in Chrome (%j)',async({count,placement},context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([0,2].flatMap(count=>['component','module'].map(placement=>({count,placement}))))('binds nested fetched lists and reconciles retained keys in Chrome (%j)',async({count,placement})=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const groups=[{id:1,name:'One',rows:[]},{id:2,name:'Two',rows:[{id:21,label:'first'},{id:22,label:'second'}]}].slice(0,count);
     const authored=sizeFixtures['request-nested-list']!['./App.tsx']!;
     const source=placement==='module'?`const user=$fetch('/api/user');${authored.replace("const user=$fetch('/api/user');",'')}`:authored;
@@ -438,8 +438,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>({groups:next}));
   },60_000);
 
-  it('recreates repeated caller-owned slots after SSR binding in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('recreates repeated caller-owned slots after SSR binding in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const sources=sizeFixtures['composition-recreated-children']!;
     const result=await production('recreated-caller-slots',sources['./App.tsx']!,{'src/Shell.tsx':sources['./Shell.tsx']!,'src/Frame.tsx':sources['./Frame.tsx']!});
     expect(result.html).toContain('mmd:initial-delivery:');
@@ -458,8 +458,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   },60_000);
-  it('keeps lazy-only navigation and direct SSR adoption without routed data code in Chrome', async context => {
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('keeps lazy-only navigation and direct SSR adoption without routed data code in Chrome', async () => {
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('lazy-module-only',`import {Detail} from './Detail';export function App(){return <main route="/">
       <nav><a class="home" route-to="/demo/">Home</a><a class="about" route-to="/demo/about">Detail</a></nav>
       <section route="/demo/"><h2>Home</h2></section><Detail route="/demo/about"/></main>;}`,{
@@ -484,8 +484,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/about');
   },60_000);
 
-  it('omits restoration from client-only fetched Group delivery and retains reactive inputs in Chrome', async context => {
-    const executablePath = chromeExecutable();if (!executablePath) {context.skip();return;}
+  it.skipIf(!chromeExecutable())('omits restoration from client-only fetched Group delivery and retains reactive inputs in Chrome', async () => {
+    const executablePath = chromeExecutable();if (!executablePath) {return;}
     const result = await production('client-only-request', `import {Group} from '@memoized-dom/data';
       function Pending(){return <i>Waiting</i>;}export function App(){let name='Ada';let n=0;
       const user=$fetch('/api/user',{query:{name}});return <main><button class="next" onClick={()=>n++}>Next {n}</button>
@@ -508,8 +508,8 @@ describe('production initial SSR bootstrap', () => {
     }, '/demo/', () => ({name}));
   },60_000);
 
-  it.each([0,2])('binds fetched lists inside repeated authored children (%i rows) in Chrome',async(count,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([0,2])('binds fetched lists inside repeated authored children (%i rows) in Chrome',async(count)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production(`structural-child-list-${count}`,`import {Shell} from './Shell';export function App(){
       const user=$fetch('/api/user');let n=0;return <main><button class="next" onClick={()=>n++}>Next</button><Shell>
         <ul>{user?.rows?.map((row,index)=><li key={row.id}>{index}:{row.label}:{n}</li>)}</ul><h3>After {n}</h3>
@@ -531,8 +531,8 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it.each(['Ada',''])('binds request-selected conditional children and recreates branches in Chrome (name=%s)',async(name,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each(['Ada',''])('binds request-selected conditional children and recreates branches in Chrome (name=%s)',async(name)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production(`structural-child-conditional-${name||'empty'}`,`import {Shell} from './Shell';export function App(){
       const user=$fetch('/api/user');let open=true;let n=0;return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button>
         <button class="next" onClick={()=>n++}>Next</button><Shell>
@@ -557,8 +557,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   },60_000);
-  it.each([0,2])('binds repeated live slots before and after %i fetched rows in Chrome',async(count,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([0,2])('binds repeated live slots before and after %i fetched rows in Chrome',async(count)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production(`live-slot-list-suffix-${count}`,`import {Shell} from './Shell';
       export function App(){let n=0;return <main><Shell><button onClick={()=>n++}>{n}</button></Shell></main>;}`,{
       'src/Shell.tsx':`export function Shell({children}){const user=$fetch('/api/user');
@@ -583,8 +583,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   },60_000);
-  it('binds live forwarded children, caller callbacks and refs without recreating nodes in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('binds live forwarded children, caller callbacks and refs without recreating nodes in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('live-forwarded-children',`import {Shell} from './Shell';
       export function App(){let n=0;let input:HTMLInputElement|null=null;
         function next(){n++;}
@@ -609,8 +609,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   },60_000);
-  it('captures a mount handle with real DOM nodes and permits remount after unmount in Chrome', async context => {
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('captures a mount handle with real DOM nodes and permits remount after unmount in Chrome', async () => {
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('captured-mount',`export function App(){return <><header>Header</header><main>Ready</main><footer>Footer</footer></>;}`,{
       'src/main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';
         const rendered=mount('root',App);
@@ -637,8 +637,8 @@ describe('production initial SSR bootstrap', () => {
       expect(checks.text).toBe('HeaderReadyFooter');
     });
   },60_000);
-  it('preserves written let state while unwritten prop derivations refresh after SSR', async context => {
-    const executablePath = chromeExecutable(); if (!executablePath) { context.skip(); return; }
+  it.skipIf(!chromeExecutable())('preserves written let state while unwritten prop derivations refresh after SSR', async () => {
+    const executablePath = chromeExecutable(); if (!executablePath) {  return; }
     const result = await production('writable-prop-initializer', `
       function Counter({seed}) {
         let owned = seed * 2;
@@ -664,8 +664,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   }, 60_000);
-  it('retains static child slots as HTML while binding the counter in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('retains static child slots as HTML while binding the counter in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('static-child-slots',`import {Shell} from './Shell';export function App(){let n=0;
       return <main><button onClick={()=>n++}>{n}</button><Shell><h2>One</h2></Shell>
         <Shell><p>Two</p><b>Extra</b></Shell></main>;}`,{
@@ -689,8 +689,8 @@ describe('production initial SSR bootstrap', () => {
       expect(requests).toEqual([]);
     });
   },60_000);
-  it.each([0,2])('retains fixed siblings around %i fetched rows in Chrome',async(count,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([0,2])('retains fixed siblings around %i fetched rows in Chrome',async(count)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const initial=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
     const result=await production(`request-siblings-${count}`,`export function App(){const user=$fetch('/api/user');
       const request=$track(user);let n=0;let show=true;let fixed=['fixed'];
@@ -725,7 +725,7 @@ describe('production initial SSR bootstrap', () => {
       expect(await page.evaluate(()=>(window as unknown as {footer:Element}).footer===document.querySelector('footer'))).toBe(true);
     },'/demo/',()=>({name:'Ada',rows:next}));
   },60_000);
-  it('binds a composed lifetime owner and reruns its effect in Chrome',async context=>{
+  it.skipIf(!chromeExecutable())('binds a composed lifetime owner and reruns its effect in Chrome',async () =>{
     const result=await production('lifetime-owner',`function Panel(){let n=0;let node=null;
       $effect(()=>{if(node)node.title='count:'+n;});
       $cleanup(()=>{document.body.dataset.cleaned='yes';});
@@ -735,7 +735,7 @@ describe('production initial SSR bootstrap', () => {
     const response=await result.app.fetch(new Request('https://app.test/demo/'));
     expect(response.status).toBe(200);const html=await response.text();
     expect(html).not.toContain('mmd:r:');
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     await browserPage(result,html,executablePath,async page=>{
       expect(await page.$eval('input',node=>node.title)).toBe('count:0');
       await page.click('button');
@@ -746,10 +746,10 @@ describe('production initial SSR bootstrap', () => {
       })).toEqual({retained:true,created:[]});
     });
   },60_000);
-  it.each([
+  it.skipIf(!chromeExecutable()).each([
     {userName:'Ada',placement:'component'},{userName:'',placement:'component'},
     {userName:'Ada',placement:'module'},{userName:'',placement:'module'},
-  ])('binds settled fetched composition without creating nodes or fetching again in Chrome (%j)',async({userName,placement},context)=>{
+  ])('binds settled fetched composition without creating nodes or fetching again in Chrome (%j)',async({userName,placement})=>{
     const declaration=`const user=$fetch('/api/user');`;
     const result=await production(`request-bound-${placement}-${userName||'empty'}`,`import {Card} from './Card';
       ${placement==='module'?declaration:''}
@@ -763,7 +763,7 @@ describe('production initial SSR bootstrap', () => {
     expect(html).toContain('application/mmd+json');expect(html).not.toContain('mmd:r:');
     const scripts=result.files.filter(file=>file.type==='chunk').map(file=>file.code).join('\n');
     expect(scripts).not.toContain('hydration runtime is not installed');
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     await browserPage(result,html,executablePath,async(page,requests)=>{
       expect(await page.$eval('h2',node=>node.textContent)).toBe(userName);
       expect(await page.$eval('p',node=>node.textContent)).toBe('Kept');
@@ -779,7 +779,7 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('serves fetched composition with zero JavaScript, preserved CSS and no browser fetch in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('serves fetched composition with zero JavaScript, preserved CSS and no browser fetch in Chrome', async () => {
     const result = await production('request-only', `import './theme.css';import {Card} from './Card';
       export function App(){const user=$fetch('/api/user');return <main><h1>Directory</h1><Card name={user?.name}/></main>;}`, {
       'src/theme.css': 'h2{color:rgb(1,2,3)}',
@@ -796,7 +796,7 @@ describe('production initial SSR bootstrap', () => {
     expect(html).toMatch(/rel="stylesheet"[^>]+href="\/demo\/assets\//);
     expect(html).not.toMatch(/<script|modulepreload|application\/mmd\+json|<!--|initial-delivery/);
     const executablePath = chromeExecutable();
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     await browserPage(result, html, executablePath, async (page, apiRequests) => {
       expect(await page.$eval('h2', node => [node.textContent, getComputedStyle(node).color]))
         .toEqual(['Hello Ada', 'rgb(1, 2, 3)']);
@@ -805,9 +805,9 @@ describe('production initial SSR bootstrap', () => {
     });
   }, 60_000);
 
-  it('preserves lazy route lifecycles with compiler-selected production hydration in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('preserves lazy route lifecycles with compiler-selected production hydration in Chrome', async () => {
     const executablePath = chromeExecutable();
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     const result = await production('routed-lifecycles', routedApp, {
       'src/Detail.tsx': routedDetail, 'src/opaque.mjs': routedOpaque,
     });
@@ -841,9 +841,9 @@ describe('production initial SSR bootstrap', () => {
     expect(html).not.toMatch(/<script|modulepreload|application\/mmd\+json|mmd:r:|mmd:bootstrap|initial-delivery/);
   }, 60_000);
 
-  it('loads the binding entry, retains initial nodes and handles later creation in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('loads the binding entry, retains initial nodes and handles later creation in Chrome', async () => {
     const executablePath = chromeExecutable();
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     const result = await production('interactive', `export function App(){let n=0;let items=[];let open=true;return <main>
       <h1>Static shell</h1><button class="add" onClick={()=>{n++;items=[...items,n];}}>Add</button><p>{n}</p>
       <button class="toggle" onClick={()=>open=!open}>Toggle</button>{open?<section><b>{n}</b></section>:<i>Closed</i>}
@@ -868,8 +868,8 @@ describe('production initial SSR bootstrap', () => {
     });
   }, 60_000);
 
-  it('binds composed SSR nodes and creates later child instances through the same factory in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('binds composed SSR nodes and creates later child instances through the same factory in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const cards=Array.from({length:24},(_,index)=>`<article data-card="${index}"><h2>Card ${index}</h2><p>Ready.</p></article>`).join('');
     const result=await production('future-composition',`import {Card} from './Card';export function App(){let open=true;let n=1;
       return <main><h1>Static surroundings</h1><button class="toggle" onClick={()=>open=!open}>Toggle</button>
@@ -903,7 +903,7 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('restores fixed request data and retains server nodes through initial bindings in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('restores fixed request data and retains server nodes through initial bindings in Chrome', async () => {
     const cards = Array.from({length:16}, (_, index) =>
       `<article data-card="${index}"><h2>Card ${index}</h2><p>Ready &amp; waiting.</p></article>`).join('');
     const result = await production('request-data', `export function App(){const user=$fetch('/api/user');let count=0;return <main>
@@ -917,7 +917,7 @@ describe('production initial SSR bootstrap', () => {
     expect(result.files.filter(file => file.type === 'chunk').map(file => file.code).join('\n'))
       .not.toContain('Ready &amp; waiting.');
     const executablePath = chromeExecutable();
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     await browserPage(result, html, executablePath, async (page, apiRequests) => {
       expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
       expect(await page.$$eval('article', nodes => nodes.map(node => node.textContent)))
@@ -935,8 +935,8 @@ describe('production initial SSR bootstrap', () => {
     });
   }, 60_000);
 
-  it.each(['Ada',''])('binds request-selected branches and creates later branches in Chrome (name=%s)',async(name,context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each(['Ada',''])('binds request-selected branches and creates later branches in Chrome (name=%s)',async(name)=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production(`request-condition-${name?'active':'empty'}`,`export function App(){const user=$fetch('/api/user');let show=true;let n=0;
       return <main><h1>{user?.name}</h1><button class="toggle" onClick={()=>show=!show}>Toggle</button>
         <button class="add" onClick={()=>n++}>{n}</button>
@@ -970,8 +970,8 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('merges live bindings across repeated request-selected component branches in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('merges live bindings across repeated request-selected component branches in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('request-condition-repeated',`function Card({active,label}){
       return <section>{active?<p title={label}>{label}</p>:<b>Hidden</b>}</section>;}
       export function App(){const user=$fetch('/api/user');let n=0;return <main><button onClick={()=>n++}>Add</button>
@@ -990,8 +990,8 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('binds an initially empty local conditional beside settled request text in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('binds an initially empty local conditional beside settled request text in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('request-local-condition-empty',`export function App(){const user=$fetch('/api/user');let show=false;let n=0;
       return <main><h1>{user?.name}</h1><button class="toggle" onClick={()=>show=!show}>Toggle</button>
         {show&&<p>{user?.name}:{n}</p>}{n}<button class="add" onClick={()=>n++}>Add</button></main>;}`);
@@ -1009,9 +1009,9 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it.each([{count:0,positional:false,placement:'component'},{count:2,positional:false,placement:'component'},
-    {count:2,positional:true,placement:'component'},{count:2,positional:false,placement:'module'}])('binds fetched rows and shares later reconciliation in Chrome (%j)',async({count,positional,placement},context)=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable()).each([{count:0,positional:false,placement:'component'},{count:2,positional:false,placement:'component'},
+    {count:2,positional:true,placement:'component'},{count:2,positional:false,placement:'module'}])('binds fetched rows and shares later reconciliation in Chrome (%j)',async({count,positional,placement})=>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const initialRows=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
     const declaration=`const user=$fetch('/api/user');`;
     const result=await production(`fetched-rows-${placement}-${count}-${positional}`,`${placement==='module'?declaration:''}export function App(){${placement==='component'?declaration:''}const request=$track(user);let suffix='!';let selected='';
@@ -1050,8 +1050,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>({name:'Ada',rows:next}));
   },60_000);
 
-  it('keeps untransferred query lists on general adoption without duplicate rows in Chrome',async context=>{
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('keeps untransferred query lists on general adoption without duplicate rows in Chrome',async () =>{
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const data={name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]};
     const result=await production('fetched-query-adoption',`export function App(){const user=$fetch('/api/user',{query:{id:7}});let suffix='!';
       return <main><h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>
@@ -1067,8 +1067,8 @@ describe('production initial SSR bootstrap', () => {
     },'/demo/',()=>data);
   },60_000);
 
-  it('selects general keyed-list adoption and recovers unproved rows in Chrome', async context => {
-    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+  it.skipIf(!chromeExecutable())('selects general keyed-list adoption and recovers unproved rows in Chrome', async () => {
+    const executablePath=chromeExecutable();if(!executablePath){return;}
     const result=await production('general-unproved-list',`export function App(){const user=$fetch('/api/user');
       let rows=[{id:1,label:'one'},{id:2,label:'two'}];let show=false;return <main><h1>{user?.name}</h1>
         <button class="reverse" onClick={()=>rows=rows.toReversed()}>Reverse</button>
@@ -1094,7 +1094,7 @@ describe('production initial SSR bootstrap', () => {
     });
   },60_000);
 
-  it('retains routing, Group request presentation and client navigation in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('retains routing, Group request presentation and client navigation in Chrome', async () => {
     const result = await production('request-routes', `import {Group} from '@memoized-dom/data';function Pending(){return <p>Loading</p>;}
       export function App(){const user=$fetch('/api/user');return <main route="/">
       <nav><a class="home" route-to="/demo/">Home</a><a class="about" route-to="/demo/about">About</a></nav>
@@ -1108,7 +1108,7 @@ describe('production initial SSR bootstrap', () => {
     expect(html.replace(/<!--[^]*?-->/g, '')).toContain('<h1>Ada</h1>');
     expect(html).toContain('application/mmd+json');
     const executablePath = chromeExecutable();
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     await browserPage(result, html, executablePath, async (page, apiRequests) => {
       expect(await page.$eval('h1', node => node.textContent)).toBe('Ada');
       await page.click('.about'); await page.waitForSelector('h2');

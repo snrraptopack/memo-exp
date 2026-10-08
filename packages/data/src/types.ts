@@ -206,7 +206,7 @@ export interface TransparentFetchFunction {
 }
 
 export interface DataRuntimeOptions {
-  readonly fetch?: typeof globalThis.fetch;
+  readonly fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   readonly baseURL?: string | URL;
 }
 

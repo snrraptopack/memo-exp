@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'bun:test';
 import {
   $fetch,
   $forms,
@@ -63,12 +64,12 @@ describe('optimistic', () => {
     for (const letter of 'abcd') submit(letter);
     expect(rows.map(row => row.text)).toEqual(['a', 'b', 'c', 'd']);
     work.get('c')!.resolve({ id: 'server-c', text: 'C' });
-    await vi.waitFor(() => expect(rows[2]).toEqual({ id: 'server-c', text: 'C', pending: false }));
+    await waitFor(() => expect(rows[2]).toEqual({ id: 'server-c', text: 'C', pending: false }));
     work.get('a')!.reject(new Error('a failed'));
-    await vi.waitFor(() => expect(rows).toHaveLength(3));
+    await waitFor(() => expect(rows).toHaveLength(3));
     work.get('d')!.resolve({ id: 'server-d', text: 'D' });
     work.get('b')!.resolve({ id: 'server-b', text: 'B' });
-    await vi.waitFor(() => expect(rows).toEqual([
+    await waitFor(() => expect(rows).toEqual([
       { id: 'server-b', text: 'B', pending: false },
       { id: 'server-c', text: 'C', pending: false },
       { id: 'server-d', text: 'D', pending: false },
@@ -102,7 +103,7 @@ describe('optimistic', () => {
     for (const letter of ['d', 'b', 'f', 'a', 'e', 'c']) {
       if (failures.has(letter)) work.get(letter)!.reject(new Error(`${letter} failed`));
       else work.get(letter)!.resolve(letter);
-      await vi.waitFor(() => expect(count).toBe(
+      await waitFor(() => expect(count).toBe(
         6 - ['d', 'b', 'f', 'a', 'e', 'c'].slice(0, ['d', 'b', 'f', 'a', 'e', 'c'].indexOf(letter) + 1)
           .filter(item => failures.has(item)).length,
       ));
@@ -122,7 +123,7 @@ describe('optimistic', () => {
     });
     const runtime = createDataRuntime({
       baseURL: 'https://example.test',
-      fetch: fetcher as typeof fetch,
+      fetch: fetcher as FetchStub,
     });
     let votes = 0;
     const ids: string[] = [];
@@ -147,14 +148,14 @@ describe('optimistic', () => {
     expect(first.pending).toBe(true);
     expect(votes).toBe(3);
     expect(new Set(ids).size).toBe(3);
-    await vi.waitFor(() => expect(responses.size).toBe(3));
+    await waitFor(() => expect(responses.size).toBe(3));
 
     responses.get('second')!.resolve(Response.json(2));
-    await vi.waitFor(() => expect(second.status).toBe('success'));
+    await waitFor(() => expect(second.status).toBe('success'));
     responses.get('first')!.resolve(Response.json({ message: 'denied' }, { status: 409 }));
-    await vi.waitFor(() => expect(first.status).toBe('error'));
+    await waitFor(() => expect(first.status).toBe('error'));
     responses.get('third')!.resolve(Response.json(3));
-    await vi.waitFor(() => expect(third.status).toBe('success'));
+    await waitFor(() => expect(third.status).toBe('success'));
 
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(votes).toBe(2);
@@ -194,18 +195,18 @@ describe('optimistic', () => {
     };
 
     form.submit(fields('invalid'));
-    await vi.waitFor(() => expect(form.errors[0]?.kind).toBe('parse'));
+    await waitFor(() => expect(form.errors[0]?.kind).toBe('parse'));
     expect(count).toBe(0);
 
     form.submit(fields('a'));
     form.submit(fields('b'));
-    await vi.waitFor(() => expect(count).toBe(2));
+    await waitFor(() => expect(count).toBe(2));
     expect(form.pending).toBe(true);
     work.get('b')!.reject(new Error('b rejected'));
-    await vi.waitFor(() => expect(count).toBe(1));
+    await waitFor(() => expect(count).toBe(1));
     expect(form.errors).toMatchObject([{ kind: 'submit', message: 'b rejected' }]);
     work.get('a')!.resolve(1);
-    await vi.waitFor(() => expect(form.pending).toBe(false));
+    await waitFor(() => expect(form.pending).toBe(false));
     expect(count).toBe(1);
   });
 
@@ -213,7 +214,7 @@ describe('optimistic', () => {
     const fetcher = vi.fn(async () => Response.json({ id: 'saved-message' }));
     const runtime = createDataRuntime({
       baseURL: 'https://example.test',
-      fetch: fetcher as typeof fetch,
+      fetch: fetcher as FetchStub,
     });
     const schema: StandardSchemaV1<unknown, { message: string }> = {
       '~standard': {
@@ -239,11 +240,11 @@ describe('optimistic', () => {
     const data = new FormData();
     data.set('message', 'hello');
     form.submit(data);
-    await vi.waitFor(() => expect(form.pending).toBe(false));
+    await waitFor(() => expect(form.pending).toBe(false));
     expect(form.errors).toEqual([]);
     expect(form.result).toEqual({ id: 'saved-message' });
     expect(temporary).toBe('saved-message');
-    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(1);
     runtime.clear();
   });
 
@@ -265,14 +266,14 @@ describe('optimistic', () => {
     const response = deferred<Response>();
     const runtime = createDataRuntime({
       baseURL: 'https://example.test',
-      fetch: (() => response.promise) as typeof fetch,
+      fetch: (() => response.promise) as FetchStub,
     });
     const source = runtime.$fetch('/vote', { method: 'POST' });
     const submit = optimistic({ action: () => source, apply: () => () => {} });
     expect(submit(undefined)).toBe(source);
     expect(() => submit(undefined)).toThrow('new operation');
     response.resolve(Response.json({ ok: true }));
-    await vi.waitFor(() => expect(source.status).toBe('success'));
+    await waitFor(() => expect(source.status).toBe('success'));
     expect(() => submit(undefined)).toThrow('new operation');
     runtime.clear();
   });

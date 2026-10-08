@@ -1,4 +1,5 @@
-import { expect, it, vi } from 'vitest';
+import { type FetchStub } from '../../../test-support/helpers';
+import { expect, it, vi } from 'bun:test';
 import { createCoreDataRuntime } from '../src/runtime-core';
 import { createDataRuntime, exposeDataRuntime } from '../src/client';
 import { $fetch } from '../src/index';
@@ -17,7 +18,7 @@ it('adds body encoding to the same runtime after a compiled GET already exists',
     const get = runWithDataRuntime(core, () => createBodylessSource('/user'));
     expect(await core.settle()).toBe(true);
     const runtime = exposeDataRuntime(core);
-    expect(runtime).toBe(core);
+    expect(core).toBe(runtime);
     const post = runtime.$fetch('/action',{method:'POST',body:{name:'Ada'}});
     expect(await core.settle()).toBe(true);
     expect(requests[0]!.body).toBeUndefined();
@@ -56,7 +57,7 @@ it('does not evaluate a paused body and preserves GET body rejection', () => {
 });
 
 it('delegates through a foreign runtime facade without requiring its private fetch store', async () => {
-  const fetcher = vi.fn<typeof fetch>(async () => Response.json({ok:true}));
+  const fetcher = vi.fn<FetchStub>(async () => Response.json({ok:true}));
   const owner = createDataRuntime({fetch:fetcher});
   const foreign = {...owner};
   try {

@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it, vi } from 'bun:test';
 import { compile } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -32,12 +33,12 @@ afterEach(() => {
   document.body.replaceChildren();
   resetAccessTable();
   resetScheduler();
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 it.each(['inline', 'component', 'conditional'])('replays %s callback expressions once per row and routes their reads', async kind => {
   const record = vi.fn();
-  vi.stubGlobal('__record', record);
+  stubGlobal('__record', record);
   const specifier = `./fixtures/out/list-callback-prelude/${kind}.ts`;
   const { App } = await import(specifier);
   setScheduler(run => run());

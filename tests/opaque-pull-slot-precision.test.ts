@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { stubGlobal, unstubAllGlobals, spyOnAccessor } from '../test-support/helpers';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compileModules } from '@memoized-dom/compiler';
@@ -53,13 +54,13 @@ beforeAll(() => {
 beforeEach(() => {
   document.body.replaceChildren(); resetAccessTable();
   frames.length=0; probe.__opaquePullClock={value:10};probe.__opaquePullFailure=false;
-  vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
+  stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
 });
 afterEach(() => {
   vi.restoreAllMocks();
   _internals().registry.forEach((_,id)=>unregister(id));
   while(frames.length)frames.shift()!(performance.now());
-  resetAccessTable();resetScheduler();vi.unstubAllGlobals();delete probe.__opaquePullClock;delete probe.__opaquePullCallback;delete probe.__opaquePullFailure;
+  resetAccessTable();resetScheduler();unstubAllGlobals();delete probe.__opaquePullClock;delete probe.__opaquePullCallback;delete probe.__opaquePullFailure;
 });
 
 it.each([false,true])('recovers a failed render before narrowing the next pull (deferred=%s)',async deferred=>{
@@ -83,13 +84,13 @@ it.each([false,true])('recovers a failed render before narrowing the next pull (
 
 it.each(['assigned','registered','throwing'] as const)('keeps external %s callbacks reactive',async kind=>{
   setScheduler(run=>run());
-  vi.stubGlobal('__registerOpaquePull',(callback:()=>void)=>{probe.__opaquePullCallback=callback;});
+  stubGlobal('__registerOpaquePull',(callback:()=>void)=>{probe.__opaquePullCallback=callback;});
   const specifier=`./fixtures/out/opaque-pull-slots/callback-${kind}.ts`;
   const {App}=await import(specifier);
   document.body.append(App('Callback',null));
   const a=document.querySelector('#a')!.firstChild as Text;
   const b=document.querySelector('#b')!.firstChild as Text;
-  const aRead=vi.spyOn(a,'data','get'),bRead=vi.spyOn(b,'data','get');
+  const aRead=spyOnAccessor(a,'data','get'),bRead=spyOnAccessor(b,'data','get');
   if(kind==='throwing')expect(()=>probe.__opaquePullCallback!()).toThrow('after write');
   else probe.__opaquePullCallback!();
   if(kind==='registered') {
@@ -118,7 +119,7 @@ it.each([false,true])('pulls only unknown output and merges real writes (deferre
   const a=roots[0]!.querySelector('#a')!.firstChild as Text;
   const b=roots[0]!.querySelector('#b')!.firstChild as Text;
   const label=roots[0]!.querySelector('#label')!.firstChild as Text;
-  const reads=[a,b,label].map(node=>vi.spyOn(node,'data','get'));
+  const reads=[a,b,label].map(node=>spyOnAccessor(node,'data','get'));
   const pull=()=>{const frame=frames.shift();expect(frame).toBeTypeOf('function');frame!(performance.now());};
   probe.__opaquePullClock!.value=20;pull();flush();
   reads.forEach(read=>expect(read).not.toHaveBeenCalled());

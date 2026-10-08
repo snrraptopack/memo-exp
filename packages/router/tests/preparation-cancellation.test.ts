@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import {
   createRouteRuntime,
   registerRoutedPreparation,
@@ -54,11 +55,11 @@ describe('route preparation cancellation', () => {
         expect(error).toMatchObject({ name: 'AbortError' });
         canceled = true;
       });
-      await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+      await waitFor(() => expect(release).toBeTypeOf('function'));
       const next = runtime.navigate('/report', { query: { version: 'new' } });
       if (next.status !== 'preparing') throw new Error('Expected preparation');
       await next.finished;
-      await vi.waitFor(() => expect(canceled).toBe(true));
+      await waitFor(() => expect(canceled).toBe(true));
       expect(serializeRoutedPreparationState(runtime)?.entries[0]?.data).toBe('new data');
       release('stale data');
       await completion;
@@ -89,9 +90,9 @@ describe('route preparation cancellation', () => {
         expect(error).toMatchObject({ name: 'AbortError' });
         canceled = true;
       });
-      await vi.waitFor(() => expect(settle).toHaveBeenCalledOnce());
+      await waitFor(() => expect(settle).toHaveBeenCalledTimes(1));
       runtime.navigate('/other');
-      await vi.waitFor(() => expect(canceled).toBe(true));
+      await waitFor(() => expect(canceled).toBe(true));
       reject(new Error('late failure'));
       await completion;
       expect(child).not.toHaveBeenCalled();
@@ -109,10 +110,10 @@ describe('route preparation cancellation', () => {
     }] });
     const result = runtime.navigate('/disposed');
     if (result.status !== 'preparing') throw new Error('Expected preparation');
-    const completion = expect(result.finished).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+    const completion = result.finished.then(() => { throw new Error('Expected promise rejection'); }, error => error);
+    await waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
     runtime.dispose();
-    await completion;
+    expect(await completion).toMatchObject({ name: 'AbortError' });
     expect(serializeRoutedPreparationState(runtime)).toBeUndefined();
   });
 

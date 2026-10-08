@@ -1,10 +1,11 @@
-// @vitest-environment node
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+// Runs with Bun globals; no DOM preload.
 /**
  * Render session contract: every renderer reports how data settlement
  * concluded, and one render-owned abort (caller signal, stream reader
  * cancellation, or hard deadline) stops route preparation and data work.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import {
   renderToReadableStream,
   render,
@@ -51,7 +52,7 @@ beforeAll(async () => {
 function jsonFetch(body: unknown): typeof fetch {
   return (async () => new Response(JSON.stringify(body), {
     headers: { 'content-type': 'application/json' },
-  })) as unknown as typeof fetch;
+  })) as unknown as FetchStub;
 }
 
 /** A fetch that never settles but records the signal it was handed. */
@@ -105,7 +106,7 @@ describe('render session', () => {
       fetch: request.fetch,
     }).getReader();
     const read = reader.read();
-    await expect.poll(() => request.signals.length).toBe(1);
+    await waitFor(async () => expect(await (() => request.signals.length)()).toBe(1));
 
     await reader.cancel(new Error('consumer went away'));
     expect(request.signals[0]!.aborted).toBe(true);
@@ -119,7 +120,7 @@ describe('render session', () => {
       routedContext: routedContext('/reports/7'),
       signal: abort.signal,
     });
-    await expect.poll(() => preparationSignals.length).toBe(1);
+    await waitFor(async () => expect(await (() => preparationSignals.length)()).toBe(1));
 
     abort.abort(new Error('client disconnected'));
     await expect(rendering).rejects.toThrow('client disconnected');

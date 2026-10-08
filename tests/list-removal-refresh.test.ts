@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { createListRegion } from '@memoized-dom/runtime/testing';
 
 for (const order of [[1, 2], [2, 4]]) {

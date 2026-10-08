@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import {
   createApplicationRuntime, getActiveApplicationRuntime, has, markDirty, onEntityDispose,
   onRegistryChange, register, registeredIds, registryGeneration, setActiveApplicationRuntime,

@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, afterEach, expect, it, vi } from 'vitest';
+import { stubGlobal, unstubAllGlobals, spyOnAccessor } from '../test-support/helpers';
+import { beforeAll, beforeEach, afterEach, expect, it, vi } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,13 +27,13 @@ beforeEach(() => {
   _internals().registry.forEach((_, id) => unregister(id));
   setScheduler(fn => fn());
   document.body.innerHTML = '';
-  vi.stubGlobal('__textNormalizations', 0);
+  stubGlobal('__textNormalizations', 0);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   resetScheduler();
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 async function mount(value: unknown, kind = 'inline') {
@@ -49,7 +50,7 @@ it('replays mutable string conversion while avoiding unchanged DOM reads and wri
   let conversions = 0;
   const app = await mount({ toString() { conversions++; return label; } });
   expect(app.text.data).toBe('first');
-  const getter = vi.spyOn(app.text, 'data', 'get');
+  const getter = spyOnAccessor(app.text, 'data', 'get');
   const observer = new MutationObserver(() => {});
   observer.observe(app.text, { characterData: true });
 

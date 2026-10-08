@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { parseHydrationMarker, parseRootHydrationIdentity } from '../packages/runtime/src/hydration-marker';
 
 it('recognizes root identities while preserving attribute and malformed-marker rules', () => {

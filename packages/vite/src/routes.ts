@@ -1,5 +1,6 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { removeDeclaration } from './declarations';
 
 const PARAMETER_SEGMENT = /^:([A-Za-z_$][A-Za-z0-9_$]*)$/;
 
@@ -46,12 +47,12 @@ export async function writeRoutesDeclaration(
   patterns: readonly string[],
 ): Promise<void> {
   const output = routesDeclarationFile(root);
-  const previous = await readFile(output, 'utf8').catch(() => undefined);
   if (patterns.length === 0) {
     // Client and SSR graph refreshes can remove the same stale declaration.
-    if (previous !== undefined) await rm(output, { force: true });
+    await removeDeclaration(output);
     return;
   }
+  const previous = await readFile(output, 'utf8').catch(() => undefined);
   const entries = [...new Set(patterns)].sort().map(routeEntry).join('\n');
   const content = `declare module '@memoized-dom/router' {
   interface RouteTable {

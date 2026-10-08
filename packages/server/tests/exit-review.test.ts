@@ -12,8 +12,8 @@
  * 3. CSR-equivalence matrix: covered by parity.test.ts (slices 1.5/1.6).
  * 4. Every render disposes its context, including on thrown errors.
  */
-// @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest';
+// Runs with Bun globals; no DOM preload.
+import { afterEach, describe, expect, it } from 'bun:test';
 import {
   runWithApplicationRuntime,
 } from '@memoized-dom/runtime';

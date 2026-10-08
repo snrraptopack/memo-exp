@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compile } from '@memoized-dom/compiler';
@@ -57,7 +57,7 @@ it.each([true,false])('recovers additional server rows and keeps later insertion
   const {App,host}=await setup(output=>output.replace('<!--/mmd--></ul>',
     '<!--mmd:w:App/items:n:3--><li>3:unexpected</li><!--/mmd--></ul>'),positional);
   mounted=mount('root',App,{onHydrateError});
-  expect(onHydrateError).toHaveBeenCalledOnce();
+  expect(onHydrateError).toHaveBeenCalledTimes(1);
   expect(onHydrateError.mock.calls[0]![0].message).toContain('additional server row content');
   expect([...host.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['0:a','1:b','2:b']);
   host.querySelector<HTMLButtonElement>('.append')!.click();

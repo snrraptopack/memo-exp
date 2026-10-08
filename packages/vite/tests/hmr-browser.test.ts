@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import { createServer, type ViteDevServer } from 'vite';
 import memoizedDom from '../src';
 
@@ -44,10 +44,10 @@ afterEach(async () => {
 }, 60_000);
 
 describe('browser HMR', () => {
-  it('propagates helper edits and replaces component text without reloading or duplicating DOM', async (context) => {
+  it.skipIf(!chromeExecutable())('propagates helper edits and replaces component text without reloading or duplicating DOM', async () => {
     const executablePath = chromeExecutable();
     if (executablePath === null) {
-      context.skip('Chrome is unavailable; set MMD_CHROME_PATH to run this test');
+
       return;
     }
 
@@ -131,10 +131,10 @@ describe('browser HMR', () => {
     }))).toEqual({ loads: '1', mains: 1, text: 'aftersecond' });
   }, 45_000);
 
-  it('updates a lazy route and reuses its new factory after leaving and returning', async context => {
+  it.skipIf(!chromeExecutable())('updates a lazy route and reuses its new factory after leaving and returning', async () => {
     const executablePath = chromeExecutable();
     if (executablePath === null) {
-      context.skip('Chrome is unavailable; set MMD_CHROME_PATH to run this test');
+
       return;
     }
     fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-lazy-hmr-'));

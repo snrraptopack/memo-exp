@@ -1,4 +1,5 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { describe, expect, expectTypeOf, it, vi } from 'bun:test';
 import { RequestError } from '../src';
 import { createDataRuntime } from '../src/client';
 import { disposeFetchResource } from '../src/resource';
@@ -15,7 +16,7 @@ function json(data: unknown, status = 200): Response {
 }
 
 async function settled<T>(resource: FetchResource<T>): Promise<void> {
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(resource.pending).toBe(false);
     expect(['success', 'error']).toContain(resource.status);
   });
@@ -25,7 +26,7 @@ describe('$fetch', () => {
   it('restores parameterized function GETs without another fetch or exposing arguments', async () => {
     const server = createDataRuntime({
       baseURL: 'https://app.test/',
-      fetch: (async () => json({ id: 42, createdAt: '2026-10-02T12:00:00.000Z' })) as typeof fetch,
+      fetch: (async () => json({ id: 42, createdAt: '2026-10-02T12:00:00.000Z' })) as FetchStub,
     });
     const source = server.$fetch('/_fn/stories/story', { query: { id: 42, label: 'private-query-value' } });
     await settled(source);
@@ -33,7 +34,7 @@ describe('$fetch', () => {
     expect(payload.sources).toHaveLength(1);
     expect(JSON.stringify(payload)).not.toContain('private-query-value');
     const fetcher = vi.fn(async () => json({ id: 43 }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     client.restoreState(payload);
     const adopted = client.$fetch('/_fn/stories/story', { query: { label: 'private-query-value', id: 42 } });
     expect(adopted.data).toEqual({ id: 42, createdAt: '2026-10-02T12:00:00.000Z' });
@@ -46,7 +47,7 @@ describe('$fetch', () => {
   });
   it('loads and decodes JSON into an honest resource state', async () => {
     const fetcher = vi.fn(async () => json([{ id: '1', name: 'Ada' }]));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const users = client.$fetch<{ id: string; name: string }[]>('/api/users');
     expect(users.status).toBe('pending');
@@ -63,13 +64,13 @@ describe('$fetch', () => {
     let resolve!: (response: Response) => void;
     const response = new Promise<Response>(done => { resolve = done; });
     const fetcher = vi.fn(() => response);
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const first = client.$fetch<string[]>('/api/users');
     const second = client.$fetch<string[]>('/api/users');
     expect(fetcher).toHaveBeenCalledTimes(1);
 
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     resolve(json(['Ada']));
     await settled(first);
     await settled(second);
@@ -84,13 +85,13 @@ describe('$fetch', () => {
     disposeFetchResource(third);
 
     const afterUnmount = client.$fetch<string[]>('/api/users');
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     disposeFetchResource(afterUnmount);
   });
 
   it('normalizes query identity before sharing', async () => {
     const fetcher = vi.fn(async () => json(['Ada']));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const first = client.$fetch<string[]>('/api/users', {
       query: { search: 'Ada', page: 1 },
@@ -114,7 +115,7 @@ describe('$fetch', () => {
       calls.push(init ?? {});
       return json({ votes: 43 });
     });
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     const input = { id: 1 };
 
     const vote = client.$fetch<{ votes: number }>('/api/vote', {
@@ -134,7 +135,7 @@ describe('$fetch', () => {
 
   it('does not cache non-GET requests unless caching is explicit', async () => {
     const fetcher = vi.fn(async () => json({ ok: true }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const first = client.$fetch('/api/vote', {
       method: 'POST',
@@ -152,7 +153,7 @@ describe('$fetch', () => {
 
   it('uses method and body in explicitly cached request identity', async () => {
     const fetcher = vi.fn(async () => json({ ok: true }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     const cache = { scope: 'app' as const };
 
     const first = client.$fetch('/api/value', {
@@ -187,7 +188,7 @@ describe('$fetch', () => {
 
   it('does not let an explicit key erase non-GET body identity', async () => {
     const fetcher = vi.fn(async () => json({ ok: true }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     const options = {
       method: 'POST' as const,
       key: 'vote',
@@ -213,7 +214,7 @@ describe('$fetch', () => {
 
   it('does not transfer request bodies without an explicit public identity', async () => {
     const fetcher = vi.fn(async () => json({ ok: true }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     const largeValue = 'x'.repeat(1024 * 1024);
     const request = client.$fetch('/api/upload', {
       method: 'POST',
@@ -226,7 +227,7 @@ describe('$fetch', () => {
 
   it('omits private or application-keyed requests from SSR transfer', async () => {
     const client = createDataRuntime({
-      fetch: (async () => json({ ok: true })) as typeof fetch,
+      fetch: (async () => json({ ok: true })) as FetchStub,
     });
     const requests = [
       client.$fetch('/api/search', { query: { token: 'private' } }),
@@ -255,7 +256,7 @@ describe('$fetch', () => {
       },
     };
     const client = createDataRuntime({
-      fetch: (async () => json({ created: '2026-01-01' })) as typeof fetch,
+      fetch: (async () => json({ created: '2026-01-01' })) as FetchStub,
     });
     const request = client.$fetch('/api/date', { validate: schema });
     await settled(request);
@@ -284,7 +285,7 @@ describe('$fetch', () => {
       },
     };
     const server = createDataRuntime({
-      fetch: (async () => json({ value: 'server' })) as typeof fetch,
+      fetch: (async () => json({ value: 'server' })) as FetchStub,
     });
     const serverRequest = server.$fetch('/api/value', {
       validate: serverSchema,
@@ -292,7 +293,7 @@ describe('$fetch', () => {
     await settled(serverRequest);
 
     const fetcher = vi.fn(async () => json({ value: 'client' }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     client.restoreState(server.serializeState());
     const clientRequest = client.$fetch('/api/value', {
       validate: clientSchema,
@@ -305,7 +306,7 @@ describe('$fetch', () => {
 
   it('does not cache HEAD or OPTIONS requests by default', async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const requests = [
       client.$fetch('/api/status', { method: 'HEAD' }),
@@ -320,7 +321,7 @@ describe('$fetch', () => {
 
   it('rejects bodies on GET and HEAD requests', () => {
     const client = createDataRuntime({
-      fetch: (async () => json({ ok: true })) as typeof fetch,
+      fetch: (async () => json({ ok: true })) as FetchStub,
     });
 
     expect(() => client.$fetch('/api/read', { body: { id: 1 } }))
@@ -333,7 +334,7 @@ describe('$fetch', () => {
 
   it('retains application cache after the last active resource is disposed', async () => {
     const fetcher = vi.fn(async () => json(['Ada']));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
     const cache = { scope: 'app' as const };
 
     const first = client.$fetch<string[]>('/api/users', { cache });
@@ -362,7 +363,7 @@ describe('$fetch', () => {
       },
     };
     const fetcher = vi.fn(async () => json([{ id: '1' }]));
-    const client = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const client = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const users = client.$fetch('/external/users', { validate: schema });
     expectTypeOf(users.data).toEqualTypeOf<User[] | undefined>();
@@ -379,7 +380,7 @@ describe('$fetch', () => {
       },
     };
     const client = createDataRuntime({
-      fetch: (async () => json([123])) as typeof fetch,
+      fetch: (async () => json([123])) as FetchStub,
     });
     const users = client.$fetch('/external/users', { validate: schema });
 

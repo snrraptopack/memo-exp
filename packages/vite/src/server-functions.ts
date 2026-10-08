@@ -1,6 +1,6 @@
 /** Vite-side discovery and virtual modules for named HTTP server functions. */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import {
   analyzeServerFunctionModule,
@@ -15,6 +15,7 @@ import {
 } from '@memoized-dom/compiler';
 import type { ResolvedAdapterOptions } from './options';
 import { normalizeFile } from './paths';
+import { removeDeclaration } from './declarations';
 import { serverRoot } from './server-config';
 
 export const serverFunctionsVirtualId = 'virtual:memoized-dom/server-functions';
@@ -356,11 +357,11 @@ export async function writeServerFunctionDeclarations(
   options: ResolvedAdapterOptions,
 ): Promise<void> {
   const file = serverFunctionsDeclarationFile(root);
-  const existing = await readFile(file, 'utf8').catch(() => undefined);
   if (serverFunctionsRoot(root, options) === null || !modules.some(module => module.functions.length > 0)) {
-    if (existing !== undefined) await rm(file, { force: true });
+    await removeDeclaration(file);
     return;
   }
+  const existing = await readFile(file, 'utf8').catch(() => undefined);
   const content = generateServerFunctionDeclarations(
     modules.map(module => ({
       ...module,

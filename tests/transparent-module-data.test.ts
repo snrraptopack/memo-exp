@@ -1,3 +1,4 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 /**
  * RFC §16.4 e2e — module-scope transparent sources.
  *
@@ -9,7 +10,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   createApplicationRuntime,
@@ -133,7 +134,7 @@ describe('module-scope transparent sources', () => {
       return new Response(JSON.stringify({ name: url.includes('Grace') ? 'Grace' : 'Ada' }), {
         headers: { 'content-type': 'application/json' },
       });
-    }) as typeof fetch });
+    }) as FetchStub });
     const previous = setActiveDataRuntime(data);
     setScheduler(run => run()); document.body.replaceChildren();
     try {
@@ -141,9 +142,9 @@ describe('module-scope transparent sources', () => {
       const inputs = await import(pathToFileURL(join(directory, 'input.ts')).href);
       const original = inputs.users;
       document.body.append(View('ReactiveInput', null));
-      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('Ada'));
+      await waitFor(() => expect(document.querySelector('output')?.textContent).toBe('Ada'));
       document.querySelector('button')!.click();
-      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('Grace'));
+      await waitFor(() => expect(document.querySelector('output')?.textContent).toBe('Grace'));
       expect(inputs.users).toBe(original);
       expect(urls).toHaveLength(2);
       expect(urls[0]).toContain('search=Ada'); expect(urls[1]).toContain('search=Grace');
@@ -182,10 +183,10 @@ describe('module-scope transparent sources', () => {
       const source = await import(pathToFileURL(join(directory, 'read-source.ts')).href);
       const original = source.user;
       document.body.append(ReadView('App', null));
-      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('1'));
+      await waitFor(() => expect(document.querySelector('output')?.textContent).toBe('1'));
       if (name.endsWith('publisher')) expect(document.querySelector('p')?.textContent).toBe('10');
       document.querySelector('button')!.click();
-      await vi.waitFor(() => expect(document.querySelector('output')?.textContent).toBe('2'));
+      await waitFor(() => expect(document.querySelector('output')?.textContent).toBe('2'));
       if (name.endsWith('publisher')) expect(document.querySelector('p')?.textContent).toBe('20');
       expect(source.user).toBe(original);
     } finally {
@@ -200,7 +201,7 @@ describe('module-scope transparent sources', () => {
     const never = (() => {
       calls++;
       return new Promise<Response>(() => {});
-    }) as typeof fetch;
+    }) as FetchStub;
 
     const makeRequestRuntime = (id: string) => {
       const application = createApplicationRuntime(id);

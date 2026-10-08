@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import {
   cleanup, createApplicationRuntime, createPreparedRegion, getEntity, markDirty,
   mountRef, readPreparationScope, refAssign, register, runWithApplicationRuntime, setScheduler,

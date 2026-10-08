@@ -1,4 +1,5 @@
-import {expect,it,vi} from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { expect, it } from 'bun:test';
 import {createDataRuntime} from '../src/client';
 import {fetchResourceOperationId,rebindFetchResourceFrom} from '../src/resource';
 
@@ -6,7 +7,7 @@ function pendingFetch() {
   const requests:Array<{signal:AbortSignal;resolve:(response:Response)=>void}>=[];
   const fetcher=((_input,init)=>new Promise<Response>(resolve=>{
     requests.push({signal:init!.signal!,resolve});
-  })) as typeof fetch;
+  })) as FetchStub;
   return {requests,fetcher};
 }
 const json=(name:string)=>Response.json({name});
@@ -17,7 +18,7 @@ it('adopts an uncached in-flight request without aborting it or accepting the ol
   try {
     const stable=runtime.$fetch<{name:string}>('/old',{cache:false});
     const candidate=runtime.$fetch<{name:string}>('/new',{cache:false});
-    await vi.waitFor(()=>expect(requests).toHaveLength(2));
+    await waitFor(()=>expect(requests).toHaveLength(2));
     const operation=fetchResourceOperationId(candidate);
     rebindFetchResourceFrom(stable,candidate);
     expect(fetchResourceOperationId(stable)).toBe(operation);
@@ -41,7 +42,7 @@ it('rejects cross-runtime adoption, retiring only the temporary candidate',async
     const stable=owner.$fetch<{name:string}>('/owner');
     expect(await owner.settle()).toBe(true);
     const candidate=other.$fetch<{name:string}>('/candidate',{cache:false});
-    await vi.waitFor(()=>expect(requests).toHaveLength(1));
+    await waitFor(()=>expect(requests).toHaveLength(1));
     expect(()=>rebindFetchResourceFrom(stable,candidate)).toThrow('different data runtimes');
     expect(requests[0]!.signal.aborted).toBe(true);
     await expect(candidate.refresh()).rejects.toThrow('disposed');

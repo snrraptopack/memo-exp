@@ -1,4 +1,5 @@
-import {beforeAll,beforeEach,afterEach,expect,it,vi} from 'vitest';
+import { spyOnAccessor } from '../test-support/helpers';
+import {beforeAll,beforeEach,afterEach,expect,it,vi} from 'bun:test';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {compile} from '@memoized-dom/compiler';
@@ -65,7 +66,7 @@ for(const kind of ['inline','component']) {
   });
   it(`${kind}: invalidates after a text setter throws following a nested update`,async()=>{
     const app=await mount(kind,1),failure=new Error('setter');
-    vi.spyOn(app.text,'data','set').mockImplementationOnce(()=>{
+    spyOnAccessor(app.text,'data','set').mockImplementationOnce(()=>{
       app.items[0]!.value=3;app.render();throw failure;
     });
     app.items[0]!.value=2;expect(app.render).toThrow(failure);

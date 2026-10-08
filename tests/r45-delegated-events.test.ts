@@ -1,6 +1,6 @@
 /** R45 - root-scoped delegated events for repeated compiler-owned DOM. */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'bun:test';
 import {
   createDelegatedEventBinding,
   setDelegatedEvent,

@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
@@ -14,7 +15,7 @@ let app:MountedApplication|undefined;
 afterEach(()=>{
   app?.unmount();app=undefined;
   for (const id of registeredIds()) unregisterSubtree(id);
-  resetScheduler();vi.restoreAllMocks();vi.unstubAllGlobals();document.body.replaceChildren();
+  resetScheduler();vi.restoreAllMocks();unstubAllGlobals();document.body.replaceChildren();
 });
 function compile(source:string) {
   const runtimePath='@memoized-dom/runtime/testing';
@@ -53,7 +54,7 @@ it('binds closed nested row structures with different initial widths and selecti
 });
 
 it('retains row ref ownership for bound and later-created rows',async()=>{
-  const refs:Node[]=[],disposed:Node[]=[];vi.stubGlobal('__initialRowRefs',refs);vi.stubGlobal('__initialRowDisposed',disposed);
+  const refs:Node[]=[],disposed:Node[]=[];stubGlobal('__initialRowRefs',refs);stubGlobal('__initialRowDisposed',disposed);
   await mount('row-refs',`export function App(){let items=['one'];return <main>
     <button onClick={()=>items=['two']}>Replace</button>{items.map(item=><li ref={node=>{
       globalThis.__initialRowRefs.push(node);return ()=>globalThis.__initialRowDisposed.push(node);
@@ -128,7 +129,7 @@ it.each(['key={item.id}','key={index}'])('binds an empty extent and creates its 
 });
 
 it('uses ordinary future factories and lifecycle for an empty composed list',async()=>{
-  const log:string[]=[];vi.stubGlobal('__initialListLog',log);
+  const log:string[]=[];stubGlobal('__initialListLog',log);
   await mount('empty-component',`
     function Row({label}){$effect(()=>{globalThis.__initialListLog.push('mount');return ()=>{globalThis.__initialListLog.push('dispose');};});return <li>{label}</li>;}
     export function App(){let items=[];return <main><button class="append" onClick={()=>{items=[{id:1,label:'created'}];}}>Add</button>
@@ -139,7 +140,7 @@ it('uses ordinary future factories and lifecycle for an empty composed list',asy
 });
 
 it.each([false,true].flatMap(owned=>[false,true].map(indexed=>({owned,indexed}))))('binds component rows with retained state and later creation (%j)',async({owned,indexed})=>{
-  const log:string[]=[];vi.stubGlobal('__componentRows',log);
+  const log:string[]=[];stubGlobal('__componentRows',log);
   await mount(`component-rows-${owned}-${indexed}`,`
     function Row({item,index}){${owned?"let n=0;$effect(()=>{globalThis.__componentRows.push('mount');return ()=>globalThis.__componentRows.push('dispose');});":""}
       return <li data-id={item.id}><span>{index}:{item.label}</span><button onClick={()=>${owned?'n++':'item.label+=\'!\''}}>${owned?'{n}':'{item.label}'}</button></li>;}
@@ -171,7 +172,7 @@ it.each([
 });
 
 it.each([0,2])('binds forwarded component-row caller slots and creates later rows (%i)',async count=>{
-  const log:string[]=[];vi.stubGlobal('__componentRows',log);
+  const log:string[]=[];stubGlobal('__componentRows',log);
   const items=[{id:1,label:'one'},{id:2,label:'two'}].slice(0,count);
   await mount(`row-slots-${count}`,`function Frame({children}){return <aside><i>Prefix</i>{children}</aside>;}
     function Row({children}){let n=0;$effect(()=>{globalThis.__componentRows.push('mount');return ()=>globalThis.__componentRows.push('dispose');});

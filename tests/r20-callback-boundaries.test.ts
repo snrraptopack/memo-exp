@@ -5,7 +5,7 @@
  * callbacks do not acquire invalidation commits.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compile } from '@memoized-dom/compiler';
 
 describe('R20 - ordinary callback boundaries', () => {

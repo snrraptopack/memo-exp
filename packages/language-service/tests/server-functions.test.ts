@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import * as ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { createLanguageService } from '../src/plugin';
 
 const contracts = `

@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -32,13 +33,13 @@ function write(name:string,output:Record<string,string>){
 }
 beforeEach(()=>{
   document.body.replaceChildren();resetAccessTable();clock.value=0;frames.length=0;
-  vi.stubGlobal('__linkedHelperClock',clock);
-  vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
+  stubGlobal('__linkedHelperClock',clock);
+  stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
 });
 afterEach(()=>{
   _internals().registry.forEach((_,id)=>unregister(id));
   while(frames.length)frames.shift()!(performance.now());
-  resetAccessTable();resetScheduler();vi.unstubAllGlobals();
+  resetAccessTable();resetScheduler();unstubAllGlobals();
 });
 
 it('carries captured opaque reads through nested calls, aliases and re-exports without write effects',()=>{

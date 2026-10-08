@@ -1,22 +1,22 @@
-// @vitest-environment node
+// This test verifies actual browser behavior in Chrome or Edge.
 import { existsSync } from 'node:fs';
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { compile } from '../packages/compiler/src/compile';
 
-it('preserves DOM shape and custom-element creation timing in Chromium', async context => {
-  const executablePath = [
+function chromeExecutable(): string | undefined {
+  return [
     process.env.MMD_CHROME_PATH,
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     '/usr/bin/google-chrome', '/usr/bin/chromium',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   ].find((candidate): candidate is string => candidate !== undefined && existsSync(candidate));
-  if (executablePath === undefined) {
-    context.skip('Chromium is unavailable; set MMD_CHROME_PATH to run this test');
-    return;
-  }
+}
+
+it.skipIf(!chromeExecutable())('preserves DOM shape and custom-element creation timing in Chromium', async () => {
+  const executablePath = chromeExecutable()!;
   const bundle = await build({
     entryPoints: ['packages/runtime/src/index.ts'],
     bundle: true, write: false, format: 'iife', globalName: 'MMD',

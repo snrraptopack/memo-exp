@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { cloneNode, parseEstreeOrThrow, walkAst } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { createExpressionSourceFacts } from '../packages/compiler/src/analysis/expression-sources';

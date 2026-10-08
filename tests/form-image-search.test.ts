@@ -1,6 +1,7 @@
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 import { clearDataRuntime } from '@memoized-dom/data';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -43,7 +44,7 @@ const app = `import ImageLoader from './image';
 afterEach(() => {
   _internals().registry.forEach((_, id) => unregister(id));
   clearDataRuntime(); resetAccessTable(); resetScheduler();
-  document.body.replaceChildren(); vi.unstubAllGlobals();
+  document.body.replaceChildren(); unstubAllGlobals();
 });
 
 it.each([false, true].flatMap(hot => [false,true].flatMap(deferred => ['array','envelope','invalid'].map(shape => ({hot,deferred,shape})))))(
@@ -58,18 +59,18 @@ it.each([false, true].flatMap(hot => [false,true].flatMap(deferred => ['array','
     if (error instanceof AggregateError) error.errors.forEach(recordError);
     else errors.push(error);
   };
-  vi.stubGlobal('reportError', recordError);
+  stubGlobal('reportError', recordError);
   let resolveFetch!: (value: Response) => void;
   const requests = vi.fn((_url: string | URL | Request) => new Promise<Response>(resolve => {resolveFetch = resolve;}));
-  vi.stubGlobal('fetch', requests);
+  stubGlobal('fetch', requests);
   const images: Array<{onload: (() => void) | null; src: string}> = [];
-  vi.stubGlobal('Image', class {
+  stubGlobal('Image', class {
     onload = null; src = '';
     constructor() { images.push(this); }
   });
   const observers: Array<{callback: (entries: Array<{isIntersecting:boolean;target:Element}>) => void;
     observe: ReturnType<typeof vi.fn>; unobserve: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn>}> = [];
-  vi.stubGlobal('IntersectionObserver', class {
+  stubGlobal('IntersectionObserver', class {
     observe = vi.fn(); unobserve = vi.fn(); disconnect = vi.fn();
     constructor(public callback: typeof observers[number]['callback']) { observers.push(this); }
   });
@@ -90,21 +91,21 @@ it.each([false, true].flatMap(hot => [false,true].flatMap(deferred => ['array','
   form.dispatchEvent(event); flush();
   expect(event.defaultPrevented).toBe(true);
   expect(document.querySelector('.pending')).not.toBeNull();
-  await vi.waitFor(() => expect(requests).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(requests).toHaveBeenCalledTimes(1));
   expect(String(requests.mock.calls[0]![0])).toContain('query=forest');
   const photos = [{id:1,width:600,height:400,alt:'forest',src:{small:'/small.jpg',large:'/large.jpg'}}];
   const respond = (payload: unknown) => resolveFetch(new Response(JSON.stringify(payload), {headers:{'content-type':'application/json'}}));
   respond(shape === 'array' ? photos : {page:1,photos});
   if (shape === 'invalid') {
-    await vi.waitFor(() => { flush(); expect(errors.some(error => String(error).includes('requires an array'))).toBe(true); });
+    await waitFor(() => { flush(); expect(errors.some(error => String(error).includes('requires an array'))).toBe(true); });
     expect(document.querySelector('.pending')).toBeNull();
     expect(document.querySelector('form')).toBe(form); expect(observers).toHaveLength(0);
     errors.length = 0; form.querySelector('input')!.value = 'mountain';
     form.dispatchEvent(new SubmitEvent('submit', {bubbles:true,cancelable:true,submitter:form.querySelector('button')}));
     flush(); expect(document.querySelector('.pending')).not.toBeNull();
-    await vi.waitFor(() => expect(requests).toHaveBeenCalledTimes(2)); respond(photos);
+    await waitFor(() => expect(requests).toHaveBeenCalledTimes(2)); respond(photos);
   }
-  await vi.waitFor(() => { flush(); expect(document.querySelector('.loading-image')).not.toBeNull(); });
+  await waitFor(() => { flush(); expect(document.querySelector('.loading-image')).not.toBeNull(); });
   if (shape === 'invalid') {
     // A new attempt retains the last result until success, so earlier queued
     // renders may still diagnose it. A valid result must finish that recovery.
@@ -112,7 +113,7 @@ it.each([false, true].flatMap(hot => [false,true].flatMap(deferred => ['array','
     errors.length = 0;
   }
   flush(); expect(document.querySelector('.pending')).toBeNull(); expect(document.querySelector('.error')).toBeNull();
-  await vi.waitFor(() => { flush(); expect(observers.some(observer => observer.observe.mock.calls.length > 0)).toBe(true); });
+  await waitFor(() => { flush(); expect(observers.some(observer => observer.observe.mock.calls.length > 0)).toBe(true); });
   const img = document.querySelector<HTMLImageElement>('.loading-image')!;
   const observer = observers.find(value => value.observe.mock.calls.length > 0)!;
   observer.callback([{isIntersecting:true,target:img}]); flush();

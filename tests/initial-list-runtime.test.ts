@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { bindInitialList } from '../packages/runtime/src/initial-list';
 import { createListRegion, createPositionalListRegion, type ListRegion } from '@memoized-dom/runtime/testing';
 

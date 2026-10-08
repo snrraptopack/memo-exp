@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   _internals, markDirty, resetAccessTable, resetScheduler, setScheduler, unregister,
@@ -76,9 +77,9 @@ const frames: FrameRequestCallback[]=[];
 const clock={current:10, calls:0, get value(){this.calls++;return this.current;}, set value(value:number){this.current=value;}, format(a:number){return `${this.value}:${a}`;}};
 beforeEach(()=>{
   document.body.replaceChildren();resetAccessTable();frames.length=0;clock.value=10;clock.calls=0;
-  vi.stubGlobal('__preludeClock',clock);
-  vi.stubGlobal('__preludeCallback',undefined);
-  vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
+  stubGlobal('__preludeClock',clock);
+  stubGlobal('__preludeCallback',undefined);
+  stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
 });
 
 it.each(['control','switch','assigned','throwing'] as const)('refreshes derived values behind %s boundaries on pulls',async kind=>{
@@ -118,7 +119,7 @@ it.each(['control','switch','assigned','throwing'] as const)('refreshes derived 
 afterEach(()=>{
   _internals().registry.forEach((_,id)=>unregister(id));
   while(frames.length)frames.shift()!(performance.now());
-  resetAccessTable();resetScheduler();vi.unstubAllGlobals();
+  resetAccessTable();resetScheduler();unstubAllGlobals();
 });
 
 it.each([false,true])('preserves chained replay, hidden reads, mixed causes and instance isolation (deferred=%s)',async deferred=>{

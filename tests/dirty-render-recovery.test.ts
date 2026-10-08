@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { expectCalledOnceWith } from '../test-support/helpers';
+import { afterEach, beforeEach, expect, it, vi } from 'bun:test';
 import {
   _internals, commit, markDirty, register, resetScheduler, setScheduler, unregister,
 } from '@memoized-dom/runtime/testing';
@@ -85,5 +86,5 @@ it('does not render a stale batch entry after a peer replaces its entity', () =>
   }});
   register({id:'peer',parent:null,render:stale});
   markDirty('owner'); markDirty('peer', 1); commit();
-  expect(stale).not.toHaveBeenCalled(); expect(replacement).toHaveBeenCalledExactlyOnceWith(2);
+  expect(stale).not.toHaveBeenCalled(); expectCalledOnceWith((replacement), 2);
 });

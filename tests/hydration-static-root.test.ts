@@ -5,7 +5,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';

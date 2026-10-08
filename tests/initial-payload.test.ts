@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { initializePayload } from '../packages/runtime/src/payload';
 import { mountInitial, registerRootFactory } from '../packages/runtime/src/mount-core';
 import { createApplicationRuntime, runWithApplicationRuntime, getExtensionStore, registerEntity, has } from '../packages/runtime/src/kernel';
@@ -40,8 +40,8 @@ it.each([false,true])('unregisters failed initializers and finishes the data han
     expect(()=>initializePayload(document.getElementById('root')!,{id:'App',create(){throw failure;}},()=>{
       registerEntity({id:'App',parent:null,render(){}});cleanup('App',dispose);throw failure;
     },()=>recoverable)).toThrow(failure);
-    expect(has('App')).toBe(false);expect(dispose).toHaveBeenCalledOnce();
-    expect(recoverable?complete:cancel).toHaveBeenCalledOnce();
+    expect(has('App')).toBe(false);expect(dispose).toHaveBeenCalledTimes(1);
+    expect(recoverable?complete:cancel).toHaveBeenCalledTimes(1);
     expect(recoverable?cancel:complete).not.toHaveBeenCalled();expect(document.querySelector('script')).toBeNull();
   }); } finally {runtime.dispose();}
 });

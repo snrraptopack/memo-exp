@@ -13,7 +13,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { compile, compileModules } from '@memoized-dom/compiler';
 import {
   _internals,

@@ -1,7 +1,7 @@
 # Router Benchmarks
 
 Production-output benchmarks for `@memoized-dom/router`. The command builds the
-router before Vitest imports its public package entry, so results cannot silently
+router before Bun imports its public package entry, so results cannot silently
 come from an older ignored `dist` directory.
 
 ```bash
@@ -26,7 +26,7 @@ Each task warms for 150 ms and measures for at least 750 ms. Fixtures are
 validated before timing. Timed return values are written to a module sink so the
 engine cannot treat the calls as unobservable. Query, path, matcher, and runtime
 suites live in separate benchmark modules to avoid sharing cursors and runtime
-state across unrelated measurements. Vitest runs the files sequentially so they
+state across unrelated measurements. The Bun runner measures the cases sequentially so they
 do not compete for CPU time during a measurement.
 
 ## Suites
@@ -91,3 +91,5 @@ Those should be added as separate integration or real-browser suites when the
 corresponding Memoized DOM layers exist. A fair external comparison must run the
 same fixture and validate equivalent output before timing; this suite is an
 internal regression baseline, not a competitor leaderboard.
+
+The Bun harness samples the clock once per 64 operations. These results use a different runner from historical Vitest measurements and should not be compared directly. Run `bun run bench/router/run.ts --smoke` to check fixtures without collecting performance results.

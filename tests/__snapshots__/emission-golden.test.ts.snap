@@ -1,6 +1,6 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`emission golden snapshots (emission-spec.md) > Cleanup — ownership-scoped teardown 1`] = `
+exports[`emission golden snapshots (emission-spec.md) Cleanup — ownership-scoped teardown 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Timer(_id, _parent, _dataPolicies) {
@@ -24,7 +24,7 @@ export function Timer(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > Cross-module — imported state keeps canonical identity > ./app.tsx 1`] = `
+exports[`emission golden snapshots (emission-spec.md) Cross-module — imported state keeps canonical identity ./app.tsx 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 const _WRITES_ = ["./state.ts#count"];
@@ -63,7 +63,7 @@ export function App(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > Cross-module — imported state keeps canonical identity > ./state.ts 1`] = `
+exports[`emission golden snapshots (emission-spec.md) Cross-module — imported state keeps canonical identity ./state.ts 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export let count = 0;
@@ -73,7 +73,7 @@ export function bump() {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > Effects — compiler-owned lifecycle registers deferred entities 1`] = `
+exports[`emission golden snapshots (emission-spec.md) Effects — compiler-owned lifecycle registers deferred entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Ticker(_id, _parent, _dataPolicies) {
@@ -115,7 +115,7 @@ export function Ticker(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > Module state — module-level let shares across instances 1`] = `
+exports[`emission golden snapshots (emission-spec.md) Module state — module-level let shares across instances 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 const _WRITES_ = ["./component.tsx#selected"];
@@ -154,7 +154,7 @@ export function Picker(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R1 — components become (id, parent) factories registering an entity 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R1 — components become (id, parent) factories registering an entity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Counter(_id, _parent, _dataPolicies) {
@@ -188,7 +188,7 @@ export function Counter(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R2 — JSX becomes a creation branch with cached nodes 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R2 — JSX becomes a creation branch with cached nodes 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Card(_id, _parent, _dataPolicies) {
@@ -231,7 +231,7 @@ export function Card(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R4 — update branch writes only dynamic slots, value-cached 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R4 — update branch writes only dynamic slots, value-cached 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Label(_id, _parent, _dataPolicies) {
@@ -267,7 +267,7 @@ export function Label(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R5 — component props become a props box with positional binding 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R5 — component props become a props box with positional binding 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Row(_id, _parent, _props, _dataPolicies) {
@@ -296,7 +296,7 @@ export function Row(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R6 — children slots forward rendered content 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R6 — children slots forward rendered content 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Shell(_id, _parent, _props, _dataPolicies) {
@@ -325,7 +325,7 @@ export function Shell(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R7 — keyed lists cache rows per key with stable identity 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R7 — keyed lists cache rows per key with stable identity 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 let _liTemplate, _liTemplateDocument;
@@ -434,7 +434,7 @@ export function Feed(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R8 — conditional regions anchor branch swaps 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R8 — conditional regions anchor branch swaps 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Badge(_id, _parent, _props, _dataPolicies) {
@@ -486,7 +486,7 @@ export function Badge(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R12/R13 — computeds compile to replaying derivation entities 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R12/R13 — computeds compile to replaying derivation entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Totals(_id, _parent, _props, _dataPolicies) {
@@ -524,7 +524,7 @@ export function Totals(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R20 — factory callbacks and explicit cleanup are entity-owned 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R20 — factory callbacks and explicit cleanup are entity-owned 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function LiveFeed(_id, _parent, _dataPolicies) {
@@ -557,7 +557,7 @@ export function LiveFeed(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R24 — component props with default values and destructuring 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R24 — component props with default values and destructuring 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function Avatar(_id, _parent, _props, _dataPolicies) {
@@ -616,7 +616,7 @@ export function Avatar(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R31 — explicit innerHTML is a guarded raw-HTML property 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R31 — explicit innerHTML is a guarded raw-HTML property 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function RawViewer(_id, _parent, _props, _dataPolicies) {
@@ -649,7 +649,7 @@ export function RawViewer(_id, _parent, _props, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R32 — module effects are linked singleton entities 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R32 — module effects are linked singleton entities 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 const _WRITES_ = ["./component.tsx#route"];
@@ -693,7 +693,7 @@ export function Nav(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R40 — arrow and function-expression components normalize to factories 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R40 — arrow and function-expression components normalize to factories 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function ArrowBadge(_id, _parent, _props, _dataPolicies) {
@@ -737,7 +737,7 @@ export function ExprCard(_id2, _parent2, _props2, _dataPolicies2) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R42 — calculated list sources use the normal derivation contract 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R42 — calculated list sources use the normal derivation contract 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 let _liTemplate, _liTemplateDocument;
@@ -852,7 +852,7 @@ export function FilteredList(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > R44 — DOM refs are compiler-native lifecycle slots 1`] = `
+exports[`emission golden snapshots (emission-spec.md) R44 — DOM refs are compiler-native lifecycle slots 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 
 export function CanvasView(_id, _parent, _dataPolicies) {
@@ -879,7 +879,7 @@ export function CanvasView(_id, _parent, _dataPolicies) {
 }"
 `;
 
-exports[`emission golden snapshots (emission-spec.md) > Transparent data — $fetch lowers to availability-gated reads 1`] = `
+exports[`emission golden snapshots (emission-spec.md) Transparent data — $fetch lowers to availability-gated reads 1`] = `
 "import * as _MD from "@memoized-dom/runtime";
 import * as _MDD from "@memoized-dom/data/internal";
 import { createBodylessSource as $fetch } from "@memoized-dom/data/internal";
@@ -998,5 +998,54 @@ export function Profile(_id, _parent, _dataPolicies) {
 	_MD.cleanup(_id, _MDD.ownResolvedValue(user));
 
 	return _h;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) Cross-module — imported state keeps canonical identity: ./state.ts 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+
+export let count = 0;
+
+export function bump() {
+	count++;
+}"
+`;
+
+exports[`emission golden snapshots (emission-spec.md) Cross-module — imported state keeps canonical identity: ./app.tsx 1`] = `
+"import * as _MD from "@memoized-dom/runtime";
+
+const _WRITES_ = ["./state.ts#count"];
+
+_MD.installAccessTable({ readers: { "./state.ts#count": ["App"] } }, "App", "./app.tsx");
+
+import { count, bump } from './state';
+
+export function App(_id, _parent, _dataPolicies) {
+	let _value;
+	const _document = _MD.getActiveEnvironment().document;
+
+	const _update = () => {
+		_MD.setTextData(_text, count);
+	};
+
+	_MD.registerEntity({ id: _id, parent: _parent, render: _update });
+
+	const _text = _document.createTextNode("");
+
+	_MD.setTextData(_text, count);
+
+	const _button = _document.createElement("button");
+
+	_button.onclick = (_event) => {
+		const _returnValue = bump(_event);
+
+		_MD.commitWrites(_WRITES_);
+
+		return _returnValue;
+	};
+
+	_button.appendChild(_text);
+
+	return _button;
 }"
 `;

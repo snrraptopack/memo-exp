@@ -1,7 +1,8 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules, diagnoseModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import {
@@ -468,7 +469,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -484,14 +485,12 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('p')?.textContent).toBe('Loading');
     expect(document.querySelector('#greeting')?.textContent).toBe('');
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify({ id: 1, name: 'Ada' }), {
       headers: { 'content-type': 'application/json' },
     }));
 
-    await expect.poll(
-      () => document.querySelector('#greeting')?.textContent,
-    ).toBe('Hello Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#greeting')?.textContent)()).toBe('Hello Ada'));
     expect(document.querySelector('p')).toBeNull();
     expect(ownerRenders()).toBe(0);
     expect(greetingRenders()).toBeGreaterThan(0);
@@ -511,14 +510,14 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.GroupApp('GroupApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     const ownerRenders = countEntityRenders('GroupApp');
     const userRenders = countEntityRenders('GroupApp/when0');
     const statisticsRenders = countEntityRenders('GroupApp/when1');
@@ -532,9 +531,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#group-user')?.textContent,
-    ).toBe('Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#group-user')?.textContent)()).toBe('Ada'));
     expect(document.querySelector('#group-statistics .pending')).not.toBeNull();
     expect(ownerRenders()).toBe(0);
     expect(userRenders()).toBeGreaterThan(0);
@@ -547,9 +544,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#group-statistics .data-error')?.textContent,
-    ).toBe('request');
+    await waitFor(async () => expect(await (() => document.querySelector('#group-statistics .data-error')?.textContent)()).toBe('request'));
     expect(document.querySelector('#group-user')?.textContent).toBe('Ada');
     expect(ownerRenders()).toBe(0);
     expect(userRenders()).toBe(userRendersAfterUser);
@@ -558,16 +553,14 @@ describe('compiler-transparent data values', () => {
     document.querySelector<HTMLButtonElement>(
       '#group-statistics .data-error',
     )!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[2]!.url).toMatch(/\/statistics$/);
     requests[2]!.resolve(
       new Response(JSON.stringify({ count: 42 }), {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#group-statistics')?.textContent,
-    ).toBe('42');
+    await waitFor(async () => expect(await (() => document.querySelector('#group-statistics')?.textContent)()).toBe('42'));
   });
 
   it('infers Group data and supports direct host suspension with inline policies', async () => {
@@ -575,7 +568,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(resolve => {
         requests.push(resolve);
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -584,7 +577,7 @@ describe('compiler-transparent data values', () => {
     document.body.appendChild(
       mod.InferredInlineGroupApp('InferredInlineGroupApp', null),
     );
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(document.querySelector('.inline-callback-pending')?.textContent)
       .toBe('Waiting inline');
     expect(document.querySelector('#inline-suspended-content')).toBeNull();
@@ -593,18 +586,14 @@ describe('compiler-transparent data values', () => {
       status: 503,
       headers: { 'content-type': 'application/json' },
     }));
-    await expect.poll(
-      () => document.querySelector('.inline-callback-error')?.textContent,
-    ).toBe('request');
+    await waitFor(async () => expect(await (() => document.querySelector('.inline-callback-error')?.textContent)()).toBe('request'));
 
     document.querySelector<HTMLButtonElement>('.inline-callback-error')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     requests[1]!(new Response(JSON.stringify({ id: 1, name: 'Ada' }), {
       headers: { 'content-type': 'application/json' },
     }));
-    await expect.poll(
-      () => document.querySelector('#inline-suspended-content')?.textContent,
-    ).toBe('Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#inline-suspended-content')?.textContent)()).toBe('Ada'));
   });
 
   it('atomically mounts a suspended Group component after all initial data commits', async () => {
@@ -616,14 +605,14 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.SuspendedGroupApp('SuspendedGroupApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(document.querySelectorAll('.pending')).toHaveLength(1);
     expect(document.querySelector('#suspended-dashboard')).toBeNull();
@@ -633,7 +622,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(document.querySelectorAll('.pending')).toHaveLength(1);
     });
     expect(document.querySelector('#suspended-dashboard')).toBeNull();
@@ -645,9 +634,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#suspended-dashboard')?.textContent,
-    ).toBe('Ada42');
+    await waitFor(async () => expect(await (() => document.querySelector('#suspended-dashboard')?.textContent)()).toBe('Ada42'));
     expect(document.querySelector('.pending')).toBeNull();
   });
 
@@ -660,7 +647,7 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -669,7 +656,7 @@ describe('compiler-transparent data values', () => {
     document.body.appendChild(
       mod.SuspendedTsrxApp('SuspendedTsrxApp', null),
     );
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(document.querySelectorAll('.tsrx-pending')).toHaveLength(1);
     expect(document.querySelector('#tsrx-suspended-dashboard')).toBeNull();
@@ -681,7 +668,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(document.querySelectorAll('.tsrx-pending')).toHaveLength(1);
     });
 
@@ -692,9 +679,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#tsrx-suspended-dashboard')?.textContent,
-    ).toBe('Ada42');
+    await waitFor(async () => expect(await (() => document.querySelector('#tsrx-suspended-dashboard')?.textContent)()).toBe('Ada42'));
     expect(document.querySelector('.tsrx-pending')).toBeNull();
   });
 
@@ -707,14 +692,14 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importTsrxFixture();
     document.body.appendChild(mod.ColorlessTsrxApp('ColorlessTsrxApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(document.querySelector('#tsrx-colorless-dashboard h2')?.textContent)
       .toBe('Colorless dashboard');
@@ -731,9 +716,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#tsrx-colorless-user')?.textContent,
-    ).toBe('Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#tsrx-colorless-user')?.textContent)()).toBe('Ada'));
     expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
       .toBe('Waiting locally');
     expect(document.querySelectorAll('.tsrx-colorless-pending')).toHaveLength(1);
@@ -745,9 +728,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#tsrx-colorless-statistics')?.textContent,
-    ).toBe('42');
+    await waitFor(async () => expect(await (() => document.querySelector('#tsrx-colorless-statistics')?.textContent)()).toBe('42'));
     expect(document.querySelector('.tsrx-colorless-pending')).toBeNull();
   });
 
@@ -760,14 +741,14 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importTsrxFixture();
     document.body.appendChild(mod.ColorlessTsrxApp('ColorlessTsrxError', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     requests.find(
       request => request.url.endsWith('/tsrx-colorless-user'),
@@ -777,23 +758,19 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#tsrx-colorless-user')?.textContent,
-    ).toContain('Colorless failure:');
+    await waitFor(async () => expect(await (() => document.querySelector('#tsrx-colorless-user')?.textContent)()).toContain('Colorless failure:'));
     expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
       .toBe('Waiting locally');
 
     document.querySelector<HTMLButtonElement>('.tsrx-colorless-error')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[2]!.url).toMatch(/\/tsrx-colorless-user$/);
     requests[2]!.resolve(
       new Response(JSON.stringify({ name: 'Recovered' }), {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#tsrx-colorless-user')?.textContent,
-    ).toBe('Recovered');
+    await waitFor(async () => expect(await (() => document.querySelector('#tsrx-colorless-user')?.textContent)()).toBe('Recovered'));
     expect(document.querySelector('#tsrx-colorless-statistics')?.textContent)
       .toBe('Waiting locally');
   });
@@ -807,7 +784,7 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -816,7 +793,7 @@ describe('compiler-transparent data values', () => {
     document.body.appendChild(
       mod.SuspendedTsrxApp('SuspendedTsrxErrorApp', null),
     );
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     requests.find(
       request => request.url.endsWith('/tsrx-suspended-user'),
@@ -826,22 +803,18 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('.tsrx-error')?.textContent,
-    ).toContain('503');
+    await waitFor(async () => expect(await (() => document.querySelector('.tsrx-error')?.textContent)()).toContain('503'));
     expect(document.querySelector('#tsrx-suspended-dashboard')).toBeNull();
 
     document.querySelector<HTMLButtonElement>('.tsrx-error')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[2]!.url).toMatch(/\/tsrx-suspended-user$/);
     requests[2]!.resolve(
       new Response(JSON.stringify({ name: 'Recovered' }), {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelectorAll('.tsrx-pending').length,
-    ).toBe(1);
+    await waitFor(async () => expect(await (() => document.querySelectorAll('.tsrx-pending').length)()).toBe(1));
 
     requests.find(
       request => request.url.endsWith('/tsrx-suspended-statistics'),
@@ -850,9 +823,7 @@ describe('compiler-transparent data values', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    await expect.poll(
-      () => document.querySelector('#tsrx-suspended-dashboard')?.textContent,
-    ).toBe('Recovered7');
+    await waitFor(async () => expect(await (() => document.querySelector('#tsrx-suspended-dashboard')?.textContent)()).toBe('Recovered7'));
   });
 
   it('carries Group policy through derivations, conditions, lists, and nested overrides', async () => {
@@ -860,7 +831,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -874,15 +845,13 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#open-state .pending')).not.toBeNull();
     expect(document.querySelector('#todo-rows > .rows-pending')).not.toBeNull();
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify([
       { id: 1, title: 'Ship compiler', done: false },
       { id: 2, title: 'Archive draft', done: true },
     ]), { headers: { 'content-type': 'application/json' } }));
 
-    await expect.poll(
-      () => document.querySelector('#open-count')?.textContent,
-    ).toBe('1');
+    await waitFor(async () => expect(await (() => document.querySelector('#open-count')?.textContent)()).toBe('1'));
     expect(document.querySelector('#open-state')?.textContent).toBe('Open work');
     expect(document.querySelector('#todo-rows')?.textContent).toBe('Ship compiler');
     expect(ownerRenders()).toBe(0);
@@ -903,14 +872,14 @@ describe('compiler-transparent data values', () => {
             signal: init!.signal!,
             resolve,
           });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.ReactiveQueryApp('ReactiveQueryApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toMatch(/\/users\?search=Ada$/);
     expect(document.querySelector('#query-result')?.textContent).toBe('');
 
@@ -918,7 +887,7 @@ describe('compiler-transparent data values', () => {
     expect(requests).toHaveLength(1);
 
     document.querySelector<HTMLButtonElement>('#next-query')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[0]!.signal.aborted).toBe(true);
     expect(requests[1]!.url).toMatch(/\/users\?search=Grace$/);
     expect(document.querySelector('p')?.textContent).toBe('Searching');
@@ -926,9 +895,7 @@ describe('compiler-transparent data values', () => {
     requests[1]!.resolve(new Response(JSON.stringify([
       { id: 2, name: 'Grace' },
     ]), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#query-result')?.textContent,
-    ).toBe('Grace');
+    await waitFor(async () => expect(await (() => document.querySelector('#query-result')?.textContent)()).toBe('Grace'));
     expect(document.querySelector('p')).toBeNull();
 
     requests[0]!.resolve(new Response(JSON.stringify([
@@ -948,27 +915,25 @@ describe('compiler-transparent data values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.ReactiveTargetApp('ReactiveTargetApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]!.url).toMatch(/\/users\/1$/);
 
     document.querySelector<HTMLButtonElement>('#next-user')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.url).toMatch(/\/users\/2$/);
 
     requests[1]!.resolve(new Response(JSON.stringify({
       id: 2,
       name: 'Grace',
     }), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#target-result')?.textContent,
-    ).toBe('Grace');
+    await waitFor(async () => expect(await (() => document.querySelector('#target-result')?.textContent)()).toBe('Grace'));
   });
 
   it('routes a derived-source failure to each nearest Group policy before replay', async () => {
@@ -976,33 +941,29 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(resolve => {
         requests.push(resolve);
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.DerivedGroupApp('DerivedGroupErrorApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     requests[0]!(new Response(JSON.stringify({ message: 'offline' }), {
       status: 503,
       headers: { 'content-type': 'application/json' },
     }));
 
-    await expect.poll(
-      () => document.querySelector('#open-count .data-error')?.textContent,
-    ).toBe('request');
+    await waitFor(async () => expect(await (() => document.querySelector('#open-count .data-error')?.textContent)()).toBe('request'));
     expect(document.querySelector('#open-state .data-error')).not.toBeNull();
     expect(document.querySelector('#todo-rows .rows-error')?.textContent).toBe('request');
 
     document.querySelector<HTMLButtonElement>('#todo-rows .rows-error')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     requests[1]!(new Response(JSON.stringify([
       { id: 1, title: 'Recovered', done: false },
     ]), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#todo-rows')?.textContent,
-    ).toBe('Recovered');
+    await waitFor(async () => expect(await (() => document.querySelector('#todo-rows')?.textContent)()).toBe('Recovered'));
   });
 
   it('preserves a transparent source through component props and child derivations', async () => {
@@ -1010,7 +971,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -1025,13 +986,11 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#cross-greeting .pending')).not.toBeNull();
     expect(document.querySelector('#cross-leaf .deep-pending')).not.toBeNull();
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify({ id: 1, name: 'Ada' }), {
       headers: { 'content-type': 'application/json' },
     }));
-    await expect.poll(
-      () => document.querySelector('#cross-greeting')?.textContent,
-    ).toBe('Welcome Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#cross-greeting')?.textContent)()).toBe('Welcome Ada'));
     expect(document.querySelector('#cross-leaf')?.textContent).toBe('Ada');
     expect(rootRenders()).toBe(0);
     expect(profileRenders()).toBe(0);
@@ -1042,32 +1001,28 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(resolve => {
         requests.push(resolve);
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.CrossComponentApp('CrossComponentErrorApp', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     requests[0]!(new Response(JSON.stringify({ message: 'offline' }), {
       status: 503,
       headers: { 'content-type': 'application/json' },
     }));
 
-    await expect.poll(
-      () => document.querySelector('#cross-greeting .data-error')?.textContent,
-    ).toBe('request');
+    await waitFor(async () => expect(await (() => document.querySelector('#cross-greeting .data-error')?.textContent)()).toBe('request'));
     expect(document.querySelector('#cross-leaf .deep-error')?.textContent).toBe('request');
 
     document.querySelector<HTMLButtonElement>('#cross-leaf .deep-error')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     requests[1]!(new Response(JSON.stringify({ id: 2, name: 'Recovered' }), {
       headers: { 'content-type': 'application/json' },
     }));
-    await expect.poll(
-      () => document.querySelector('#cross-leaf')?.textContent,
-    ).toBe('Recovered');
+    await waitFor(async () => expect(await (() => document.querySelector('#cross-leaf')?.textContent)()).toBe('Recovered'));
     expect(document.querySelector('#cross-greeting')?.textContent)
       .toBe('Welcome Recovered');
   });
@@ -1111,7 +1066,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -1122,7 +1077,7 @@ describe('compiler-transparent data values', () => {
     document.body.appendChild(mod.RemoteApp('RemoteApp', null));
     expect(document.querySelector('#remote-profile .remote-pending')).not.toBeNull();
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify({
       name: 'Linked',
       roles: [
@@ -1132,9 +1087,7 @@ describe('compiler-transparent data values', () => {
     }), {
       headers: { 'content-type': 'application/json' },
     }));
-    await expect.poll(
-      () => document.querySelector('#remote-profile')?.textContent,
-    ).toBe('Remote Linked:reader');
+    await waitFor(async () => expect(await (() => document.querySelector('#remote-profile')?.textContent)()).toBe('Remote Linked:reader'));
   });
 
   it('keeps an ungrouped structural site empty until its source commits', async () => {
@@ -1142,7 +1095,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -1152,14 +1105,12 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('h1')?.textContent).toBe('Ungrouped');
     expect(document.querySelector('#ungrouped-rows')?.textContent).toBe('');
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify([
       { id: 1, title: 'One' },
       { id: 2, title: 'Two' },
     ]), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#ungrouped-rows')?.textContent,
-    ).toBe('OneTwo');
+    await waitFor(async () => expect(await (() => document.querySelector('#ungrouped-rows')?.textContent)()).toBe('OneTwo'));
   });
 
   it('accepts multiple content children in Group', () => {
@@ -1204,14 +1155,14 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: ((input: string | URL | Request) => new Promise<Response>(resolve => {
         requests.set(String(input), resolve);
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.NestedCallbackGroupApp('NestedCallbackGroupApp', null));
-    await vi.waitFor(() => expect(requests.size).toBe(2));
+    await waitFor(() => expect(requests.size).toBe(2));
     expect(document.querySelector('#nested-cards > .pending')).not.toBeNull();
     const resolveRequest = (path: string): ((response: Response) => void) =>
       [...requests].find(([url]) => url.endsWith(path))![1];
@@ -1227,9 +1178,7 @@ describe('compiler-transparent data values', () => {
       { id: 1, projectId: 1 },
       { id: 2, projectId: 1 },
     ]), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#nested-cards')?.textContent,
-    ).toBe('Compiler:2');
+    await waitFor(async () => expect(await (() => document.querySelector('#nested-cards')?.textContent)()).toBe('Compiler:2'));
   });
 
   it('defers collection methods on a transparent source passed through props', async () => {
@@ -1237,7 +1186,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -1248,15 +1197,13 @@ describe('compiler-transparent data values', () => {
     );
     expect(document.querySelector('#cross-list .pending')).not.toBeNull();
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify([
       { id: 3, title: 'Closed', done: true },
       { id: 2, title: 'Second', done: false },
       { id: 1, title: 'First', done: false },
     ]), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#cross-list')?.textContent,
-    ).toBe('FirstSecond');
+    await waitFor(async () => expect(await (() => document.querySelector('#cross-list')?.textContent)()).toBe('FirstSecond'));
   });
 
   it('preserves transparent provenance through a generic props object', async () => {
@@ -1264,7 +1211,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -1277,7 +1224,7 @@ describe('compiler-transparent data values', () => {
     }).not.toThrow();
     expect(document.querySelector('#generic-props-view')?.textContent).toBe('');
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify({
       total: 12345,
       tasks: [
@@ -1286,9 +1233,7 @@ describe('compiler-transparent data values', () => {
         { id: 1, title: 'First', done: false },
       ],
     }), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#generic-props-view')?.textContent,
-    ).toBe('12,345FirstSecond');
+    await waitFor(async () => expect(await (() => document.querySelector('#generic-props-view')?.textContent)()).toBe('12,345FirstSecond'));
   });
 
   it('inherits Group presentation through a descendant-owned source', async () => {
@@ -1296,7 +1241,7 @@ describe('compiler-transparent data values', () => {
     runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -1308,14 +1253,12 @@ describe('compiler-transparent data values', () => {
     expect(document.querySelector('#owned-source-shell')).not.toBeNull();
     expect(document.querySelector('#owned-source-list .deep-pending')).not.toBeNull();
 
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(new Response(JSON.stringify([
       { id: 2, title: 'Second' },
       { id: 1, title: 'First' },
     ]), { headers: { 'content-type': 'application/json' } }));
-    await expect.poll(
-      () => document.querySelector('#owned-source-list')?.textContent,
-    ).toBe('SecondFirst');
+    await waitFor(async () => expect(await (() => document.querySelector('#owned-source-list')?.textContent)()).toBe('SecondFirst'));
   });
 
   it('publishes direct source payload mutations to dependent list regions', async () => {
@@ -1323,16 +1266,14 @@ describe('compiler-transparent data values', () => {
       fetch: (() => Promise.resolve(new Response(JSON.stringify([
         { id: 'one', title: 'First' },
         { id: 'two', title: 'Second' },
-      ]), { headers: { 'content-type': 'application/json' } }))) as typeof fetch,
+      ]), { headers: { 'content-type': 'application/json' } }))) as FetchStub,
     });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
 
     const mod = await importFixture();
     document.body.appendChild(mod.SourceMutationApp('SourceMutationApp', null));
-    await expect.poll(
-      () => document.querySelector('#mutable-source-list')?.textContent,
-    ).toBe('FirstSecond');
+    await waitFor(async () => expect(await (() => document.querySelector('#mutable-source-list')?.textContent)()).toBe('FirstSecond'));
 
     const rows = document.querySelectorAll<HTMLElement>('.mutable-source-row');
     rows[1]!.dispatchEvent(new Event('dragstart', { bubbles: true }));

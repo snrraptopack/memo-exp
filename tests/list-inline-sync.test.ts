@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { createListRegion, type ListRegion } from '@memoized-dom/runtime';
 
 it('preserves mutations, replacement bindings and indices in one updater', () => {

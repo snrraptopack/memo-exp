@@ -1,5 +1,5 @@
-// @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+// Runs with Bun globals; no DOM preload.
+import { describe, expect, it, vi } from 'bun:test';
 import { deleteCookie, error, getCookie, json, setCookie } from '../src';
 import { createServerFunctionRoutes, createServerRouter } from '../src/http-router';
 import { decodeResponse } from '../../data/src/request';

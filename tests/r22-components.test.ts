@@ -16,7 +16,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { resetAccessTable, resolveWrites } from '@memoized-dom/runtime/testing';
 import {

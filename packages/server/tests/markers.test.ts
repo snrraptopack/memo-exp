@@ -1,3 +1,4 @@
+import '../../../test-support/dom';
 /**
  * SSR marker serialization — Phase 2 groundwork.
  *
@@ -11,7 +12,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { renderToString } from '../src/index';
 

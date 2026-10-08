@@ -1,5 +1,5 @@
 import { compileModules } from '@memoized-dom/compiler';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 
 function output(
   callback = 'const select = id => { selected = id; };',

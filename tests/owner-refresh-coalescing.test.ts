@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -34,11 +35,11 @@ async function load(sources: Record<string, string>, name: string) {
 
 beforeEach(() => {
   document.body.replaceChildren(); resetAccessTable();
-  vi.stubGlobal('__ownerRefreshCounts', { reconciles: 0, updates: 0 });
+  stubGlobal('__ownerRefreshCounts', { reconciles: 0, updates: 0 });
 });
 afterEach(() => {
   _internals().registry.forEach((_, id) => unregister(id));
-  resetAccessTable(); resetScheduler(); vi.unstubAllGlobals();
+  resetAccessTable(); resetScheduler(); unstubAllGlobals();
 });
 
 it.each([false, true])('publishes each Octane rotation once (deferred=%s)', async deferred => {
@@ -104,7 +105,7 @@ it.each([false, true])('accepts an unknown mutating method (same array=%s)', asy
 });
 
 it('preserves getter reads and live event bindings in a fused opaque row', async () => {
-  vi.stubGlobal('__rowReads', []);
+  stubGlobal('__rowReads', []);
   const { App } = await load({
     './model.ts': `export function makeItems(){return [1,2].map(id=>({
       get id(){globalThis.__rowReads.push('id'+id);return id;},

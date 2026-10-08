@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { type FetchStub } from '../test-support/helpers';
+import { describe, expect, it } from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -73,7 +74,7 @@ function mockFetch(data: unknown): typeof fetch {
       new Response(JSON.stringify(data), {
         headers: { 'content-type': 'application/json' },
       }),
-    )) as typeof fetch;
+    )) as FetchStub;
 }
 
 describe('SSR Settle Coordinator (RFC §16.5)', () => {

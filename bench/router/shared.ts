@@ -12,7 +12,7 @@ export function consume(value: unknown): void {
   benchmarkSink = value;
 }
 
-/** Validate fixtures once, before Vitest starts timing them. */
+/** Validate fixtures once, before the Bun runner starts timing them. */
 export function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`router benchmark fixture mismatch: ${message}`);
 }

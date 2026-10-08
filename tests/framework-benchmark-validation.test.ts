@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { measureInPage, type MeasureConfig } from '../bench/frameworks/measure';
 import { makeSnapshot, mutatePlain, remaining } from '../bench/frameworks/model';
 import type { FrameworkBench } from '../bench/frameworks/contract';

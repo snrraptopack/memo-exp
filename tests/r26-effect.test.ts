@@ -1,3 +1,4 @@
+import { mocked, expectCalledOnceWith } from '../test-support/helpers';
 /**
  * R26 — compiler-owned reactive side effects.
  */
@@ -10,7 +11,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -341,14 +342,14 @@ describe('R26 — compiled effect execution', () => {
 
     document.querySelector<HTMLButtonElement>('#increment')!.click();
     expect(document.querySelector('#count')!.textContent).toBe('1');
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       ['run:0:dom:missing'],
       ['cleanup:0'],
       ['run:1:dom:1'],
     ]);
 
     document.querySelector<HTMLButtonElement>('#unrelated')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       'run:0:dom:missing',
       'cleanup:0',
       'run:1:dom:1',
@@ -367,17 +368,13 @@ describe('R26 — compiled effect execution', () => {
   it('waits for changed computeds and ignores unrelated module updates', async () => {
     const { App } = await importCompiled('r26-module');
     document.body.appendChild(App('App', null));
-    expect(vi.mocked(console.log).mock.calls).toEqual([
-      ['total:1'],
-    ]);
+    expectCalledOnceWith(mocked(console.log), 'total:1');
 
     document.querySelector<HTMLButtonElement>('#module-unrelated')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
-      ['total:1'],
-    ]);
+    expectCalledOnceWith(mocked(console.log), 'total:1');
 
     document.querySelector<HTMLButtonElement>('#add')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       ['total:1'],
       ['total:2'],
     ]);
@@ -391,9 +388,7 @@ describe('R26 — compiled effect execution', () => {
     document.body.appendChild(App('App', null));
     expect(queue).toHaveLength(1);
     queue.shift()!();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
-      ['run:0:dom:0'],
-    ]);
+    expectCalledOnceWith(mocked(console.log), 'run:0:dom:0');
 
     const increment =
       document.querySelector<HTMLButtonElement>('#increment')!;
@@ -403,7 +398,7 @@ describe('R26 — compiled effect execution', () => {
     queue.shift()!();
 
     expect(document.querySelector('#count')!.textContent).toBe('2');
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       ['run:0:dom:0'],
       ['cleanup:0'],
       ['run:2:dom:2'],
@@ -460,16 +455,16 @@ describe('R26 — compiled effect execution', () => {
     document.body.appendChild(App('App', null));
 
     expect(document.querySelector('#idempotent-value')!.textContent).toBe('0');
-    expect(vi.mocked(console.log).mock.calls).toEqual([[1], [0]]);
+    expect(mocked(console.log).mock.calls).toEqual([[1], [0]]);
   });
 
   it('treats reactive arguments passed to unknown effect APIs as read-only consumption', async () => {
     const { App } = await importCompiled('r26-consume');
     document.body.appendChild(App('App', null));
 
-    expect(vi.mocked(console.log).mock.calls).toEqual([[0]]);
+    expectCalledOnceWith(mocked(console.log), 0);
 
     document.querySelector<HTMLButtonElement>('#consume-increment')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([[0], [1]]);
+    expect(mocked(console.log).mock.calls).toEqual([[0], [1]]);
   });
 });

@@ -1,7 +1,8 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import { render, renderToString } from '@memoized-dom/server';
@@ -83,7 +84,7 @@ describe('authored descendant-wide suspension', () => {
   });
   function setup() {
     data = createDataRuntime({ fetch: ((_input: unknown, init?: RequestInit) =>
-      new Promise<Response>(resolve => requests.push({ signal: init?.signal, resolve }))) as typeof fetch });
+      new Promise<Response>(resolve => requests.push({ signal: init?.signal, resolve }))) as FetchStub });
     previous = setActiveDataRuntime(data);
     setScheduler(run => run());
   }
@@ -93,20 +94,20 @@ describe('authored descendant-wide suspension', () => {
   it('claims descendant-owned reads and nested suspension under one inherited policy', async () => {
     setup();
     document.body.append(fixture.App!('App', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(document.querySelector('h1')?.textContent).toBe('Unchanged');
     expect(document.querySelectorAll('.loading')).toHaveLength(1);
     expect(document.querySelector('.inner')).toBeNull();
     expect(document.querySelector('#held')).toBeNull();
     requests[0]!.resolve(response('Ready'));
-    await vi.waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Ready'));
+    await waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Ready'));
     expect(document.querySelector('#held')?.textContent).toBe('Held');
     expect(document.querySelector('.loading')).toBeNull();
   });
   it('aborts abandoned child work and cannot publish a stale generation', async () => {
     setup();
     document.body.append(fixture.App!('App', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     document.querySelector<HTMLButtonElement>('#hide')!.click();
     expect(requests[0]!.signal?.aborted).toBe(true);
     requests[0]!.resolve(response('Too late'));
@@ -124,21 +125,21 @@ describe('authored descendant-wide suspension', () => {
   it('discovers descendant-owned TSRX reads without requiring source props and retries failures', async () => {
     setup();
     document.body.append(fixture.Tsrx!('Tsrx', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     expect(document.querySelector('.tsrx-loading')?.textContent).toBe('Waiting TSRX');
     expect(document.querySelector('.inner')).toBeNull();
     expect(document.querySelector('#leaf')).toBeNull();
     requests[0]!.resolve(response('Unavailable', 503));
-    await vi.waitFor(() => expect(document.querySelector('.tsrx-failed')?.textContent).toBe('request:503'));
+    await waitFor(() => expect(document.querySelector('.tsrx-failed')?.textContent).toBe('request:503'));
     document.querySelector<HTMLButtonElement>('.tsrx-failed')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     requests[1]!.resolve(response('Recovered TSRX'));
-    await vi.waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Recovered TSRX'));
+    await waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Recovered TSRX'));
     expect(document.querySelector('.tsrx-loading')).toBeNull();
   });
   it('resolves the same descendant TSRX preparation during SSR', async () => {
     const { html } = await render(fixture.Tsrx!, {
-      mode: 'resolve', fetch: (async () => response('TSRX server')) as typeof fetch,
+      mode: 'resolve', fetch: (async () => response('TSRX server')) as FetchStub,
     });
     expect(html).toContain('TSRX server');
     expect(html).not.toContain('tsrx-loading');
@@ -146,28 +147,28 @@ describe('authored descendant-wide suspension', () => {
   it('rolls back a failed descendant and recreates its owned request on retry', async () => {
     setup();
     document.body.append(fixture.App!('App', null));
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     requests[0]!.resolve(response('Failed', 503));
-    await vi.waitFor(() => expect(document.querySelector('.failed')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.failed')).not.toBeNull());
     expect(document.querySelector('#held')).toBeNull();
     expect(document.querySelector('#leaf')).toBeNull();
     document.querySelector<HTMLButtonElement>('.failed')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(document.querySelector('.loading')).not.toBeNull();
     requests[1]!.resolve(response('Recovered'));
-    await vi.waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Recovered'));
+    await waitFor(() => expect(document.querySelector('#leaf')?.textContent).toBe('Recovered'));
     expect(document.querySelector('#held')).not.toBeNull();
     expect(document.querySelector('h1')?.textContent).toBe('Unchanged');
   });
   it('renders only the outer shell in synchronous SSR', () => {
-    const html = renderToString(fixture.App!, { fetch: (() => new Promise(() => {})) as typeof fetch });
+    const html = renderToString(fixture.App!, { fetch: (() => new Promise(() => {})) as FetchStub });
     expect(html).toContain('class="loading"');
     expect(html).not.toContain('id="held"');
     expect(html).not.toContain('class="inner"');
   });
   it('settles authored descendant preparation during resolved SSR', async () => {
     const { html } = await render(fixture.App!, {
-      mode: 'resolve', fetch: (async () => response('Server ready')) as typeof fetch, markers: true,
+      mode: 'resolve', fetch: (async () => response('Server ready')) as FetchStub, markers: true,
     });
     expect(html).toContain('Server ready');
     expect(html).toContain('id="held"');
@@ -189,7 +190,7 @@ describe('authored descendant-wide suspension', () => {
   });
   it('adopts resolved descendant data without refetching or replacing server DOM', async () => {
     const result = await render(fixture.App!, {
-      mode: 'resolve', markers: true, fetch: (async () => response('Transferred')) as typeof fetch,
+      mode: 'resolve', markers: true, fetch: (async () => response('Transferred')) as FetchStub,
     });
     setup();
     const host = document.createElement('div');

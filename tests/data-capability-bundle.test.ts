@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { build } from 'esbuild';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import type { DataRuntime } from '../packages/data/src/types';
 
 describe('bundled public data construction', () => {

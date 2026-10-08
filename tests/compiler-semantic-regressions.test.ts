@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compile, compileDetailed } from '../packages/compiler/src/compile';
 import { compileModules, compileModulesDetailed } from '../packages/compiler/src/linker';
 import { analyzeScope, parseEstreeOrThrow } from '../packages/compiler/src/ast';

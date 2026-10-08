@@ -1,6 +1,6 @@
 import {readFileSync,readdirSync,existsSync} from 'node:fs';
 import {join,resolve,relative,dirname} from 'node:path';
-import {expect,it} from 'vitest';
+import { expect, it } from 'bun:test';
 import {parseEstreeOrThrow,walkAst,childNode,stringValue} from '../packages/compiler/src/ast';
 import {createAnalysisCtx} from '../packages/compiler/src/context/model';
 import {createCtx} from '../packages/compiler/src/dom/context';

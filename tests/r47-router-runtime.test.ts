@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../test-support/helpers';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
@@ -189,7 +190,7 @@ describe('compiled router DOM integration', () => {
       .toContain('App/route0/when0');
 
     document.querySelector<HTMLButtonElement>('#open-palette')!.click();
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(document.querySelector('#palette')?.textContent).toBe('Command palette');
     });
 

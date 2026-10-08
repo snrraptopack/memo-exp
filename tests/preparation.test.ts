@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../test-support/helpers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import {
   cleanup, createApplicationRuntime, createRenderPreparation, getEntity,
   markDirty, mountRef, refAssign, register, registerEffect,
@@ -73,7 +74,7 @@ describe('detached render preparation lifecycle', () => {
     await Promise.resolve();
     expect(callback).not.toHaveBeenCalled();
     preparation.activate();
-    await vi.waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
   });
 
   it('resumes detached renders under the same preparation context', () => {

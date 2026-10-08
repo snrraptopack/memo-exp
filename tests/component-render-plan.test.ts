@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { parseEstreeOrThrow, type BaseNode } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import type { ComponentPath } from '../packages/compiler/src/context';

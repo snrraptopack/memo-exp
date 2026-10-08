@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { compile, compileModulesDetailed, emitInitialHtml, experimentalTsrxEstreeFrontend } from '../packages/compiler/src';
 import * as runtime from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';

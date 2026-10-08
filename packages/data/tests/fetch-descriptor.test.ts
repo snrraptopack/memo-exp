@@ -1,4 +1,4 @@
-import {expect,it,vi} from 'vitest';
+import {expect,it,vi} from 'bun:test';
 import {createDataRuntime} from '../src/client';
 import {rebindFetchResource} from '../src/resource';
 import type {FetchOptions} from '../src/types';

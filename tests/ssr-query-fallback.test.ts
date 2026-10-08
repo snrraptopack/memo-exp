@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { waitFor, stubGlobal, unstubAllGlobals, type FetchStub } from '../test-support/helpers';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -37,7 +38,7 @@ afterEach(() => {
   mounted = undefined;
   host?.remove();
   host = undefined;
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 it('refetches an untransferred query source without leaving duplicate SSR DOM', async () => {
@@ -50,7 +51,7 @@ it('refetches an untransferred query source without leaving duplicate SSR DOM', 
   const result = await render(app.App, {
     mode: 'resolve',
     markers: true,
-    fetch: (async () => response()) as typeof fetch,
+    fetch: (async () => response()) as FetchStub,
   });
   expect(result.html).toContain('Ada');
   expect(result.payload.state).toBeUndefined();
@@ -64,10 +65,10 @@ it('refetches an untransferred query source without leaving duplicate SSR DOM', 
   document.body.appendChild(payload.firstElementChild!);
 
   const clientFetch = vi.fn(async () => response());
-  vi.stubGlobal('fetch', clientFetch);
+  stubGlobal('fetch', clientFetch);
   mounted = mount('root', app.App);
 
-  await vi.waitFor(() => expect(host?.querySelector('h1')?.textContent).toBe('Ada'));
+  await waitFor(() => expect(host?.querySelector('h1')?.textContent).toBe('Ada'));
   expect(host.querySelectorAll('h1')).toHaveLength(1);
   expect(clientFetch).toHaveBeenCalledTimes(1);
 });

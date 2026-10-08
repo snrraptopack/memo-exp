@@ -1,7 +1,8 @@
+import { waitFor, stubGlobal, unstubAllGlobals, type FetchStub, expectCalledOnceWith } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import {
@@ -96,10 +97,10 @@ describe('compiler-owned detached preparation', () => {
   beforeEach(() => {
     requests = [];
     effects = vi.fn();
-    vi.stubGlobal('__prepareEffect', effects);
+    stubGlobal('__prepareEffect', effects);
     application = createApplicationRuntime('compiled-preparation', { document, schedule: null });
     data = createDataRuntime({ fetch: ((input: RequestInfo | URL) =>
-      new Promise<Response>(resolve => requests.push({ url: String(input), resolve }))) as typeof fetch });
+      new Promise<Response>(resolve => requests.push({ url: String(input), resolve }))) as FetchStub });
     previous = setActiveDataRuntime(data);
     inRuntime(() => setScheduler(run => queueMicrotask(() => inRuntime(run))));
   });
@@ -107,11 +108,11 @@ describe('compiler-owned detached preparation', () => {
     application.dispose();
     data.clear();
     setActiveDataRuntime(previous);
-    vi.unstubAllGlobals();
+    unstubAllGlobals();
     document.body.replaceChildren();
   });
   async function respond(url: string, body: unknown) {
-    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith(url))).toBe(true));
+    await waitFor(() => expect(requests.some(request => request.url.endsWith(url))).toBe(true));
     requests.find(request => request.url.endsWith(url))!.resolve(new Response(JSON.stringify(body), {
       headers: { 'content-type': 'application/json' },
     }));
@@ -127,22 +128,22 @@ describe('compiler-owned detached preparation', () => {
     expect(preparation.readiness).toBe('pending');
     expect(effects).not.toHaveBeenCalled();
     await respond('/show', { enabled: true });
-    await vi.waitFor(() => expect(root.textContent).toContain('Static shell'));
-    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
+    await waitFor(() => expect(root.textContent).toContain('Static shell'));
+    await waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
     const entity = [...application.state.registry.values()].find(entity => entity.id.endsWith('/Leaf'));
     expect(entity).toBeDefined();
     const input = (root as Element).querySelector('input');
     expect(preparation.readiness).toBe('pending');
     expect(inRuntime(() => leaf.currentInput())).toBeNull();
     await respond('/leaf', { name: 'Ada' });
-    await vi.waitFor(() => expect(preparation.readiness).toBe('ready'));
+    await waitFor(() => expect(preparation.readiness).toBe('ready'));
     expect(inRuntime(() => getEntity(entity!.id))).toBe(entity);
     expect((root as Element).querySelector('input')).toBe(input);
     expect(requests.filter(request => request.url.endsWith('/leaf'))).toHaveLength(1);
     document.body.append(root);
     preparation.activate();
     expect(inRuntime(() => leaf.currentInput())).toBe(input);
-    await vi.waitFor(() => expect(effects).toHaveBeenCalledExactlyOnceWith(input));
+    await waitFor(() => expectCalledOnceWith((effects), input));
   });
 
   it.each(['AttributeOnly', 'PropRead'])('tracks initial and incremental payload reads in %s', async name => {
@@ -150,7 +151,7 @@ describe('compiler-owned detached preparation', () => {
     const root = preparation.run(() => fixture[name]!(name, null));
     expect(preparation.readiness).toBe('pending');
     await respond(name === 'AttributeOnly' ? '/attribute' : '/prop', { name: 'Grace' });
-    await vi.waitFor(() => expect(preparation.readiness).toBe('ready'));
+    await waitFor(() => expect(preparation.readiness).toBe('ready'));
     expect(name === 'AttributeOnly' ? (root as HTMLInputElement).value : root.textContent).toBe('Grace');
   });
 
@@ -159,7 +160,7 @@ describe('compiler-owned detached preparation', () => {
     const root = preparation.run(() => fixture.ConditionalAttribute!('App', null));
     expect(preparation.readiness).toBe('pending');
     inRuntime(() => (root as Element).querySelector<HTMLButtonElement>('#hide')!.click());
-    await vi.waitFor(() => expect(root.textContent).toContain('Gone'));
+    await waitFor(() => expect(root.textContent).toContain('Gone'));
     expect(preparation.readiness).toBe('ready');
   });
 
@@ -168,7 +169,7 @@ describe('compiler-owned detached preparation', () => {
     const root = preparation.run(() => fixture[name]!(name, null));
     expect(preparation.readiness).toBe('pending');
     await respond(name === 'SpreadHost' ? '/spread-host' : '/spread-prop', { name: 'Katherine' });
-    await vi.waitFor(() => expect(preparation.readiness).toBe('ready'));
+    await waitFor(() => expect(preparation.readiness).toBe('ready'));
     expect(name === 'SpreadHost' ? (root as HTMLInputElement).value : root.textContent).toBe('Katherine');
   });
 
@@ -176,7 +177,7 @@ describe('compiler-owned detached preparation', () => {
     const root = inRuntime(() => fixture[name]!(name, null));
     document.body.append(root);
     await respond(name === 'SpreadHost' ? '/spread-host' : '/spread-prop', { name: 'Dorothy' });
-    await vi.waitFor(() => expect(
+    await waitFor(() => expect(
       name === 'SpreadHost' ? (root as HTMLInputElement).value : root.textContent,
     ).toBe('Dorothy'));
   });
@@ -186,7 +187,7 @@ describe('compiler-owned detached preparation', () => {
     const root = preparation.run(() => list.ModuleSpread!('ModuleSpread', null));
     expect(preparation.readiness).toBe('pending');
     await respond('/module-spread', { name: 'Mary' });
-    await vi.waitFor(() => expect(preparation.readiness).toBe('ready'));
+    await waitFor(() => expect(preparation.readiness).toBe('ready'));
     expect((root as HTMLInputElement).value).toBe('Mary');
   });
 
@@ -201,13 +202,13 @@ describe('compiler-owned detached preparation', () => {
     const region = inRuntime(() => createPreparedRegion(document.body, 'failed-request', create,
       () => ({ nodes: [document.createTextNode('Pending')], update() {} }),
       (_error, again) => { retry = again; return { nodes: [document.createTextNode('Failed')], update() {} }; }));
-    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith(url))).toBe(true));
+    await waitFor(() => expect(requests.some(request => request.url.endsWith(url))).toBe(true));
     requests.find(request => request.url.endsWith(url))!.resolve(new Response('denied', { status: 403 }));
-    await vi.waitFor(() => expect(region.status).toBe('error'));
+    await waitFor(() => expect(region.status).toBe('error'));
     expect(document.body.textContent).toBe('Failed');
     expect(application.state.registry.size).toBe(0);
     const attempt = retry();
-    await vi.waitFor(() => expect(requests.filter(request => request.url.endsWith(url))).toHaveLength(2));
+    await waitFor(() => expect(requests.filter(request => request.url.endsWith(url))).toHaveLength(2));
     expect(document.body.textContent).toBe('Pending');
     requests.findLast(request => request.url.endsWith(url))!.resolve(new Response(JSON.stringify({ name: 'Recovered' }), {
       headers: { 'content-type': 'application/json' },
@@ -225,12 +226,12 @@ describe('compiler-owned detached preparation', () => {
     }, () => ({ nodes: [document.createTextNode('Loading list')], update() {} })));
     expect(region.status).toBe('pending');
     await respond('/module-list', [{ id: 'one' }]);
-    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith('/list-leaf'))).toBe(true));
+    await waitFor(() => expect(requests.some(request => request.url.endsWith('/list-leaf'))).toBe(true));
     expect(region.status).toBe('pending');
     expect(document.body.textContent).toBe('Loading list');
     expect(effects).not.toHaveBeenCalled();
     await respond('/list-leaf', { name: 'Ada' });
-    await vi.waitFor(() => expect(region.status).toBe('active'));
+    await waitFor(() => expect(region.status).toBe('active'));
     expect(document.querySelectorAll('#list-leaf')).toHaveLength(1);
     expect(document.querySelector('input')?.value).toBe('Ada');
     expect(effects).toHaveBeenCalledTimes(1);
@@ -246,17 +247,17 @@ describe('compiler-owned detached preparation', () => {
       () => ({ nodes: [pending], update() {}, dispose: fallbackDisposed })));
     expect(document.body.textContent).toBe('Loading');
     await respond('/show', { enabled: true });
-    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
+    await waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
     expect(document.querySelector('#static')).toBeNull();
     expect(document.querySelector('#leaf')).toBeNull();
     expect(effects).not.toHaveBeenCalled();
     await respond('/leaf', { name: 'Ada' });
-    await vi.waitFor(() => expect(region.status).toBe('active'));
+    await waitFor(() => expect(region.status).toBe('active'));
     expect(document.querySelectorAll('#static')).toHaveLength(1);
     expect(document.querySelectorAll('#leaf')).toHaveLength(1);
     const input = document.querySelector('input');
     expect(input?.value).toBe('Ada');
-    expect(effects).toHaveBeenCalledExactlyOnceWith(input);
+    expectCalledOnceWith((effects), input);
     expect(fallbackDisposed).toHaveBeenCalledTimes(1);
     region.dispose();
     expect(document.body.textContent).toBe('');
@@ -266,7 +267,7 @@ describe('compiler-owned detached preparation', () => {
   it('abandons a staged range without publishing stale completions or lifecycles', async () => {
     const region = inRuntime(() => createPreparedRegion(document.body, 'app-boundary', () => create('App')));
     await respond('/show', { enabled: true });
-    await vi.waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
+    await waitFor(() => expect(requests.some(request => request.url.endsWith('/leaf'))).toBe(true));
     region.dispose();
     await respond('/leaf', { name: 'Too late' });
     await Promise.resolve();
@@ -286,7 +287,7 @@ describe('compiler-owned detached preparation', () => {
     expect(document.body.textContent).toBe('Outer loading');
     expect(innerPending).not.toHaveBeenCalled();
     await respond('/attribute', { name: 'Grace' });
-    await vi.waitFor(() => expect(outer.status).toBe('active'));
+    await waitFor(() => expect(outer.status).toBe('active'));
     expect(document.querySelector<HTMLInputElement>('#attribute')?.value).toBe('Grace');
     outer.dispose();
     expect(application.state.registry.size).toBe(0);

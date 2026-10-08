@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor, spyOnAccessor } from '../../../test-support/helpers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import { createScrollCoordinator } from '../src/scroll';
 import { createRouteRuntime } from '../src/runtime-full';
 import { createMemoryRouteHistory } from '../src/history';
@@ -91,7 +92,7 @@ describe('scroll restoration coordinator', () => {
 
   it('does not overwrite a saved destination offset with old DOM scroll while awaiting readiness', async () => {
     const frames = deferredFrames();
-    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(10);
+    spyOnAccessor(window, 'scrollY', 'get').mockReturnValue(10);
     sessionStorage.setItem('__mmd_scroll_waiting', JSON.stringify({ x: 0, y: 750 }));
     const coordinator = createScrollCoordinator();
     coordinator.connect();
@@ -111,7 +112,7 @@ describe('scroll restoration coordinator', () => {
 
   it('keeps scroll tracking in memory and persists only when the entry is left or hidden', () => {
     const frames = deferredFrames();
-    const position = vi.spyOn(window, 'scrollY', 'get').mockReturnValue(300);
+    const position = spyOnAccessor(window, 'scrollY', 'get').mockReturnValue(300);
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
     const coordinator = createScrollCoordinator();
     coordinator.connect();
@@ -134,7 +135,7 @@ describe('scroll restoration coordinator', () => {
 
   it('bounds persisted positions in session storage', () => {
     deferredFrames();
-    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(10);
+    spyOnAccessor(window, 'scrollY', 'get').mockReturnValue(10);
     const coordinator = createScrollCoordinator();
     for (let index = 0; index < 105; index++) coordinator.capture(`entry-${index}`);
     const stored = Object.keys(sessionStorage).filter(key => key.startsWith('__mmd_scroll_'));
@@ -203,7 +204,7 @@ describe('scroll restoration coordinator', () => {
     target.id = 'late';
     const intoView = vi.spyOn(target, 'scrollIntoView');
     document.body.append(target);
-    await vi.waitFor(() => expect(intoView).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(intoView).toHaveBeenCalledTimes(1));
     coordinator.dispose();
   });
 
@@ -262,7 +263,7 @@ describe('scroll restoration coordinator', () => {
 
   it('uses memory history entry keys for back/forward scroll snapshots', () => {
     const frames = deferredFrames();
-    const position = vi.spyOn(window, 'scrollY', 'get').mockReturnValue(640);
+    const position = spyOnAccessor(window, 'scrollY', 'get').mockReturnValue(640);
     const history = createMemoryRouteHistory({ initialEntries: ['/first'] });
     const firstKey = history.location.key;
     const runtime = createRouteRuntime({ routeHistory: history, environment: {} });

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 
 it('installs async request context after client initialization and binds queued work within another request', () => {
   const output=execFileSync(process.execPath,['--input-type=module','-e',`

@@ -1,9 +1,10 @@
+import '../../../test-support/dom';
 /**
  * StringDocument tree operations are differentially tested against a real
  * DOM: every random append/insert/remove/fragment/move sequence must leave
  * identical structure and identical parent/sibling pointers in both trees.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import {
   StringDocument,
   type StringRenderableNode,

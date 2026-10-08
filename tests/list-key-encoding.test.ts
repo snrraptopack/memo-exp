@@ -9,7 +9,7 @@
  *   - exact round-trips through decodeListKey;
  *   - declared limitation: non-primitive keys stay process-local synthetics.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import {
   createListRegion,
   decodeListKey,

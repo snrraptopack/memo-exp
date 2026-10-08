@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { waitFor, stubGlobal, unstubAllGlobals, expectCalledOnceWith } from '../test-support/helpers';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -40,7 +41,7 @@ function gatedFetch() {
     gates.set(path, () => resolve(Response.json({ title: `${path.slice(5)} title` })));
   })) as typeof globalThis.fetch;
   const open = async (path: string) => {
-    await vi.waitFor(() => expect(gates.has(path)).toBe(true));
+    await waitFor(() => expect(gates.has(path)).toBe(true));
     gates.get(path)!();
   };
   return { fetch, open };
@@ -81,7 +82,7 @@ afterEach(async () => {
   mounted?.unmount();
   mounted = undefined;
   document.body.replaceChildren();
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
   delete (document as { readyState?: unknown }).readyState;
   delete (globalThis as Record<PropertyKey, unknown>)[Symbol.for('memoized-dom:stream')];
 });
@@ -145,7 +146,7 @@ describe('out-of-order region streaming', () => {
     const serverSection = host.querySelector('#fast');
 
     const clientFetch = vi.fn(() => new Promise<Response>(() => {}));
-    vi.stubGlobal('fetch', clientFetch);
+    stubGlobal('fetch', clientFetch);
     const onHydrateError = vi.fn();
     mounted = mount('root', app.App, { onHydrateError });
     await Promise.resolve();
@@ -162,7 +163,7 @@ describe('out-of-order region streaming', () => {
 
     Object.defineProperty(document, 'readyState', { configurable: true, get: () => 'loading' });
     const clientFetch = vi.fn(() => new Promise<Response>(() => {}));
-    vi.stubGlobal('fetch', clientFetch);
+    stubGlobal('fetch', clientFetch);
     const onHydrateError = vi.fn();
     mounted = mount('root', app.App, { onHydrateError });
     await Promise.resolve();
@@ -171,7 +172,7 @@ describe('out-of-order region streaming', () => {
 
     await server.open('/api/fast');
     appendStreamed(host, (await nextChunk(reader))!);
-    await vi.waitFor(() => expect(host.querySelector('#fast')?.textContent).toBe('fast title'));
+    await waitFor(() => expect(host.querySelector('#fast')?.textContent).toBe('fast title'));
     expect(host.querySelectorAll('.skeleton')).toHaveLength(1);
     expect(host.querySelectorAll('template, script:not([type])')).toHaveLength(0);
     expect(clientFetch).not.toHaveBeenCalled();
@@ -204,17 +205,16 @@ describe('out-of-order region streaming', () => {
     const slowNode = [...host.querySelector('#slow')!.childNodes].find(node => node.nodeType === 3);
 
     const clientFetch = vi.fn(() => new Promise<Response>(() => {}));
-    vi.stubGlobal('fetch', clientFetch);
+    stubGlobal('fetch', clientFetch);
     const onHydrateError = vi.fn();
     mounted = mount('root', app.App, { onHydrateError });
-    expect(onHydrateError).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ name: 'HydrationMismatchError' }), 'region');
+    expectCalledOnceWith((onHydrateError), expect.objectContaining({ name: 'HydrationMismatchError' }), 'region');
     expect(host.querySelector('#static')).toBe(header);
     expect(host.querySelector('#fast')).toBe(fast);
     expect([...host.querySelector('#slow')!.childNodes].find(node => node.nodeType === 3)).toBe(slowNode);
     expect(host.querySelector('#slow')!.textContent).toBe(slowText);
     expect(fast.querySelector('b')).toBeNull();
-    await vi.waitFor(() => expect(fast.textContent).toBe('fast title'));
+    await waitFor(() => expect(fast.textContent).toBe('fast title'));
   });
 
   it('stops at the settle budget and leaves undelivered sources to the browser', async () => {
@@ -227,7 +227,7 @@ describe('out-of-order region streaming', () => {
     expect(host.querySelector('#fast')?.textContent).toBe('fast title');
 
     const clientFetch = vi.fn(() => new Promise<Response>(() => {}));
-    vi.stubGlobal('fetch', clientFetch);
+    stubGlobal('fetch', clientFetch);
     mounted = mount('root', app.App);
     await Promise.resolve();
     expect(clientFetch).toHaveBeenCalledTimes(1);
@@ -241,7 +241,7 @@ describe('out-of-order region streaming', () => {
     appendStreamed(host, (await nextChunk(reader))!);
     Object.defineProperty(document, 'readyState', {configurable:true, get:() => 'loading'});
     const clientFetch = vi.fn(() => new Promise<Response>(() => {}));
-    vi.stubGlobal('fetch', clientFetch);
+    stubGlobal('fetch', clientFetch);
     mounted = mount('root', app.App);
     const realm = (globalThis as Record<PropertyKey, unknown>)[Symbol.for('memoized-dom:stream')] as {owns(id:string):boolean};
     expect(realm.owns('App')).toBe(true);
@@ -264,7 +264,7 @@ describe('out-of-order region streaming', () => {
     delete parsed.state;
     payload.textContent = JSON.stringify(parsed);
     Object.defineProperty(document, 'readyState', {configurable:true, get:() => 'loading'});
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     mounted = mount('root', app.App);
     const skeletons = [...host.querySelectorAll('.skeleton')];
     const fast = host.querySelector('#fast');

@@ -4,13 +4,13 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": [
+      "bun",
       "node"
     ]
   },
   "include": [
     "src",
-    "tests",
-    "vitest.config.ts"
+    "tests"
   ],
   "exclude": [
     "dist"

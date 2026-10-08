@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import { createDataRuntime } from '../src';
 import type { FetchResource } from '../src';
 
@@ -10,7 +11,7 @@ function json(data: unknown, status = 200): Response {
 }
 
 async function settled<T>(resource: FetchResource<T>): Promise<void> {
-  await vi.waitFor(() => expect(resource.pending).toBe(false));
+  await waitFor(() => expect(resource.pending).toBe(false));
 }
 
 describe('resource concurrency', () => {
@@ -20,11 +21,11 @@ describe('resource concurrency', () => {
     const runtime = createDataRuntime({ fetch: ((_input, options) => {
       signal = options!.signal as AbortSignal;
       return new Promise<Response>(resolve => { finish = resolve; });
-    }) as typeof fetch });
+    }) as FetchStub });
     const first = runtime.$fetch<string[]>('/shared-write');
     const second = runtime.$fetch<string[]>('/shared-write');
     try {
-      await vi.waitFor(() => expect(signal).toBeInstanceOf(AbortSignal));
+      await waitFor(() => expect(signal).toBeInstanceOf(AbortSignal));
       expect(() => first.update(() => { throw new Error('write failed'); })).toThrow('write failed');
       expect(signal.aborted).toBe(false);
       expect(second.pending).toBe(true);
@@ -55,10 +56,10 @@ describe('resource concurrency', () => {
       fetch: ((_input, init) => {
         requestSignal = init?.signal as AbortSignal;
         return new Promise<Response>(resolve => { finish = resolve; });
-      }) as typeof fetch,
+      }) as FetchStub,
     });
     const resource = runtime.$fetch<string[]>('/items');
-    await vi.waitFor(() => expect(requestSignal).toBeInstanceOf(AbortSignal));
+    await waitFor(() => expect(requestSignal).toBeInstanceOf(AbortSignal));
 
     resource.update(() => ['local']);
 
@@ -83,16 +84,16 @@ describe('resource concurrency', () => {
         new Promise<Response>(resolve => { finish = resolve; }),
       );
     const runtime = createDataRuntime({
-      fetch: fetcher as typeof fetch,
+      fetch: fetcher as FetchStub,
     });
     const resource = runtime.$fetch<string[]>('/items');
     await settled(resource);
     const refresh = resource.refresh();
-    const refreshRejection = expect(refresh).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    const refreshRejection = refresh.then(() => { throw new Error('Expected promise rejection'); }, error => error);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
 
     resource.mutate(current => current?.push('local'));
-    await refreshRejection;
+    expect(await refreshRejection).toMatchObject({ name: 'AbortError' });
     expect(resource.data).toEqual(['server', 'local']);
     expect(resource.pending).toBe(false);
 
@@ -106,7 +107,7 @@ describe('resource concurrency', () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(json(['current']))
       .mockResolvedValueOnce(json({ message: 'failed' }, 503));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const resource = runtime.$fetch<string[]>('/resource');
     await settled(resource);
 
@@ -131,10 +132,10 @@ describe('resource concurrency', () => {
   it('detaches one consumer without cancelling a shared request', async () => {
     let finish!: (response: Response) => void;
     const fetcher = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const first = runtime.$fetch<string[]>('/shared');
     const second = runtime.$fetch<string[]>('/shared');
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
 
     first.abort();
     finish(json(['done']));
@@ -148,19 +149,19 @@ describe('resource concurrency', () => {
   it('rejects an aborted consumer refresh while shared work continues', async () => {
     const finishes: Array<(response: Response) => void> = [];
     const fetcher = vi.fn(() => new Promise<Response>(resolve => finishes.push(resolve)));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const owner = new AbortController();
     const first = runtime.$fetch<string[]>('/shared-refresh', {
       signal: owner.signal,
     });
     const second = runtime.$fetch<string[]>('/shared-refresh');
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     finishes.shift()!(json(['initial']));
     await settled(first);
     await settled(second);
 
     const refresh = first.refresh();
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     const reason = new Error('consumer left');
     owner.abort(reason);
 
@@ -173,7 +174,7 @@ describe('resource concurrency', () => {
 
   it('does not share resources when caching is disabled', async () => {
     const fetcher = vi.fn(async () => json(['private']));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const first = runtime.$fetch('/private', { cache: false });
     const second = runtime.$fetch('/private', { cache: false });
     await settled(first);

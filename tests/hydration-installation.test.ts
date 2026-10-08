@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { installHydrationRuntime } from '../packages/runtime/src/mount';
 import { hydrateList } from '../packages/runtime/src/hydration-list';
 import { claimHydrationRoot, HydrationDocument } from '../packages/runtime/src/hydration';

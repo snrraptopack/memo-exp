@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it } from 'bun:test';
 import { createListRegion } from '@memoized-dom/runtime/testing';
 
 afterEach(() => { document.body.replaceChildren(); });

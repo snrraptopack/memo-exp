@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -30,11 +31,11 @@ async function load(source: string, name: string) {
 
 beforeEach(() => {
   document.body.replaceChildren(); resetAccessTable();
-  vi.stubGlobal('__ownerRowReplays', 0);
+  stubGlobal('__ownerRowReplays', 0);
 });
 afterEach(() => {
   _internals().registry.forEach((_, id) => unregister(id));
-  resetAccessTable(); resetScheduler(); vi.unstubAllGlobals();
+  resetAccessTable(); resetScheduler(); unstubAllGlobals();
 });
 
 for (const escaped of [false, true]) it.each([false, true])(`retains identity and mixed/replacement replay (alias=${escaped}, deferred=%s)`, async deferred => {
@@ -181,7 +182,7 @@ it.each([false, true])('separates structural and ordinary writes with live sourc
 
 it('keeps conditional mixed commits consistent before effects observe the DOM', async () => {
   const observations:Array<{value:string;dom:string}>=[];
-  vi.stubGlobal('__ownerObservations',observations);
+  stubGlobal('__ownerObservations',observations);
   const {App}=await load(`export function App(){${data}
     $effect(()=>{globalThis.__ownerObservations.push({value:items[0].label,dom:document.querySelector('li')?.textContent})});
     return <main><button onClick={()=>{if(true){items=[items[2],items[0],items[1]];}

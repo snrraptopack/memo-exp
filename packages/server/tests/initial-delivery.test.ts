@@ -1,7 +1,9 @@
+import '../../../test-support/dom';
+import { waitFor, stubGlobal, unstubAllGlobals } from '../../../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
 import { commit, mount, mountInitial, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import { registerRootFactory, rootFactoryStore } from '@memoized-dom/runtime/server';
@@ -14,7 +16,7 @@ const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
 
 const entry = `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`;
 let mounted: ReturnType<typeof mountInitial> | undefined;
-afterEach(() => { mounted?.unmount(); mounted = undefined; resetScheduler(); document.body.innerHTML = ''; vi.unstubAllGlobals(); });
+afterEach(() => { mounted?.unmount(); mounted = undefined; resetScheduler(); document.body.innerHTML = ''; unstubAllGlobals(); });
 
 async function fixture(name: string, source: string) {
   const sources = { './main.ts': entry, './App.tsx': source };
@@ -131,7 +133,7 @@ describe('shared initial server delivery', () => {
       `export function App(){const data=$fetch('/api/name');let n=0;return <main>{data.name?<h1>{data.name}</h1>:null}<button onClick={()=>n++}>{n}</button></main>;}`);
     let release!:(response:Response)=>void;
     const fetch=vi.fn(()=>new Promise<Response>(resolve=>{release=resolve;}));
-    vi.stubGlobal('fetch',fetch);
+    stubGlobal('fetch',fetch);
     document.body.innerHTML='<div id="root"></div>';
     setScheduler(run=>run());
     mounted=mount('root',value.clientModule.App);
@@ -140,9 +142,9 @@ describe('shared initial server delivery', () => {
     expect(document.querySelector('h1')).toBeNull();
     button.click();
     expect(button.textContent).toBe('1');
-    await expect.poll(()=>fetch.mock.calls.length).toBe(1);
+    await waitFor(async () => expect(await (()=>fetch.mock.calls.length)()).toBe(1));
     release(Response.json({name:'Ada'}));
-    await expect.poll(()=>document.querySelector('h1')?.textContent).toBe('Ada');
+    await waitFor(async () => expect(await (()=>document.querySelector('h1')?.textContent)()).toBe('Ada'));
     expect(document.querySelector('button')).toBe(button);
     expect(button.textContent).toBe('1');
     expect(fetch).toHaveBeenCalledTimes(1);

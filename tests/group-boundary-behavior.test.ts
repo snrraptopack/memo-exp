@@ -1,7 +1,8 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   createDataRuntime,
@@ -88,7 +89,7 @@ describe('Group boundaries across component ownership', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>((resolve) => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     previousRuntime = setActiveDataRuntime(runtime);
     setScheduler(run => run());
@@ -103,7 +104,7 @@ describe('Group boundaries across component ownership', () => {
 
   it('keeps normal A mounted while suspended B consumes the same A-owned source', async () => {
     mount('SharedSourceChildSuspended');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
 
     expect(document.querySelector('#shared-a-shell')).not.toBeNull();
     expect(document.querySelector('#shared-a-value .outer-pending')).not.toBeNull();
@@ -111,19 +112,17 @@ describe('Group boundaries across component ownership', () => {
     expect(document.querySelector('#shared-b')).toBeNull();
 
     request('/matrix/shared-user').resolve(json({ name: 'Ada' }));
-    await expect.poll(() => document.querySelector('#shared-a-value')?.textContent)
-      .toBe('Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#shared-a-value')?.textContent)())
+      .toBe('Ada'));
     expect(document.querySelector('#shared-b')?.textContent).toBe('Ada');
   });
 
   it('renders separate nearest error policies when normal A and suspended B share a failed source', async () => {
     mount('SharedSourceChildSuspended');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
 
     request('/matrix/shared-user').resolve(failure());
-    await expect.poll(
-      () => document.querySelector('#shared-a-value .outer-error')?.textContent,
-    ).toContain('503');
+    await waitFor(async () => expect(await (() => document.querySelector('#shared-a-value .outer-error')?.textContent)()).toContain('503'));
     expect(document.querySelector('.inner-error')?.textContent).toContain('503');
     expect(document.querySelector('#shared-b')).toBeNull();
     expect(document.querySelector('#shared-a-shell')).not.toBeNull();
@@ -131,41 +130,37 @@ describe('Group boundaries across component ownership', () => {
 
   it('lets suspended B mount before an independent A-owned source resolves', async () => {
     mount('IndependentChildSuspended');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(document.querySelector('#independent-a-shell')).not.toBeNull();
     expect(document.querySelector('#independent-a-value .outer-pending')).not.toBeNull();
     expect(document.querySelector('#independent-b')).toBeNull();
 
     request('/matrix/independent-details').resolve(json({ name: 'Details' }));
-    await expect.poll(() => document.querySelector('#independent-b')?.textContent)
-      .toBe('Details');
+    await waitFor(async () => expect(await (() => document.querySelector('#independent-b')?.textContent)())
+      .toBe('Details'));
     expect(document.querySelector('#independent-a-value .outer-pending')).not.toBeNull();
 
     request('/matrix/independent-summary').resolve(json({ text: 'Summary' }));
-    await expect.poll(
-      () => document.querySelector('#independent-a-value')?.textContent,
-    ).toBe('Summary');
+    await waitFor(async () => expect(await (() => document.querySelector('#independent-a-value')?.textContent)()).toBe('Summary'));
   });
 
   it('withholds normal B when the component A containing it is suspended', async () => {
     mount('ParentSuspendsComponent');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
 
     expect(document.querySelector('.outer-pending')).not.toBeNull();
     expect(document.querySelector('#parent-suspended-a')).toBeNull();
     expect(document.querySelector('#parent-suspended-b')).toBeNull();
 
     request('/matrix/parent-suspended-user').resolve(json({ name: 'Ada' }));
-    await expect.poll(
-      () => document.querySelector('#parent-suspended-b')?.textContent,
-    ).toBe('Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#parent-suspended-b')?.textContent)()).toBe('Ada'));
     expect(document.querySelector('#parent-suspended-a')).not.toBeNull();
   });
 
   it('allows B to mount normally while an element inside B suspends A-owned data', async () => {
     mount('ChildSuspendsOwnElement');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
 
     expect(document.querySelector('#self-suspending-a-shell')).not.toBeNull();
     expect(document.querySelector('#self-suspending-b-shell')).not.toBeNull();
@@ -173,21 +168,19 @@ describe('Group boundaries across component ownership', () => {
     expect(document.querySelector('#self-suspending-b-value')).toBeNull();
 
     request('/matrix/self-suspending-user').resolve(json({ name: 'Ada' }));
-    await expect.poll(
-      () => document.querySelector('#self-suspending-b-value')?.textContent,
-    ).toBe('Ada');
+    await waitFor(async () => expect(await (() => document.querySelector('#self-suspending-b-value')?.textContent)()).toBe('Ada'));
   });
 
   it('discovers child-owned requests before publishing the suspended parent', async () => {
     mount('SuspendedParentCreatesWaterfall');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(requests[0]!.url).toMatch(/\/matrix\/waterfall-parent$/);
     expect(document.querySelector('#waterfall-a-shell')).toBeNull();
     expect(document.querySelector('#waterfall-b-shell')).toBeNull();
 
     request('/matrix/waterfall-parent').resolve(json({ name: 'Parent' }));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.url).toMatch(/\/matrix\/waterfall-child$/);
     expect(document.querySelector('#waterfall-a-shell')).toBeNull();
     expect(document.querySelector('#waterfall-b-shell')).toBeNull();
@@ -196,18 +189,16 @@ describe('Group boundaries across component ownership', () => {
     expect(document.querySelector('.outer-pending')).not.toBeNull();
 
     request('/matrix/waterfall-child').resolve(json({ name: 'Child' }));
-    await expect.poll(
-      () => document.querySelector('#waterfall-b-value')?.textContent,
-    ).toBe('Child');
+    await waitFor(async () => expect(await (() => document.querySelector('#waterfall-b-value')?.textContent)()).toBe('Child'));
   });
 
   it('withholds the entire staged subtree when the parent dependency fails', async () => {
     mount('SuspendedParentCreatesWaterfall');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     request('/matrix/waterfall-parent').resolve(failure());
-    await expect.poll(() => document.querySelector('.outer-error')?.textContent)
-      .toContain('503');
+    await waitFor(async () => expect(await (() => document.querySelector('.outer-error')?.textContent)())
+      .toContain('503'));
     expect(requests).toHaveLength(2);
     expect(document.querySelector('#waterfall-a-shell')).toBeNull();
     expect(document.querySelector('#waterfall-b-shell')).toBeNull();
@@ -215,45 +206,45 @@ describe('Group boundaries across component ownership', () => {
 
   it('keeps the committed owner during refresh and uses read-local pending on rebind', async () => {
     mount('SuspendedRefreshAndRebind');
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
 
     expect(document.querySelector('#rebind-shell')).not.toBeNull();
     expect(document.querySelector('#rebind-value')).toBeNull();
     request('/matrix/rebind/one').resolve(json({ name: 'Initial' }));
-    await expect.poll(() => document.querySelector('#rebind-value')?.textContent)
-      .toBe('Initial');
+    await waitFor(async () => expect(await (() => document.querySelector('#rebind-value')?.textContent)())
+      .toBe('Initial'));
     const committed = document.querySelector('#rebind-value');
 
     document.querySelector<HTMLButtonElement>('#refresh-source')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.url).toMatch(/\/matrix\/rebind\/one$/);
     expect(document.querySelector('#rebind-value')?.textContent).toBe('Initial');
     expect(document.querySelector('.outer-pending')).toBeNull();
     requests[1]!.resolve(json({ name: 'Refreshed' }));
-    await expect.poll(() => document.querySelector('#rebind-value')?.textContent)
-      .toBe('Refreshed');
+    await waitFor(async () => expect(await (() => document.querySelector('#rebind-value')?.textContent)())
+      .toBe('Refreshed'));
 
     document.querySelector<HTMLButtonElement>('#rebind-source')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[2]!.url).toMatch(/\/matrix\/rebind\/two$/);
     expect(document.querySelector('#rebind-value')).toBe(committed);
     expect(document.querySelector('.outer-pending')).not.toBeNull();
     requests[2]!.resolve(json({ name: 'Rebound' }));
-    await expect.poll(() => document.querySelector('#rebind-value')?.textContent)
-      .toBe('Rebound');
+    await waitFor(async () => expect(await (() => document.querySelector('#rebind-value')?.textContent)())
+      .toBe('Rebound'));
   });
 
   it('retries every failed dependency represented by one suspended boundary', async () => {
     mount('MultipleFailureSuspended');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     request('/matrix/failure-left').resolve(failure(501));
     request('/matrix/failure-right').resolve(failure(502));
-    await expect.poll(() => document.querySelector('.multi-error')?.textContent)
-      .toContain('501');
+    await waitFor(async () => expect(await (() => document.querySelector('.multi-error')?.textContent)())
+      .toContain('501'));
 
     document.querySelector<HTMLButtonElement>('.multi-error')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(4));
+    await waitFor(() => expect(requests).toHaveLength(4));
     expect(requests[2]!.url).toMatch(/\/matrix\/failure-left$/);
     expect(requests[3]!.url).toMatch(/\/matrix\/failure-right$/);
     expect(document.querySelector('.multi-error')).toBeNull();
@@ -264,26 +255,26 @@ describe('Group boundaries across component ownership', () => {
     expect(document.querySelector('.outer-pending')).not.toBeNull();
     expect(document.querySelector('#multi-value')).toBeNull();
     requests[3]!.resolve(json({ name: 'Right' }));
-    await expect.poll(() => document.querySelector('#multi-value')?.textContent)
-      .toBe('Left:Right');
+    await waitFor(async () => expect(await (() => document.querySelector('#multi-value')?.textContent)())
+      .toBe('Left:Right'));
   });
 
   it('includes child-private sources in the parent atomic activation', async () => {
     mount('SuspendedParentWithColorlessChild');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[0]!.url).toMatch(/\/matrix\/mixed-parent$/);
     expect(document.querySelector('#mixed-parent')).toBeNull();
 
     requests[0]!.resolve(json({ name: 'Parent' }));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]!.url).toMatch(/\/matrix\/mixed-child$/);
     expect(document.querySelector('#mixed-parent')).toBeNull();
     expect(document.querySelector('#mixed-child')).toBeNull();
     expect(document.querySelector('.outer-pending')).not.toBeNull();
 
     requests[1]!.resolve(json({ name: 'Child' }));
-    await expect.poll(() => document.querySelector('#mixed-child')?.textContent)
-      .toBe('Child');
+    await waitFor(async () => expect(await (() => document.querySelector('#mixed-child')?.textContent)())
+      .toBe('Child'));
     expect(document.querySelector('.outer-pending')).toBeNull();
   });
 

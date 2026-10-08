@@ -1,3 +1,4 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 /**
  * RFC §16.4 / §16.8.3 — runtime-owned module source descriptions.
  *
@@ -10,7 +11,7 @@
  *    stale instances in every runtime instead of silently reusing them.
  * 4. Descriptions never fire requests at module evaluation.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
@@ -41,7 +42,7 @@ function fetchCalls(): { calls: string[]; fetch: typeof fetch } {
         headers: { 'content-type': 'application/json' },
       }),
     );
-  }) as typeof fetch;
+  }) as FetchStub;
   return { calls, fetch };
 }
 
@@ -87,14 +88,14 @@ describe('runtime-owned module source descriptions (RFC §16.4)', () => {
     expect(calls).toEqual(['1', '1']);
 
     // Reads resolve within their own runtime's instance once committed.
-    await vi.waitFor(() => {
+    await waitFor(() => {
       runWithApplicationRuntime(rootA.application, () => {
         expect(readModuleSourceList(sourceRef('shared#list'))).toEqual([
           1, 2, 3,
         ]);
       });
     }, { timeout: 2000, interval: 10 });
-    await vi.waitFor(() => {
+    await waitFor(() => {
       runWithApplicationRuntime(rootB.application, () => {
         expect(readModuleSourceList(sourceRef('shared#list'))).toEqual([
           1, 2, 3,
@@ -221,7 +222,7 @@ describe('runtime-owned module source descriptions (RFC §16.4)', () => {
         { query: { page: 2 } },
       );
     });
-    await vi.waitFor(() => expect(calls).toEqual(['list?page=1', 'list?page=2']));
+    await waitFor(() => expect(calls).toEqual(['list?page=1', 'list?page=2']));
 
     data.clear();
     application.dispose();

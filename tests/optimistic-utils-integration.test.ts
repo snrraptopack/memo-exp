@@ -1,7 +1,8 @@
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { clearDataRuntime } from '@memoized-dom/data';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -81,12 +82,12 @@ afterEach(() => {
   resetAccessTable();
   resetScheduler();
   clearDataRuntime();
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 it('renders direct and form optimistic writes, then rolls back only failed out-of-order operations', async () => {
   const requests: Array<{ direction: string; resolve: (response: Response) => void }> = [];
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+  stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const direction = new URL(String(input), 'http://localhost').searchParams.get('direction')!;
     return new Promise<Response>(resolve => requests.push({ direction, resolve }));
   }));
@@ -98,8 +99,8 @@ it('renders direct and form optimistic writes, then rolls back only failed out-o
 
   root.querySelector<HTMLButtonElement>('#direct')!.click();
   root.querySelector<HTMLButtonElement>('#direct')!.click();
-  await vi.waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('2'));
-  await vi.waitFor(() => expect(requests).toHaveLength(2));
+  await waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('2'));
+  await waitFor(() => expect(requests).toHaveLength(2));
 
   const form = root.querySelector('form')!;
   const submit = (button: HTMLButtonElement) => {
@@ -109,26 +110,26 @@ it('renders direct and form optimistic writes, then rolls back only failed out-o
   };
   submit(root.querySelector<HTMLButtonElement>('#form-up')!);
   submit(root.querySelector<HTMLButtonElement>('#form-down')!);
-  await vi.waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('2'));
-  await vi.waitFor(() => expect(requests).toHaveLength(4));
+  await waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('2'));
+  await waitFor(() => expect(requests).toHaveLength(4));
   expect(root.querySelector('#pending')).not.toBeNull();
   expect(root.querySelectorAll('#entries li')).toHaveLength(4);
   expect(root.querySelector('#entries')?.textContent).toContain('pending');
 
   requests[2]!.resolve(Response.json({ id: 'form-up' }));
-  await vi.waitFor(() => expect(root.querySelector('#saved')?.textContent).toBe('form-up'));
+  await waitFor(() => expect(root.querySelector('#saved')?.textContent).toBe('form-up'));
   expect(root.querySelector('#entries')?.textContent).toContain('form-up:up:saved');
-  await vi.waitFor(() => expect(root.querySelector('#pending')).not.toBeNull());
+  await waitFor(() => expect(root.querySelector('#pending')).not.toBeNull());
   requests[0]!.resolve(Response.json({ error: 'first failed' }, { status: 409 }));
-  await vi.waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('1'));
+  await waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('1'));
   expect(root.querySelector('#direct-error')?.textContent).toContain('status 409');
 
   requests[3]!.resolve(Response.json({ error: 'form failed' }, { status: 409 }));
-  await vi.waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('2'));
-  await vi.waitFor(() => expect(root.querySelector('#form-error')?.textContent).toContain('status 409'));
+  await waitFor(() => expect(root.querySelector('#votes')?.textContent).toBe('2'));
+  await waitFor(() => expect(root.querySelector('#form-error')?.textContent).toContain('status 409'));
   requests[1]!.resolve(Response.json({ id: 'direct-up' }));
-  await vi.waitFor(() => expect(root.querySelector('#pending')).toBeNull());
-  await vi.waitFor(() => expect(root.querySelector('#saved')?.textContent).toBe('direct-up'));
+  await waitFor(() => expect(root.querySelector('#pending')).toBeNull());
+  await waitFor(() => expect(root.querySelector('#saved')?.textContent).toBe('direct-up'));
   expect(root.querySelector('#votes')?.textContent).toBe('2');
   expect([...root.querySelectorAll('#entries li')].map(row => row.textContent)).toEqual([
     'direct-up:up:saved',

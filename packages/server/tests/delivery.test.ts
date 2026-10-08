@@ -1,4 +1,5 @@
-// @vitest-environment node
+import { waitFor } from '../../../test-support/helpers';
+// Runs with Bun globals; no DOM preload.
 /**
  * SSR delivery contract through serve().fetch():
  * - `stream` commits headers once route preparation decides the response,
@@ -8,7 +9,7 @@
  * - client disconnects and HEAD requests stop request-owned work;
  * - `buffer` responds with the complete document and Server-Timing.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import { serve, type RenderReport, type ServerApplication } from '../src/index';
 import { compileFixture, type CompiledTiers } from './parity-harness';
 
@@ -93,8 +94,8 @@ describe('SSR delivery', () => {
     expect(rest).not.toContain('class="pending"');
     expect(rest).toContain('<script type="application/mmd+json"');
     expect(rest.endsWith('</body>')).toBe(true);
-    await expect.poll(() => harness.reports.map(report => report.outcome))
-      .toEqual(['complete']);
+    await waitFor(async () => expect(await (() => harness.reports.map(report => report.outcome))())
+      .toEqual(['complete']));
   });
 
   it('closes a document with an empty outlet when the body fails after commit', async () => {
@@ -114,12 +115,12 @@ describe('SSR delivery', () => {
     const response = await harness.app.fetch(new Request('https://app.test/'));
     const reader = response.body!.getReader();
     await reader.read();
-    await expect.poll(() => harness.apiSignals.length).toBe(1);
+    await waitFor(async () => expect(await (() => harness.apiSignals.length)()).toBe(1));
 
     await reader.cancel(new DOMException('client went away', 'AbortError'));
     expect(harness.apiSignals[0]!.aborted).toBe(true);
-    await expect.poll(() => harness.reports.map(report => report.outcome))
-      .toEqual(['aborted']);
+    await waitFor(async () => expect(await (() => harness.reports.map(report => report.outcome))())
+      .toEqual(['aborted']));
   });
 
   it('answers HEAD after preparation without rendering the body', async () => {
@@ -130,7 +131,7 @@ describe('SSR delivery', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     expect(await response.text()).toBe('');
-    await expect.poll(() => harness.apiSignals[0]?.aborted).toBe(true);
+    await waitFor(async () => expect(await (() => harness.apiSignals[0]?.aborted)()).toBe(true));
   });
 
   it('buffers per-registration, overriding application defaults', async () => {

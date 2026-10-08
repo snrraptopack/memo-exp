@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'bun:test';
 import { createCoreDataRuntime } from '../src/runtime-core';
 import { enableDataReads } from '../src/read-resource';
 import { exposeDataRuntime } from '../src/client';
@@ -31,7 +31,7 @@ describe('optional data transfer producer', () => {
       target.pathname = '/_fn/changed';
       target.search = '?id=99';
       const producer = enableDataSerialization(runtime);
-      expect(producer).toBe(runtime);
+      expect(runtime).toBe(producer);
       const state = producer.serializeState();
       expect(state.sources).toHaveLength(1);
       expect(state.sources[0]!.snapshot).toEqual({status:'success',data:{id:7},revalidate:false});
@@ -52,12 +52,12 @@ describe('optional data transfer producer', () => {
     const fetched = core.$fetch('/user');
     const reads = enableDataReads(core);
     const read = reads.$read(Promise.resolve('ready'));
-    expect(reads).toBe(core);
+    expect(core).toBe(reads);
     expect('serializeState' in reads).toBe(false);
     await expect(core.settle()).resolves.toBe(true);
     const runtime = exposeDataRuntime(core);
     try {
-      expect(runtime).toBe(core);
+      expect(core).toBe(runtime);
       expect(exposeDataRuntime(core)).toBe(runtime);
       expect(runWithDataRuntime(runtime, () => getActiveDataRuntime())).toBe(runtime);
       expect(runtime.serializeState().sources).toHaveLength(1);

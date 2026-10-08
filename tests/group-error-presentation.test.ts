@@ -1,7 +1,8 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, RequestError, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import { toPresentationError } from '@memoized-dom/runtime';
@@ -54,23 +55,23 @@ describe('unified Group failure presentation', () => {
       return new Response(JSON.stringify(failed ? { message: 'Unavailable' } : { name: 'Recovered' }), {
         status: failed ? 503 : 200, headers: { 'content-type': 'application/json' },
       });
-    }) as typeof fetch });
+    }) as FetchStub });
     previous = setActiveDataRuntime(data);
     setScheduler(run => run());
     document.body.append(fixture[name]!(name, null));
   }
   it.each(['Progressive', 'Atomic'])('normalizes %s errors without losing request detail or retry', async name => {
     mount(name);
-    await vi.waitFor(() => expect(document.querySelector('#failure')?.textContent).toContain('request:503:http:'));
+    await waitFor(() => expect(document.querySelector('#failure')?.textContent).toContain('request:503:http:'));
     document.querySelector<HTMLButtonElement>('#failure')!.click();
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Recovered'));
+    await waitFor(() => expect(document.body.textContent).toContain('Recovered'));
     expect(document.querySelector('#failure')).toBeNull();
   });
   it('permits error callbacks that consume only retry', async () => {
     mount('NarrowCallback');
-    await vi.waitFor(() => expect(document.querySelector('#retry-only')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('#retry-only')).not.toBeNull());
     document.querySelector<HTMLButtonElement>('#retry-only')!.click();
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Recovered'));
+    await waitFor(() => expect(document.body.textContent).toContain('Recovered'));
   });
   it('preserves original transport errors and stable presentation identity', () => {
     const request = new RequestError('Bad request', { kind: 'validation', status: 422, data: { field: 'email' } });

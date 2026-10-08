@@ -1,16 +1,9 @@
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 /** End-to-end coverage for data resources through the opaque pull fallback. */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it,  } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   _internals,
@@ -130,7 +123,7 @@ describe('data resources through opaque volatility', () => {
     resetAccessTable();
     setScheduler(run => run());
     frames.length = 0;
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
     });
@@ -141,7 +134,7 @@ describe('data resources through opaque volatility', () => {
     _internals().registry.forEach((_, id) => unregister(id));
     while (frames.length > 0) frames.shift()!(performance.now());
     resetScheduler();
-    vi.unstubAllGlobals();
+    unstubAllGlobals();
   });
 
   async function pullFrame(): Promise<void> {
@@ -157,7 +150,7 @@ describe('data resources through opaque volatility', () => {
     const mod = await importFixture();
     document.body.appendChild(mod.App('App', null));
 
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     expect(document.querySelector('#status')?.textContent).toBe('pending');
     expect(document.querySelector('#loading')).not.toBeNull();
     expect(_internals().volatileSet.has('App')).toBe(true);
@@ -166,7 +159,7 @@ describe('data resources through opaque volatility', () => {
       { id: 'a', name: 'Ada' },
       { id: 'g', name: 'Grace' },
     ]);
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(document.querySelector('#status')?.textContent).toBe('success');
     });
@@ -179,9 +172,9 @@ describe('data resources through opaque volatility', () => {
     unregister('App');
     document.body.replaceChildren();
     document.body.appendChild(mod.App('App', null));
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(2));
+    await waitFor(() => expect(mod.requestCount()).toBe(2));
     mod.resolveRequest(1, { message: 'failed' }, 503);
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(document.querySelector('#status')?.textContent).toBe('error');
     });
@@ -191,10 +184,10 @@ describe('data resources through opaque volatility', () => {
   it('keeps normal destructuring snapshot-based while direct getters stay live', async () => {
     const mod = await importFixture();
     document.body.appendChild(mod.SnapshotApp('SnapshotApp', null));
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     mod.resolveRequest(0, [{ id: 'a', name: 'Ada' }]);
 
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(document.querySelector('#live-count')?.textContent).toBe('1');
     });
@@ -206,7 +199,7 @@ describe('data resources through opaque volatility', () => {
   it('maps an optional nested collection view directly from an opaque resource', async () => {
     const mod = await importFixture();
     document.body.appendChild(mod.NestedCollectionApp('NestedCollectionApp', null));
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     mod.resolveRequest(0, {
       hits: [
         { id: 'one', title: 'Compiler-owned routes' },
@@ -214,7 +207,7 @@ describe('data resources through opaque volatility', () => {
       ],
     });
 
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(
         [...document.querySelectorAll('#nested-feed li')].map(node => node.textContent),
@@ -225,7 +218,7 @@ describe('data resources through opaque volatility', () => {
   it('clears component-owned data work on removal and starts cleanly on remount', async () => {
     const mod = await importFixture();
     document.body.appendChild(mod.App('App', null));
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     const firstSignal = mod.requestSignal(0) as AbortSignal;
     expect(firstSignal.aborted).toBe(false);
 
@@ -236,7 +229,7 @@ describe('data resources through opaque volatility', () => {
 
     document.body.replaceChildren();
     document.body.appendChild(mod.App('App', null));
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(2));
+    await waitFor(() => expect(mod.requestCount()).toBe(2));
     expect(mod.requestSignal(1)).not.toBe(firstSignal);
     expect(document.querySelector('#loading')).not.toBeNull();
   });
@@ -244,13 +237,13 @@ describe('data resources through opaque volatility', () => {
   it('supports explicit argument changes by replacing ordinary component state', async () => {
     const mod = await importFixture();
     document.body.appendChild(mod.SearchApp('SearchApp', null));
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(1));
+    await waitFor(() => expect(mod.requestCount()).toBe(1));
     const firstSignal = mod.requestSignal(0) as AbortSignal;
     const firstURL = new URL(mod.requestInput(0));
     expect(`${firstURL.pathname}${firstURL.search}`).toBe('/users?page=1');
 
     document.querySelector<HTMLButtonElement>('#next')!.click();
-    await vi.waitFor(() => expect(mod.requestCount()).toBe(2));
+    await waitFor(() => expect(mod.requestCount()).toBe(2));
 
     expect(firstSignal.aborted).toBe(true);
     const secondURL = new URL(mod.requestInput(1));
@@ -258,7 +251,7 @@ describe('data resources through opaque volatility', () => {
     expect(document.querySelector('#search-status')?.textContent).toBe('pending');
 
     mod.resolveRequest(1, [{ id: 'g', name: 'Grace' }]);
-    await vi.waitFor(async () => {
+    await waitFor(async () => {
       await pullFrame();
       expect(document.querySelector('#search-result')?.textContent).toBe('Grace');
     });

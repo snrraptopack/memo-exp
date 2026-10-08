@@ -1,3 +1,4 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 /**
  * RFC §16.6/§16.8.5 — source-state snapshot envelope.
  *
@@ -6,7 +7,7 @@
  * re-issue a duplicate request for restored success, keep restored errors
  * retryable through their own handle, and sanitize error payloads.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import {
   createDataRuntime,
   setActiveDataRuntime,
@@ -33,7 +34,7 @@ function makeRuntime(options: {
         headers: { 'content-type': 'application/json' },
       }),
     );
-  }) as typeof fetch;
+  }) as FetchStub;
   return createDataRuntime({ fetch });
 }
 
@@ -45,7 +46,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     });
     setActiveDataRuntime(source);
     const resource = source.$fetch('/api/items');
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(resource.status).toBe('success');
     });
     const envelope = source.serializeState();
@@ -75,7 +76,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     const neverFetch = ((url: RequestInfo | URL) => {
       calls.push(String(url));
       return pending.promise;
-    }) as typeof fetch;
+    }) as FetchStub;
     const source = createDataRuntime({ fetch: neverFetch });
     setActiveDataRuntime(source);
     source.$fetch('/api/slow');
@@ -90,7 +91,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     target.restoreState(envelope);
     setActiveDataRuntime(target);
     const restored = target.$fetch('/api/slow');
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(restored.status).toBe('success');
     });
     expect(targetCalls).toEqual(['/api/slow']);
@@ -98,11 +99,11 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
 
   it('restores sanitized errors that stay retryable', async () => {
     const failing = createDataRuntime({
-      fetch: (() => Promise.reject(new Error('network down'))) as typeof fetch,
+      fetch: (() => Promise.reject(new Error('network down'))) as FetchStub,
     });
     setActiveDataRuntime(failing);
     const resource = failing.$fetch('/api/fail');
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(resource.status).toBe('error');
     });
     const envelope = failing.serializeState();
@@ -129,7 +130,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     expect(calls).toEqual([]);
 
     restored.refresh();
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(restored.data).toEqual(['recovered']);
     });
     expect(calls).toEqual(['/api/fail']);
@@ -145,11 +146,11 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
             headers: { 'content-type': 'application/json' },
           }),
         );
-      }) as typeof fetch,
+      }) as FetchStub,
     });
     setActiveDataRuntime(runtime);
     const resource = runtime.$fetch('/api/items');
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(resource.status).toBe('success');
     });
     resource.refresh();
@@ -168,7 +169,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
             headers: { 'content-type': 'application/json' },
           }),
         );
-      }) as typeof fetch,
+      }) as FetchStub,
     });
     target.restoreState(envelope);
     setActiveDataRuntime(target);
@@ -185,7 +186,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
           new Response(JSON.stringify({ ok: true }), {
             headers: { 'content-type': 'application/json' },
           }),
-        )) as typeof fetch,
+        )) as FetchStub,
     });
     setActiveDataRuntime(runtime);
 
@@ -195,7 +196,7 @@ describe('source-state snapshot envelope (RFC §16.6)', () => {
     expect(paused.status).toBe('idle');
 
     const resource = runtime.$fetch('/api/ok');
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(resource.status).toBe('success');
     });
     const envelope = runtime.serializeState();

@@ -2,7 +2,7 @@ import {
   originalPositionFor,
   TraceMap,
 } from '@jridgewell/trace-mapping';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import {
   compile,
   compileDetailed,

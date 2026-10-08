@@ -1,3 +1,4 @@
+import { expectCalledOnceWith } from '../test-support/helpers';
 import {
   afterEach,
   beforeEach,
@@ -5,7 +6,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -78,7 +79,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     const retained = host.querySelector('p');
     const onHydrateError = vi.fn();
     expect(() => mount(host, App, { onHydrateError })).toThrow(failure);
-    expect(create).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledTimes(1);
     expect(onHydrateError).not.toHaveBeenCalled();
     expect(host.querySelector('p')).toBe(retained);
   });
@@ -95,8 +96,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     const onHydrateError = vi.fn(() => { throw failure; });
     expect(() => mount(host, App, { onHydrateError })).toThrow(failure);
     expect(create).not.toHaveBeenCalled();
-    expect(onHydrateError).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ name: 'HydrationMismatchError', boundary: 'App' }), 'root');
+    expectCalledOnceWith((onHydrateError), expect.objectContaining({ name: 'HydrationMismatchError', boundary: 'App' }), 'root');
     expect(host.querySelector('p')).toBe(retained);
   });
 
@@ -149,7 +149,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     const onHydrateError = vi.fn();
     mounted = mount('root', app.App, { onHydrateError });
 
-    expect(onHydrateError).toHaveBeenCalledOnce();
+    expect(onHydrateError).toHaveBeenCalledTimes(1);
     expect(onHydrateError.mock.calls[0]?.[0]).toMatchObject({
       name: 'HydrationMismatchError',
       boundary: 'App',
@@ -178,7 +178,7 @@ describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
     const onHydrateError = vi.fn();
     mounted = mount('root', app.App, { onHydrateError });
 
-    expect(onHydrateError).toHaveBeenCalledOnce();
+    expect(onHydrateError).toHaveBeenCalledTimes(1);
     expect(onHydrateError.mock.calls[0]?.[0]).toMatchObject({
       boundary: 'App',
       expected: '<!--mmd:r:App-->',

@@ -1,7 +1,8 @@
+import { waitFor } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { render } from '@memoized-dom/server';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -92,7 +93,7 @@ it('runs read refresh and overlapping form submissions with independent rollback
   setScheduler(run => run());
   const root = DataFormsReadApp('DataFormsReadApp', null) as HTMLElement;
   document.body.append(root);
-  await vi.waitFor(() => expect(root.textContent).toContain('Welcome'));
+  await waitFor(() => expect(root.textContent).toContain('Welcome'));
 
   const form = root.querySelector('form')!;
   const input = form.querySelector('input')!;
@@ -113,17 +114,17 @@ it('runs read refresh and overlapping form submissions with independent rollback
   expect(root.textContent).toContain('fail (sending)');
   expect(root.querySelector('h2')?.textContent).toBe('New messages (3)');
 
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(root.textContent).not.toContain('fail (sending)');
     expect(root.textContent).not.toContain('a (sending)');
     expect(root.textContent).toContain('The message was rejected.');
   });
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(root.textContent).not.toContain('alpha (sending)');
     expect(root.querySelector('h2')?.textContent).toBe('New messages (2)');
   });
 
   root.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
   expect(root.textContent).toContain('Refreshing...');
-  await vi.waitFor(() => expect(root.textContent).not.toContain('Refreshing...'));
+  await waitFor(() => expect(root.textContent).not.toContain('Refreshing...'));
 });

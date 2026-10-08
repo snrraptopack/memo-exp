@@ -1,9 +1,10 @@
+import { type FetchStub } from '../../../test-support/helpers';
 /**
  * RFC §16.4 — module sources are immutable descriptions materialized lazily
  * per ApplicationRuntime. Two concurrent runtimes over one described key
  * must get independent instances and independent request state.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import {
   createApplicationRuntime,
   runWithApplicationRuntime,
@@ -40,7 +41,7 @@ function neverRuntime(): { runtime: DataRuntime; calls: () => number } {
     fetch: (() => {
       state.count++;
       return new Promise<Response>(() => {});
-    }) as typeof fetch,
+    }) as FetchStub,
   });
   return { runtime, calls: () => state.count };
 }
@@ -89,7 +90,7 @@ describe('module transparent sources', () => {
   it('keeps request state independent between runtimes', async () => {
     const settled = {
       runtime: createDataRuntime({
-        fetch: (() => new Promise<Response>(() => {})) as typeof fetch,
+        fetch: (() => new Promise<Response>(() => {})) as FetchStub,
       }),
     };
     const pending = neverRuntime();

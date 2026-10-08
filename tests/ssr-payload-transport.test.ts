@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stubGlobal, unstubAllGlobals, type FetchStub } from '../test-support/helpers';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -56,7 +57,7 @@ async function importCompiled(): Promise<CompiledApp> {
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 function mockFetch(data: unknown): typeof fetch {
@@ -65,7 +66,7 @@ function mockFetch(data: unknown): typeof fetch {
       new Response(JSON.stringify(data), {
         headers: { 'content-type': 'application/json' },
       }),
-    )) as typeof fetch;
+    )) as FetchStub;
 }
 
 describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
@@ -104,7 +105,7 @@ describe('DOM-Embedded JSON Payload Transport (RFC §16.6 & §16.7)', () => {
 
     // No client runtime setup is required. The default runtime is automatic,
     // and any network request proves payload restoration failed.
-    vi.stubGlobal('fetch', vi.fn(() => {
+    stubGlobal('fetch', vi.fn(() => {
       throw new Error('Client should not issue fetch — state must restore from payload channel');
     }));
 

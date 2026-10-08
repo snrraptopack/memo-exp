@@ -1,7 +1,8 @@
+import { type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   commit,
@@ -89,7 +90,7 @@ describe('Transparent source mutations, delegated events, and routed access reso
       fetch: (async () =>
         new Response(JSON.stringify(mockStories), {
           headers: { 'content-type': 'application/json' },
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     setActiveDataRuntime(dataRuntime);
 

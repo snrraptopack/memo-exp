@@ -1,4 +1,4 @@
-import {expect, it, vi} from 'vitest';
+import {expect, it, vi} from 'bun:test';
 import {Window} from 'happy-dom';
 import {createApplicationRuntime, runWithApplicationRuntime} from '@memoized-dom/runtime';
 import {createCoreDataRuntime, fetchStoreForRuntime} from '../src/runtime-core';
@@ -15,11 +15,11 @@ it('upgrades an existing client cache without replacing its resource or request 
     expect(fetchStoreForRuntime(core).restoration).toBeUndefined();
     await core.settle();
     const runtime = exposeDataRuntime(core);
-    expect(runtime).toBe(core);
-    expect(enableDataRestoration(core)).toBe(core);
+    expect(core).toBe(runtime);
+    expect(Object.is(enableDataRestoration(core), core)).toBe(true);
     expect(core.$fetch('/user').data).toEqual({name:'Ada'});
     expect(source.data).toEqual({name:'Ada'});
-    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(1);
     const state = runtime.serializeState();
     const clientFetch = vi.fn(async () => Response.json({name:'wrong'}));
     const client = enableDataRestoration(createCoreDataRuntime({fetch:clientFetch}));
@@ -30,7 +30,7 @@ it('upgrades an existing client cache without replacing its resource or request 
       client.clear();
       client.$fetch('/user');
       await client.settle();
-      expect(clientFetch).toHaveBeenCalledOnce();
+      expect(clientFetch).toHaveBeenCalledTimes(1);
     } finally {client.clear();}
   } finally {core.clear();}
 });
@@ -52,7 +52,7 @@ it.each(['resume','cancel','dispose'] as const)('owns deferred hydration work un
     expect(fetcher).toHaveBeenCalledTimes(action === 'resume' ? 1 : 0);
     if (action === 'cancel') {
       await expect(source.refresh()).resolves.toBe('ready');
-      expect(fetcher).toHaveBeenCalledOnce();
+      expect(fetcher).toHaveBeenCalledTimes(1);
     }
     if (action === 'resume') expect(source.data).toBe('ready');
   } finally {runtime.clear();app.dispose();await window.happyDOM.close();}

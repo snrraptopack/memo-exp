@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../test-support/helpers';
+import { describe, expect, it } from 'bun:test';
 import { measureCapability } from '../bench/package-size/capability-audit';
 
 function api<T>(code: string): T {
@@ -68,6 +69,6 @@ describe.each(['source', 'package'] as const)('optional package capabilities: %s
       apply: () => { count++; return () => count--; }, reconcile: (value: number) => saved.push(value) });
     expect(update(1)).toBe(success); expect(update(2)).toBe(failure); expect(count).toBe(2);
     resolve(10); reject(new Error('failed'));
-    await vi.waitFor(() => { expect(saved).toEqual([10]); expect(count).toBe(1); });
+    await waitFor(() => { expect(saved).toEqual([10]); expect(count).toBe(1); });
   });
 });

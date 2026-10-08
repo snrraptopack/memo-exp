@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -25,10 +26,10 @@ async function load(sources: Record<string, string>, name: string) {
 }
 const replays = () => (globalThis as unknown as { __helperReplays: number }).__helperReplays;
 const reset = () => { (globalThis as unknown as { __helperReplays: number }).__helperReplays = 0; };
-beforeEach(() => { document.body.replaceChildren(); resetAccessTable(); vi.stubGlobal('__helperReplays', 0); });
+beforeEach(() => { document.body.replaceChildren(); resetAccessTable(); stubGlobal('__helperReplays', 0); });
 afterEach(() => {
   _internals().registry.forEach((_, id) => unregister(id));
-  resetAccessTable(); resetScheduler(); vi.unstubAllGlobals();
+  resetAccessTable(); resetScheduler(); unstubAllGlobals();
 });
 
 it.each([false, true].flatMap(linked => [false, true].map(deferred => ({ linked, deferred }))))(

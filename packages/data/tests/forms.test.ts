@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import { $forms, $track, type StandardSchemaV1 } from '../src';
 
 function deferred<T>() {
@@ -26,8 +27,8 @@ describe('$forms', () => {
     expect(form.pending).toBe(false);
     form.submit(fields('first'));
     expect(tracker.id).toMatch(/^form-/);
-    await vi.waitFor(() => expect(form.pending).toBe(false));
-    expect(action).toHaveBeenCalledOnce();
+    await waitFor(() => expect(form.pending).toBe(false));
+    expect(action).toHaveBeenCalledTimes(1);
     expect(form.result).toBe('first');
     expect(form.errors).toEqual([]);
     expect(tracker).not.toHaveProperty('value');
@@ -72,19 +73,19 @@ describe('$forms', () => {
     expect(form.pending).toBe(true);
 
     second.resolve(2);
-    await vi.waitFor(() => expect(callbacks).toContain(`success:${b}`));
+    await waitFor(() => expect(callbacks).toContain(`success:${b}`));
     expect(form.pending).toBe(true);
     expect(votes).toBe(3);
     expect(form.result).toBeUndefined();
 
     first.reject(new Error('a failed'));
-    await vi.waitFor(() => expect(callbacks).toContain(`error:${a}`));
+    await waitFor(() => expect(callbacks).toContain(`error:${a}`));
     expect(form.pending).toBe(true);
     expect(votes).toBe(2);
     expect(form.errors).toEqual([]);
 
     third.resolve(3);
-    await vi.waitFor(() => expect(form.pending).toBe(false));
+    await waitFor(() => expect(form.pending).toBe(false));
     expect(votes).toBe(2);
     expect(pending.size).toBe(0);
     expect(form.result).toBe(3);
@@ -106,11 +107,11 @@ describe('$forms', () => {
     form.submit(fields('new'));
     const newId = $track(form).id;
     newer.reject(new Error('new failed'));
-    await vi.waitFor(() => expect(failed).toContain(newId));
+    await waitFor(() => expect(failed).toContain(newId));
     expect(form.errors).toMatchObject([{ kind: 'submit', message: 'new failed' }]);
 
     older.reject(new Error('old failed'));
-    await vi.waitFor(() => expect(failed).toHaveLength(2));
+    await waitFor(() => expect(failed).toHaveLength(2));
     expect(failed).toContain(oldId);
     expect(form.errors).toMatchObject([{ kind: 'submit', message: 'new failed' }]);
   });
@@ -154,7 +155,7 @@ describe('$forms', () => {
       const operation = work.get(letter)!;
       if (failures.has(letter)) operation.reject(new Error(`${letter} failed`));
       else operation.resolve(letter);
-      await vi.waitFor(() => expect(settled).toHaveLength(index + 1));
+      await waitFor(() => expect(settled).toHaveLength(index + 1));
       expect(form.pending).toBe(index < order.length - 1);
       expect(pending.size).toBe(order.length - index - 1);
     }
@@ -180,12 +181,12 @@ describe('$forms', () => {
     const action = vi.fn((value: { id: number }) => value.id * 2);
     const form = $forms({ schema, action });
     form.submit(fields('bad'));
-    await vi.waitFor(() => expect(form.pending).toBe(false));
+    await waitFor(() => expect(form.pending).toBe(false));
     expect(form.errors).toEqual([{ kind: 'parse', message: 'Invalid id', path: ['id'] }]);
     expect(action).not.toHaveBeenCalled();
 
     form.submit(fields('42'));
-    await vi.waitFor(() => expect(form.pending).toBe(false));
+    await waitFor(() => expect(form.pending).toBe(false));
     expect(action).toHaveBeenCalledWith({ id: 42 });
     expect(form.result).toBe(84);
     expect(form.errors).toEqual([]);

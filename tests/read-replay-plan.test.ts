@@ -1,4 +1,4 @@
-import {expect, it} from 'vitest';
+import { expect, it } from 'bun:test';
 import {
   analyzeScope, findNode, parseEstreeOrThrow, printEstree, type BaseNode,
 } from '../packages/compiler/src/ast';

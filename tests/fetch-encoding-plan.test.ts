@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 import { analyzeScope, parseEstreeOrThrow } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';

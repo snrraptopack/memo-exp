@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { parseEstreeOrThrow } from '../packages/compiler/src/ast';
 import { GeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
 import { emittedRuntimeHelpers } from '../packages/compiler/src/dom/runtime-requirements';

@@ -1,7 +1,8 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import { render, renderToString } from '@memoized-dom/server';
@@ -140,13 +141,13 @@ describe('props-based Group policy scopes', () => {
   });
   function mount(name: string) {
     runtime = createDataRuntime({ fetch: ((input: string | URL | Request) =>
-      new Promise<Response>(resolve => requests.push({ url: String(input), resolve }))) as typeof fetch });
+      new Promise<Response>(resolve => requests.push({ url: String(input), resolve }))) as FetchStub });
     previous = setActiveDataRuntime(runtime);
     setScheduler(run => run());
     document.body.append(fixture[name]!(name, null));
   }
   async function respond(body: unknown, status = 200) {
-    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0));
+    await waitFor(() => expect(requests.length).toBeGreaterThan(0));
     requests.at(-1)!.resolve(new Response(JSON.stringify(body), {
       status, headers: { 'content-type': 'application/json' },
     }));
@@ -160,7 +161,7 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelectorAll('.outer-pending')).toHaveLength(2);
     expect(document.querySelector('group')).toBeNull();
     await respond({ name: 'Ada' });
-    await vi.waitFor(() => expect(document.querySelector('#value')?.textContent).toBe('Ada'));
+    await waitFor(() => expect(document.querySelector('#value')?.textContent).toBe('Ada'));
     expect(document.querySelector('.child-value')?.textContent).toBe('Ada');
   });
 
@@ -169,7 +170,7 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelector('#inner .inner-pending')).not.toBeNull();
     expect(document.querySelector('.child-value .outer-pending')).not.toBeNull();
     await respond({ message: 'offline' }, 503);
-    await vi.waitFor(() => expect(document.querySelector('#inner .failure')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('#inner .failure')).not.toBeNull());
     expect(document.querySelector('.child-value .other-failure')).not.toBeNull();
   });
 
@@ -178,7 +179,7 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelectorAll('.outer-pending')).toHaveLength(1);
     expect(document.querySelectorAll('.inner-pending')).toHaveLength(1);
     await respond({ name: 'Ada' });
-    await vi.waitFor(() => expect(document.querySelectorAll('.own-value')[0]?.textContent).toBe('Ada'));
+    await waitFor(() => expect(document.querySelectorAll('.own-value')[0]?.textContent).toBe('Ada'));
     expect(document.querySelectorAll('.own-value')[1]?.textContent).toBe('Ada');
   });
 
@@ -186,12 +187,12 @@ describe('props-based Group policy scopes', () => {
     mount('AcrossFiles');
     expect(document.querySelector('#leaf-value .outer-pending')).not.toBeNull();
     await respond({ message: 'offline' }, 503);
-    await vi.waitFor(() => expect(document.querySelector('#leaf-value .other-failure')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('#leaf-value .other-failure')).not.toBeNull());
     expect(document.querySelector('.failure')).toBeNull();
     (document.querySelector('.other-failure') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     await respond({ name: 'Recovered' });
-    await vi.waitFor(() => expect(document.querySelector('#leaf-value')?.textContent).toBe('Recovered'));
+    await waitFor(() => expect(document.querySelector('#leaf-value')?.textContent).toBe('Recovered'));
   });
 
   it('supports inline policies that capture reactive owner state', async () => {
@@ -200,12 +201,12 @@ describe('props-based Group policy scopes', () => {
     (document.querySelector('#change-label') as HTMLButtonElement).click();
     expect(document.querySelector('.inline-pending')?.textContent).toBe('Still waiting');
     await respond({ message: 'offline' }, 503);
-    await vi.waitFor(() => expect(document.querySelector('.inline-error')?.textContent).toContain('Still waiting'));
+    await waitFor(() => expect(document.querySelector('.inline-error')?.textContent).toContain('Still waiting'));
     (document.querySelector<HTMLButtonElement>('.inline-error')!).click();
-    await vi.waitFor(()=>expect(requests).toHaveLength(2));
+    await waitFor(()=>expect(requests).toHaveLength(2));
     expect(document.querySelector('.inline-pending')?.textContent).toBe('Still waiting');
     await respond({name:'Recovered'});
-    await vi.waitFor(()=>expect(document.querySelector('#inline-value')?.textContent).toBe('Recovered'));
+    await waitFor(()=>expect(document.querySelector('#inline-value')?.textContent).toBe('Recovered'));
     expect(document.querySelector('.inline-error')).toBeNull();
   });
 
@@ -215,7 +216,7 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelector('#suspended-leaf')).toBeNull();
     expect(document.querySelector('.outer-pending')).not.toBeNull();
     await respond({ name: 'Ada' });
-    await vi.waitFor(() => expect(document.querySelector('#suspended-leaf')?.textContent).toBe('Private sectionAda'));
+    await waitFor(() => expect(document.querySelector('#suspended-leaf')?.textContent).toBe('Private sectionAda'));
     expect(document.querySelector('.outer-pending')).toBeNull();
   });
 
@@ -223,7 +224,7 @@ describe('props-based Group policy scopes', () => {
     mount('MixedForms');
     expect(document.querySelector('.inner-pending')).not.toBeNull();
     await respond({ message: 'offline' }, 503);
-    await vi.waitFor(() => expect(document.querySelector('.failure')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.failure')).not.toBeNull());
   });
 
   it('diagnoses invalid policies and callbacks', () => {
@@ -247,7 +248,7 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelector('.inner-pending')).not.toBeNull();
     expect(document.querySelector('.outer-pending')).toBeNull();
     await respond({ message: 'offline' }, 503);
-    await vi.waitFor(() => expect(document.querySelector('.failure')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.failure')).not.toBeNull());
     expect(document.querySelector('.other-failure')).toBeNull();
   });
 
@@ -256,12 +257,12 @@ describe('props-based Group policy scopes', () => {
     expect(document.querySelector('h1')?.textContent).toBe('Static');
     expect(document.querySelector('#empty-value')?.textContent).toBe('');
     await respond({ name: 'Ada' });
-    await vi.waitFor(() => expect(document.querySelector('#empty-value')?.textContent).toBe('Ada'));
+    await waitFor(() => expect(document.querySelector('#empty-value')?.textContent).toBe('Ada'));
   });
 
   it('renders static shell content and inherited pending policies on the server', () => {
     const html = renderToString(fixture.MultipleChildren!, {
-      fetch: (() => new Promise<Response>(() => {})) as typeof fetch,
+      fetch: (() => new Promise<Response>(() => {})) as FetchStub,
     });
     expect(html).toContain('Static');
     expect(html).toContain('Footer');
@@ -272,7 +273,7 @@ describe('props-based Group policy scopes', () => {
     const { html } = await render(fixture.AcrossFiles!, {
       mode: 'resolve', fetch: (async () => new Response(JSON.stringify({ name: 'Ada' }), {
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     expect(html).toContain('Ada');
     expect(html).not.toContain('outer-pending');

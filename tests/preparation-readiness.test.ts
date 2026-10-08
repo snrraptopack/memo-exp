@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../test-support/helpers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import {
   createApplicationRuntime, createRenderPreparation, getEntity, markDirty,
   register, runWithApplicationRuntime, setScheduler, unregister,
@@ -235,13 +236,13 @@ describe('consumed-resource preparation readiness', () => {
       preparation.run(() => register({ id: 'root', parent: null, render }));
       preparation.collect('root', render);
       expect(preparation.readiness).toBe('pending');
-      await vi.waitFor(() => expect(requests).toHaveLength(3));
+      await waitFor(() => expect(requests).toHaveLength(3));
       requests[0]!(new Response(JSON.stringify({ name: 'Ada' })));
-      await vi.waitFor(() => expect(first.status).toBe('success'));
+      await waitFor(() => expect(first.status).toBe('success'));
       flush();
       expect(preparation.readiness).toBe('pending');
       requests[1]!(new Response(JSON.stringify({ name: 'Grace' })));
-      await vi.waitFor(() => expect(second.status).toBe('success'));
+      await waitFor(() => expect(second.status).toBe('success'));
       flush();
       expect(preparation.readiness).toBe('ready');
       expect(unused.status).not.toBe('success');

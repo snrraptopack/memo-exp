@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import {
   createRouteRuntime,
   readRouteComponent,
@@ -44,7 +45,7 @@ describe('route module resource', () => {
       expect(readRouteModuleState(key).status).toBe('idle');
       const result = runtime.navigate('/ready');
       if (result.status !== 'preparing') throw new Error('Expected preparation');
-      await vi.waitFor(() => expect(readRouteModuleState(key).status).toBe('loading'));
+      await waitFor(() => expect(readRouteModuleState(key).status).toBe('loading'));
       expect(phases).toEqual(['loading']);
       release();
       await result.finished;
@@ -76,13 +77,13 @@ describe('route module resource', () => {
     try {
       const first = firstRuntime.navigate('/shared');
       if (first.status !== 'preparing') throw new Error('Expected preparation');
-      await vi.waitFor(() => expect(loader).toHaveBeenCalledOnce());
+      await waitFor(() => expect(loader).toHaveBeenCalledTimes(1));
       const second = secondRuntime.navigate('/shared');
       if (second.status !== 'preparing') throw new Error('Expected preparation');
       expect(secondRuntime.route.pathname).toBe('/');
       release();
       await Promise.all([first.finished, second.finished]);
-      expect(loader).toHaveBeenCalledOnce();
+      expect(loader).toHaveBeenCalledTimes(1);
       expect(firstRuntime.route.pathname).toBe('/shared');
       expect(secondRuntime.route.pathname).toBe('/shared');
     } finally {
@@ -172,19 +173,19 @@ describe('route module resource', () => {
     try {
       const slow = runtime.navigate('/slow');
       if (slow.status !== 'preparing') throw new Error('Expected preparation');
-      const canceled = expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
-      await vi.waitFor(() => expect(loader).toHaveBeenCalledOnce());
+      const canceled = slow.finished.then(() => { throw new Error('Expected promise rejection'); }, error => error);
+      await waitFor(() => expect(loader).toHaveBeenCalledTimes(1));
       expect(runtime.navigate('/newer').status).toBe('completed');
-      await canceled;
+      expect(await canceled).toMatchObject({ name: 'AbortError' });
       expect(runtime.route.pathname).toBe('/newer');
       expect(readRouteModuleState(key).status).toBe('loading');
 
       release();
-      await vi.waitFor(() => expect(readRouteModuleState(key).status).toBe('ready'));
+      await waitFor(() => expect(readRouteModuleState(key).status).toBe('ready'));
       const revisit = runtime.navigate('/slow');
       if (revisit.status === 'preparing') await revisit.finished;
       expect(runtime.route.pathname).toBe('/slow');
-      expect(loader).toHaveBeenCalledOnce();
+      expect(loader).toHaveBeenCalledTimes(1);
     } finally {
       runtime.dispose();
     }

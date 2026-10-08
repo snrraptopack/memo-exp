@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 
 describe('linker identifier lifecycle', () => {

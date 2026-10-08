@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import {
   createHackerNewsData,
   loadFeedPage,
@@ -21,11 +22,11 @@ describe('Hacker News router and data example', () => {
       }), {
         headers: { 'content-type': 'application/json' },
       });
-    }) as unknown as typeof fetch;
+    }) as unknown as FetchStub;
     const data = createHackerNewsData(fetcher);
 
     const feed = loadFeedPage(data, 'ask', 2);
-    await vi.waitFor(() => expect(feed.status).toBe('success'));
+    await waitFor(() => expect(feed.status).toBe('success'));
 
     expect(requests).toHaveLength(1);
     expect(requests[0].pathname).toBe('/api/v1/search_by_date');
@@ -51,11 +52,11 @@ describe('Hacker News router and data example', () => {
       }), {
         headers: { 'content-type': 'application/json' },
       });
-    }) as unknown as typeof fetch;
+    }) as unknown as FetchStub;
     const data = createHackerNewsData(fetcher);
 
     const story = loadStory(data, '123');
-    await vi.waitFor(() => expect(story.status).toBe('success'));
+    await waitFor(() => expect(story.status).toBe('success'));
 
     expect(requests).toHaveLength(1);
     expect(requests[0].pathname).toBe('/api/v1/items/123');

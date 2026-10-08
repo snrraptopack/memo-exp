@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { bench, describe } from './harness';
 import { createRouteRuntime } from '@memoized-dom/router';
 import type {
   RouteLocationSnapshot,

@@ -1,10 +1,11 @@
+import { waitFor } from '../../../test-support/helpers';
 /**
  * Exercises the Vite 8 adapter through Rolldown build and dev transforms.
  */
 import { join, resolve } from 'node:path';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import {
   build,
   createServer,
@@ -736,7 +737,7 @@ describe('Vite 8 adapter', () => {
     const app = await readFile(appFile, 'utf8');
     await writeFile(appFile, app.replace('Increment</button>', 'Increase</button>'));
 
-    await vi.waitFor(
+    await waitFor(
       () => {
         expect(send).toHaveBeenCalled();
       },
@@ -782,7 +783,7 @@ describe('Vite 8 adapter', () => {
       );
     await writeFile(appFile, invalid);
 
-    await vi.waitFor(
+    await waitFor(
       () => {
         expect(
           send.mock.calls.some(
@@ -798,7 +799,7 @@ describe('Vite 8 adapter', () => {
 
     send.mockClear();
     await writeFile(appFile, app);
-    await vi.waitFor(
+    await waitFor(
       () => {
         expect(
           send.mock.calls.some(([payload]) => payload.type === 'update'),

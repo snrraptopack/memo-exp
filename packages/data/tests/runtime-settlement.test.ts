@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import { createDataRuntime, getActiveDataRuntime, runWithDataRuntime } from '../src';
 import { subscribeFetchResource } from '../src/resource';
 import type { FetchResource } from '../src';
@@ -13,7 +14,7 @@ describe('data runtime provider settlement', () => {
   it('waits for a promise read started by a fetch completion', async () => {
     const response = deferred<Response>();
     const later = deferred<string>();
-    const runtime = createDataRuntime({ fetch: (() => response.promise) as typeof fetch });
+    const runtime = createDataRuntime({ fetch: (() => response.promise) as FetchStub });
     const fetched = runtime.$fetch('/user');
     let read: FetchResource<string> | undefined;
     const unsubscribe = subscribeFetchResource(fetched, snapshot => {
@@ -23,7 +24,7 @@ describe('data runtime provider settlement', () => {
     const settlement = runtime.settle(2000).then(result => { finished = true; return result; });
     try {
       response.resolve(Response.json({ name: 'Ada' }));
-      await vi.waitFor(() => expect(read?.pending).toBe(true));
+      await waitFor(() => expect(read?.pending).toBe(true));
       expect(finished).toBe(false);
       later.resolve('Complete');
       await expect(settlement).resolves.toBe(true);
@@ -38,7 +39,7 @@ describe('data runtime provider settlement', () => {
   it('waits for a fetch started by a promise read completion', async () => {
     const initial = deferred<string>();
     const response = deferred<Response>();
-    const runtime = createDataRuntime({ fetch: (() => response.promise) as typeof fetch });
+    const runtime = createDataRuntime({ fetch: (() => response.promise) as FetchStub });
     const read = runtime.$read(initial.promise);
     let fetched: FetchResource<unknown> | undefined;
     const unsubscribe = subscribeFetchResource(read, snapshot => {
@@ -48,7 +49,7 @@ describe('data runtime provider settlement', () => {
     const settlement = runtime.settle(2000).then(result => { finished = true; return result; });
     try {
       initial.resolve('Start');
-      await vi.waitFor(() => expect(fetched?.pending).toBe(true));
+      await waitFor(() => expect(fetched?.pending).toBe(true));
       expect(finished).toBe(false);
       response.resolve(Response.json({ name: 'Ada' }));
       await expect(settlement).resolves.toBe(true);
@@ -86,7 +87,8 @@ describe('data runtime provider settlement', () => {
     runtime.$read(later.promise);
     try {
       const settlement = runtime.settle(25);
-      await vi.advanceTimersByTimeAsync(25);
+      vi.advanceTimersByTime(25);
+      await Promise.resolve();
       await expect(settlement).resolves.toBe(false);
       expect(vi.getTimerCount()).toBe(0);
       later.resolve('Done');

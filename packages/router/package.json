@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "bun run ./scripts/clean.ts && rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
-    "test": "vitest run --config vitest.config.ts && tsc -p tsconfig.test.json"
+    "test": "bun test --isolate ./tests && bun check -p tsconfig.test.json"
   },
   "publishConfig": {
     "access": "public"

@@ -9,14 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it,  } from 'bun:test';
 import { compile, compileModules } from '@memoized-dom/compiler';
 import { mountRef } from '@memoized-dom/runtime';
 import {

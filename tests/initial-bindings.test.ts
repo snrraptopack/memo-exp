@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModulesDetailed, emitInitialHtml } from '../packages/compiler/src';
 
 const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>

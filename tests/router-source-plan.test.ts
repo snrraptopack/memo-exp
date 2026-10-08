@@ -1,4 +1,4 @@
-import {expect,it} from 'vitest';
+import { expect, it } from 'bun:test';
 import {parseEstreeOrThrow} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import {planRouterJsx} from '../packages/compiler/src/analysis/routes';

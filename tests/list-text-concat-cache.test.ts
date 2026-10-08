@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { compile } from '@memoized-dom/compiler';
@@ -112,16 +112,25 @@ for (const kind of ['inline', 'component']) describe(`${kind} row text joins`, (
     let right: unknown = 'one';
     const app = await create({ get left() { return left; },
       get right() { rightReads++; return right; } });
+    // Compare the emitted expression with authored JavaScript in this engine.
+    // Bun's JavaScriptCore reads the right operand before a Symbol error;
+    // V8 throws earlier. The compiler must preserve the host's behavior.
+    function authoredRightReads() {
+      let reads = 0;
+      const item = { get left() { return left; }, get right() { reads++; return right; } };
+      try { void (item.left + ':' + item.right); } catch {}
+      return reads;
+    }
     app.render();
     left = Symbol('left'); rightReads = 0;
     expect(app.render).toThrow(TypeError);
-    expect(rightReads).toBe(0);
-    left = 1; right = Symbol('right');
+    expect(rightReads).toBe(authoredRightReads());
+    left = 1; right = Symbol('right'); rightReads = 0;
     expect(app.render).toThrow(TypeError);
-    expect(rightReads).toBe(1);
-    left = { valueOf() { throw new Error('conversion'); } };
+    expect(rightReads).toBe(authoredRightReads());
+    left = { valueOf() { throw new Error('conversion'); } }; rightReads = 0;
     expect(app.render).toThrow('conversion');
-    expect(rightReads).toBe(1);
+    expect(rightReads).toBe(authoredRightReads());
     left = 1; right = 'one';
     app.render();
     expect(app.node.textContent).toBe('1:one');

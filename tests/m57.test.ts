@@ -11,7 +11,7 @@
  *    ids in the dirty set until they render — this must not eat cascades).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   register,
   unregister,

@@ -1,5 +1,6 @@
-// @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../../../test-support/helpers';
+// Runs with Bun globals; no DOM preload.
+import { describe, expect, it, vi } from 'bun:test';
 import {
   getServerContext,
   serve,
@@ -370,7 +371,7 @@ describe('serve', () => {
     expect(inlineScripts.length).toBeGreaterThan(1);
     expect(inlineScripts.every(tag => tag === '<script nonce="n0nce">')).toBe(true);
     expect(html.endsWith('</div></body>')).toBe(true);
-    await vi.waitFor(() => expect(outcomes).toEqual(['complete']));
+    await waitFor(() => expect(outcomes).toEqual(['complete']));
   });
 
   it('rejects duplicate SSR fallbacks and ambiguous scoped registrations', () => {

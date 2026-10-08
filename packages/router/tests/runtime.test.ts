@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '../../../test-support/helpers';
+import { beforeEach, describe, expect, it, vi } from 'bun:test';
 import {
   createRouteRuntime,
   createMemoryRouteHistory,
@@ -144,9 +145,9 @@ describe('route runtime', () => {
     gated = true;
     browser.pop(1);
     expect(runtime.route.pathname).toBe('/second');
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
     release();
-    await vi.waitFor(() => expect(runtime.route.pathname).toBe('/first'));
+    await waitFor(() => expect(runtime.route.pathname).toBe('/first'));
     expect(browser.history.pushState).toHaveBeenCalledTimes(2);
     runtime.dispose();
   });
@@ -186,7 +187,7 @@ describe('route runtime', () => {
     runtime.subscribeNavigation(event => { if (event.phase === 'error') retry = event.retry; });
     fail = true;
     browser.pop(1);
-    await vi.waitFor(() => expect(retry).toBeTypeOf('function'));
+    await waitFor(() => expect(retry).toBeTypeOf('function'));
     expect(browser.go).toHaveBeenLastCalledWith(1);
     expect(runtime.route.pathname).toBe('/second');
     browser.pop(2);
@@ -223,7 +224,7 @@ describe('route runtime', () => {
     });
     fail = true;
     browser.pop(1);
-    await vi.waitFor(() => expect(retried?.status).toBe('preparing'));
+    await waitFor(() => expect(retried?.status).toBe('preparing'));
     expect(browser.go).toHaveBeenCalledTimes(1);
     expect(browser.go).toHaveBeenLastCalledWith(1);
     browser.pop(2);
@@ -269,7 +270,7 @@ describe('route runtime', () => {
     runtime.navigate('/second');
     gated = true;
     browser.pop(1);
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
     runtime.navigate('/third');
     release();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -322,7 +323,7 @@ describe('route runtime', () => {
     await result.finished;
     expect(runtime.route.pathname).toBe('/login');
     expect(history.location.href).toContain('/login');
-    expect(prepare).toHaveBeenCalledOnce();
+    expect(prepare).toHaveBeenCalledTimes(1);
     runtime.dispose();
     history.destroy();
   });
@@ -354,11 +355,11 @@ describe('route runtime', () => {
     ] });
     const slow = runtime.back();
     if (slow?.status !== 'preparing') throw new Error('expected preparation');
-    const rejected = expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const rejected = slow.finished.then(() => { throw new Error('Expected promise rejection'); }, error => error);
+    await waitFor(() => expect(release).toBeTypeOf('function'));
     expect(runtime.forward()?.status).toBe('completed');
     release();
-    await rejected;
+    expect(await rejected).toMatchObject({ name: 'AbortError' });
     expect(runtime.route.pathname).toBe('/forward');
     expect(history.location.index).toBe(2);
     runtime.dispose();
@@ -426,11 +427,11 @@ describe('route runtime', () => {
     const slow = runtime.navigate('/slow');
     expect(slow.status).toBe('preparing');
     if (slow.status !== 'preparing') throw new Error('expected preparation');
-    const completion = expect(slow.finished).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const completion = slow.finished.then(() => { throw new Error('Expected promise rejection'); }, error => error);
+    await waitFor(() => expect(release).toBeTypeOf('function'));
     expect(runtime.navigate('/newer').status).toBe('completed');
     release();
-    await completion;
+    expect(await completion).toMatchObject({ name: 'AbortError' });
     expect(runtime.route.pathname).toBe('/newer');
     runtime.dispose();
   });
@@ -541,7 +542,7 @@ describe('route runtime', () => {
       server: true,
     });
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async (_input, init) => {
+      (async (_input: RequestInfo | URL, init?: RequestInit) => {
         expect(JSON.parse(String(init?.body))).toMatchObject({
           state: { visits: 1 },
         });
@@ -550,13 +551,13 @@ describe('route runtime', () => {
           data: { initialized: true },
           state: { visits: 2 },
         });
-      },
+      }) as unknown as typeof globalThis.fetch,
     );
 
     const remote = runtime.navigate('/remote');
     if (remote.status !== 'preparing') throw new Error('expected preparation');
     await remote.finished;
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(serializeRoutedPreparationState(runtime)?.entries[0]?.state)
       .toEqual({ visits: 2 });
     runtime.dispose();
@@ -644,7 +645,7 @@ describe('route runtime', () => {
     );
     expect(runtime.route.pathname).toBe('/docs/compiler');
     expect(runtime.route.state).toEqual({ via: 'navigation-api' });
-    expect(intercept).toHaveBeenCalledOnce();
+    expect(intercept).toHaveBeenCalledTimes(1);
     expect(intercept).toHaveBeenCalledWith(expect.objectContaining({
       scroll: 'manual',
     }));
@@ -681,7 +682,7 @@ describe('route runtime', () => {
     }) as NavigationEventLike);
 
     expect(runtime.route.pathname).toBe('/from-anchor');
-    expect(intercept).toHaveBeenCalledOnce();
+    expect(intercept).toHaveBeenCalledTimes(1);
     runtime.dispose();
   });
 
@@ -726,9 +727,9 @@ describe('route runtime', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(runtime.route.pathname).toBe('/');
 
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
     release();
-    await vi.waitFor(() => expect(runtime.route.pathname).toBe('/prepared'));
+    await waitFor(() => expect(runtime.route.pathname).toBe('/prepared'));
     expect(navigation.navigate).toHaveBeenCalledWith(
       'http://localhost:3000/prepared',
       { history: 'push', state: null },
@@ -842,12 +843,12 @@ describe('route runtime', () => {
     expect(runtime.route.query.get('tab')).toBe('members');
     expect(runtime.route.navigationType).toBe('push');
     expect(runtime.route.state).toEqual({ source: 'test' });
-    expect(push).toHaveBeenCalledOnce();
+    expect(push).toHaveBeenCalledTimes(1);
 
     runtime.navigate('/login', { replace: true });
     expect(runtime.route.pathname).toBe('/login');
     expect(runtime.route.navigationType).toBe('replace');
-    expect(replace).toHaveBeenCalledOnce();
+    expect(replace).toHaveBeenCalledTimes(1);
     runtime.dispose();
   });
 
@@ -892,7 +893,7 @@ describe('route runtime', () => {
     expect(click.defaultPrevented).toBe(true);
     expect(runtime.route.pathname).toBe('/from-link');
     expect(runtime.route.query.get('tab')).toBe('router');
-    expect(push).toHaveBeenCalledOnce();
+    expect(push).toHaveBeenCalledTimes(1);
     anchor.remove();
     disconnect();
     runtime.dispose();
@@ -1384,7 +1385,7 @@ describe('route runtime', () => {
     expect(result?.status).toBe('preparing');
     expect(history.location.index).toBe(1);
     expect(runtime.route.pathname).toBe('/current');
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
     release();
     if (result?.status !== 'preparing') throw new Error('expected preparation');
     await result.finished;

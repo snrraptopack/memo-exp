@@ -1,6 +1,7 @@
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { clearDataRuntime } from '@memoized-dom/data';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -52,7 +53,7 @@ afterEach(() => {
   resetAccessTable();
   resetScheduler();
   clearDataRuntime();
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -62,7 +63,7 @@ it('compiles an optimistic form with an expression before the error-row return',
 
 it('submits overlapping optimistic messages, reconciles success and rolls back failure', async () => {
   const requests: Array<{ message: string; resolve(value: string): void; reject(error: Error): void }> = [];
-  vi.stubGlobal('__messageRequests', requests);
+  stubGlobal('__messageRequests', requests);
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
   const modules = compileModules({
     './App.tsx': messagingSource,
@@ -90,28 +91,28 @@ it('submits overlapping optimistic messages, reconciles success and rolls back f
 
   submit('first');
   submit('second');
-  await vi.waitFor(() => expect(requests).toHaveLength(2));
-  await vi.waitFor(() => expect(document.querySelectorAll('small')).toHaveLength(2));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  await waitFor(() => expect(document.querySelectorAll('small')).toHaveLength(2));
   requests[1]!.resolve('saved second');
-  await vi.waitFor(() => expect(document.body.textContent).toContain('saved second'));
+  await waitFor(() => expect(document.body.textContent).toContain('saved second'));
   expect(document.querySelectorAll('small')).toHaveLength(1);
   requests[0]!.reject(new Error('Delivery failed'));
-  await vi.waitFor(() => expect(document.querySelectorAll('small')).toHaveLength(0));
+  await waitFor(() => expect(document.querySelectorAll('small')).toHaveLength(0));
   expect(document.body.textContent).not.toContain('first');
   expect(document.body.textContent).toContain('Hello there!');
   expect(document.body.textContent).toContain('saved second');
   // The form reports its newest attempt. An older failed operation still
   // rolls back its own row without overwriting a newer successful result.
   submit('third');
-  await vi.waitFor(() => expect(requests).toHaveLength(3));
+  await waitFor(() => expect(requests).toHaveLength(3));
   requests[2]!.reject(new Error('Newest delivery failed'));
-  await vi.waitFor(() => expect(form.querySelector('p')?.textContent).toContain('Newest delivery failed'));
+  await waitFor(() => expect(form.querySelector('p')?.textContent).toContain('Newest delivery failed'));
   expect(log).toHaveBeenCalled();
   expect(document.body.textContent).not.toContain('third');
   submit('fourth');
-  await vi.waitFor(() => expect(requests).toHaveLength(4));
+  await waitFor(() => expect(requests).toHaveLength(4));
   requests[3]!.resolve('saved fourth');
-  await vi.waitFor(() => expect(document.body.textContent).toContain('saved fourth'));
+  await waitFor(() => expect(document.body.textContent).toContain('saved fourth'));
   expect(form.querySelector('p')).toBeNull();
   expect(document.querySelectorAll('small')).toHaveLength(0);
 });

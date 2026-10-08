@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer as createHttpServer } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { build, createServer } from 'vite';
 import puppeteer from 'puppeteer-core';
 import memoizedDom from '../src';
@@ -12,6 +12,11 @@ import { applyInitialPage } from '../src/initial-html';
 const runtime = resolve(import.meta.dirname, '../../runtime/src/index.ts');
 const runtimeHot = resolve(import.meta.dirname, '../../runtime/src/hot.ts');
 const fixtures: string[] = [];
+
+function chromeExecutable(): string | undefined {
+  return [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
+    .find((path): path is string => !!path && existsSync(path));
+}
 afterEach(async () => {
   for (const directory of fixtures.splice(0)) await rm(directory, { recursive: true, force: true });
 });
@@ -64,10 +69,10 @@ describe('HTML first production builds', () => {
     expect(result.html).not.toContain('<main>');
   });
 
-  it('binds nested composed children without creating their initial elements in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('binds nested composed children without creating their initial elements in Chrome', async () => {
     const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
       .find((path): path is string => !!path && existsSync(path));
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     const result = await production(await fixture(`import {Counter} from './Counter';import {name,rename} from './state';
       export function App(){return <main><h1>{name}</h1><Counter offset={2} run={rename}/><Counter offset={10} run={rename}/></main>;}`, {
       'src/Counter.tsx': `import {Value} from './Value';export function Counter({offset,run}){let n=0;return <section>
@@ -117,10 +122,10 @@ describe('HTML first production builds', () => {
       await browser.close(); await new Promise<void>((done, reject) => server.close(error => error ? reject(error) : done()));
     }
   });
-  it('binds controlled input values and empty todo extents in Chrome',async context=>{
+  it.skipIf(!chromeExecutable())('binds controlled input values and empty todo extents in Chrome',async () =>{
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find(path=>path&&existsSync(path));
-    if (!executablePath) {context.skip();return;}
+    if (!executablePath) {return;}
     const result=await production(await fixture(`export function App(){let items=[];let temp='seed';let open=true;return <main>
       <h1>Static todo surroundings</h1><form><input class="todo" type="text" value={temp} onInput={e=>{temp=e.target.value;}}/></form>
       <button class="add" onClick={()=>{if(!temp.trim())return;items=[...items,temp];temp='';}}>Add</button>
@@ -178,10 +183,10 @@ describe('HTML first production builds', () => {
       await browser.close();await new Promise<void>((done,reject)=>server.close(error=>error?reject(error):done()));
     }
   });
-  it('binds both list identity modes in Chrome and creates only later rows',async context=>{
+  it.skipIf(!chromeExecutable())('binds both list identity modes in Chrome and creates only later rows',async () =>{
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find(path=>path&&existsSync(path));
-    if (!executablePath) {context.skip();return;}
+    if (!executablePath) {return;}
     const result=await production(await fixture(`export function App(){let items=[{id:1,label:'one'},{id:2,label:'two'}];let selected='none';return <main>
       <h1>Static list surroundings</h1><button class="reverse" onClick={()=>{items=[...items].reverse();}}>Reverse</button>
       <button class="replace" onClick={()=>{items=items.map(item=>({...item,label:item.label+'!'}));}}>Replace</button>
@@ -246,10 +251,10 @@ describe('HTML first production builds', () => {
     expect(result.html).toContain('<ul><li>one</li><li>two</li></ul>');
     expect(result.files.some(file=>file.type==='chunk')).toBe(false);
   });
-  it('binds conditional HTML in Chrome and recreates only the switched branch',async context=>{
+  it.skipIf(!chromeExecutable())('binds conditional HTML in Chrome and recreates only the switched branch',async () =>{
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find(path=>path&&existsSync(path));
-    if (!executablePath) {context.skip();return;}
+    if (!executablePath) {return;}
     const result=await production(await fixture(`export function App(){let open=true;let n=1;return <main>
       <h1>Retained surrounding content</h1><button class="toggle" onClick={()=>{open=!open;}}>Toggle</button>
       {open?<section title="Current branch"><b>Branch label</b><button class="add" onClick={()=>n++}>{n}</button></section>:<p>Closed</p>}
@@ -374,10 +379,10 @@ describe('HTML first production builds', () => {
     expect(Math.abs(bytes[1]! - bytes[0]!)).toBeLessThan(128);
   });
 
-  it('retains the original HTML nodes while mounting independent interactive children in Chrome', async context => {
+  it.skipIf(!chromeExecutable())('retains the original HTML nodes while mounting independent interactive children in Chrome', async () => {
     const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
       .find((path): path is string => !!path && existsSync(path));
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     const result = await production(await fixture(`import {Counter} from './Counter';export function App(){let name='Ada';
       return <main><h1>{'Hello '+name}</h1><Counter offset={0} live={false}/><Counter offset={2} live={true}/><Counter offset={10} live={true}/></main>;}`, {
       'src/Counter.tsx': `export function Counter({offset,live}){let n=0;return <section>{live?<button onClick={()=>n++}>{n+offset}</button>:<span>Static instance</span>}</section>;}`,
@@ -451,10 +456,10 @@ describe('HTML first production builds', () => {
     expect(Math.abs(bytes[1]! - bytes[0]!)).toBeLessThan(128);
   });
 
-  it.each(['owner','module'])('binds %s state to initial DOM without recreating nodes in Chrome', async (placement,context) => {
+  it.skipIf(!chromeExecutable()).each(['owner','module'])('binds %s state to initial DOM without recreating nodes in Chrome', async (placement) => {
     const executablePath=[process.env.MMD_CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium']
       .find((path):path is string=>!!path&&existsSync(path));
-    if (!executablePath) {context.skip();return;}
+    if (!executablePath) {return;}
     const state=`let n=1;let name='';`;
     const appSource=`${placement==='module'?state:''}
       export function App(){${placement==='owner'?state:''}const doubled=n*2;const alias=doubled;
@@ -553,10 +558,10 @@ describe('HTML first production builds', () => {
     } finally { await server.close(); }
   });
 
-  it('renders the production HTML with browser JavaScript disabled', async context => {
+  it.skipIf(!chromeExecutable())('renders the production HTML with browser JavaScript disabled', async () => {
     const executablePath = [process.env.MMD_CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium']
       .find((path): path is string => !!path && existsSync(path));
-    if (!executablePath) { context.skip(); return; }
+    if (!executablePath) {  return; }
     const result = await production(await fixture(`import './page.css'; export function App(){return <h1>Hello</h1>;}`, {
       'src/page.css': 'h1{color:rgb(1,2,3)}',
     }));

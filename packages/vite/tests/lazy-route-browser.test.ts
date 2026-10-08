@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { createServer, type ViteDevServer } from 'vite';
 import memoizedDom from '../src';
 import { routedApp, routedDetail, routedOpaque, initializeRoutedLifecycles, checkRoutedLifecycles } from './fixtures/routed-lifecycles';
@@ -35,10 +35,10 @@ afterEach(async () => {
 }, 30_000);
 
 describe('route-only component chunks', () => {
-  it('preserves Group, refs, effects and opaque updates through lazy navigation and direct hydration', async context => {
+  it.skipIf(!chromeExecutable())('preserves Group, refs, effects and opaque updates through lazy navigation and direct hydration', async () => {
     const executablePath = chromeExecutable();
     if (executablePath === null) {
-      context.skip('Chrome is unavailable; set MMD_CHROME_PATH to run this test');
+
       return;
     }
     fixture = await mkdtemp(join(tmpdir(), 'memoized-dom-lazy-lifecycles-'));

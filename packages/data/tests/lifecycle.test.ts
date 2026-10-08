@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { waitFor, stubGlobal, unstubAllGlobals, type FetchStub } from '../../../test-support/helpers';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import { createDataRuntime } from '../src';
 import {
   disposeFetchResource,
@@ -14,19 +15,19 @@ function json(data: unknown, status = 200): Response {
 }
 
 async function settled<T>(resource: FetchResource<T>): Promise<void> {
-  await vi.waitFor(() => expect(resource.pending).toBe(false));
+  await waitFor(() => expect(resource.pending).toBe(false));
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  unstubAllGlobals();
 });
 
 describe('data runtime lifecycle', () => {
   it('clears retained entries and resets attached resources to idle', async () => {
     const fetcher = vi.fn(() => new Promise<Response>(() => {}));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const resource = runtime.$fetch('/pending', { cache: { scope: 'app' } });
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
 
     runtime.clear();
 
@@ -43,15 +44,15 @@ describe('data runtime lifecycle', () => {
           reject(new DOMException('Aborted', 'AbortError'));
         });
       }));
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const cache = { scope: 'app' as const };
     const first = runtime.$fetch('/retained', { cache });
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     disposeFetchResource(first);
 
     const second = runtime.$fetch('/retained', { cache });
 
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     expect(second.status).toBe('pending');
     expect(second.pending).toBe(true);
     runtime.clear();
@@ -61,7 +62,7 @@ describe('data runtime lifecycle', () => {
     const fetcher = vi.fn(async () => json([]));
     const owner = new AbortController();
     owner.abort();
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
 
     const resource = runtime.$fetch('/never', { signal: owner.signal });
     await Promise.resolve();
@@ -73,9 +74,9 @@ describe('data runtime lifecycle', () => {
 
   it('isolates listener failures from resource state transitions', async () => {
     const reportError = vi.fn();
-    vi.stubGlobal('reportError', reportError);
+    stubGlobal('reportError', reportError);
     const runtime = createDataRuntime({
-      fetch: (async () => json(['ready'])) as typeof fetch,
+      fetch: (async () => json(['ready'])) as FetchStub,
     });
     const resource = runtime.$fetch<string[]>('/read');
     subscribeFetchResource(resource, value => {
@@ -88,7 +89,7 @@ describe('data runtime lifecycle', () => {
   });
 
   it('rejects commands and subscriptions after generated-code disposal', async () => {
-    const runtime = createDataRuntime({ fetch: (async () => json([])) as typeof fetch });
+    const runtime = createDataRuntime({ fetch: (async () => json([])) as FetchStub });
     const resource = runtime.$fetch<unknown[]>('/read');
     await settled(resource);
     disposeFetchResource(resource);

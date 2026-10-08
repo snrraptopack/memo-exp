@@ -1,4 +1,5 @@
-import {afterEach,expect,it,vi} from 'vitest';
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
+import {afterEach,expect,it,vi} from 'bun:test';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -9,7 +10,7 @@ let application:MountedApplication|undefined;
 afterEach(()=>{
   application?.unmount();application=undefined;
   for(const id of registeredIds())unregisterSubtree(id);
-  resetScheduler();vi.restoreAllMocks();vi.unstubAllGlobals();document.body.replaceChildren();
+  resetScheduler();vi.restoreAllMocks();unstubAllGlobals();document.body.replaceChildren();
 });
 const shell=`export function Shell({children}){return <section><h2>Before</h2>{children}<footer>After</footer></section>;}`;
 async function bind(name:string,source:string,modules:Record<string,string>={}) {
@@ -82,8 +83,8 @@ it.each([
 });
 
 it.each([false,true])('binds and recreates fixed caller slots through repeated forwarding (open=%s)',async open=>{
-  const log:string[]=[];vi.stubGlobal('__slotLifetime',log);
-  const refs:string[]=[];vi.stubGlobal('__slotRefs',refs);
+  const log:string[]=[];stubGlobal('__slotLifetime',log);
+  const refs:string[]=[];stubGlobal('__slotRefs',refs);
   await bind(`recreated-slot-${open}`,`import {Shell} from './Shell';export function App(){let open=${open};let n=1;
     return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button><button class="next" onClick={()=>n++}>Next</button>
       {open&&<Shell><b>Fixed caller text</b><button class="inside" ref={node=>{globalThis.__slotRefs.push(node.localName);return ()=>{globalThis.__slotRefs.push('clear');};}} title={'n'+n} onClick={()=>n++}>{n}</button></Shell>}<p>{n}</p></main>;}`,{
@@ -94,13 +95,13 @@ it.each([false,true])('binds and recreates fixed caller slots through repeated f
   });
   if(!open)click('.toggle');
   const initial=document.querySelector('section');expect(log).toEqual(['mount']);
-  await expect.poll(()=>refs).toEqual(['button','button']);
+  await waitFor(async () => expect(await (()=>refs)()).toEqual(['button','button']));
   click('.inside');expect([...document.querySelectorAll('.inside')].map(node=>node.textContent)).toEqual(['2','2']);
   click('.toggle');expect(initial!.isConnected).toBe(false);expect(log).toEqual(['mount','dispose']);
   expect(refs.filter(value=>value==='clear')).toHaveLength(2);
   click('.next');expect(document.querySelector('p')!.textContent).toBe('3');
   click('.toggle');expect(document.querySelector('section')).not.toBe(initial);
-  await expect.poll(()=>refs.filter(value=>value==='button').length).toBe(4);
+  await waitFor(async () => expect(await (()=>refs.filter(value=>value==='button').length)()).toBe(4));
   expect([...document.querySelectorAll('.inside')].map(node=>[node.textContent,node.getAttribute('title')])).toEqual([['3','n3'],['3','n3']]);
   expect([...document.querySelectorAll('b')].map(node=>node.textContent)).toEqual(['Fixed caller text','Fixed caller text']);
   document.querySelectorAll<HTMLButtonElement>('.inside')[1]!.click();
@@ -169,7 +170,7 @@ it.each(['owner','module'])('updates repeated conditional/list slots through for
 });
 
 it('keeps child component state, refs and cleanup across conditional recreation',async()=>{
-  const log:string[]=[];vi.stubGlobal('__slotLifetime',log);
+  const log:string[]=[];stubGlobal('__slotLifetime',log);
   await bind('conditional-lifetime',`import {Shell} from './Shell';import {Counter} from './Counter';
     export function App(){let open=true;return <main><button class="toggle" onClick={()=>open=!open}>Toggle</button><Shell>{open&&<Counter/>}</Shell></main>;}`,{
     './Counter.tsx':`export function Counter(){let n=0;let ref=null;

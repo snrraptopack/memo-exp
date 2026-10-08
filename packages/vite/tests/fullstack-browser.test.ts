@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { createServer, type ViteDevServer } from 'vite';
 import memoizedDom from '../src';
 
@@ -51,10 +51,10 @@ afterEach(async () => {
 }, 30_000);
 
 describe('fullstack browser integration', () => {
-  it('hydrates facade sources, rebinds parameters, and settles event-created results', async (context) => {
+  it.skipIf(!chromeExecutable())('hydrates facade sources, rebinds parameters, and settles event-created results', async () => {
     const executablePath = chromeExecutable();
     if (executablePath === null) {
-      context.skip('Chrome is unavailable; set MMD_CHROME_PATH to run this test');
+
       return;
     }
 

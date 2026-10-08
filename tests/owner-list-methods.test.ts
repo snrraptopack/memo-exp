@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { _internals, createListRegion, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -20,8 +21,8 @@ async function load(body:string,name:string){
 }
 const reads=()=>(globalThis as unknown as {__methodReplays:number}).__methodReplays;
 const reset=()=>{(globalThis as unknown as {__methodReplays:number}).__methodReplays=0;};
-beforeEach(()=>{document.body.replaceChildren();resetAccessTable();vi.stubGlobal('__methodReplays',0);});
-afterEach(()=>{_internals().registry.forEach((_,id)=>unregister(id));resetAccessTable();resetScheduler();vi.unstubAllGlobals();});
+beforeEach(()=>{document.body.replaceChildren();resetAccessTable();stubGlobal('__methodReplays',0);});
+afterEach(()=>{_internals().registry.forEach((_,id)=>unregister(id));resetAccessTable();resetScheduler();unstubAllGlobals();});
 
 it.each([false,true])('preserves identity and selection across guarded native transformations (deferred=%s)',async deferred=>{
   const {App,output}=await load(`let items=${records};let selected=0;const select=id=>{selected=id;};

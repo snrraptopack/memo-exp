@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { walkMarkup } from '../packages/runtime/src/markup-walk';
 import { parseMarkup, type MarkupChild } from '../packages/runtime/src/markup-parse';
 

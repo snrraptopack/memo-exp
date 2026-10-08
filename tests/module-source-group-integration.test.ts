@@ -1,3 +1,4 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 /**
  * RFC §16.4 regression battery — module-scope sources consumed through the
  * component-local machinery (Group, $track, derivations).
@@ -14,7 +15,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import {
   createApplicationRuntime,
@@ -147,7 +148,7 @@ describe('module-scope sources through Group/$track/derivations', () => {
     const never = (() => {
       calls++;
       return new Promise<Response>(() => {});
-    }) as typeof fetch;
+    }) as FetchStub;
 
     const makeRequest = (id: string) =>
       createApplicationRuntime(id);
@@ -261,7 +262,7 @@ describe('module-scope sources through Group/$track/derivations', () => {
       if (url.includes('/api/session')) return sessionRequest;
       return Promise.resolve(jsonResponse({}));
     };
-    const data = createDataRuntime({ fetch: fetchJson as typeof fetch });
+    const data = createDataRuntime({ fetch: fetchJson as FetchStub });
     const previousData = setActiveDataRuntime(data);
 
     try {
@@ -275,7 +276,7 @@ describe('module-scope sources through Group/$track/derivations', () => {
       resolveNotifications(
         jsonResponse([{ id: 'n1', text: 'Deploy done', read: false }]),
       );
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(document.querySelector('.unread')?.textContent).toContain(
           'Deploy done',
         );
@@ -293,7 +294,7 @@ describe('module-scope sources through Group/$track/derivations', () => {
           email: 'ada@ws',
         }),
       );
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(document.querySelector('.avatar')?.textContent).toBe('A');
         expect(document.querySelector('.who strong')?.textContent).toBe(
           'Ada Lovelace',

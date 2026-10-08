@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'bun:test';
 import {
   createApplicationRuntime, getActiveApplicationRuntime, markDirty, register,
   runWithApplicationRuntime, setActiveApplicationRuntime, setScheduler,

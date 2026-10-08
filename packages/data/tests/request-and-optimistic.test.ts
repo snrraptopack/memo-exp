@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import { createDataRuntime, RequestError } from '../src';
 import type { FetchResource } from '../src';
 
@@ -10,13 +11,13 @@ function json(data: unknown, status = 200): Response {
 }
 
 async function settled<T>(resource: FetchResource<T>): Promise<void> {
-  await vi.waitFor(() => expect(resource.pending).toBe(false));
+  await waitFor(() => expect(resource.pending).toBe(false));
 }
 
 describe('request identity and errors', () => {
   it('retains the status and JSON body of a non-2xx response', async () => {
     const runtime = createDataRuntime({
-      fetch: (async () => json({ error: 'invalid_credentials' }, 401)) as typeof fetch,
+      fetch: (async () => json({ error: 'invalid_credentials' }, 401)) as FetchStub,
     });
     const resource = runtime.$fetch('/_fn/auth/postLogin');
     await settled(resource);
@@ -34,7 +35,7 @@ describe('request identity and errors', () => {
         status: 500,
         statusText: 'Server Error',
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     const resource = runtime.$fetch('/broken');
 
@@ -57,10 +58,10 @@ describe('request identity and errors', () => {
       json: () => Promise.reject(new DOMException('Aborted', 'AbortError')),
       text: () => Promise.resolve(''),
     } as unknown as Response;
-    const runtime = createDataRuntime({ fetch: (async () => response) as typeof fetch });
+    const runtime = createDataRuntime({ fetch: (async () => response) as FetchStub });
     const resource = runtime.$fetch('/aborted');
 
-    await vi.waitFor(() => expect(resource.pending).toBe(false));
+    await waitFor(() => expect(resource.pending).toBe(false));
 
     expect(resource.status).toBe('idle');
     expect(resource.error).toBeNull();
@@ -69,7 +70,7 @@ describe('request identity and errors', () => {
   it('strips fragments and shares equivalent absolute request identities', async () => {
     const fetcher = vi.fn(async () => json(['shared']));
     const runtime = createDataRuntime({
-      fetch: fetcher as typeof fetch,
+      fetch: fetcher as FetchStub,
       baseURL: 'https://example.test/app/',
     });
 
@@ -78,7 +79,7 @@ describe('request identity and errors', () => {
     await settled(first);
     await settled(second);
 
-    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledWith(
       'https://example.test/api/users',
       expect.objectContaining({ method: 'GET' }),
@@ -91,12 +92,12 @@ describe('request identity and errors', () => {
       return json({ ok: true });
     });
     const headers = new Headers({ authorization: 'Bearer first' });
-    const runtime = createDataRuntime({ fetch: fetcher as typeof fetch });
+    const runtime = createDataRuntime({ fetch: fetcher as FetchStub });
     const resource = runtime.$fetch('/profile', { headers });
     headers.set('authorization', 'Bearer changed');
 
     await settled(resource);
 
-    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

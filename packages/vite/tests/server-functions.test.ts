@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { analyzeServerFunctionModule, parseWithEstreeFrontendOrThrow, memoizedEstreeFrontend } from '@memoized-dom/compiler';
 import { resolveAdapterOptions } from '../src/options';
 import { rewriteServerFunctionBarrelImports, serverFunctionsDeclarationFile, writeServerFunctionDeclarations } from '../src/server-functions';
@@ -68,8 +68,9 @@ describe('conditional generated declarations', () => {
     await writeRoutesDeclaration(fixture, ['/stories/:id']);
     expect(await readFile(serverFunctionsDeclarationFile(fixture), 'utf8')).toContain('function story');
     expect(await readFile(routesDeclarationFile(fixture), 'utf8')).toContain('/stories/:id');
-    await writeServerFunctionDeclarations(fixture, [], options);
     await Promise.all([
+      writeServerFunctionDeclarations(fixture, [], options),
+      writeServerFunctionDeclarations(fixture, [], options),
       writeRoutesDeclaration(fixture, []),
       writeRoutesDeclaration(fixture, []),
     ]);

@@ -1,7 +1,8 @@
+import { waitFor, stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { render, renderToString } from '@memoized-dom/server';
 import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -11,7 +12,7 @@ describe('$read and $forms compiler integration', () => {
     for (const id of _internals().registry.keys()) unregister(id);
     document.body.replaceChildren();
     resetScheduler();
-    vi.unstubAllGlobals();
+    unstubAllGlobals();
   });
   it('retains promise creation for direct and bound reads', () => {
     const output = compileModules({
@@ -84,7 +85,7 @@ describe('$read and $forms compiler integration', () => {
     form.dispatchEvent(new SubmitEvent('submit', {
       bubbles: true, cancelable: true, submitter: form.querySelector('button'),
     }));
-    await vi.waitFor(() => expect(form.querySelector('[data-role="result"]')?.textContent).toBe('hello'));
+    await waitFor(() => expect(form.querySelector('[data-role="result"]')?.textContent).toBe('hello'));
     form.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
     expect(form.querySelector('[data-role="result"]')?.textContent).toBe('hello!');
   });
@@ -123,7 +124,7 @@ describe('$read and $forms compiler integration', () => {
     });
     root.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
-    await vi.waitFor(() => expect(root.querySelector('output')?.textContent).toBe('hello'));
+    await waitFor(() => expect(root.querySelector('output')?.textContent).toBe('hello'));
     expect(root.querySelector('button')?.disabled).toBe(false);
   });
 
@@ -154,15 +155,15 @@ describe('$read and $forms compiler integration', () => {
     setScheduler(run => run());
     const root = App('App', null) as HTMLElement;
     document.body.append(root);
-    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('1'));
+    await waitFor(() => expect(root.querySelector('span')?.textContent).toBe('1'));
     root.querySelector('button')!.click();
-    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('2'));
+    await waitFor(() => expect(root.querySelector('span')?.textContent).toBe('2'));
   });
 
   it.each(['const', 'export const'])('retries an outer %s promise in its creation scope despite component shadows', async declaration => {
     const load = vi.fn((endpoint: string): Promise<{endpoint: string; attempt: number}> =>
       Promise.resolve({endpoint, attempt: load.mock.calls.length}));
-    vi.stubGlobal('__readReplayLoader', load);
+    stubGlobal('__readReplayLoader', load);
     const output = compileModules({
       './app.tsx': `
         const endpoint = 'outer';
@@ -184,9 +185,9 @@ describe('$read and $forms compiler integration', () => {
     setScheduler(run => run());
     const root = App('ReadShadowApp', null) as HTMLElement;
     document.body.append(root);
-    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('outer:1'));
+    await waitFor(() => expect(root.querySelector('span')?.textContent).toBe('outer:1'));
     root.querySelector('button')!.click();
-    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('outer:2'));
+    await waitFor(() => expect(root.querySelector('span')?.textContent).toBe('outer:2'));
     expect(load.mock.calls).toEqual([['outer'], ['outer']]);
   });
 
@@ -216,9 +217,9 @@ describe('$read and $forms compiler integration', () => {
     setScheduler(run => run());
     const root = App(`ReadDestructured${name}`, null) as HTMLElement;
     document.body.append(root);
-    await vi.waitFor(() => expect(root.querySelector('span')?.textContent).toBe('7'));
+    await waitFor(() => expect(root.querySelector('span')?.textContent).toBe('7'));
     root.querySelector('button')!.click();
-    await vi.waitFor(() => expect(root.querySelector('output')?.textContent).toBe('refreshed'));
+    await waitFor(() => expect(root.querySelector('output')?.textContent).toBe('refreshed'));
     expect(root.querySelector('span')?.textContent).toBe('7');
   });
 });

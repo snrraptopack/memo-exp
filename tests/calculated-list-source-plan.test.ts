@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it } from 'bun:test';
 import { parseEstreeOrThrow, printEstree } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { createAnalysisCtx, refreshAstAnalysis } from '../packages/compiler/src/context';

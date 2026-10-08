@@ -1,4 +1,5 @@
-import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
+import { afterEach, describe, it, expect, beforeEach } from 'bun:test';
 import {
   setScheduler,
   resetScheduler,
@@ -65,13 +66,13 @@ describe('M0 kernel', () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    unstubAllGlobals();
     resetScheduler();
   });
 
   it('polls volatile pull state for its mounted lifetime only', () => {
     const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal(
+    stubGlobal(
       'requestAnimationFrame',
       (callback: FrameRequestCallback) => {
         frames.push(callback);

@@ -1,3 +1,4 @@
+import { mocked, expectCalledOnceWith } from '../test-support/helpers';
 /**
  * R27 - component render preludes and source-level control flow.
  */
@@ -9,7 +10,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -333,13 +334,13 @@ describe('R27 - compiled render preludes', () => {
     expect(console.log).not.toHaveBeenCalled();
 
     document.querySelector<HTMLButtonElement>('#toggle')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([['connect']]);
+    expectCalledOnceWith(mocked(console.log), 'connect');
 
     document.querySelector<HTMLButtonElement>('#effect-other')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([['connect']]);
+    expectCalledOnceWith(mocked(console.log), 'connect');
 
     document.querySelector<HTMLButtonElement>('#toggle')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       ['connect'],
       ['disconnect'],
     ]);

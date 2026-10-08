@@ -1,6 +1,7 @@
+import { stubGlobal, unstubAllGlobals } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { _internals, resetAccessTable, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
 
@@ -30,14 +31,14 @@ function compile(text:string){return compileModules({'./app.tsx':text})['./app.t
 beforeEach(()=>{
   document.body.replaceChildren();resetAccessTable();frames.length=0;
   clock.value=0;clock.fail=false;clock.reads=0;
-  vi.stubGlobal('__controlClock',clock);
-  vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
+  stubGlobal('__controlClock',clock);
+  stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
 });
 afterEach(()=>{
   clock.fail=false;
   _internals().registry.forEach((_,id)=>unregister(id));
   while(frames.length)frames.shift()!(performance.now());
-  resetAccessTable();resetScheduler();vi.unstubAllGlobals();
+  resetAccessTable();resetScheduler();unstubAllGlobals();
 });
 
 it.each([false,true].flatMap(deferred=>[false,true].map(linked=>({deferred,linked}))))(

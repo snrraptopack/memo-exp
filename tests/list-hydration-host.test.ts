@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'bun:test';
 import { claimHydrationRoot, HydrationDocument, HydrationMismatchError } from '../packages/runtime/src/hydration';
 import { hydrateList } from '../packages/runtime/src/hydration-list';
 import { getActiveEnvironment, runWithRenderEnvironment } from '../packages/runtime/src/kernel';
@@ -62,7 +62,7 @@ it.each([false, true])('preserves the authored failure when the row cursor also 
     let caught = false;
     try { region.reconcile(['a']); }
     catch (error) { caught = true; expect(error).toBeUndefined(); }
-    expect(caught).toBe(true); expect(pop).toHaveBeenCalledOnce();
+    expect(caught).toBe(true); expect(pop).toHaveBeenCalledTimes(1);
     expect(pop.mock.results[0]!.type).toBe('throw');
   }, () => { throw undefined; });
 });

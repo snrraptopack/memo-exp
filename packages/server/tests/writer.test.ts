@@ -1,7 +1,9 @@
+import { type FetchStub } from '../../../test-support/helpers';
+import '../../../test-support/dom';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { commit, commitWrites, mount, registerRootFactory, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import '@memoized-dom/runtime/hydrate';
@@ -135,7 +137,7 @@ describe('experimental compiler leaf writer', () => {
         commitWrites(['./writer-settled.tsx#rows']);
         commit();
         return Response.json({ status: 'done' });
-      }) as typeof fetch });
+      }) as FetchStub });
     }
     setScheduler(run => run());
     try {
@@ -200,7 +202,7 @@ describe('experimental compiler leaf writer', () => {
           commitWrites(['./writer-cells.tsx#rows']);
           commit();
           return Response.json({ status: 'done' });
-        }) as typeof fetch,
+        }) as FetchStub,
       })));
     }
     const before = await pair(baseline.module);
@@ -270,7 +272,7 @@ describe('experimental compiler leaf writer', () => {
           commitWrites(['./writer-imported/state.ts#rows', './writer-imported/row.tsx#prefix']);
           commit();
           return Response.json({ status: 'done' });
-        }) as typeof fetch,
+        }) as FetchStub,
       })));
     }
     const before = await pair(baseline);

@@ -1,5 +1,5 @@
-// @vitest-environment node
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+// Runs with Bun globals; no DOM preload.
+import { describe, expect, expectTypeOf, it, vi } from 'bun:test';
 import { json as respondJson, type JsonResponse } from '../src';
 import {
   createServerFunctionRoutes,
@@ -224,7 +224,7 @@ describe('server HTTP router', () => {
     expect(response.headers.get('x-function-middleware')).toBe('yes');
     expect(await json(response)).toEqual({ args: [42, true, ['a', 'b']] });
     expect(calls).toEqual([[42, true, ['a', 'b']]]);
-    expect(routeMiddleware).toHaveBeenCalledOnce();
+    expect(routeMiddleware).toHaveBeenCalledTimes(1);
   });
 
   it('decodes mutation bodies and reports malformed endpoint input as 400', async () => {
@@ -338,7 +338,7 @@ describe('server HTTP router', () => {
     expect(head.status).toBe(200);
     expect(head.headers.get('x-route')).toBe('get');
     expect(await head.text()).toBe('');
-    expect(get).toHaveBeenCalledOnce();
+    expect(get).toHaveBeenCalledTimes(1);
 
     const options = await router.fetch(new Request('https://app.test/items', {
       method: 'OPTIONS',

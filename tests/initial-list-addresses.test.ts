@@ -1,4 +1,4 @@
-import {afterEach,expect,it} from 'vitest';
+import { afterEach, expect, it } from 'bun:test';
 import {bindInitialListNodes} from '../packages/runtime/src/initial-list-bindings';
 
 afterEach(()=>document.body.replaceChildren());

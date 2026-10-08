@@ -1,9 +1,10 @@
-// @vitest-environment node
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+// Runs with Bun globals; no DOM preload.
 /** Request-only delivery uses the production async request storage. */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { compileModulesDetailed } from '@memoized-dom/compiler';
 import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { render, renderToString, renderToReadableStream, serve } from '../src/index';
@@ -99,14 +100,14 @@ describe('request-only server delivery', () => {
     expect(contract).toMatchObject({browser:'bindings',key:value.client.initialDelivery?.key});
     expect(contract).not.toHaveProperty('html');
     const options={initialKey:contract.key,mode:'shell' as const};
-    const response=await render(value.serverModule.App,{...options,fetch:(async()=>Response.json({name:''})) as typeof fetch});
+    const response=await render(value.serverModule.App,{...options,fetch:(async()=>Response.json({name:''})) as FetchStub});
     expect(response.html).toBe('<main><section><h2><!--mmd:empty--></h2><p>Kept</p></section><button>0</button></main>');
     expect(response.payload.state?.sources).toHaveLength(1);
     expect(response.scriptTag).toContain('application/mmd+json');
     expect(response.settlement.status).toBe('complete');
-    const stream=renderToReadableStream(value.serverModule.App,{...options,fetch:(async()=>Response.json({name:''})) as typeof fetch});
+    const stream=renderToReadableStream(value.serverModule.App,{...options,fetch:(async()=>Response.json({name:''})) as FetchStub});
     expect(await new Response(stream).text()).toBe(response.html+response.scriptTag);
-    const full=await render(value.serverModule.App,{...options,markers:true,fetch:(async()=>Response.json({name:'Ada & <friends>'})) as typeof fetch});
+    const full=await render(value.serverModule.App,{...options,markers:true,fetch:(async()=>Response.json({name:'Ada & <friends>'})) as FetchStub});
     expect(full.html).toContain('<h2>Ada &amp; &lt;friends&gt;</h2>');
     expect(full.html).not.toContain('mmd:r:');expect(full.scriptTag).toContain('application/mmd+json');
   });
@@ -138,11 +139,11 @@ describe('request-only server delivery', () => {
       calls++;
       await new Promise<void>(resolve => releases.push(resolve));
       return Response.json({ name });
-    }) as typeof fetch;
+    }) as FetchStub;
     const options = { initialKey: contract.key, markers: true, mode: 'shell' as const };
     const first = render(value.serverModule.App, { ...options, fetch: fetchFor('Ada & <friends>') });
     const second = render(value.serverModule.App, { ...options, fetch: fetchFor('Grace') });
-    await expect.poll(() => releases.length).toBe(2);
+    await waitFor(async () => expect(await (() => releases.length)()).toBe(2));
     releases[1]!(); releases[0]!();
     const results = await Promise.all([first, second]);
     expect(results[0]!.html).toContain('Hello Ada &amp; &lt;friends&gt;');
@@ -160,7 +161,7 @@ describe('request-only server delivery', () => {
     await expect(render(value.serverModule.App, { ...options, initialKey: 'stale', fetch: fetchFor('Wrong') }))
       .rejects.toThrow('contracts do not match');
     expect(calls).toBe(2);
-    const jsonFetch = (async () => Response.json({ name: 'Stream' })) as typeof fetch;
+    const jsonFetch = (async () => Response.json({ name: 'Stream' })) as FetchStub;
     const stream = renderToReadableStream(value.serverModule.App, { ...options, fetch: jsonFetch });
     expect(await new Response(stream).text()).toContain('<h2 title="Stream">Hello Stream</h2>');
     const ordinary = await render(value.serverModule.App, { mode: 'resolve', markers: true, fetch: jsonFetch });
@@ -174,16 +175,17 @@ describe('request-only server delivery', () => {
     const signals: AbortSignal[] = [];
     const hangingFetch = ((_input: unknown, init?: RequestInit) => {
       signals.push(init!.signal!); return new Promise<Response>(() => {});
-    }) as typeof fetch;
+    }) as FetchStub;
     const options = { initialKey: value.server.initialDelivery!.key, fetch: hangingFetch };
     await expect(render(value.serverModule.App, { ...options, timeout: 10 })).rejects.toThrow('did not settle');
     expect(signals[0]!.aborted).toBe(true);
     const controller = new AbortController();
     const pending = render(value.serverModule.App, { ...options, signal: controller.signal });
-    const rejected = expect(pending).rejects.toThrow('Disconnected');
-    await expect.poll(() => signals.length).toBe(2);
+    const rejected = pending.then(() => { throw new Error('Expected promise rejection'); }, error => error);
+    await waitFor(async () => expect(await (() => signals.length)()).toBe(2));
     controller.abort(new Error('Disconnected'));
-    await rejected;
+    const rejectedError = await rejected;
+    expect(() => { throw rejectedError; }).toThrow('Disconnected');
     expect(signals[1]!.aborted).toBe(true);
   });
 
@@ -191,8 +193,8 @@ describe('request-only server delivery', () => {
     const value = await fixture(`request-failure-${contract}`, `export function App(){const user=$fetch('/api/user');return <h1>{user?.name}</h1>;}`);
     const options = { mode: 'resolve' as const, ...(contract ? { initialKey: value.server.initialDelivery!.key } : {}) };
     const results = await Promise.allSettled([
-      render(value.serverModule.App, { ...options, fetch: (async () => new Response('Unavailable', { status: 503 })) as typeof fetch }),
-      render(value.serverModule.App, { ...options, fetch: (async () => Response.json({ name: 'Still isolated' })) as typeof fetch }),
+      render(value.serverModule.App, { ...options, fetch: (async () => new Response('Unavailable', { status: 503 })) as FetchStub }),
+      render(value.serverModule.App, { ...options, fetch: (async () => Response.json({ name: 'Still isolated' })) as FetchStub }),
     ]);
     expect(results[0]!.status).toBe('rejected');
     if (results[0]!.status === 'rejected') expect(results[0]!.reason.message).toContain('503');

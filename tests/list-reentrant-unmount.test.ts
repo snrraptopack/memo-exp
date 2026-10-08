@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it } from 'bun:test';
 import { createListRegion, register, registeredIds, unregisterSubtree } from '@memoized-dom/runtime/testing';
 
 afterEach(() => {
@@ -64,12 +64,12 @@ it('cleans a late factory entry even if its disposer throws', () => {
 });
 
 it.each([
-  ['fresh', [], [1,2]],
-  ['steady', [1,2], [1,2]],
-  ['append prefix', [1,2], [1,2,3]],
+  ['fresh', [], [1,2], undefined],
+  ['steady', [1,2], [1,2], undefined],
+  ['append prefix', [1,2], [1,2,3], undefined],
   ['append tail', [1,2], [1,2,3], 3],
-  ['removal', [1,2,3], [1,2]],
-  ['mixed', [1,2], [3,1,2]],
+  ['removal', [1,2,3], [1,2], undefined],
+  ['mixed', [1,2], [3,1,2], undefined],
 ])('%s: stops immediately when a key getter unmounts', (_name, initial, next, target) => {
   const app = create(); app.region.reconcile(initial as number[]); const reads: number[] = [];
   app.hooks(item => { reads.push(item); if (item === (target ?? (next as number[])[0])) app.region.dispose(); });

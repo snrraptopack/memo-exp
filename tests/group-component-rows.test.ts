@@ -1,7 +1,8 @@
+import { waitFor, type FetchStub } from '../test-support/helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { compileModules } from '@memoized-dom/compiler';
 import { createDataRuntime, setActiveDataRuntime, type DataRuntime } from '@memoized-dom/data';
 import { _internals, resetScheduler, setScheduler, unregister } from '@memoized-dom/runtime/testing';
@@ -59,7 +60,7 @@ describe('Group policies through specialized component rows', () => {
   function mount(name: string) {
     requests = [];
     data = createDataRuntime({ fetch: ((url: unknown, init?: RequestInit) =>
-      new Promise<Response>(resolve => requests.push({ url: String(url), signal: init?.signal, resolve }))) as typeof fetch });
+      new Promise<Response>(resolve => requests.push({ url: String(url), signal: init?.signal, resolve }))) as FetchStub });
     previous = setActiveDataRuntime(data);
     setScheduler(run => run());
     document.body.append(fixture[name]!(name, null));
@@ -69,38 +70,38 @@ describe('Group policies through specialized component rows', () => {
   }
   it('inherits read-local pending and error policies across files without suspending static rows', async () => {
     mount('Progressive');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(document.querySelectorAll('li')).toHaveLength(2);
     expect(document.querySelectorAll('.waiting')).toHaveLength(2);
     expect(document.querySelector('h2')?.textContent).toBe('First');
     resolve(0, 'Ready one');
     resolve(1, 'Failed', 503);
-    await vi.waitFor(() => expect(document.querySelector('.failed')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.failed')).not.toBeNull());
     expect(document.querySelector('[data-row="one"] span')?.textContent).toBe('Ready one');
     document.querySelector<HTMLButtonElement>('.failed')!.click();
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[2]!.url).toContain('/row/two');
     resolve(2, 'Recovered two');
-    await vi.waitFor(() => expect(document.querySelector('[data-row="two"] span')?.textContent).toBe('Recovered two'));
+    await waitFor(() => expect(document.querySelector('[data-row="two"] span')?.textContent).toBe('Recovered two'));
     expect(document.querySelectorAll('li')).toHaveLength(2);
   });
   it('discovers all component-row reads before publishing one atomic list', async () => {
     mount('Atomic');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(document.querySelectorAll('.waiting')).toHaveLength(1);
     expect(document.querySelector('ul')).toBeNull();
     resolve(0, 'First ready');
     await Promise.resolve();
     expect(document.querySelector('ul')).toBeNull();
     resolve(1, 'Second ready');
-    await vi.waitFor(() => expect(document.querySelectorAll('li')).toHaveLength(2));
+    await waitFor(() => expect(document.querySelectorAll('li')).toHaveLength(2));
     expect(document.querySelector('ul')?.textContent).toContain('First ready');
     expect(document.querySelector('ul')?.textContent).toContain('Second ready');
     expect(document.querySelector('.waiting')).toBeNull();
   });
   it('abandons every staged row request when its atomic list is removed', async () => {
     mount('Atomic');
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     document.querySelector<HTMLButtonElement>('#hide')!.click();
     expect(requests.every(request => request.signal?.aborted)).toBe(true);
     resolve(0, 'Late one');

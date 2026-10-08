@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { build } from 'esbuild';
 import { compileModules } from '@memoized-dom/compiler';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'bun:test';
 import type { RouteRuntime } from '../packages/router/src/runtime';
 
 describe('bundled public router construction', () => {

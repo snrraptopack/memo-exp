@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { waitFor, type FetchStub } from '../../../test-support/helpers';
+import { describe, expect, it, vi } from 'bun:test';
 import {
   $read,
   $track,
@@ -37,14 +38,14 @@ describe('transparent resolved values', () => {
   it('settles a colorless value into an honest routed payload', async () => {
     let finish!: (response: Response) => void;
     const runtime = createDataRuntime({
-      fetch: (() => new Promise<Response>(resolve => { finish = resolve; })) as typeof fetch,
+      fetch: (() => new Promise<Response>(resolve => { finish = resolve; })) as FetchStub,
     });
     const resource = runtime.$fetch<User>('/user');
     const controller = new AbortController();
     const settled = settleRoutedValue(resource, controller.signal);
 
     expect(settled).toBeInstanceOf(Promise);
-    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
     finish(json({ id: 1, name: 'Ada' }));
     await expect(settled).resolves.toEqual({ id: 1, name: 'Ada' });
     expect(settleRoutedValue({ plain: true }, controller.signal)).toBeUndefined();
@@ -75,7 +76,7 @@ describe('transparent resolved values', () => {
     expect(state.error).toBeNull();
 
     resolve({ id: 1, name: 'Ada' });
-    await vi.waitFor(() => expect(state.status).toBe('success'));
+    await waitFor(() => expect(state.status).toBe('success'));
 
     expect(state.status).toBe('success');
     expect(state.pending).toBe(false);
@@ -102,7 +103,7 @@ describe('transparent resolved values', () => {
     state.onError(failure);
 
     reject(new Error('offline'));
-    await vi.waitFor(() => expect(state.status).toBe('error'));
+    await waitFor(() => expect(state.status).toBe('error'));
 
     expect(state.status).toBe('error');
     expect(state.pending).toBe(false);
@@ -121,7 +122,7 @@ describe('transparent resolved values', () => {
       () => new Promise<User>((resolve, reject) => pending.push({ resolve, reject })),
     ));
     const request = $track(user);
-    await vi.waitFor(() => expect(request.status).toBe('success'));
+    await waitFor(() => expect(request.status).toBe('success'));
 
     const first = request.refresh();
     const second = request.refresh();
@@ -144,23 +145,23 @@ describe('transparent resolved values', () => {
       fetch: ((input: string | URL | Request) =>
         new Promise<Response>(resolve => {
           requests.push({ url: String(input), resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     const leftResource = runtime.$fetch<User>('/left');
     const rightResource = runtime.$fetch<User>('/right');
     const left = leftResource as unknown as ResolvedValue<User>;
     const right = rightResource as unknown as ResolvedValue<User>;
 
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     requests[0]!.resolve(json({ message: 'left failed' }, 501));
     requests[1]!.resolve(json({ message: 'right failed' }, 502));
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect($track(left).error?.status).toBe(501);
       expect($track(right).error?.status).toBe(502);
     });
 
     const retry = retryResolvedValues([left, right]);
-    await vi.waitFor(() => expect(requests).toHaveLength(4));
+    await waitFor(() => expect(requests).toHaveLength(4));
     expect(requests[2]!.url).toBe('/left');
     expect(requests[3]!.url).toBe('/right');
     requests[2]!.resolve(json({ id: 1, name: 'Left' }));
@@ -182,7 +183,7 @@ describe('transparent resolved values', () => {
         return new Promise<Response>(resolve => {
           finish = resolve;
         });
-      }) as typeof fetch,
+      }) as FetchStub,
     });
     const resource = runtime.$fetch<User>('/users/1', {
       method: 'PATCH',
@@ -196,7 +197,7 @@ describe('transparent resolved values', () => {
     expect(requestInit?.body).toBe('{"name":"Grace"}');
 
     finish(json({ id: 1, name: 'Grace' }));
-    await vi.waitFor(() => expect(state.status).toBe('success'));
+    await waitFor(() => expect(state.status).toBe('success'));
 
     expect(readResolvedValue(user)).toEqual({ id: 1, name: 'Grace' });
     expect(state.pending).toBe(false);
@@ -209,7 +210,7 @@ describe('transparent resolved values', () => {
     const runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(accept => {
         resolve = accept;
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     const resource = runtime.$fetch<User>('/user');
     const user = resource as unknown as ResolvedValue<User>;
@@ -222,7 +223,7 @@ describe('transparent resolved values', () => {
 
     let transitions = 0;
     const disconnect = connectResolvedValue(user, () => transitions++);
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     resolve(json({ id: 1, name: 'Ada' }));
     await resource.refresh();
 
@@ -243,7 +244,7 @@ describe('transparent resolved values', () => {
 
   it('keeps initial request failures loud at render and imperative sites', async () => {
     const runtime = createDataRuntime({
-      fetch: (async () => json({ message: 'offline' }, 503)) as typeof fetch,
+      fetch: (async () => json({ message: 'offline' }, 503)) as FetchStub,
     });
     const resource = runtime.$fetch<User>('/user');
     const user = resource as unknown as ResolvedValue<User>;
@@ -259,7 +260,7 @@ describe('transparent resolved values', () => {
     const runtime = createDataRuntime({
       fetch: (() => new Promise<Response>(resolve => {
         requests.push(resolve);
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     const first = runtime.$fetch<User>('/vote', {
       method: 'POST',
@@ -284,11 +285,11 @@ describe('transparent resolved values', () => {
     secondTrack.onSuccess(secondSuccess);
     secondTrack.onError(secondError);
 
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     requests[1]!(json({ id: 1, name: 'second' }));
     requests[0]!(json({ message: 'first failed' }, 503));
 
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(secondSuccess).toHaveBeenCalledWith(
         { id: 1, name: 'second' },
         secondId,
@@ -308,7 +309,7 @@ describe('transparent resolved values', () => {
     const settledId = secondTrack.id;
     const refreshed = secondTrack.refresh();
     expect(secondTrack.id).not.toBe(settledId);
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await waitFor(() => expect(requests).toHaveLength(3));
     requests[2]!(json({ id: 1, name: 'refreshed' }));
     await expect(refreshed).resolves.toEqual({ id: 1, name: 'refreshed' });
     runtime.clear();
@@ -323,7 +324,7 @@ describe('transparent resolved values', () => {
       fetch: ((_input: string | URL | Request, init?: RequestInit) =>
         new Promise<Response>(resolve => {
           requests.push({ signal: init!.signal!, resolve });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     const first = runtime.$fetch<User>('/vote', {
       method: 'POST',
@@ -343,14 +344,14 @@ describe('transparent resolved values', () => {
 
     visible = second;
     rebindEventSourceSlot(slot, () => visible, () => {});
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[0]!.signal.aborted).toBe(false);
 
     requests[1]!.resolve(json({ id: 1, name: 'second' }));
     requests[0]!.resolve(json({ id: 1, name: 'first' }));
-    await vi.waitFor(() => {
-      expect(firstSuccess).toHaveBeenCalledOnce();
-      expect(secondSuccess).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(firstSuccess).toHaveBeenCalledTimes(1);
+      expect(secondSuccess).toHaveBeenCalledTimes(1);
     });
     expect(requests[0]!.signal.aborted).toBe(false);
     expect(requests[1]!.signal.aborted).toBe(false);
@@ -373,7 +374,7 @@ describe('transparent resolved values', () => {
             signal: init!.signal!,
             resolve,
           });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     const resource = runtime.$fetch<User[]>('/users', {
       query: { search: 'Ada' },
@@ -382,16 +383,16 @@ describe('transparent resolved values', () => {
     let transitions = 0;
     const disconnect = connectResolvedValue(users, () => transitions++);
 
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     rebindResolvedValue(users, '/users', { query: { search: 'Grace' } });
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(requests[0]!.url).toBe('/users?search=Ada');
     expect(requests[0]!.signal.aborted).toBe(true);
     expect(requests[1]!.url).toBe('/users?search=Grace');
 
     requests[1]!.resolve(json([{ id: 2, name: 'Grace' }]));
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(readResolvedValueForRender(users)).toEqual([
         { id: 2, name: 'Grace' },
       ]);
@@ -427,7 +428,7 @@ describe('transparent resolved values', () => {
             signal: init!.signal!,
             resolve,
           });
-        })) as typeof fetch,
+        })) as FetchStub,
     });
     const getStory = (id: number): ResolvedValue<User> =>
       runtime.$fetch<User>('/_fn/stories/getStory', {
@@ -435,16 +436,16 @@ describe('transparent resolved values', () => {
       }) as unknown as ResolvedValue<User>;
     const story = getStory(1);
 
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     rebindResolvedValueFromFactory(story, () => getStory(2));
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(requests[0]!.url).toBe('/_fn/stories/getStory?id=1');
     expect(requests[0]!.signal.aborted).toBe(true);
     expect(requests[1]!.url).toBe('/_fn/stories/getStory?id=2');
 
     requests[1]!.resolve(json({ id: 2, name: 'Grace' }));
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(readResolvedValueForRender(story)).toEqual({
         id: 2,
         name: 'Grace',
@@ -472,7 +473,7 @@ describe('transparent resolved values', () => {
           signal: init?.signal as AbortSignal,
           resolve,
         });
-      })) as typeof fetch,
+      })) as FetchStub,
     });
     const resource = runtime.$fetch<User>('/users/1', {
       method: 'PATCH',
@@ -480,19 +481,19 @@ describe('transparent resolved values', () => {
     });
     const user = resource as unknown as ResolvedValue<User>;
 
-    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    await waitFor(() => expect(requests).toHaveLength(1));
     rebindResolvedValue(user, '/users/1', {
       method: 'PUT',
       body: { name: 'Grace' },
     });
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await waitFor(() => expect(requests).toHaveLength(2));
 
     expect(requests[0]).toMatchObject({ method: 'PATCH', body: '{"name":"Ada"}' });
     expect(requests[0]?.signal.aborted).toBe(true);
     expect(requests[1]).toMatchObject({ method: 'PUT', body: '{"name":"Grace"}' });
 
     requests[1]!.resolve(json({ id: 1, name: 'Grace' }));
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(readResolvedValueForRender(user)).toEqual({ id: 1, name: 'Grace' });
     });
 
@@ -512,7 +513,7 @@ describe('transparent resolved values', () => {
 
   it('claims SSR state for an initial request and fetches after a query rebind', async () => {
     const server = createDataRuntime({
-      fetch: (async () => json([{ id: 1, name: 'Ada' }])) as typeof fetch,
+      fetch: (async () => json([{ id: 1, name: 'Ada' }])) as FetchStub,
     });
     server.$fetch<User[]>('/users');
     expect(await server.settle()).toBe(true);
@@ -523,7 +524,7 @@ describe('transparent resolved values', () => {
       fetch: (async (input: string | URL | Request) => {
         requests.push(String(input));
         return json([{ id: 2, name: 'Grace' }]);
-      }) as typeof fetch,
+      }) as FetchStub,
     });
     client.restoreState(state);
     const resource = client.$fetch<User[]>('/users');
@@ -535,8 +536,8 @@ describe('transparent resolved values', () => {
     rebindResolvedValue(users, '/users', {
       query: { search: 'Grace' },
     });
-    await vi.waitFor(() => expect(requests).toEqual(['/users?search=Grace']));
-    await vi.waitFor(() => {
+    await waitFor(() => expect(requests).toEqual(['/users?search=Grace']));
+    await waitFor(() => {
       expect(readResolvedValueForRender(users)).toEqual([
         { id: 2, name: 'Grace' },
       ]);

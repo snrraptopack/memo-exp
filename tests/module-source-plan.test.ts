@@ -1,4 +1,4 @@
-import {expect, it} from 'vitest';
+import { expect, it } from 'bun:test';
 import {analyzeScope, cloneNode, findNode, parseEstreeOrThrow, printEstree, type BaseNode} from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { createCtx } from '../packages/compiler/src/dom/context';

@@ -1,3 +1,4 @@
+import { mocked, expectCalledOnceWith } from '../test-support/helpers';
 /**
  * R33 - resolvable named effects and stable conditional activation.
  */
@@ -12,7 +13,7 @@ import {
   expect,
   it,
   vi,
-} from 'vitest';
+} from 'bun:test';
 import { compile } from '@memoized-dom/compiler';
 import {
   _internals,
@@ -95,18 +96,18 @@ describe('R33 - named and conditional effects', () => {
     expect(console.log).not.toHaveBeenCalled();
 
     document.querySelector<HTMLButtonElement>('#toggle')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([['run:1']]);
+    expectCalledOnceWith(mocked(console.log), 'run:1');
     expect(_internals().registry.has('App/$effects/0/$active')).toBe(true);
 
     document.querySelector<HTMLButtonElement>('#increment')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       ['run:1'],
       ['cleanup:2'],
       ['run:2'],
     ]);
 
     document.querySelector<HTMLButtonElement>('#toggle')!.click();
-    expect(vi.mocked(console.log).mock.calls).toEqual([
+    expect(mocked(console.log).mock.calls).toEqual([
       ['run:1'],
       ['cleanup:2'],
       ['run:2'],
