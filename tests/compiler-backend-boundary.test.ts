@@ -53,6 +53,7 @@ it('source analysis can be constructed without a DOM allocator or host plans',()
   expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly|instanceReasonIds|analyzedFunctions|callbackPublications|handlerHasRootCommit|routeCallsiteIds|routeContextParams|externalReactiveImports|presentationParameters)/.test(key))).toEqual([]);
   expect(context).not.toHaveProperty('transparentPolicyParams');
   expect(context).not.toHaveProperty('transparentInheritedOnlyPolicyParams');
+  expect(context).not.toHaveProperty('privateRowPropComponents');
 });
 
 it('records presentation ownership without parameters and keeps local policy ahead of inheritance',()=>{

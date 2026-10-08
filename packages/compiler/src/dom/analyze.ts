@@ -32,7 +32,9 @@ import {
 } from '../analysis/instance-control-flow';
 import { isListLightweightCandidate, pathVariants } from '../analysis/component-graph';
 import { normalizeComponentJsxValues } from '../components/jsx-values';
-import { normalizePrivateRowProps } from '../components/private-row-props';
+import { planPrivateRowProps } from '../planning/private-row-props';
+import { lowerPrivateRowProps } from './private-row-props';
+import { analyzeComponentProps } from '../components/props';
 import { normalizeRenderFunctions } from '../components/render-functions';
 import { normalizeCalculatedListSources } from '../lists/calculated-sources';
 import {
@@ -69,7 +71,12 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   validateLinkedImports(ctx, programPath);
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
-  normalizePrivateRowProps(ctx, programPath);
+  const normalizedParameters = lowerPrivateRowProps(ctx, programPath, planPrivateRowProps(ctx, programPath));
+  // Reanalyze normalized lexical bindings from the backend's explicit result.
+  // The backend never publishes its positional ABI by mutating source props.
+  for (const [name, parameters] of normalizedParameters) {
+    ctx.componentProps.set(name, analyzeComponentProps(parameters));
+  }
   lowerSourceDestructuring(ctx, planSourceDestructuring(ctx, programPath.node,
     refreshAstAnalysis(ctx, programPath.node), programPath));
   refreshAstAnalysis(ctx, programPath.node);

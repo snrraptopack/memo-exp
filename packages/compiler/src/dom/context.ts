@@ -39,6 +39,8 @@ export interface DomContext extends AnalysisContext {
   initialDomComponents:Readonly<Record<string,InitialDomRoot>>;
   initialServerComponents:Readonly<Record<string,InitialDomRoot>>;
   domOnlyRowComponents:Set<string>;
+  /** Published by DOM prop lowering, never used as a source-analysis fact. */
+  privateRowPropComponents:Set<string>;
   emission:DomEmissionState;
 }
 
@@ -49,5 +51,5 @@ export function createCtx(opts:InternalMemoDomOptions={}):DomContext {
     presentationParameters:new Map(),
     initialBrowserRoot:opts.initialBrowserRoot??null,initialDomRoot:opts.initialDomRoot??null,
     initialDomComponents:opts.initialDomComponents??{},initialServerComponents:opts.initialServerComponents??{},
-    domOnlyRowComponents:new Set(),emission:createDomEmissionState()};
+    domOnlyRowComponents:new Set(),privateRowPropComponents:new Set(),emission:createDomEmissionState()};
 }

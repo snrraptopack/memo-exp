@@ -62,7 +62,8 @@ export interface SimpleObjectPropBinding {
  * compiler-private lightweight row factories. Defaults, nested patterns,
  * rest properties, and unproven generic `props` bindings retain the object
  * envelope. Private single-field rows can be normalized before this pass by
- * components/private-row-props.ts once every envelope use and call is proven.
+ * the DOM backend once planning/private-row-props.ts proves every envelope
+ * use and call; normalized lexical parameters are then analyzed explicitly.
  */
 export function simpleObjectPropBindings(
   plan: ComponentPropsPlan,

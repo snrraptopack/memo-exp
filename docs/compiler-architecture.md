@@ -780,3 +780,20 @@ not another hydration or reconciliation engine. Existing conditional/list owners
 still control updates and disposal. Parser-safe host requirements, lexical slot
 mount proofs and incompatible-factory rejection remain explicit boundaries.
 Measurements and browser checks are recorded in the delivery audit.
+
+### Private row-prop source proof — 2026-10-08
+
+The shared planner captures a private component's unobserved single-field props
+envelope. It resolves lexical identity and rejects escaping envelopes, property
+receivers, computed accesses, mutations and dynamic scope without rewriting the
+program. DOM lowering selects its existing lightweight ABI and returns normalized
+lexical parameters explicitly for reanalysis; its ABI publication is backend state.
+The former mixed component implementation is removed.
+
+Eight focused suites pass 98 checks, including shadowing, getter replay, retained
+identity, throwing prop evaluation, callback props, cleanup and initial lists.
+The transitive boundary check, compiler build, type checking and lint pass.
+All 123 compiler output/graph/delivery comparisons match `0133339`; five paired
+production SSR fixtures retain identical HTML, payload and JS sizes with the same
+runtime. This separates source proof from emission, with no additional byte or
+CPU claim. Calculated-source and remaining semantic normalization stay open.

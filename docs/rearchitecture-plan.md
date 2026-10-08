@@ -318,7 +318,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   This batch removes mixed compiler code; it makes no browser-size or CPU gain
   claim. Remaining normalization/composition and capability gates stay open.
 
-### Mount marker recognition (parent `4935119`)
+### Mount marker recognition (commit `0133339`, parent `4935119`)
 
 - Ordinary mount now retains only root-marker recognition. Full region parsing
   remains reachable through the optional hydration capability. Both readers
@@ -336,3 +336,22 @@ These are prerequisites for the runtime-size and broader precision batches.
   tradeoff reduces ordinary interactivity cost without removing server-markup
   detection. No DOM CPU improvement is claimed; broader capability isolation
   and numeric keys remain open.
+
+### Private row-prop contracts (parent `0133339`)
+
+- Shared planning now proves single-field envelope use with lexical identities,
+  including shadowed bindings, direct keyed calls, escape/receiver checks and
+  dynamic scope rejection. It allocates nothing and leaves authored syntax intact.
+- DOM lowering chooses its existing row ABI, allocates the replacement binding
+  and returns normalized parameters explicitly for source reanalysis. Its private
+  row ABI publication moved out of shared context. Removed the former mixed
+  component implementation; there is one proof and one backend consumer.
+- Compiler build, type checking, lint and the transitive import boundary passed.
+  Eight focused suites passed 98 tests, including retained nodes, getters,
+  throwing prop evaluation, callback props, cleanup and initial list adoption.
+- All 123 output/graph/delivery comparisons match `0133339`. Five production
+  SSR builds using identical runtime packages retain equal HTML, payload, JS and
+  gzip bytes: static zero JS, counter 8,613 / 3,483 B, todo 17,140 / 6,443 B,
+  lazy routing 68,066 / 22,009 B in three chunks and routed/Group
+  87,093 / 26,790 B. The preceding runtime-size improvement is preserved;
+  this compiler boundary batch makes no additional size or CPU claim.

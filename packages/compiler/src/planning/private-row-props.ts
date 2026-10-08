@@ -1,34 +1,38 @@
-import * as astFactory from '../ast/factory';
+import type * as t from '../ast/compiler-types';
 import {
-  childNode, childNodes, cloneNode, identifierName, jsxIdentifierName,
-  nodeField, replaceNode, walkAst, type BaseNode,
+  childNode, childNodes, identifierName, jsxIdentifierName,
+  nodeField, walkAst, type BaseNode,
 } from '../ast';
-import { astBindingAt, refreshAstAnalysis, type ProgramPath } from '../context';
-import { type DomContext as Ctx } from '../dom/context';
-import { generatedIdentifier } from '../dom/identifiers';
-import { isListLightweightCandidate } from '../analysis/component-graph';
-import { analyzeComponentProps } from './props';
+import { astBindingAt, type Ctx, type ProgramPath } from '../context';
+
+/** The authored envelope cannot escape or be observed beyond this own field. */
+export interface PrivateRowPropPlan {
+  readonly component: string;
+  readonly declaration: t.FunctionDeclaration;
+  readonly field: string;
+  readonly members: readonly BaseNode[];
+}
 
 /**
  * A private row that only reads one supplied own props field cannot observe
- * the envelope. Normalize it to the existing destructured/positional contract.
+ * the envelope. Capture that proof before a backend selects its row ABI.
  * Every call must be a direct keyed JSX map row with precisely that prop.
  */
-export function normalizePrivateRowProps(ctx: Ctx, programPath: ProgramPath): void {
-  if (ctx.hot) return;
+export function planPrivateRowProps(ctx: Ctx, programPath: ProgramPath): readonly PrivateRowPropPlan[] {
   const program = programPath.node as unknown as BaseNode;
   let dynamicScope = false;
   walkAst(program, { enter(node) {
     if (node.type === 'WithStatement' || node.type === 'CallExpression' &&
         identifierName(childNode(node, 'callee')) === 'eval') dynamicScope = true;
   } });
-  if (dynamicScope) return;
+  if (dynamicScope) return [];
 
+  const plans: PrivateRowPropPlan[] = [];
   for (const [name, path] of ctx.compPaths) {
     const analysis = ctx.astAnalysis!;
     const fn = path.node;
     const parameter = fn.params.length === 1 ? fn.params[0] : null;
-    if (!parameter || parameter.type !== 'Identifier' || !isListLightweightCandidate(ctx, name)) continue;
+    if (!parameter || parameter.type !== 'Identifier') continue;
     const component = analysis.rootScope.getBinding(name);
     const props = astBindingAt(ctx, parameter as unknown as BaseNode, parameter.name);
     // Ordinary references include exports, aliases and direct factory calls.
@@ -99,17 +103,7 @@ export function normalizePrivateRowProps(ctx: Ctx, programPath: ProgramPath): vo
       if (node.type === 'JSXMemberExpression') valid = false;
     } });
     if (!valid || calls === 0 || argumentsRead) continue;
-    const local = generatedIdentifier(ctx, 'rowProp');
-    for (const member of members) {
-      const replacement = cloneNode(childNode(member, 'object')!) as unknown as typeof local;
-      replacement.name = local.name;
-      replaceNode(analysis, member, replacement);
-    }
-    fn.params = [{ type: 'ObjectPattern', properties: [
-      astFactory.objectProperty(astFactory.identifier(field), cloneNode(local)),
-    ] }];
-    ctx.componentProps.set(name, analyzeComponentProps(fn.params));
-    ctx.privateRowPropComponents.add(name);
-    refreshAstAnalysis(ctx, programPath.node);
+    plans.push(Object.freeze({component:name, declaration:fn, field, members:Object.freeze(members)}));
   }
+  return Object.freeze(plans);
 }
