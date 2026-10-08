@@ -291,7 +291,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   publication still need explicit contracts. Areas 2–5 retain their unfinished
   gates; this source-boundary batch makes no bundle or CPU improvement claim.
 
-### Source normalization and explicit export publication (parent `0dcdf97`)
+### Source normalization and explicit export publication (commit `4935119`, parent `0dcdf97`)
 
 - Extracted provider import facts into shared analysis. Shared destructuring
   plans now validate the complete pass and describe bindings, defaults, array
@@ -317,3 +317,22 @@ These are prerequisites for the runtime-size and broader precision batches.
   remains three chunks; routed/Group and fetched delivery remain supported.
   This batch removes mixed compiler code; it makes no browser-size or CPU gain
   claim. Remaining normalization/composition and capability gates stay open.
+
+### Mount marker recognition (parent `4935119`)
+
+- Ordinary mount now retains only root-marker recognition. Full region parsing
+  remains reachable through the optional hydration capability. Both readers
+  use the same identity validation; malformed-marker behavior and the warning/
+  fresh-mount fallback are preserved. The bundle audit checks parser isolation.
+- Runtime build, type checking and lint passed. Six focused suites passed 36
+  tests, including 260 marker comparisons, cursor validation, hydration recovery,
+  ownership, package boundaries and the missing-runtime fallback.
+- Paired source graphs using identical compiler output: owner counter
+  8,434 -> 8,188 raw B (3,456 -> 3,336 gzip B); input/list 16,390 -> 16,144 B
+  (6,497 -> 6,398 gzip B); module counter 11,760 -> 11,514 B
+  (4,654 -> 4,541 gzip B). All nine production Chromium graphs passed.
+- Explicit program hydration retains both readers: the same fixtures grow
+  114–116 raw B and 24–39 gzip B. Its nine Chromium graphs also passed. This
+  tradeoff reduces ordinary interactivity cost without removing server-markup
+  detection. No DOM CPU improvement is claimed; broader capability isolation
+  and numeric keys remain open.

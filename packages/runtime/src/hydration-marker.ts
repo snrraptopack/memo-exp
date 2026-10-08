@@ -15,6 +15,20 @@ export interface HydrationCloseMarker {
 
 export type HydrationMarker = HydrationOpenMarker | HydrationCloseMarker;
 
+/** Shared identity validation; an attribute suffix is outside the identity. */
+function markerIdentity(payload: string): string | null {
+  const attributeAt = payload.indexOf(' @ ');
+  const end = attributeAt === -1 ? payload.length : attributeAt;
+  const identity = payload.slice(0, end);
+  return identity.length === 0 || identity.includes('>') ? null : identity;
+}
+
+/** Ordinary mount needs only a root identity, not the region marker protocol. */
+export function parseRootHydrationIdentity(data: string): string | null {
+  if (!data.startsWith('mmd:r:')) return null;
+  return markerIdentity(data.slice(6));
+}
+
 /** Parse one protocol comment body. Unrelated comments return null. */
 export function parseHydrationMarker(data: string): HydrationMarker | null {
   if (data === '/mmd') return { type: 'close' };
@@ -26,10 +40,9 @@ export function parseHydrationMarker(data: string): HydrationMarker | null {
       kind !== 'l' && kind !== 'w' && kind !== 'd')
   ) return null;
   const payload = data.slice(6);
-  const attributeAt = payload.indexOf(' @ ');
-  const identity = attributeAt === -1 ? payload : payload.slice(0, attributeAt);
-  if (identity.length === 0 || identity.includes('>')) return null;
-  const attribute = attributeAt === -1 ? undefined : payload.slice(attributeAt + 3);
+  const identity = markerIdentity(payload);
+  if (identity === null) return null;
+  const attribute = identity.length === payload.length ? undefined : payload.slice(identity.length + 3);
   return {
     type: 'open', kind, identity,
     ...(attribute === undefined ? {} : { attribute }),

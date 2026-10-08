@@ -2757,3 +2757,25 @@ Reproduce the ordinary comparison with `bun run bench:size:audit --verify
 --before-ref=2c57535 --fixture=owner-counter --fixture=input-list
 --fixture=module-counter`; add `--hydrate-program` for the optional capability
 comparison. These are retained-byte measurements, with no DOM timing claim.
+
+### Root recognition without the region parser — 2026-10-08
+
+Ordinary mount scans only root identities. The complete region-marker parser
+is retained by the optional hydration capability, with one shared identity
+validator for both readers. SSR detection, missing-runtime fallback and malformed
+marker handling remain supported; the audit checks parser reachability.
+
+Paired source bundles against `4935119`, using identical compiler output:
+
+| Fixture | Before raw B | After raw B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Owner counter | 8,434 | 8,188 | 3,456 | 3,336 |
+| Input/list | 16,390 | 16,144 | 6,497 | 6,398 |
+| Module counter | 11,760 | 11,514 | 4,654 | 4,541 |
+
+Explicit program hydration retains both readers and grows 114–116 raw B,
+24–39 gzip B. All eighteen Chromium graphs pass interactions and retained list
+identity. Six focused suites pass 36 tests, including marker grammar, adoption,
+recovery and ownership. Runtime build, type checking and lint pass.
+Reproduce with the preceding audit command using `--before-ref=4935119`,
+and add `--hydrate-program` for that capability. No CPU improvement is claimed.

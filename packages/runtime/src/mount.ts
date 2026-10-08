@@ -1,6 +1,6 @@
 /** General mount detects SSR; its installed capability owns adoption/recovery. */
 import type { HydrationCapabilities } from './hydration';
-import { parseHydrationMarker } from './hydration-marker';
+import { parseRootHydrationIdentity } from './hydration-marker';
 import {
   resolveMount, createApplication,
   type MountTarget, type MountableComponent, type MountOptions,
@@ -60,11 +60,8 @@ export function installHydrationRuntime(
 function hydrationRootId(host: Element): string | null {
   for (let node = host.firstChild; node !== null; node = node.nextSibling) {
     if (node.nodeType !== 8) continue;
-    const marker = parseHydrationMarker((node as Comment).data);
-    if (
-      marker?.type === 'open' &&
-      marker.kind === 'r'
-    ) return marker.identity;
+    const identity = parseRootHydrationIdentity((node as Comment).data);
+    if (identity !== null) return identity;
   }
   return null;
 }

@@ -104,6 +104,10 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         inputs.some(input => /\/hydration-error\.(?:ts|js)$/.test(input.path))) {
       throw new Error('Ordinary mount must not retain optional hydration recovery');
     }
+    if (graph !== 'source-before' && ['owner-counter', 'input-list', 'module-counter'].includes(fixture) &&
+        output.text.includes('type:"open",kind:') !== hydration) {
+      throw new Error('The full region marker parser must be retained only with hydration');
+    }
     if (programHydration && graph === 'source') {
       if (!compilation.hydrationCapabilities.list && inputs.some(input => input.path.endsWith('/hydration-list.ts'))) throw new Error('A program without lists retained list adoption');
       if (!compilation.hydrationCapabilities.markup && inputs.some(input => /\/(?:hydration-markup|markup-walk)\.ts$/.test(input.path))) throw new Error('A program without markup retained markup adoption');
