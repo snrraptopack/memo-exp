@@ -4,6 +4,21 @@ import { planInitialDom } from '../packages/compiler/src/dom/initial-dom';
 import {sizeFixtures} from '../bench/package-size/fixtures';
 
 const entry=`import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`;
+it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('preserves availability boundaries for non-optional request selectors (%s)',frontend=>{
+  for(const declaration of [
+    `const user=$fetch('/api/user');`,
+    `const source=$fetch('/api/user');const user=source;`,
+  ]) {
+    const sources={'./main.ts':entry,'./App.tsx':`export function App(){${declaration}let n=0;
+      return <main>{user.name?<h1>{user.name}</h1>:null}<button onClick={()=>n++}>{n}</button></main>;}`};
+    for(const routedEnvironment of ['client','server'] as const) {
+      const result=compileModulesDetailed(sources,{initialContent:true,frontend,routedEnvironment});
+      expect(result.initialDelivery).toBeUndefined();
+      expect(result.output['./App.tsx']).not.toContain('mmd:initial:when:');
+    }
+  }
+});
+
 it.each([yukuEstreeFrontend,experimentalTsrxEstreeFrontend])('binds recreated component-owned request structures (%s)',frontend=>{
   const sources={'./main.ts':entry,...sizeFixtures['request-component-structures']!};
   const client=compileModulesDetailed(sources,{initialContent:true,frontend});

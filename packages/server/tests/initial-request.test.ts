@@ -22,6 +22,22 @@ async function fixture(name: string, source: string) {
 }
 
 describe('request-only server delivery', () => {
+  it.each(['', 'Ada'])('preserves request availability before a non-optional selector and local counter (%s)',async name=>{
+    const value=await fixture(`conditional-counter-${name || 'empty'}`,
+      `export function App(){const data=$fetch('/api/name');let n=0;return <main>{data.name?<h1>{data.name}</h1>:null}<button onClick={()=>n++}>{n}</button></main>;}`);
+    expect(value.server.initialDelivery).toBeUndefined();
+    expect(value.client.initialDelivery).toBeUndefined();
+    let calls=0;
+    const fetch=(async()=>{calls++;return Response.json({name});}) as typeof globalThis.fetch;
+    const result=await render(value.serverModule.App,{fetch,mode:'resolve',markers:true});
+    expect(result.settlement.status).toBe('complete');
+    expect(result.html).not.toContain('mmd:initial:when');
+    const expected=`<main>${name?'<h1>Ada</h1>':''}<button>0</button></main>`;
+    expect(result.html.replace(/<!--[^]*?-->/g,'')).toBe(expected);
+    expect(result.payload.state?.sources).toHaveLength(1);
+    expect(calls).toBe(1);
+  });
+
   it.each([0,2])('settles a fetched list of %s rows with source anchors for bindings and general markers otherwise',async count=>{
     const value=await fixture(`fetched-list-${count}`,`export function App(){const user=$fetch('/api/user');let suffix='!';
       return <main><h1>{user?.name}</h1><button onClick={()=>suffix+='!'}>Change</button>

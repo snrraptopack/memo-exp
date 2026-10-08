@@ -456,15 +456,15 @@ describe('production initial SSR bootstrap', () => {
     let name = 'Ada';
     await browserPage(result, result.html, executablePath, async (page, requests) => {
       await page.waitForFunction(() => document.querySelector('p')?.textContent === 'Ada:0');
+      const main=await page.$('main'),next=await page.$('.next');
       expect(requests).toEqual(['/api/user?name=Ada']);
       await page.click('.next');await page.waitForFunction(() => document.querySelector('p')?.textContent === 'Ada:1');
       name = 'Lin';await page.click('.change');
       await page.waitForFunction(() => document.querySelector('p')?.textContent === 'Lin:1');
       expect(requests).toEqual(['/api/user?name=Ada','/api/user?name=Lin']);
-      expect(await page.evaluate(() => {
-        const initial=(window as unknown as {initial:Element[]}).initial;
-        return initial.includes(document.querySelector('main')!) && initial.includes(document.querySelector('.next')!);
-      })).toBe(true);
+      expect(await page.evaluate((main,next)=>
+        document.querySelector('main')===main && document.querySelector('.next')===next,
+      main,next)).toBe(true);
     }, '/demo/', () => ({name}));
   },60_000);
 
@@ -1029,11 +1029,11 @@ describe('production initial SSR bootstrap', () => {
 
   it('selects general keyed-list adoption and recovers unproved rows in Chrome', async context => {
     const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
-    const result=await production('request-list',`export function App(){const user=$fetch('/api/user');
+    const result=await production('general-unproved-list',`export function App(){const user=$fetch('/api/user');
       let rows=[{id:1,label:'one'},{id:2,label:'two'}];let show=false;return <main><h1>{user?.name}</h1>
         <button class="reverse" onClick={()=>rows=rows.toReversed()}>Reverse</button>
         <button class="append" onClick={()=>rows=[...rows,{id:3,label:'three'}]}>Append</button>
-        <ul>{rows.map(row=><li key={row.id}>{row.label}{show&&<b>Extra</b>}</li>)}</ul></main>;}`);
+        <ul>{rows.map(row=><li key={row.id}>{row.label}{show&&<><b>Extra</b><i>More</i></>}</li>)}</ul></main>;}`);
     const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
     expect(html).toContain('mmd:w:');expect(html).not.toContain('mmd:initial-delivery:');
     await browserPage(result,html,executablePath,async(page,requests)=>{

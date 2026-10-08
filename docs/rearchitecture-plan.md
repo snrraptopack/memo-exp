@@ -19,6 +19,43 @@ This is the execution checklist. Detailed historical evidence remains in
 [Performance work](./performance-work.md) and
 [Merged delivery audit](./merged-delivery-audit.md).
 
+### Verified foundations and remaining deliverables
+
+The area statuses above describe whole completion gates. They do not mean that
+their implemented foundations are unfinished. Evidence for these milestones is
+recorded under the corresponding commits below:
+
+- [x] Move DOM creation, attributes, addressing, adoption and emission into
+  `src/dom/`; enforce the transitive shared-analysis import boundary.
+- [x] Capture native/module callbacks and mutation source writes before DOM
+  instrumentation; allocate runtime reasons in the backend.
+- [x] Separate provider/destructuring, calculated-list, async-read and finite-JSX
+  source plans from their DOM lowering and explicit publication results.
+- [x] Isolate ordinary mount from optional recovery/full marker parsing and
+  environment override merging; verify the measured production savings.
+- [x] Preserve zero-JavaScript static delivery and exercise interactive, fetched,
+  lazy and routed/Group delivery in production browser fixtures.
+
+The remaining deliverables retain the original five-area scope:
+
+- [ ] Finish remaining semantic normalization, ownership inputs and generated
+  ABI separation; delete replaced implementations (area 1).
+- [ ] Intern graph-known state keys across the build, including lazy modules,
+  and verify multiple applications and conservative dynamic resolution (area 2).
+- [ ] Reduce duplicated initialization/update emission and retained creation
+  where evaluation, adoption and future lifetime proofs permit it (areas 2/5).
+- [ ] Extend exact alias/callback/module/row targeting and affected opaque work,
+  with instrumentation proving skipped unrelated updates (area 3).
+- [ ] Reduce measured list replay/setup/range costs while preserving retained
+  identity, cleanup and recovery across the full benchmark matrix (area 4).
+- [ ] Complete structural caller-slot/render-value ownership and combined
+  composition/routing/Group/request/ref/cleanup coverage; remove superseded
+  scaffolding (area 5).
+
+A consolidated stability checkpoint is separate from these optimization gates.
+Passing it establishes a tested revision; it does not complete the remaining
+architecture or justify an unmeasured performance claim.
+
 ## Architecture boundary
 
 Use `packages/compiler/src/dom/` for DOM-specific planning, lowering and emission:
@@ -469,3 +506,36 @@ These are prerequisites for the runtime-size and broader precision batches.
   mixed sequences before timing, plus identity checks after every timed sample.
   It uses one update sample at 10k rows in ABBA order; the before/after canonical
   DOM artifacts are identical. These timings establish no CPU improvement.
+
+### Consolidated stability checkpoint (parent `d4023e3`)
+
+- Found an unsafe initial-binding optimization: a non-optional request selector
+  beside local state read its pending value before settlement. The DOM planner
+  now preserves the existing availability boundary by declining that delivery
+  proof. Request row values retain their proved availability, so existing row
+  binding optimizations remain enabled. No new runtime path or authoring rule
+  was added. Broader request-selector binding proofs remain open.
+- Stable authored regressions cover direct and aliased request selectors in both
+  frontends and environments, empty/nonempty server responses, and clicking a
+  retained counter while its request is pending. Corrected two production test
+  setups: client-created Group nodes are captured after mount, and general list
+  recovery uses an actually unproved multi-host fragment. Existing positive
+  nested initial-binding coverage remains in place.
+- Full root suite after the fix: **249 files / 2,508 tests passed**. All ten
+  package builds, root type checking, data/router/utils test type checking,
+  changed-source lint and the transitive compiler boundary passed.
+- Package suites verified **525 distinct tests across 48 files**. Vite's first
+  full run passed 110/112 tests; both corrected browser cases then passed in a
+  focused rerun. The complete Vite suite was not repeated after those test-only
+  corrections. Other package suites passed in full, including 147 server tests.
+- All 135 existing compiler output/graph/delivery comparisons match `d4023e3`
+  with source maps excluded. Seven paired production SSR fixtures retain equal
+  HTML, payload, raw/gzip JavaScript and chunk counts using the same runtime.
+  Static stays at zero JavaScript; counter is 8,393 / 3,414 raw/gzip B, todo
+  16,918 / 6,381 B, lazy routing 67,841 / 21,970 B in three chunks and routed
+  request/Group 86,872 / 26,759 B. No size or CPU gain is claimed for this fix.
+- This checkpoint closes the historical full-root rerun gap recorded above.
+  It establishes the tested baseline, not completion of the five areas. The
+  next source-boundary cleanup is generated row ABI state still declared in
+  shared context; numeric keys, duplicated emission and retained creation remain
+  bundle deliverables. Dependencies, examples and numbered docs were untouched.

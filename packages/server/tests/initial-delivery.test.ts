@@ -1,9 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
-import { commit, mountInitial, resetScheduler, setScheduler } from '@memoized-dom/runtime';
+import { commit, mount, mountInitial, resetScheduler, setScheduler } from '@memoized-dom/runtime';
 import { registerRootFactory, rootFactoryStore } from '@memoized-dom/runtime/server';
 import { initialBootstrapDescriptor } from '@memoized-dom/runtime/server';
 import { registeredIds } from '@memoized-dom/runtime/testing';
@@ -14,7 +14,7 @@ const compileInitial: typeof compileModulesDetailed = (sources, options = {}) =>
 
 const entry = `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`;
 let mounted: ReturnType<typeof mountInitial> | undefined;
-afterEach(() => { mounted?.unmount(); mounted = undefined; resetScheduler(); document.body.innerHTML = ''; });
+afterEach(() => { mounted?.unmount(); mounted = undefined; resetScheduler(); document.body.innerHTML = ''; vi.unstubAllGlobals(); });
 
 async function fixture(name: string, source: string) {
   const sources = { './main.ts': entry, './App.tsx': source };
@@ -120,10 +120,32 @@ describe('shared initial server delivery', () => {
     `let name='Ada';export function change(){name='Grace';}export function App(){return <h1>{name}</h1>;}`,
     `const value={get name(){return 'Ada';}};export function App(){return <h1>{value.name}</h1>;}`,
     `export function App(){const data=$fetch('/api/name');let n=0;return <main>{data.name?<h1>{data.name}</h1>:null}<button onClick={()=>n++}>{n}</button></main>;}`,
-  ])('keeps request-dependent or externally writable roots on ordinary SSR: %s', source => {
+  ])('keeps externally writable, opaque or unproved request roots on ordinary SSR: %s', source => {
     const compiled = compileInitial({ './main.ts': entry, './App.tsx': source }, { routedEnvironment: 'server' });
     expect(compiled.initialDelivery).toBeUndefined();
     expect(compiled.output['./App.tsx']).not.toContain('initialDelivery');
+  });
+
+  it('keeps a local counter interactive while a non-optional request selector waits',async()=>{
+    const value=await fixture('pending-request-selector',
+      `export function App(){const data=$fetch('/api/name');let n=0;return <main>{data.name?<h1>{data.name}</h1>:null}<button onClick={()=>n++}>{n}</button></main>;}`);
+    let release!:(response:Response)=>void;
+    const fetch=vi.fn(()=>new Promise<Response>(resolve=>{release=resolve;}));
+    vi.stubGlobal('fetch',fetch);
+    document.body.innerHTML='<div id="root"></div>';
+    setScheduler(run=>run());
+    mounted=mount('root',value.clientModule.App);
+    const button=document.querySelector<HTMLButtonElement>('button')!;
+    expect(button.textContent).toBe('0');
+    expect(document.querySelector('h1')).toBeNull();
+    button.click();
+    expect(button.textContent).toBe('1');
+    await expect.poll(()=>fetch.mock.calls.length).toBe(1);
+    release(Response.json({name:'Ada'}));
+    await expect.poll(()=>document.querySelector('h1')?.textContent).toBe('Ada');
+    expect(document.querySelector('button')).toBe(button);
+    expect(button.textContent).toBe('1');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('retains initial HTML while starting an inline effect only in the browser',async()=>{

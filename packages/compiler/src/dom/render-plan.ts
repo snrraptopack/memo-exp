@@ -15,10 +15,15 @@ import { initialSite, type InitialRenderNode, type InitialRenderAttribute, type 
 
 
 type Value = string | number | boolean | null | undefined | ValueObject | ValueArray | Component | Content | RequestValue | RequestFactory | RequestTracker;
-interface RequestValue { readonly kind: 'request-value' }
+interface RequestValue { readonly kind: 'request-value'; readonly available?: true }
 interface RequestFactory { readonly kind: 'request-factory'; readonly track?: true }
 interface RequestTracker { readonly kind: 'request-tracker' }
 const requestValue: RequestValue = { kind: 'request-value' };
+// A row factory runs only after its collection has yielded an actual item.
+const availableRequestValue: RequestValue = { kind: 'request-value', available: true };
+function isRequestValue(value: Value): value is RequestValue {
+  return value !== null && typeof value === 'object' && value.kind === 'request-value';
+}
 interface ValueArray { readonly kind: 'array'; readonly items: readonly Value[] }
 interface ValueObject { readonly kind: 'object'; readonly fields: ReadonlyMap<string, Value>; readonly props?: boolean; readonly live?: ReadonlySet<string> }
 interface Component { readonly kind: 'component'; readonly node: BaseNode; readonly scope: Scope; readonly local?: string }
@@ -61,6 +66,7 @@ export function planInitialRendering(
   const regions: { id: number; site: string }[] = [];
   let target: string | undefined;
   let inStructure = false;
+  let selectingRequestBranch = false;
   const owners=new Map<string,{moduleId:string;component:string;features:Set<'ref'|'effect'|'cleanup'>}>();
   // Another ref in the same owner must still disqualify a static content slot.
   let ownerSiteCount=0;
@@ -108,13 +114,13 @@ export function planInitialRendering(
     if (callee?.type !== 'MemberExpression' || nodeField(callee, 'computed') ||
         identifierLikeName(childNode(callee, 'property')) !== 'map') return undefined;
     const input = expression(childNode(callee, 'object'), scope);
-    const unknown = bindings && input === requestValue;
+    const unknown = bindings && isRequestValue(input);
     if (!unknown && (input === null || typeof input !== 'object' || input.kind !== 'array')) return undefined;
     const nested = bindings && inStructure;
     const fn=childNodes(node,'arguments')[0];
     if (fn && (nodeField(fn,'async') || nodeField(fn,'generator'))) need(scope,'Async list callbacks need browser execution');
     const callback = planListCallback(node as MapCallExpression, message => need(scope, message));
-    const items = unknown ? [requestValue] : (input as ValueArray).items;
+    const items = unknown ? [availableRequestValue] : (input as ValueArray).items;
     if (!callback.jsx || (items.length>0 || nested) && (callback.prelude.length || bindings && callback.itemPattern.type !== 'Identifier')) {
       need(scope, 'Initial lists need a closed JSX row callback');
     }
@@ -143,7 +149,7 @@ export function planInitialRendering(
       if (!bindings) return {kind: 'content', nodes: rows.flat()};
       if (rows.some(row => row.length !== 1 || !['element','component'].includes(row[0]!.kind))) need(scope, 'Initial lists need one host root per row');
       if (rows.some(row => row[0]?.kind === 'component' && !requestRowHosts(row))) need(scope, 'Component rows need proved caller slot extents');
-      const requestRow = unknown ? rows[0]! : nested ? buildRow(requestValue,0,false) : undefined;
+      const requestRow = unknown ? rows[0]! : nested ? buildRow(availableRequestValue,0,false) : undefined;
       if (requestRow && (requestRow.length!==1 || !['element','component'].includes(requestRow[0]!.kind) || !requestRowHosts(requestRow))) {
         need(scope, 'Variable list rows need proved host descendants');
       }
@@ -158,8 +164,12 @@ export function planInitialRendering(
     const plan = planConditionalBranches(node as t.ConditionalExpression | t.LogicalExpression, {
       buildCodeFrameError(message) { return new NeedsBrowser({moduleId: scope.moduleId, kind: 'unknown', detail: message}); },
     });
-    const selected = expression(plan.pickExpr, scope);
-    const selectedBranch = selected === requestValue ? null : primitive(selected, scope);
+    const previousSelection = selectingRequestBranch;
+    selectingRequestBranch = true;
+    let selected: Value;
+    try { selected = expression(plan.pickExpr, scope); }
+    finally { selectingRequestBranch = previousSelection; }
+    const selectedBranch = isRequestValue(selected) ? null : primitive(selected, scope);
     if (selectedBranch !== null && typeof selectedBranch !== 'number') need(scope, 'Initial conditional needs a closed selector');
     const branch = inStructure && !staysClosed(plan.pickExpr,scope) ? null : selectedBranch;
     const previous = inStructure;
@@ -222,9 +232,9 @@ export function planInitialRendering(
       case 'BinaryExpression': {
         const leftValue = expression(childNode(node, 'left'), scope);
         const rightValue = expression(childNode(node, 'right'), scope);
-        if (leftValue === requestValue || rightValue === requestValue) {
-          if (leftValue !== requestValue) primitive(leftValue, scope);
-          if (rightValue !== requestValue) primitive(rightValue, scope);
+        if (isRequestValue(leftValue) || isRequestValue(rightValue)) {
+          if (!isRequestValue(leftValue)) primitive(leftValue, scope);
+          if (!isRequestValue(rightValue)) primitive(rightValue, scope);
           if (['in', 'instanceof'].includes(String(nodeField(node, 'operator')))) need(scope, 'Unproved request operation');
           return requestValue;
         }
@@ -280,7 +290,14 @@ export function planInitialRendering(
       }
       case 'MemberExpression': {
         const object = expression(childNode(node, 'object'), scope);
-        if (object === requestValue && !nodeField(node,'computed')) return requestValue;
+        if (isRequestValue(object) && !nodeField(node,'computed')) {
+          if (selectingRequestBranch && !object.available && !nodeField(node,'optional')) {
+            // Ordinary rendering owns an availability boundary. Initial
+            // structural binding currently reads the selector immediately.
+            need(scope,'Request selector needs its ordinary availability boundary');
+          }
+          return object;
+        }
         const name = nodeField(node, 'computed')
           ? primitive(expression(childNode(node, 'property'), scope), scope)
           : identifierLikeName(childNode(node, 'property'));
@@ -296,10 +313,10 @@ export function planInitialRendering(
         if (bindings && nodeHasJsx(node)) return conditional(node, scope);
         if (mixed && scope.rootRender && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
         const test = expression(childNode(node, 'test'), scope);
-        if (test === requestValue) {
+        if (isRequestValue(test)) {
           for (const key of ['consequent', 'alternate']) {
             const value = expression(childNode(node, key), scope);
-            if (value !== requestValue) primitive(value, scope);
+            if (!isRequestValue(value)) primitive(value, scope);
           }
           return requestValue;
         }
@@ -310,9 +327,9 @@ export function planInitialRendering(
         if (bindings && nodeHasJsx(node)) return conditional(node, scope);
         if (mixed && scope.rootRender && nodeHasJsx(node)) need(scope, 'Root structural regions need a placement proof');
         const left = expression(childNode(node, 'left'), scope);
-        if (left === requestValue) {
+        if (isRequestValue(left)) {
           const right = expression(childNode(node, 'right'), scope);
-          if (right !== requestValue) primitive(right, scope);
+          if (!isRequestValue(right)) primitive(right, scope);
           return requestValue;
         }
         const value = primitive(left, scope);
@@ -340,7 +357,7 @@ export function planInitialRendering(
         if (request && callee!==null && typeof callee==='object' && callee.kind === 'request-factory') {
           const args=childNodes(node,'arguments');
           if(callee.track) {
-            if(!bindings || args.length!==1 || expression(args[0]!,scope)!==requestValue) need(scope,'Request tracking needs a bound request owner');
+            if(!bindings || args.length!==1 || !isRequestValue(expression(args[0]!,scope))) need(scope,'Request tracking needs a bound request owner');
             return {kind:'request-tracker'};
           }
           const target=args[0] ? expression(args[0],scope) : undefined;
@@ -454,7 +471,7 @@ export function planInitialRendering(
   }
 
   function content(value: Value, scope: Scope): readonly InitialRenderNode[] {
-    if (value === requestValue) return [{kind:'text',value:''}];
+    if (isRequestValue(value)) return [{kind:'text',value:''}];
     if (value !== null && typeof value === 'object') {
       if (value.kind === 'content') return value.nodes;
       return need(scope, 'Non-content object child');
@@ -528,7 +545,7 @@ export function planInitialRendering(
         if (!pending.length) return;
         const joined=combineTextExpressions(pending);
         const resolved=expression(joined,scope);
-        if (resolved===requestValue) {result.push({kind:'text',value:'',...(bindings?{live:true}:{})});pending.length=0;return;}
+        if (isRequestValue(resolved)) {result.push({kind:'text',value:'',...(bindings?{live:true}:{})});pending.length=0;return;}
         const value=primitive(resolved,scope);
         if (bindings) {
           const live = !staysClosed(joined, scope);
@@ -550,7 +567,7 @@ export function planInitialRendering(
           if (input?.type === 'Identifier' && nodeField(input, 'name') === 'undefined') continue;
           if (input && (nodeField(input, 'value') === null || typeof nodeField(input, 'value') === 'boolean')) continue;
           const value = expression(input, scope);
-          if (value===requestValue) {pending.push(input as t.Expression);continue;}
+          if (isRequestValue(value)) {pending.push(input as t.Expression);continue;}
           if (value !== null && typeof value === 'object' || input && nodeHasJsx(input)) {
             flush();
             const nodes = content(value, scope);
@@ -607,7 +624,7 @@ export function planInitialRendering(
       const input = childNode(attribute, 'value');
       const valueNode = input?.type === 'JSXExpressionContainer' ? childNode(input, 'expression') : input;
       const value = input === null ? true : expression(valueNode, scope);
-      if (host && name !== 'key') attributes.push({ name, value: value===requestValue ? null : primitive(value, scope),
+      if (host && name !== 'key') attributes.push({ name, value: isRequestValue(value) ? null : primitive(value, scope),
         ...(bindings ? {site:initialSite(attribute),live:!staysClosed(valueNode,scope)} : {}) });
       else { props.set(name, value); if (bindings && !staysClosed(valueNode,scope)) liveProps.add(name); }
     }
