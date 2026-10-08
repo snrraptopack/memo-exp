@@ -8,7 +8,7 @@ is a foundation, not completion of the compiler or runtime rearchitecture.
 | Order | Area | Status | Completion gate |
 | --- | --- | --- | --- |
 | 1 | Analysis and DOM backend separation | In progress | Shared facts independent of backend imports; replaced implementations removed; behavior verified |
-| 2 | Fixed cost of interactivity | Open | Production bundle savings and capability isolation verified across local, lazy and routed applications |
+| 2 | Fixed cost of interactivity | In progress | Production bundle savings and capability isolation verified across local, lazy and routed applications |
 | 3 | Reactivity precision | Open | Correct visible updates and demonstrated exclusion of unrelated row/slot work |
 | 4 | List execution costs | Open | Correctness, retained identity and disposal pass; paired timing supports each claimed gain |
 | 5 | Composition and delivery coverage | Open | Initial delivery and subsequent interaction verified with shared factories, graph and lifetimes |
@@ -241,3 +241,29 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
 Next in area 1: finish semantic normalization; complete ownership inputs and
 move remaining generated ABI state out of source facts.
 These are prerequisites for the runtime-size and broader precision batches.
+
+### Optional hydration recovery (parent `2c57535`)
+
+- Moved root mismatch recovery and adopted-root publication from general mount
+  into the installed hydration capability. Deleted the former mount helper and
+  recovery branch; root validation, creation, handles and disposal use the same
+  existing engine. No compiler mount mode or authoring API was added.
+- Ordinary mount still detects server markup and preserves its missing-runtime
+  warning/fresh fallback. Installed hydration preserves region callbacks, root
+  recovery, payload completion and exception propagation. Client-only data
+  handling alone is not treated as proof that a host has no server HTML.
+- Runtime build, type checking and lint passed. Ten focused suites passed 46
+  tests, including retained adoption, list/route/atomic region recovery, ownership,
+  missing-runtime fallback and authored exceptions during adoption/recovery.
+- Identical compiler output with runtime/data/router sources isolated against
+  `2c57535`: owner counter 8,996 -> 8,434 raw B (3,689 -> 3,456 gzip B);
+  input/list 16,954 -> 16,390 B (6,737 -> 6,497 gzip B); module counter
+  12,324 -> 11,760 B (4,893 -> 4,654 gzip B). All nine production Chromium
+  graphs passed interactions and retained list identity. Explicit hydration
+  remains supported and is audited separately. This is a size change, with no
+  DOM timing claim. Numeric module keys and broader capability isolation remain open.
+- Four production SSR fixtures retain matching HTML/payload/JS across the
+  preceding and current compiler with the same updated runtime: static remains
+  zero JS, counter 8,613 / 3,483 B, lazy routing 67,957 / 21,958 B in three
+  chunks, routed/Group 86,981 / 26,764 B. This checks delivery compatibility,
+  not an isolated before/after runtime-size comparison.

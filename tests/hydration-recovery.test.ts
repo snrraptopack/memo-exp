@@ -67,6 +67,39 @@ afterEach(() => {
 });
 
 describe('Phase 3 mismatch recovery ladder (Level 1 & Level 3)', () => {
+  it('propagates an unrelated factory failure without attempting a fresh mount', () => {
+    const failure = new Error('authored factory failed');
+    const App = () => undefined;
+    const create = vi.fn(() => { throw failure; });
+    registerRootFactory(App, { id: 'App', create });
+    const host = document.createElement('div');
+    host.innerHTML = '<!--mmd:r:App--><p>Retained</p><!--/mmd-->';
+    document.body.append(host);
+    const retained = host.querySelector('p');
+    const onHydrateError = vi.fn();
+    expect(() => mount(host, App, { onHydrateError })).toThrow(failure);
+    expect(create).toHaveBeenCalledOnce();
+    expect(onHydrateError).not.toHaveBeenCalled();
+    expect(host.querySelector('p')).toBe(retained);
+  });
+
+  it('preserves a throwing mismatch callback before clearing the server root', () => {
+    const failure = new Error('authored recovery callback failed');
+    const App = () => undefined;
+    const create = vi.fn(() => document.createElement('main'));
+    registerRootFactory(App, { id: 'App', create });
+    const host = document.createElement('div');
+    host.innerHTML = '<!--mmd:r:OldApp--><p>Retained</p><!--/mmd-->';
+    document.body.append(host);
+    const retained = host.querySelector('p');
+    const onHydrateError = vi.fn(() => { throw failure; });
+    expect(() => mount(host, App, { onHydrateError })).toThrow(failure);
+    expect(create).not.toHaveBeenCalled();
+    expect(onHydrateError).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: 'HydrationMismatchError', boundary: 'App' }), 'root');
+    expect(host.querySelector('p')).toBe(retained);
+  });
+
   it('Level 1: scalar text mismatch updates on initial render without throwing or node replacement', async () => {
     const app = await importCompiled();
     app.resetState();

@@ -1,10 +1,8 @@
-/** General mount keeps SSR detection and optional hydration recovery. */
-import { rootNodes } from './jsx-dom';
-import { HydrationMismatchError } from './hydration-error';
-import type { HydratedApplicationRoot, HydrationCapabilities } from './hydration';
+/** General mount detects SSR; its installed capability owns adoption/recovery. */
+import type { HydrationCapabilities } from './hydration';
 import { parseHydrationMarker } from './hydration-marker';
 import {
-  resolveMount, createApplication, createMountedApplication,
+  resolveMount, createApplication,
   type MountTarget, type MountableComponent, type MountOptions,
   type RootFactoryDefinition, type MountedApplication,
 } from './mount-core';
@@ -21,7 +19,8 @@ interface HydrationRuntimeBridge {
   hydrate?(
     host: Element,
     definition: RootFactoryDefinition,
-    adopt: (adopted: HydratedApplicationRoot) => MountedApplication,
+    serverRootId: string,
+    options: MountOptions,
   ): MountedApplication;
 }
 
@@ -70,24 +69,6 @@ function hydrationRootId(host: Element): string | null {
   return null;
 }
 
-function adoptApplication(
-  host: Element,
-  definition: RootFactoryDefinition,
-  hydrate: NonNullable<HydrationRuntimeBridge['hydrate']>,
-  options: MountOptions,
-): MountedApplication {
-  return hydrate(host, definition, adopted => {
-    const mounted = createMountedApplication(
-      host,
-      definition,
-      rootNodes(adopted.root),
-      adopted.disposeMarkers,
-    );
-    for (const error of adopted.recovered) options.onHydrateError?.(error, 'region');
-    return mounted;
-  });
-}
-
 /**
  * Mount one compiled application root. A matching SSR root is adopted
  * automatically; a structural mismatch is discarded and mounted once.
@@ -110,19 +91,5 @@ export function mount(
     host.innerHTML = '';
     return createApplication(host, definition);
   }
-  try {
-    if (serverRootId !== definition.id) {
-      throw new HydrationMismatchError(
-        definition.id,
-        `<!--mmd:r:${definition.id}-->`,
-        `<!--mmd:r:${serverRootId}-->`,
-      );
-    }
-    return adoptApplication(host, definition, hydrate, options);
-  } catch (error) {
-    if (!(error instanceof HydrationMismatchError)) throw error;
-    options.onHydrateError?.(error, 'root');
-    host.innerHTML = '';
-    return createApplication(host, definition);
-  }
+  return hydrate(host, definition, serverRootId, options);
 }

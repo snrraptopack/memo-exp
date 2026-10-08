@@ -33,6 +33,13 @@ in `browser-bundle-architecture.md`. This batch does not claim faster DOM timing
 
 ## Correctness gates
 
+The 2026-10-08 mount capability audit moves hydration recovery into its optional
+entry while retaining one mount ownership/creation engine. Ordinary counter,
+input/list and module-counter source graphs shrink by 562–564 raw B and
+233–240 gzip B against `2c57535`; explicit hydration remains supported. Paired
+browser interactions and exception/recovery checks pass. See the browser
+architecture document for the reproducible audit. No CPU gain is claimed.
+
 Benchmark timings require visible DOM changes. The DOM suite checks fresh 1k
 and 10k selection transitions before timing. Alias routing and lightweight
 component-row routing have regression coverage. Generated benchmark files must

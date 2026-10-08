@@ -2727,3 +2727,33 @@ Chrome checks pass individually: empty fetched component rows, populated
 fetched component rows and recreated structural caller slots. They verify
 adopted node identity, no duplicate fetch or node creation, retained local
 state, reload/reorder, insertion/removal, remount and interaction.
+
+### Optional recovery behind the hydration capability — 2026-10-08
+
+General mount retains server-root detection and its missing-runtime fallback.
+Mismatch errors, root recovery and adopted-root publication now belong to the
+installed hydration capability. The former mount recovery implementation was
+removed. Creation, ownership, payload restoration and disposal retain the same
+engines; no new authoring API or compiler mounting path was introduced.
+
+Paired esbuild production graphs against runtime/data/router `2c57535`, using
+identical current compiler output and stable fixtures:
+
+| Fixture | Before raw B | After raw B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Owner counter | 8,996 | 8,434 | 3,689 | 3,456 |
+| Input/list | 16,954 | 16,390 | 6,737 | 6,497 |
+| Module counter | 12,324 | 11,760 | 4,893 | 4,654 |
+
+All nine Chromium graphs passed interaction checks, including duplicate input
+values, whitespace rejection, reset and retained list identity. With explicit
+program hydration installed, the three graphs reduce by 37 raw B each and
+30–35 gzip B; hydration remains available. Those nine browser graphs also pass
+interactions. SSR adoption and recovery are checked by ten focused suites
+(46 tests), including list/route/atomic recovery, cross-runtime unmount, missing
+hydration fallback and propagation of authored exceptions.
+
+Reproduce the ordinary comparison with `bun run bench:size:audit --verify
+--before-ref=2c57535 --fixture=owner-counter --fixture=input-list
+--fixture=module-counter`; add `--hydrate-program` for the optional capability
+comparison. These are retained-byte measurements, with no DOM timing claim.
