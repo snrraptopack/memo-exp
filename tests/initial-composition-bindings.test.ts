@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {sizeFixtures} from '../bench/package-size/fixtures';
 import { compileModulesDetailed, emitInitialHtml } from '@memoized-dom/compiler';
 import { mountInitial, registeredIds, unregisterSubtree, setScheduler, resetScheduler, type MountedApplication } from '@memoized-dom/runtime/testing';
 
@@ -30,6 +31,25 @@ async function bind(name:string,source:string,modules:Record<string,string>={}) 
   create.mockRestore();text.mockRestore();return result;
 }
 function click(selector:string) {document.querySelector<HTMLButtonElement>(selector)!.click();}
+
+it('optimizes retained caller slot creation while preserving adoption, updates and remounts',async()=>{
+  const sources=sizeFixtures['composition-recreated-slot-24']!;
+  const result=await bind('retained-caller-markup',sources['./App.tsx']!,{'./Shell.tsx':sources['./Shell.tsx']!});
+  expect(result.output['./App.tsx']).toContain('materializeMarkup');
+  expect(result.output['./App.tsx']).not.toContain('createElement("article")');
+  const initial=document.querySelector('section')!,cards=[...initial.querySelectorAll('article')];
+  click('.inside');expect(document.querySelector('footer')!.textContent).toBe('1');
+  expect([...initial.querySelectorAll('article')]).toEqual(cards);
+  click('.toggle');expect(initial.isConnected).toBe(false);
+  click('.next');click('.toggle');
+  const recreated=document.querySelector('section')!;
+  expect(recreated).not.toBe(initial);expect(recreated.querySelectorAll('article')).toHaveLength(24);
+  expect(recreated.querySelector('.inside')!.textContent).toBe('2');
+  expect(recreated.querySelector('.inside')!.getAttribute('title')).toBe('value 2');
+  click('.inside');expect(document.querySelector('footer')!.textContent).toBe('3');
+  expect(initial.querySelector('.inside')!.textContent).toBe('1');
+  app!.unmount();app=undefined;expect(registeredIds()).toEqual([]);
+});
 
 it.each([false,true])('keeps closed authored children in HTML without a browser slot (imported=%s)',async imported=>{
   const shell='function Shell({children}){return <section class="shell">{children}</section>;}';

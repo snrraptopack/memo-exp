@@ -61,6 +61,46 @@ function chromeExecutable(): string | undefined {
     .find((path): path is string => !!path && existsSync(path));
 }
 
+describe('retained caller slot markup',()=>{
+  it.each(['composition','request'])('adopts and recreates %s slots in production Chrome',async(kind,context)=>{
+    const executablePath=chromeExecutable();if(!executablePath){context.skip();return;}
+    const sources=sizeFixtures[`${kind}-recreated-slot-24`]!;
+    const extras=Object.fromEntries(Object.entries(sources).filter(([id])=>id!=='./App.tsx').map(([id,source])=>['src/'+id.slice(2),source]));
+    const rows=[{id:1,label:'one'},{id:2,label:'two'}];
+    const result=await production(`retained-slot-${kind}`,sources['./App.tsx']!,extras,{rows});
+    const html=await(await result.app.fetch(new Request('https://app.test/demo/'))).text();
+    let next=rows;
+    await browserPage(result,html,executablePath,async(page,requests)=>{
+      expect(await page.evaluate(()=>({created:(window as unknown as {created:string[]}).created.filter(tag=>tag!=='link'),
+        retained:(window as unknown as {initial:Element[]}).initial.filter(node=>node.localName!=='script').every(node=>node.isConnected)}))).toEqual({created:[],retained:true});
+      expect(requests).toEqual([]);
+      await page.evaluate(()=>{(window as unknown as {kept:Element[]}).kept=[...document.querySelectorAll('section')];});
+      await page.click('.inside');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='1');
+      if(kind==='composition'){
+        await page.click('.toggle');await page.waitForFunction(()=>document.querySelectorAll('section').length===0);
+        await page.click('.next');await page.waitForFunction(()=>document.querySelector('footer')?.textContent==='2');
+        await page.click('.toggle');await page.waitForSelector('.inside');
+      }else{
+        next=[{id:2,label:'changed'},{id:3,label:'new'}];
+        await page.click('.reload');await page.waitForFunction(()=>document.querySelector('b')?.textContent==='changed');
+        expect(await page.evaluate(()=>{const kept=(window as unknown as {kept:Element[]}).kept;
+          return document.querySelector('section')===kept[1]&&!kept[0].isConnected;})).toBe(true);
+        expect(await page.$$eval('section b',nodes=>nodes.map(node=>node.textContent))).toEqual(['changed','new']);
+        next=[];await page.click('.reload');await page.waitForFunction(()=>document.querySelectorAll('section').length===0);
+        next=[{id:1,label:'fresh'}];await page.click('.reload');await page.waitForSelector('.inside');
+      }
+      expect(await page.$eval('section',node=>node.querySelectorAll('article').length)).toBe(24);
+      const value=kind==='composition'?'2':'1';
+      expect(await page.$eval('.inside',node=>node.textContent)).toBe(value);
+      expect(await page.$eval('.inside',node=>node.getAttribute('title'))).toBe('value '+value);
+      expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept.every(node=>!node.isConnected))).toBe(true);
+      await page.click('.inside');await page.waitForFunction(expected=>document.querySelector('footer')?.textContent===expected,{},String(Number(value)+1));
+      expect(await page.evaluate(()=>(window as unknown as {kept:Element[]}).kept[0].querySelector('.inside')?.textContent)).toBe('1');
+      expect(requests).toEqual(kind==='request'?['/api/user','/api/user','/api/user']:[]);
+    },'/demo/',()=>({rows:next}));
+  },120_000);
+});
+
 async function browserPage(result: Awaited<ReturnType<typeof production>>, html: string, executablePath: string,
   check: (page: Page, apiRequests: string[]) => Promise<void>, pathname = '/demo/',
   apiData: () => unknown = () => ({name:'Unexpected client fetch'})): Promise<void> {

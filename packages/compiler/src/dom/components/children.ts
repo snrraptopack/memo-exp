@@ -17,6 +17,7 @@ import { planDirectChildren } from '../../jsx/children';
 import { materializeDirectChildren } from '../direct-children';
 import { initialBindingsDeclaration, freshInitialStatement, type InitialDomSlot } from '../initial-dom';
 import { initialSite, initialSlotMountKey } from '../../planning/initial-content';
+import { applyStaticMarkup } from '../markup';
 
 export type EmitChildSlot = (
   scope: EmitScope,
@@ -120,6 +121,12 @@ export function buildChildrenSlot(
     );
   }
 
+  // Slots use the same creation optimizer as components, including the guarded
+  // future-creation arm of an initial binding. Keep the materialized update as
+  // an explicit consumer so nodes used only by later updates remain bound.
+  const updateStatement = updateDecl(ctx, childScope);
+  applyStaticMarkup(ctx, childScope, null, [updateStatement]);
+
   ownerScope.creation.push(
     astFactory.variableDeclaration('let', [
       astFactory.variableDeclarator(cloneEstreeNode(updateHolder), astFactory.nullLiteral()),
@@ -176,7 +183,7 @@ export function buildChildrenSlot(
             ]),
             cacheDecl(childScope),
             ...childScope.prelude,
-            updateDecl(ctx, childScope),
+            updateStatement,
             ...childScope.creation,
             ...childScope.mounts,
             astFactory.ifStatement(

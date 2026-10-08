@@ -2846,3 +2846,41 @@ Reproduce using `bun run bench:size:ssr --before-ref=d1cd2e9
 `--client-only` for that product. Nine production browser graphs pass update,
 reorder and identity checks. The compiler-only canonical DOM comparison has
 identical browser artifacts and makes no CPU gain claim.
+
+### Retained caller-slot creation — 2026-10-08
+
+The audit found that component factories already optimized their guarded future
+creation, but compiler-owned caller slots bypassed that pass. Large slots still
+emitted separate text/element constructors and appends for their later instances.
+Caller slots now use the existing DOM markup optimizer, with their materialized
+update function supplied as an explicit node consumer. Initial binding still
+reads the delivered nodes; markup parsing runs only for newly created instances.
+The existing parser/namespace checks and savings floor remain in force. No new
+runtime helper, ownership engine or alternative factory was introduced.
+
+Paired production HTML/SSR builds against compiler/Vite `6c48d1c`, holding the
+runtime/data/server packages constant and counting every emitted browser chunk:
+
+| Caller slot | Before raw / gzip B | After raw / gzip B |
+|---|---:|---:|
+| Recreated composition, one card | 14,071 / 5,331 | 14,071 / 5,331 |
+| Recreated composition, 24 cards | 21,024 / 6,412 | 16,809 / 5,990 |
+| Fetched component rows, one card | 49,985 / 16,632 | 49,985 / 16,632 |
+| Fetched component rows, 24 cards | 56,945 / 17,736 | 52,738 / 17,273 |
+
+HTML and payload sizes are unchanged. Seven controls are unchanged: static,
+counter, sixty static forwarded children, fetched-only, fetched component rows,
+lazy routing and routed Group. Static and fetched-only remain zero JavaScript.
+Future-instance markup remains necessary; this change removes repeated imperative
+construction rather than deleting later rendering. No CPU improvement is claimed.
+
+Production Chromium verifies unchanged initial node identity with no initial
+element creation, caller events, live text/attributes, conditional remounts and
+fetched-row reuse/removal/append/clear/recreation. Focused DOM tests exercise
+slot disposal, refs/effects, namespace and parser-sensitive fallback behavior.
+
+Reproduce the paired target sizes with `bun run bench:size:ssr
+--before-ref=6c48d1c --fixture=composition-recreated-slot-1
+--fixture=composition-recreated-slot-24 --fixture=request-recreated-slot-1
+--fixture=request-recreated-slot-24`. The production browser tests are the
+`retained caller slot markup` group in Vite's `initial-ssr.test.ts`.

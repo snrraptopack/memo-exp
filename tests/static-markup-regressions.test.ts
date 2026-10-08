@@ -5,9 +5,9 @@ import { renderToString } from '@memoized-dom/server';
 
 const padding = '<span data-kind="item">item</span>'.repeat(16);
 
-function compiled(body: string): (id: string, parent: string | null) => Node {
+function compiled(body: string, declarations = ''): (id: string, parent: string | null) => Node {
   const code = compileModules({
-    './app.tsx': `export function App() { return ${body}; }`,
+    './app.tsx': `${declarations} export function App() { return ${body}; }`,
     './main.ts': `import { mount } from '@memoized-dom/runtime'; import { App } from './app'; mount('root', App);`,
   })['./app.tsx']!;
   return new Function('_MD', code
@@ -19,6 +19,19 @@ function compiled(body: string): (id: string, parent: string | null) => Node {
 afterEach(() => runtime.unregisterSubtree('App'));
 
 describe('static markup preserves imperative DOM semantics', () => {
+  it('preserves unsafe text and SVG namespaces inside optimized caller slots',()=>{
+    const app=compiled(`<Shell><section>${padding}</section>
+      <span data-value={'a\\rb\\0c'}>{'a\\rb\\0c'}</span>
+      <svg><linearGradient><stop/></linearGradient><foreignObject><div>HTML</div></foreignObject></svg></Shell>`,
+    `function Shell({children}){return <main>{children}</main>;}`);
+    const root=app('App',null) as Element;
+    expect(root.querySelectorAll('span[data-kind]')).toHaveLength(16);
+    const value=root.querySelector('span[data-value]')!;
+    expect(value.textContent).toBe('a\rb\0c');expect(value.getAttribute('data-value')).toBe('a\rb\0c');
+    const gradient=root.querySelector('svg')!.firstChild as Element;
+    expect(gradient.localName).toBe('linearGradient');expect(gradient.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect((root.querySelector('foreignObject')!.firstChild as Element).namespaceURI).toBe('http://www.w3.org/1999/xhtml');
+  });
   it.each(['list','conditional'])('preserves %s insertion between static siblings',kind=>{
     const region=kind==='list'?`{['row'].map(item=><aside>{item}</aside>)}`:`{true&&<aside>row</aside>}`;
     const app=compiled(`<main><section>${padding}</section>${region}<footer>After</footer></main>`);

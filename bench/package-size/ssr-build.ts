@@ -24,6 +24,7 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  ...Object.fromEntries(Object.entries(sizeFixtures).filter(([name])=>name.includes('-recreated-slot-'))),
   'primitive-inline-list': sizeFixtures['primitive-inline-list']!,
   'primitive-component-list': sizeFixtures['primitive-component-list']!,
   'dynamic-tags': sizeFixtures['dynamic-tags']!,
@@ -93,7 +94,7 @@ for (const [fixture, sources] of Object.entries(fixtures)) {
       fixture==='request-component-structures' ? {rows:[{id:1,label:'one',active:true,tags:[{id:11,label:'first'},{id:12,label:'second'}]},{id:2,label:'two',active:false,tags:[]}]} :
       fixture==='request-nested-list' ? {groups:[{id:1,name:'One',rows:[]},{id:2,name:'Two',rows:[{id:21,label:'first'},{id:22,label:'second'}]}]} :
       ['request-row-children','request-conditional-list'].includes(fixture) ? {name:'Ada',active:true,rows:[{id:1,label:'one',active:true},{id:2,label:'two',active:false}]} :
-      ['request-list','request-list-siblings','request-component-list'].includes(fixture) ? {name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]} : {name:'Ada'};
+      (fixture.startsWith('request-recreated-slot-') || ['request-list','request-list-siblings','request-component-list'].includes(fixture)) ? {name:'Ada',rows:[{id:1,label:'one'},{id:2,label:'two'}]} : {name:'Ada'};
     const files = { ...sources,
       './main.ts': `import {mount} from '@memoized-dom/runtime';import {App} from './App';mount('root',App);`,
       './server.ts': `import {serve} from '@memoized-dom/server';import {App} from './App';const app=serve();

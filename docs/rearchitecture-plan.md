@@ -2,7 +2,7 @@
 
 ## Current checklist
 
-Original baseline: `7abcf55`; audited revision: `9b4896d` plus the package batch
+Original baseline: `7abcf55`; audited revision: `6c48d1c` plus the caller-slot batch
 below. All five areas have verified milestones. Further extensions remain open;
 the initial HTML and unused-capability work is implemented, not pending.
 
@@ -52,6 +52,9 @@ recorded under the corresponding commits below:
 - [x] Move generated row ABI into `dom/row-context.ts`; delete the shared declaration.
 - [x] Audit other packages and remove measured server-helper/full form-tracker
   retention; remove the CSS package and its obsolete implementation plan.
+- [x] Apply the existing markup optimizer to caller-slot creation, including
+  guarded creation after initial delivery; verify adoption, remounts, fetched
+  row reuse/removal/append and paired production bundle savings.
 
 The remaining deliverables retain the original five-area scope:
 
@@ -619,3 +622,24 @@ These are prerequisites for the runtime-size and broader precision batches.
   personal examples are untouched. Generic data dispatch/restoration, unproved
   composition/creation and further performance proofs remain explicit open items;
   numeric routing stays deferred.
+
+### Caller-slot creation audit, optimization and verification (parent `6c48d1c`)
+
+- Identified the missing markup optimization in compiler-owned caller slots;
+  component future-creation arms already used it. Route slots through that same
+  DOM pass and pass the update function explicitly for retained node binding.
+  Repeated imperative construction is removed from eligible large slots. No
+  runtime implementation, compatibility facade or ownership engine was added.
+- Stable small/large composition and fetched-row fixtures compare compiler/Vite
+  revisions with identical runtime packages. Large composition: 21,024 → 16,809
+  raw B, 6,412 → 5,990 gzip B. Fetched rows: 56,945 → 52,738 raw B,
+  17,736 → 17,273 gzip B. Small slots and seven controls are unchanged; HTML and
+  payload are unchanged; static/fetched-only stay zero JS. No CPU claim.
+- Compiler and Vite builds, root typecheck, changed-file lint and diff checks
+  pass. Seven focused suites pass 84 tests; two production Chromium cases pass
+  adoption, live slots, remounts and request-row reuse/removal/append/recreation.
+  Namespace/unsafe-text fallbacks, effects, refs and disposal remain covered.
+- These three requested steps are complete for the demonstrated caller-slot
+  gap. The broader remaining-deliverable checklist still applies; unknown
+  initialization/update evaluation cannot be reordered to force smaller output.
+  Details and reproduction commands are in the browser architecture document.

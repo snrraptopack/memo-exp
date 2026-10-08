@@ -220,6 +220,21 @@ bootstrap. Reports include HEAD, baseline and dirty state. These payload checks
 do not measure CPU performance. The general entry's separate cost is available
 with `--hydrate` instead of `--hydrate-program`.
 
+## Retained caller-slot creation
+
+For retained caller-slot creation, use the production delivery audit:
+
+```bash
+bun run bench:size:ssr --before-ref=6c48d1c --fixture=composition-recreated-slot-1 --fixture=composition-recreated-slot-24 --fixture=request-recreated-slot-1 --fixture=request-recreated-slot-24
+bunx vitest run --config packages/vite/vitest.config.ts tests/initial-ssr.test.ts -t "retained caller slot markup"
+```
+
+These stable authored fixtures check small and large future-creation costs.
+The production browser group validates adoption and later interaction; the generic
+source audit's browser verifier does not cover these structural fixture shapes.
+Measurements and limitations are recorded in
+[Browser JavaScript architecture](../../docs/browser-bundle-architecture.md).
+
 ## Canonical key interning estimate
 
 After building an application, run:

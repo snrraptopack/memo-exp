@@ -1,5 +1,18 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  ...Object.fromEntries([1,24].flatMap(count=>['composition','request'].map(kind=>[`${kind}-recreated-slot-${count}`,{
+    './App.tsx': `import {Shell} from './Shell';export function App(){let n=0;let open=true;
+      ${kind==='request'?"const user=$fetch('/api/user');const request=$track(user);":''}
+      return <main><h1>Delivered surroundings</h1><button class="next" onClick={()=>n++}>Next</button>
+      <button class="toggle" onClick={()=>open=!open}>Toggle</button>
+      ${kind==='request'?'<button class="reload" onClick={()=>request.refresh()}>Reload</button>':''}
+      {${kind==='request'?'user?.rows?.map(item=>':'open&&'}<Shell ${kind==='request'?'key={item.id}':''}>
+        ${Array.from({length:count},(_,index)=>`<article><h2>Card ${index}</h2><p>Ready.</p></article>`).join('')}
+        <button class="inside" title={'value '+n} onClick={()=>n++}>{n}</button>
+        ${kind==='request'?'<b>{item.label}</b>':''}</Shell>${kind==='request'?')':''}}
+      <footer>{n}</footer></main>;}`,
+    './Shell.tsx': `export function Shell({children}){return <section>{children}</section>;}`,
+  }]))),
   ...Object.fromEntries(['inline','component'].map(kind=>[`primitive-${kind}-list`,{
     './App.tsx':`${kind==='component' ? "import {Row} from './Row';" : ''}export function App(){
       let items=[{id:1,value:1},{id:2,value:2},{id:3,value:3}];return <main>
