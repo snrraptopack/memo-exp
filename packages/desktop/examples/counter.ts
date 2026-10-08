@@ -6,7 +6,10 @@ import { createProcessHost } from '../src/bridge/process';
 
 const source = `export function Counter() {
   let count: number = 0;
-  return <button onClick={() => count++}>Count: {count}</button>;
+  return <div>
+    <p>Count: <span>{count}</span></p>
+    <button onClick={() => count++}>Increment</button>
+  </div>;
 }`;
 const { code } = compileDesktop(source, {
   moduleId: 'desktop-counter.tsx',

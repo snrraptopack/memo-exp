@@ -1,6 +1,6 @@
 # Compiled native desktop architecture
 
-Date: 2026-10-08. Architecture proposal for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The desktop backend and native scene engine described here are proposed work.
+Date: 2026-10-08. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, native tag translation, and headless retained scene are implemented; GPUI windows, geometry, input, and drawing remain planned work.
 
 ## The technique we aim to use
 
@@ -62,7 +62,7 @@ Solid already targets reactive updates directly. Our architectural hypothesis th
 
 Memoized DOM already analyzes lexical bindings, source reads and writes, callbacks, component relationships, list/branch structure, and presentation ownership. Shared planning lives under `packages/compiler/src/analysis/` and `packages/compiler/src/planning/`. The DOM backend coordinates lowering and emission under `packages/compiler/src/dom/`.
 
-Those source facts are the starting point for desktop compilation. The current public compiler entry still invokes the DOM transform. The desktop target needs its own lowering and emission path, with explicit shared inputs; the existing separation does not mean a desktop emitter is implemented.
+Those source facts are reused by the desktop compiler entry. The compiler root invokes the DOM transform; `@memoized-dom/compiler/desktop` invokes desktop lowering and emission directly. The desktop emitter encodes authored tags and source bindings without translating those tags into GPUI primitives.
 
 The existing ownership, scheduling, preparation, and cleanup contracts establish behavior to preserve. Their implementations must be reviewed for host assumptions before reuse. DOM anchors, ranges, markup parsing, hydration addressing, and `DocumentLike` operations belong to the DOM target. Native structure requires native handles, regions, properties, refs, and publication results.
 
@@ -77,12 +77,16 @@ packages/compiler/
     src/analysis/       shared source facts
     src/planning/       shared semantic plans
     src/dom/            existing DOM backend
-    src/desktop/        desktop lowering and emission
+    src/desktop/        compilation and authored scene encoding
 
 packages/desktop/
     src/runtime/        application scheduling and scene publication
     src/bridge/         host transactions and events
-    rust/               scene engine; GPUI integration follows
+    src/scene/          scene wire types
+    rust/src/tags.rs         native tag translation and content contracts
+    rust/src/template.rs     template validation and native preparation
+    rust/src/presentation.rs immutable flow and text-group plans
+    rust/src/lib.rs          live instances and atomic publication
 ```
 
 Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` entry. The compiler root continues to expose DOM compilation. Both backends use the existing core modules; desktop compilation does not invoke the DOM emitter. A separately exported shared pipeline can follow once desktop fixtures establish its required inputs and outputs.
@@ -90,6 +94,49 @@ Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` e
 Keep the dependency direction explicit: desktop compilation depends on shared analysis; shared analysis does not depend on either backend. Desktop application execution does not import compiler tooling or parsing dependencies. A build/example runner imports the desktop compiler entry separately from the application runtime.
 
 Reuse the same semantic analysis and ownership contracts across targets. Separately built entry points and enforced import boundaries establish this separation; directory placement alone does not. Extract desktop emission into its own tooling package only when working fixtures demonstrate a useful shared pipeline boundary.
+
+## Native tag translation
+
+`packages/desktop/rust/src/tags.rs` is the authoritative translation registry. The compiler emits element records containing the original tag string, parent index, text leaves, typed slots, and event sites. It checks the supported source syntax and callback contracts. Rust resolves each tag, validates content and event placement, and prepares a native presentation plan before installing the template. Unsupported tags therefore fail at native installation today, rather than at compilation. Error messages identify the template, node, and tag. Future build-time validation should consume the same native definitions instead of maintaining a second semantic registry in TypeScript.
+
+| Authored tag | Native meaning | Current content contract | Presentation preparation |
+| --- | --- | --- | --- |
+| `div` | Generic block container | Supported flow content | Container item with ordered child items |
+| `p` | Paragraph | Text and inline spans | One paragraph item and combined text group |
+| `span` | Inline range | Text and nested spans | Remains within its containing text group; no independent flex box |
+| `button` | Button control | Text and inline spans | Control item, combined label group, permitted click site |
+| `container` | Prototype alias for `div` | Same as `div` | Same as `div` |
+| `text` | Prototype alias for `span` | Same as `span` | Same inline behavior |
+
+These are the first desktop contracts. They do not implement the full HTML content model or a browser's default stylesheet. Buttons inside paragraphs, links, images, headings, lists, inputs, and arbitrary attributes require explicit work and currently fail validation or compilation. Paragraph/control roles in the registry describe the intended accessibility mapping; accessibility publication and keyboard activation are not implemented yet. Default margins, fonts, decoration, and style inheritance still need a defined desktop style contract.
+
+Adjacent text expressions and spans inside a paragraph form one text group. Rust retains their original source records and text-slot addresses. A text change rebuilds the affected group's combined content once per accepted transaction; a revision advances only when that combined content changes. Other groups keep their revisions and identities. In a `div`, consecutive phrasing children form an anonymous paragraph before the next block or control. A root span receives its own paragraph presentation item. These rules preserve authored order without treating every string as a separate layout child.
+
+`template.rs` resolves and validates immutable definitions. `presentation.rs` prepares flow items and text-group membership once per installed template. Live instances retain group content independently. The current revision covers content only; it is not a proof that shaping or geometry can be reused after width, font, style, scale, or platform changes.
+
+To expand the registry, define the tag's content model and layout category, then implement its native preparation, supported properties, input behavior, focus and accessibility semantics. Add fixtures that exercise rejection, retained identity, and publication failure as well as visible behavior. A tag with no working implementation must remain unsupported; adding a name alone does not enable it.
+
+## GPUI rendering from the developer perspective
+
+GPUI keeps application data in entities. An entity implementing `Render` produces elements for a requested frame; `RenderOnce` supplies reusable element recipes. The ordinary element tree and its callbacks are temporary. Stable element IDs associate appropriate framework state across frames, but do not make every element allocation or layout result persistent. Our retained scene and caches therefore belong outside the returned element tree. [Pinned element lifecycle](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/element.rs).
+
+The standard application pattern is `gpui_platform::application().run(...)`, `cx.open_window(...)`, and `cx.new(...)` to create a root view. Its render method can compose `div()` elements through styling and child-builder traits. For our host, the root view should own the accepted scene and renderer caches, and return a small custom scene element for each requested frame. This is an integration design, not an implemented GPUI window. [Pinned application example](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/examples/hello_world.rs).
+
+The custom element must participate in GPUI's actual phases:
+
+| Phase | GPUI contract | Proposed scene adapter responsibility |
+| --- | --- | --- |
+| `request_layout` | Return a layout ID and request state | Describe the scene's required dimensions and measurement inputs |
+| `prepaint` | Receive computed bounds and prepare frame state | Resolve placement, clipping, visibility, hitboxes, and accessible geometry |
+| `paint` | Emit drawing using layout/prepaint state | Draw accepted native records using reusable content and shaping caches |
+
+The adapter can initially use GPUI layout participation while native incremental geometry is developed. `Window::request_layout` registers style and child layout IDs for the current frame; `request_measured_layout` provides a measurement callback receiving known dimensions and available space. Reusing our own measured results is possible only when their inputs match. Do not retain a GPUI frame's layout IDs as native scene handles. Hitboxes and mouse listeners also participate in the current frame and must refer back to a live instance generation and event site. These are adapter obligations, not capabilities established by retaining templates alone. [Pinned window layout and input APIs](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/window.rs).
+
+GPUI text provides `Text` for uniform content and `StyledText::with_runs` for styled runs within one string. Run lengths are UTF-8 byte lengths and must cover the complete string on valid character boundaries. When span styles are added, the adapter must map source fragments to valid run ranges inside the combined paragraph; joining strings alone does not implement styled spans. Persistent cache keys must include content, effective styles/font inputs, wrapping constraints, and scale-sensitive inputs. [Pinned text implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/text.rs).
+
+GPUI's `canvas` supplies prepaint and paint callbacks for short custom drawing, but does not implement our scene's control, text, layout, or ownership contracts. A custom `Element` is the planned boundary for coordinated scene layout, input and painting. Keep the GPUI adapter separate from tag translation and transaction staging so headless fixtures continue to validate native semantics without a window. [Pinned canvas implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/canvas.rs).
+
+Application developers author supported JSX and ordinary local JavaScript callbacks. They do not construct GPUI elements or maintain renderer caches. Renderer developers implement the native contracts and the custom element phases. In the current diagnostic prototype, the build runner imports `compileDesktop`, creates a process host, mounts the compiled component inside `createDesktopApplication(host).mount(...)`, awaits its `ready` promise, dispatches indexed events, and disposes the application. Native event delivery will replace the diagnostic dispatch path while preserving its ownership and publication rules.
 
 ## Compiler output
 
@@ -198,11 +245,11 @@ Define supported primitive and style semantics explicitly. Desktop refs and inpu
 
 ## First implementation and validation
 
-The first implementation compiles fixed `<container>`, `<button>`, and `<text>` scenes, primitive text expressions, and synchronous component-local click handlers. It reuses core parsing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
+The first implementation compiles fixed authored-tag scenes, primitive text expressions, and synchronous component-local click handlers. Rust translates `div`, `p`, `span`, and `button`, plus the prototype aliases described above. The compiler reuses core parsing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
-The counter example compiles authored TypeScript/JSX, mounts it in the Rust host, dispatches events from the diagnostic runner, inspects the retained text records, and disposes its owner. It is a headless scene prototype. Native input delivery, GPUI drawing, geometry, text shaping, accessibility, and branch/list publication are subsequent work, not capabilities of this prototype.
+The counter example compiles a `div` containing a paragraph with a dynamic span and an increment button. It mounts the scene in the Rust host, dispatches events from the diagnostic runner, inspects the retained text groups and presentation identities, and disposes its owner. It is a headless scene prototype. Native input delivery, GPUI drawing, geometry, text shaping, accessibility, and branch/list publication are subsequent work, not capabilities of this prototype.
 
 Run the current prototype from the repository root:
 

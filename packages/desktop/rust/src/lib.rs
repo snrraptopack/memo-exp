@@ -1,52 +1,14 @@
 //! Persistent scene state and atomic publication, independent of window presentation.
+pub mod presentation;
+pub mod tags;
+pub mod template;
+use presentation::{FlowItem, TextValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use template::PreparedTemplate;
+pub use template::{Node, Template};
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Template {
-    pub id: String,
-    pub nodes: Vec<Node>,
-    pub slots: Vec<TextSlot>,
-    pub events: Vec<Event>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum Primitive {
-    Container,
-    Button,
-    Text,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Node {
-    pub kind: Primitive,
-    pub parent: Option<usize>,
-    pub text: String,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct TextSlot {
-    pub node: usize,
-    pub r#type: SlotKind,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum SlotKind {
-    Text,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Event {
-    pub node: usize,
-    pub r#type: EventKind,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum EventKind {
-    Click,
-}
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Handle {
@@ -84,13 +46,15 @@ pub struct Transaction {
 #[derive(Clone)]
 pub struct Instance {
     pub handle: Handle,
-    pub template: Arc<Template>,
+    pub template: Arc<PreparedTemplate>,
     pub texts: Vec<String>,
     pub dirty: BTreeSet<usize>,
+    pub text_groups: Vec<TextValue>,
+    pending_groups: BTreeSet<usize>,
 }
 #[derive(Default)]
 pub struct Scene {
-    templates: BTreeMap<String, Arc<Template>>,
+    templates: BTreeMap<String, Arc<PreparedTemplate>>,
     instances: BTreeMap<u64, Instance>,
     generations: BTreeMap<u64, u64>,
     sequence: u64,
@@ -106,53 +70,22 @@ pub struct InstanceSnapshot {
     pub template: String,
     pub texts: Vec<String>,
     pub dirty: Vec<usize>,
+    pub presentation: Vec<FlowItem>,
+    pub text_groups: Vec<TextValue>,
 }
 
 impl Scene {
     pub fn install(&mut self, template: Template) -> Result<(), String> {
-        if template.id.is_empty() || template.nodes.is_empty() {
-            return Err("Empty scene template".into());
-        }
-        let mut roots = 0;
-        for (index, node) in template.nodes.iter().enumerate() {
-            match node.parent {
-                None => roots += 1,
-                Some(parent) if parent < index => {}
-                _ => return Err("Template parent must precede its child".into()),
-            }
-        }
-        if roots != 1 {
-            return Err("Template must contain exactly one root".into());
-        }
-        let mut slots = BTreeSet::new();
-        for slot in &template.slots {
-            if !matches!(
-                template.nodes.get(slot.node).map(|node| &node.kind),
-                Some(Primitive::Text)
-            ) || !slots.insert(slot.node)
-            {
-                return Err("Invalid or duplicate text slot".into());
-            }
-        }
-        let mut events = BTreeSet::new();
-        for event in &template.events {
-            if !matches!(
-                template.nodes.get(event.node).map(|node| &node.kind),
-                Some(Primitive::Button)
-            ) || !events.insert(event.node)
-            {
-                return Err("Invalid or duplicate click event".into());
-            }
-        }
         if let Some(existing) = self.templates.get(&template.id) {
-            return if **existing == template {
+            return if existing.source == template {
                 Ok(())
             } else {
                 Err("Template identity has conflicting definitions".into())
             };
         }
+        let template = template.prepare()?;
         self.templates
-            .insert(template.id.clone(), Arc::new(template));
+            .insert(template.source.id.clone(), Arc::new(template));
         Ok(())
     }
 
@@ -191,20 +124,26 @@ impl Scene {
                         .get(&template)
                         .ok_or("Unknown scene template")?
                         .clone();
-                    if values.len() != template.slots.len() {
+                    if values.len() != template.source.slots.len() {
                         return Err("Initial scene values do not cover every slot".into());
                     }
+                    let texts: Vec<String> = template
+                        .source
+                        .nodes
+                        .iter()
+                        .map(|node| node.text().to_owned())
+                        .collect();
                     let mut instance = Instance {
                         handle,
-                        texts: template
-                            .nodes
-                            .iter()
-                            .map(|node| node.text.clone())
-                            .collect(),
-                        dirty: (0..template.nodes.len()).collect(),
+                        text_groups: Vec::new(),
+                        texts,
+                        dirty: (0..template.source.nodes.len()).collect(),
+                        pending_groups: BTreeSet::new(),
                         template,
                     };
                     apply_writes(&mut instance, values)?;
+                    instance.text_groups = instance.template.presentation.values(&instance.texts);
+                    instance.pending_groups.clear();
                     staged.insert(handle.id, Some(instance));
                     generations.insert(handle.id, handle.generation);
                 }
@@ -217,6 +156,16 @@ impl Scene {
                     staged.insert(handle.id, None);
                 }
             }
+        }
+        // All operations have validated. Prepare each affected paragraph once,
+        // on candidate state, before swapping any instance into the live scene.
+        for instance in staged.values_mut().flatten() {
+            instance.template.presentation.refresh(
+                &instance.texts,
+                &mut instance.text_groups,
+                &instance.pending_groups,
+            );
+            instance.pending_groups.clear();
         }
         for (id, instance) in staged {
             if let Some(instance) = instance {
@@ -238,9 +187,11 @@ impl Scene {
                 .values()
                 .map(|instance| InstanceSnapshot {
                     handle: instance.handle,
-                    template: instance.template.id.clone(),
+                    template: instance.template.source.id.clone(),
                     texts: instance.texts.clone(),
                     dirty: instance.dirty.iter().copied().collect(),
+                    presentation: instance.template.presentation.items.clone(),
+                    text_groups: instance.text_groups.clone(),
                 })
                 .collect(),
         }
@@ -283,12 +234,16 @@ fn apply_writes(instance: &mut Instance, writes: Vec<TextWrite>) -> Result<(), S
         }
         let slot = instance
             .template
+            .source
             .slots
             .get(write.slot)
             .ok_or("Unknown scene slot")?;
         if instance.texts[slot.node] != write.value {
             instance.texts[slot.node] = write.value;
             instance.dirty.insert(slot.node);
+            if let Some(group) = instance.template.presentation.group_for_node[slot.node] {
+                instance.pending_groups.insert(group);
+            }
         }
     }
     Ok(())
@@ -301,7 +256,7 @@ mod tests {
 
     fn template() -> Template {
         serde_json::from_value(json!({"id":"counter", "nodes":[
-            {"kind":"button","parent":null,"text":""}, {"kind":"text","parent":0,"text":""}],
+            {"kind":"element","tag":"button","parent":null,"text":""}, {"kind":"text","parent":0,"text":""}],
             "slots":[{"node":1,"type":"text"}],"events":[{"node":0,"type":"click"}]}))
         .unwrap()
     }
@@ -354,10 +309,14 @@ mod tests {
         scene.install(template()).unwrap();
         scene.install(template()).unwrap();
         let mut changed = template();
-        changed.nodes[1].text = "different".into();
+        if let Node::Text { text, .. } = &mut changed.nodes[1] {
+            *text = "different".into();
+        }
         assert!(scene.install(changed).is_err());
         let mut cycle = template();
-        cycle.nodes[1].parent = Some(1);
+        if let Node::Text { parent, .. } = &mut cycle.nodes[1] {
+            *parent = Some(1);
+        }
         assert!(scene.install(cycle).is_err());
     }
 }

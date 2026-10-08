@@ -36,7 +36,9 @@ describe('desktop compilation and publication', () => {
     const app = createDesktopApplication(recording.host);
     const counter = app.mount(Counter);
     await counter.ready;
-    expect(recording.templates[0]!.nodes.map(node => node.kind)).toEqual(['button', 'text', 'text']);
+    expect(recording.templates[0]!.nodes).toMatchObject([
+      { kind: 'element', tag: 'button' }, { kind: 'text' }, { kind: 'text' },
+    ]);
     expect(recording.transactions[0]!.operations[0]).toMatchObject({ kind: 'mount', values: [{ slot: 0, value: '0' }] });
     expect(await counter.dispatch(0)).toBe(0); // Authored postfix return is preserved.
     await counter.dispatch(0);
@@ -167,7 +169,7 @@ describe('desktop compilation and publication', () => {
   });
 
   it.each([
-    [`export function Counter(){ return <div />; }`, 'unsupported desktop primitive'],
+    [`export function Counter(){ return <Counter />; }`, 'component tags require desktop component linking'],
     [`export function Counter(){ let x=0; return <button onClick={async()=>x++}>{x}</button>; }`, 'asynchronous callbacks'],
     [`export function Counter(){ let x=0; const y=x+1; return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
     [`export function Counter(){ let x=0; function label(){return x+1;} const y=label(); return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],

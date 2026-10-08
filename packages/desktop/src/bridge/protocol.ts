@@ -1,10 +1,6 @@
-/** Version-one scene contract; the initial bridge uses JSON lines for inspection. */
-export interface SceneTemplate {
-  readonly id: string;
-  readonly nodes: readonly { readonly kind: 'container' | 'button' | 'text'; readonly parent: number | null; readonly text: string }[];
-  readonly slots: readonly { readonly node: number; readonly type: 'text' }[];
-  readonly events: readonly { readonly node: number; readonly type: 'click' }[];
-}
+/** Version-one transport contract; Rust prepares authored tags for presentation. */
+import type { FlowItem, SceneTemplate, TextGroupValue } from '../scene/schema';
+export type { SceneTemplate } from '../scene/schema';
 
 export interface SceneHandle { readonly id: number; readonly generation: number }
 export interface TextWrite { readonly slot: number; readonly value: string }
@@ -28,5 +24,7 @@ export interface SceneSnapshot {
     readonly template: string;
     readonly texts: readonly string[];
     readonly dirty: readonly number[];
+    readonly presentation: readonly FlowItem[];
+    readonly text_groups: readonly TextGroupValue[];
   }[];
 }
