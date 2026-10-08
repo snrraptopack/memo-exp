@@ -242,7 +242,7 @@ Next in area 1: finish semantic normalization; complete ownership inputs and
 move remaining generated ABI state out of source facts.
 These are prerequisites for the runtime-size and broader precision batches.
 
-### Optional hydration recovery (parent `2c57535`)
+### Optional hydration recovery (commit `4da52c8`, parent `2c57535`)
 
 - Moved root mismatch recovery and adopted-root publication from general mount
   into the installed hydration capability. Deleted the former mount helper and
@@ -267,3 +267,26 @@ These are prerequisites for the runtime-size and broader precision batches.
   zero JS, counter 8,613 / 3,483 B, lazy routing 67,957 / 21,958 B in three
   chunks, routed/Group 86,981 / 26,764 B. This checks delivery compatibility,
   not an isolated before/after runtime-size comparison.
+
+### Presentation ownership and DOM data emission (parent `4da52c8`)
+
+- Replaced generated presentation parameters and their parallel inherited-only
+  marker in shared context with one semantic ownership contract. Local policy
+  requirements take precedence over inherited propagation. DOM parameter
+  allocation consumes explicit owner contracts in the existing allocation order
+  without changing source facts or shadowing authored bindings.
+- Source row eligibility, read collection and export metadata now inspect
+  ownership facts. Moved policy argument/rendering, automatic DOM data sites and
+  source-subscription emission into `dom/`; removed their three former files,
+  old feature exports and shared metadata re-export facades. Consumers import
+  shared async facts directly from their planner.
+- Compiler build, type checking, lint and the transitive import boundary passed.
+  Ten focused suites passed 95 tests across Group, pending/error callbacks,
+  transported sources, component rows, TSRX and initial lifetime handling.
+- All 123 stable output/graph/delivery comparisons match `4da52c8`, excluding
+  source maps. Four paired production delivery fixtures retain identical
+  HTML/payload/raw/gzip bytes: static zero JS, counter 8,613 / 3,483 B, lazy
+  routing 67,957 / 21,958 B (three chunks), routed/Group 86,981 / 26,764 B.
+- Area 1 remains open: mixed source normalization and backend component export
+  publication still need explicit contracts. Areas 2–5 retain their unfinished
+  gates; this source-boundary batch makes no bundle or CPU improvement claim.

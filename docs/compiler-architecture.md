@@ -49,8 +49,15 @@ route manifests and module loading live in `dom/router.ts`.
 Source replay causes are symbolic; the DOM backend allocates numeric reasons.
 Backend callback publication is passed explicitly to pull-plan finalization.
 Native event and component callbacks share captured source/helper contracts.
-Remaining normalization, module callbacks and ownership work are tracked in
+Remaining normalization and ownership work are tracked in
 the execution checklist; these migrations do not complete the rearchitecture.
+
+Presentation ownership is a shared contract describing local policy/source
+requirements or inherited propagation. DOM-only parameter allocation consumes
+that contract without changing it. Source row eligibility and export metadata
+use ownership facts, not the existence of generated names. Policy rendering,
+source-subscription emission and automatic DOM data sites live in `dom/`;
+their former feature modules and exports are removed.
 
 Separate authored-language meaning from the code a rendering target needs.
 Normalized JSX, lexical reads/writes, opaque and async provenance, component
@@ -325,7 +332,7 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Props and region identities | Shared analysis plus backend lowering; authored slots carry caller ownership, mount sites and future-creation guards | Extend publication contracts to structural slots, JSX render props and escaping render values |
 | DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
 | Normalization and transparent read/callback lowering | Group policies, read replay operations and lazy module sources have explicit plans before target lowering; other transforms remain mixed | Extend source contracts to remaining callback transforms and TSRX validation |
-| Generated IDs, headers, imports and output buffers | One mutable DOM emission state referenced by `Ctx`; no mirrored facade fields | Replace remaining runtime-producing normalization with explicit target lowering |
+| Generated IDs, headers, imports and output buffers | DOM context owns emission, runtime reasons, route/subscription ABI and presentation parameters; shared context retains source contracts | Replace remaining runtime-producing normalization with explicit target lowering |
 | Generated-header coverage | Deferred header insertion after some rewrites | Passes explicitly cover authored, generated or complete module trees |
 
 These boundaries are not implemented merely by moving files or renaming `Ctx`.

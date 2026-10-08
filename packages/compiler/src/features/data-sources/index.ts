@@ -13,18 +13,6 @@ export {
   scanEventSourceAssignments,
   scanTransparentSourceBindings,
 } from './component-sources';
-export {
-  transparentCallPolicyArgument,
-  transparentBoundaryPolicyArgument,
-  transparentSourceMounts,
-} from './policy-arguments';
-export {
-  preparationRead,
-  registerTransparentDataSite,
-  subscribeTransparentStructuralSite,
-  transparentExpressionSources,
-} from './subscriptions';
-export { isImplicitPolicyProp, transparentPolicyRenderer } from './automatic-sites';
 export { rewriteTransparentDataReads } from './read-rewriting';
 export { lowerTransparentGroups } from './group-lowering';
 export { atomicSitePolicy } from './atomic-sites';

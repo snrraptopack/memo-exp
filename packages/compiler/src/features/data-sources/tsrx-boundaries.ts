@@ -10,6 +10,8 @@ import {
 import type { DomContext as Ctx } from '../../dom/context';
 import type { TransparentPresentationComponent, TransparentPresentationPolicy } from '../../context';
 import { generatedComponentIdentifier, generatedIdentifier } from '../../dom/identifiers';
+import { allocatePresentationParameter } from '../../dom/presentation-parameters';
+import { requirePresentationOwner } from '../../planning/presentation-ownership';
 import {
   componentSourceProps,
   jsxTagName,
@@ -219,9 +221,7 @@ export function lowerTsrxTryBoundary(
   if (owner?.id == null) {
     throw programPath.buildCodeFrameError('memo-dom: suspend must be authored inside a component', component);
   }
-  if (!ctx.transparentPolicyParams.has(owner.id.name)) {
-    ctx.transparentPolicyParams.set(owner.id.name, generatedIdentifier(ctx, 'dataPolicies'));
-  }
+  allocatePresentationParameter(ctx, requirePresentationOwner(ctx, owner.id.name));
   consumeSuspendDirective(component, suspend);
   if (component.openingElement.attributes.some(attribute =>
     astFactory.isJSXAttribute(attribute) && astFactory.isJSXIdentifier(attribute.name, { name: 'route' }))) {

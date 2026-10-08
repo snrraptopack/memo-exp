@@ -15,7 +15,10 @@ import { isInlineScalarCallback, stabilizeInlineCallbackProp } from './component
 import { emitComponentCallback } from './component-callback';
 import { buildRenderCallbackAdapter } from './render-callback';
 import { compileRefValue } from './refs';
-import { isImplicitPolicyProp, preparationRead, registerTransparentDataSite, transparentCallPolicyArgument, transparentExpressionSources } from '../data-sources';
+import { transparentExpressionSources } from '../planning/async-reads';
+import { isImplicitPolicyProp } from './data-sites';
+import { preparationRead, registerTransparentDataSite } from './data-subscriptions';
+import { transparentCallPolicyArgument } from './data-policies';
 import type { NodeEmitter } from './node-emitter';
 import type { AuthoredChildrenSlotBuilder, AuthoredRenderValueSlotBuilder } from './authored-slots';
 

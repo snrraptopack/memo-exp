@@ -1,16 +1,17 @@
 /** Automatic pending/error policy sites for transparent reads. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   isValidIdentifier as isValidEstreeIdentifier,
   overwriteNode,
   type BaseNode,
-} from '../../ast';
-import type { DomContext as Ctx } from '../../dom/context';
-import type { TransparentPresentationPolicy, TransparentPresentationComponent } from '../../context';
-import { md, mdd } from '../../dom/identifiers';
-import { annotateTransparentSources, sourceArray } from './subscriptions';
+} from '../ast/index';
+import type { DomContext as Ctx } from './context';
+import type { TransparentPresentationPolicy, TransparentPresentationComponent } from '../context';
+import { md, mdd } from './identifiers';
+import { sourceArray } from './data-subscriptions';
+import { annotateTransparentSources } from '../planning/async-reads';
 
 interface TransparentPolicyRenderer {
   renderer: t.Expression;
@@ -50,7 +51,7 @@ function sourcePolicy(
   component: string,
   source: string,
 ): t.Expression {
-  const parameter = ctx.transparentPolicyParams.get(component);
+  const parameter = ctx.presentationParameters.get(component);
   const prop = ctx.transparentSourceProps.get(component)?.get(source);
   if (parameter === undefined) return astFactory.nullLiteral();
   const fallback = astFactory.optionalMemberExpression(

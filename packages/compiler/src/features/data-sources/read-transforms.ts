@@ -20,7 +20,7 @@ import {
   sourceDependencies,
   type TransparentDerivation,
 } from './read-analysis';
-import { sourceArray, type RenderGatedExpression } from './subscriptions';
+import { sourceArray, type RenderGatedExpression } from '../../dom/data-subscriptions';
 
 export function replaceDerivedReads(
   ctx: Ctx,

@@ -18,7 +18,8 @@ import { cacheDecl, newEmitScope, updateDecl, type EmitScope, type RegionSourceP
 import { compileRefValue } from './refs';
 import { emitComponentCallback } from './component-callback';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
-import { isImplicitPolicyProp, transparentCallPolicyArgument } from '../data-sources';
+import { isImplicitPolicyProp } from './data-sites';
+import { transparentCallPolicyArgument } from './data-policies';
 import type { InitialDomRoot } from './initial-dom';
 
 interface ComponentRowFactoryPlan {

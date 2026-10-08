@@ -29,7 +29,7 @@ import { cacheDecl, newEmitScope, registerStmt, renderDocument, updateDecl } fro
 import { applyRepeatedDomTemplate } from './dom-template';
 import { prepareServerWriter } from './server-writer';
 import { applyStaticMarkup } from './markup';
-import { transparentSourceMounts } from '../data-sources';
+import { transparentSourceMounts } from './data-policies';
 import {selectedRouteSubscriptionBinding,externalSubscriptionBinding} from './external-reactivity';
 import { routeSelectorExpression } from './route-selectors';
 import { listProvenanceVariable } from './list-bindings';
@@ -178,7 +178,7 @@ export function transformComponent(
   const propPlan = ctx.componentProps.get(name)!;
   const propSlotCount = propPlan.params.length;
   const { sourceLocal, ownsRoutes, externalSources, routeSelectors, hasLocalEffects } = placement;
-  const dataPolicies = ctx.transparentPolicyParams.get(name) ?? null;
+  const dataPolicies = ctx.presentationParameters.get(name) ?? null;
   const lightweight =
     dataPolicies === null &&
     !ctx.transparentSources.has(name) &&

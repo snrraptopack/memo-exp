@@ -1,14 +1,13 @@
 /** Transparent source dependency metadata and emitted subscriptions. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode,
-} from '../../ast';
-import type { DomContext as Ctx } from '../../dom/context';
-import { generatedIdentifier, md, mdd } from '../../dom/identifiers';
-import { registerStmt, type EmitScope } from '../../dom/scope';
-import {transparentExpressionSources} from '../../planning/async-reads';
-export {transparentExpressionSources} from '../../planning/async-reads';
+} from '../ast/index';
+import type { DomContext as Ctx } from './context';
+import { generatedIdentifier, md, mdd } from './identifiers';
+import { registerStmt, type EmitScope } from './scope';
+import {transparentExpressionSources} from '../planning/async-reads';
 
 export function sourceArray(names: readonly string[]): t.ArrayExpression {
   return astFactory.arrayExpression(
@@ -43,7 +42,6 @@ export function preparationRead(
   ]);
 }
 
-export {annotateTransparentSources, excludeTransparentSubscriptions} from '../../planning/async-reads';
 
 /** Authored control flow whose payload sinks self-gate per render site. */
 export type RenderGatedExpression = t.Expression & {__memoDomRenderGated?: true};

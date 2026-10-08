@@ -31,10 +31,8 @@ import { materializeDirectChildren } from './direct-children';
 import { buildConditionalBranchCreate, emitConditionalRegion } from './conditional-region';
 import { emitListRegion } from './list-region';
 import { emitRouteRegion } from './route-region';
-import {
-  subscribeTransparentStructuralSite,
-  transparentPolicyRenderer,
-} from '../data-sources';
+import { subscribeTransparentStructuralSite } from './data-subscriptions';
+import { transparentPolicyRenderer } from './data-sites';
 import { emitText } from './text-node';
 import { emitComponentCall } from './component-call';
 import { emitDirectChildOperations, emitHostElement, type HostElementDependencies } from './host-element';

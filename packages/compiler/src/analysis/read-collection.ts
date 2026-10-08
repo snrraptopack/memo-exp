@@ -401,7 +401,7 @@ export function collectReads(ctx: Ctx): void {
 
       for (const value of ctx.moduleListSelections.get(call) ?? []) rowVars.delete(value);
       if (rowVars.size === 0 && containerSuffix === site.suffix && !ctx.hot &&
-          !ctx.transparentSources.has(name) && !ctx.transparentPolicyParams.has(name) &&
+          !ctx.transparentSources.has(name) && !ctx.presentationOwners.has(name) &&
           isSimpleInlineRow(site)) ctx.lightweightInlineRows.add(call);
       if (rowVars.size > 0) {
         ctx.rowReads.set(`${name}/${containerSuffix}`, {

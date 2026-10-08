@@ -15,7 +15,7 @@ import { buildComponentRowCreate } from './list-component-row';
 import { buildInlineRowCreate } from './list-inline-row';
 import { buildTargetedListUpdate, moduleListSelectionSetup, runtimeListSource } from './list-update';
 import type { AuthoredChildrenSlotBuilder } from './authored-slots';
-import { preparationRead } from '../data-sources';
+import { preparationRead } from './data-subscriptions';
 import { initialSite } from '../planning/initial-content';
 import { initialNode, initialOrCreate, initialServerAnchor, initialStructuralPlacement } from './initial-dom';
 

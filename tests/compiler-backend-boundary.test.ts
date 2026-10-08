@@ -6,6 +6,9 @@ import {createAnalysisCtx} from '../packages/compiler/src/context/model';
 import {createCtx} from '../packages/compiler/src/dom/context';
 import {allocateInstanceReasons} from '../packages/compiler/src/dom/instance-reasons';
 import {scanExternalReactiveImports} from '../packages/compiler/src/analysis/external-reactivity';
+import {requirePresentationOwner} from '../packages/compiler/src/planning/presentation-ownership';
+import {allocatePresentationParameter} from '../packages/compiler/src/dom/presentation-parameters';
+import {initializeGeneratedIdentifiers} from '../packages/compiler/src/dom/identifiers';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 
 const sourceRoot=resolve(import.meta.dirname,'../packages/compiler/src');
@@ -46,7 +49,33 @@ it('shared analysis, planning and context cannot import DOM lowering or runtime 
 it('source analysis can be constructed without a DOM allocator or host plans',()=>{
   const context=createAnalysisCtx({moduleId:'./source-only.tsx'});
   expect(context.stateKeys.size).toBe(0);
-  expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly|instanceReasonIds|analyzedFunctions|callbackPublications|handlerHasRootCommit|routeCallsiteIds|routeContextParams|externalReactiveImports)/.test(key))).toEqual([]);
+  expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly|instanceReasonIds|analyzedFunctions|callbackPublications|handlerHasRootCommit|routeCallsiteIds|routeContextParams|externalReactiveImports|presentationParameters)/.test(key))).toEqual([]);
+  expect(context).not.toHaveProperty('transparentPolicyParams');
+  expect(context).not.toHaveProperty('transparentInheritedOnlyPolicyParams');
+});
+
+it('records presentation ownership without parameters and keeps local policy ahead of inheritance',()=>{
+  const context=createAnalysisCtx();
+  requirePresentationOwner(context,'Bridge','inherited');
+  const local=requirePresentationOwner(context,'Bridge');
+  expect(requirePresentationOwner(context,'Bridge','inherited')).toBe(local);
+  expect([...context.presentationOwners]).toEqual([
+    ['Bridge',{component:'Bridge',mode:'local'}],
+  ]);
+  expect(context).not.toHaveProperty('presentationParameters');
+});
+
+it('allocates a presentation ABI without changing source ownership or shadowing authored bindings',()=>{
+  const context=createCtx();
+  const program=parseEstreeOrThrow('const _dataPolicies=1;', {filename:'./policies.ts'}).program;
+  initializeGeneratedIdentifiers(context,program);
+  const owner=requirePresentationOwner(context,'View');
+  const before=JSON.stringify([...context.presentationOwners]);
+  const parameter=allocatePresentationParameter(context,owner);
+  expect(parameter.name).not.toBe('_dataPolicies');
+  expect(allocatePresentationParameter(context,owner)).toBe(parameter);
+  expect(JSON.stringify([...context.presentationOwners])).toBe(before);
+  expect(()=>allocatePresentationParameter(context,{component:'Missing',mode:'local'})).toThrow('missing analyzed presentation owner');
 });
 
 it('allocates deterministic runtime reasons from complete source facts in the backend',()=>{

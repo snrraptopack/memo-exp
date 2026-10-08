@@ -14,9 +14,9 @@ import {
 import { astBindingAt, nodeHasJsx, refreshAstAnalysis } from '../../context';
 import { type DomContext as Ctx } from '../../dom/context';
 import { mdd } from '../../dom/identifiers';
-import {annotateAsyncRead} from '../../planning/async-reads';
+import {annotateAsyncRead, annotateTransparentSources, excludeTransparentSubscriptions} from '../../planning/async-reads';
 import { initialReadPlacement } from '../../dom/initial-dom';
-import { wrapAutomaticSite } from './automatic-sites';
+import { wrapAutomaticSite } from '../../dom/data-sites';
 import { lowerModuleRefReadsEstree } from './module-read-lowering';
 import {
   isActionRefreshTarget,
@@ -41,11 +41,7 @@ import {
   resolvedRenderExpression,
   trackDependencies,
 } from './read-transforms';
-import {
-  annotateTransparentSources,
-  excludeTransparentSubscriptions,
-  type RenderGatedExpression,
-} from './subscriptions';
+import type { RenderGatedExpression } from '../../dom/data-subscriptions';
 
 export function rewriteTransparentDataReads(ctx: Ctx): void {
   const refresh = (): void => {
@@ -250,7 +246,7 @@ export function rewriteTransparentDataReads(ctx: Ctx): void {
         if (
           !fixedInitialSink && !spread && ctx.astAnalysis?.parentByNode.get(container)?.type !== 'JSXAttribute' && (
             nodeHasJsx(rawExpression as unknown as t.Node) ||
-            ctx.transparentPolicyParams.has(component) ||
+            ctx.presentationOwners.has(component) ||
             dependencies.some((source) =>
               ctx.transparentSourceProps.get(component)?.has(source) === true
             )

@@ -1,14 +1,14 @@
 /** Component-call policy propagation and source ownership emission. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode,
   isValidIdentifier,
-} from '../../ast';
-import { type DomContext as Ctx } from '../../dom/context';
-import { type TransparentPresentationComponent, type TransparentPresentationPolicy } from '../../context';
-import { orderCallProps } from '../../dom/components/calls';
-import { generatedIdentifier, md, mdd } from '../../dom/identifiers';
+} from '../ast/index';
+import { type DomContext as Ctx } from './context';
+import { type TransparentPresentationComponent, type TransparentPresentationPolicy } from '../context';
+import { orderCallProps } from './components/calls';
+import { generatedIdentifier, md, mdd } from './identifiers';
 
 function policyComponentRenderer(
   ctx: Ctx,
@@ -81,7 +81,7 @@ export function transparentBoundaryPolicyArgument(
   owner: string,
   policy: TransparentPresentationPolicy,
 ): t.Expression {
-  const inherited = ctx.transparentPolicyParams.get(owner);
+  const inherited = ctx.presentationParameters.get(owner);
   return fixedPolicyExpression(ctx, policy, inherited === undefined
     ? undefined
     : astFactory.optionalMemberExpression(cloneNode(inherited), astFactory.identifier('$default'), false, true));
@@ -94,7 +94,7 @@ export function transparentCallPolicyArgument(
   element: t.JSXElement,
 ): t.ObjectExpression | null {
   const entries = new Map<string, t.Expression>();
-  const inherited = ctx.transparentPolicyParams.get(owner);
+  const inherited = ctx.presentationParameters.get(owner);
   for (const [prop, policy] of ctx.transparentGroupCallPolicies.get(element) ?? []) {
     const inheritedDefault = inherited === undefined ? undefined : astFactory.optionalMemberExpression(
       cloneNode(inherited), astFactory.identifier('$default'), false, true,

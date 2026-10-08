@@ -83,7 +83,8 @@ it('rejects a later invalid Group before earlier policies allocate or mutate sou
   const before=JSON.stringify(program);
   expect(()=>lowerTransparentGroups(ctx,{node:program as unknown as t.Program,...errorAt},
     planGroupPresentations(program as unknown as t.Program,analyzeScope(program),ctx.transparentGroups,errorAt))).toThrow('synchronous');
-  expect(JSON.stringify(program)).toBe(before);expect(ctx.transparentPolicyParams.size).toBe(0);
+  expect(JSON.stringify(program)).toBe(before);
+  expect(ctx.presentationOwners.size).toBe(0);expect(ctx.presentationParameters.size).toBe(0);
   expect(ctx.emission.header).toEqual([]);
   expect(identifiers.generateComponent('GroupPending').name).toBe('GroupPending');
 });

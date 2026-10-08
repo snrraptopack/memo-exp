@@ -145,7 +145,7 @@ export function isLightweightListedComponent(
  * *all* of the following gates:
  *   1. `isLightweightListedComponent` (row ABI eligible)
  *   2. no transparent async-source bindings (`transparentSources`)
- *   3. no inherited data-policy parameter (`transparentPolicyParams`)
+ *   3. no presentation ownership/propagation requirement
  *
  * Missing gates 2–3 was the bug: a component that closes over a transparent source
  * gets emitted as an entity-factory `function Comp(_id, _parent, _propsBox)`,
@@ -155,7 +155,7 @@ export function isLightweightListedComponent(
 export function isLightweightRowComponent(ctx: Ctx, name: string): boolean {
   if (!isLightweightListedComponent(ctx, name)) return false;
   if (ctx.transparentSources.has(name)) return false;
-  if (ctx.transparentPolicyParams.has(name)) return false;
+  if (ctx.presentationOwners.has(name)) return false;
   return true;
 }
 

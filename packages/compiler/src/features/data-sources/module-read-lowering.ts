@@ -13,7 +13,7 @@ import {
 import { astBindingAt } from '../../context';
 import { type DomContext as Ctx } from '../../dom/context';
 import { generatedIdentifier, mdd } from '../../dom/identifiers';
-import {annotateAsyncRead} from '../../planning/async-reads';
+import {annotateAsyncRead, annotateTransparentSources, transparentExpressionSources} from '../../planning/async-reads';
 import { initialReadPlacement } from '../../dom/initial-dom';
 import {
   isActionRefreshTarget,
@@ -22,10 +22,6 @@ import {
   isGeneratedDataCall,
   isPassthroughArgument,
 } from './read-analysis';
-import {
-  annotateTransparentSources,
-  transparentExpressionSources,
-} from './subscriptions';
 
 /**
  * Lower reads of module-scope source refs inside a component:

@@ -7,7 +7,8 @@ import { type DomContext as Ctx } from './context';
 import { md } from './identifiers';
 import { domPropertyWrite } from './attributes';
 import { freshSlot, pushSlotUpdater, slotGuard, type EmitScope } from './scope';
-import { preparationRead, registerTransparentDataSite, transparentExpressionSources } from '../data-sources';
+import { preparationRead, registerTransparentDataSite } from './data-subscriptions';
+import { transparentExpressionSources } from '../planning/async-reads';
 
 export function emitInitialInputValue(ctx:Ctx,scope:EmitScope,node:string,attribute:t.JSXAttribute,
   owner:t.Expression,live:boolean):void {

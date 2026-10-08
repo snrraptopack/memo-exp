@@ -6,6 +6,7 @@ import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { OwnerListOperation } from '../analysis/owner-list-structure';
 import type { ComponentPropsPlan, ControlFlowDerivation, LocalDerivation } from '../components/props';
 import type { CompilerRouteDefinition, CompilerRouteElement } from '../analysis/routes';
+import type { PresentationOwner } from '../planning/presentation-ownership';
 
 export const DEFAULT_TRANSPARENT_ASYNC_SOURCES: readonly TransparentAsyncSourceDefinition[] = [
   {
@@ -430,10 +431,8 @@ export interface Ctx {
   transparentModuleSources: Map<string, string>;
   /** Direct prop binding -> authored prop name for transported source holders. */
   transparentSourceProps: Map<string, Map<string, string>>;
-  /** Private factory parameter carrying inherited presentation renderers. */
-  transparentPolicyParams: Map<string, t.Identifier>;
-  /** Parameters added only for ordinary call-through, not intrinsic policy. */
-  transparentInheritedOnlyPolicyParams: Set<string>;
+  /** Authored presentation/source ownership or ordinary inherited propagation. */
+  presentationOwners: Map<string, PresentationOwner>;
   /** Nearest lexical Group policies attached to component prop call sites. */
   transparentGroupCallPolicies: WeakMap<
     t.JSXElement,
@@ -752,8 +751,7 @@ export function createAnalysisCtx(opts: AnalysisOptions = {}): Ctx {
     importedValues,
     transparentModuleSources,
     transparentSourceProps: new Map(),
-    transparentPolicyParams: new Map(),
-    transparentInheritedOnlyPolicyParams: new Set(),
+    presentationOwners: new Map(),
     transparentGroupCallPolicies: new WeakMap(),
     state,
     stateKeys,

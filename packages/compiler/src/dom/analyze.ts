@@ -43,7 +43,8 @@ import { lexicalBindingStringCandidates } from '../analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from '../analysis/component-reads';
 import { analyzeComponent } from '../analysis/component-validation';
 import { scanRefProps } from '../components/ref-props';
-import { generatedIdentifier } from './identifiers';
+import { allocatePresentationParameter } from './presentation-parameters';
+import { requirePresentationOwner } from '../planning/presentation-ownership';
 import {
   normalizeTransparentSourceDestructuring,
   registerTransparentSourceRoots,
@@ -106,12 +107,11 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   // rows omit the channel; resource-owning rows need their own read-local UI.
   for (const [name] of ctx.comps) {
     if (
-      ctx.transparentPolicyParams.has(name) ||
+      ctx.presentationOwners.has(name) ||
       ((ctx.listedSites.has(name) || ctx.linkedComponentRows.has(name)) &&
         !ctx.transparentSources.has(name) && isListLightweightCandidate(ctx, name))
     ) continue;
-    ctx.transparentPolicyParams.set(name, generatedIdentifier(ctx, 'dataPolicies'));
-    ctx.transparentInheritedOnlyPolicyParams.add(name);
+    allocatePresentationParameter(ctx, requirePresentationOwner(ctx, name, 'inherited'));
   }
   // acyclicity check runs unconditionally — a state-free recursive component
   // would otherwise slip past (pathVariants is only reached via the table)

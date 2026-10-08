@@ -9,7 +9,10 @@ import { componentId, generatedIdentifier, md } from './identifiers';
 import type { JsxNode } from '../jsx/children';
 import { cacheDecl, newEmitScope, registerStmt, updateDecl, type EmitScope, type RegionSourcePlans } from './scope';
 import type { NodeEmitter } from './node-emitter';
-import { preparationRead, subscribeTransparentStructuralSite, transparentExpressionSources, atomicSitePolicy, transparentBoundaryPolicyArgument } from '../data-sources';
+import { atomicSitePolicy } from '../features/data-sources/atomic-sites';
+import { transparentExpressionSources } from '../planning/async-reads';
+import { preparationRead, subscribeTransparentStructuralSite } from './data-subscriptions';
+import { transparentBoundaryPolicyArgument } from './data-policies';
 
 /** Static path appended to a component factory id by enclosing regions. */
 function ownerPathSuffix(expression: t.Expression): string | null {

@@ -16,8 +16,9 @@ import {
   walkAst,
   type BaseNode,
 } from '../../ast';
-import { generatedIdentifier } from '../../dom/identifiers';
-import { wrapAutomaticSite } from './automatic-sites';
+import { allocatePresentationParameter } from '../../dom/presentation-parameters';
+import { requirePresentationOwner } from '../../planning/presentation-ownership';
+import { wrapAutomaticSite } from '../../dom/data-sites';
 import { atomicSite, markAtomicRoute } from './atomic-sites';
 import {
   annotateGroupComponentCalls,
@@ -95,9 +96,7 @@ function lowerGroupScopes(
           ancestor = ctx.astAnalysis?.parentByNode.get(ancestor);
         }
         const owner = ownerOf(node);
-        if (!ctx.transparentPolicyParams.has(owner)) {
-          ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
-        }
+        allocatePresentationParameter(ctx, requirePresentationOwner(ctx, owner));
         consumeSuspendDirective(element, directive);
         // Route metadata is collected after data lowering. Preserve this
         // element until route emission can put suspension inside the match.
@@ -113,9 +112,7 @@ function lowerGroupScopes(
       scopes.pop();
       const policy = plans.get(element)!;
       const owner = ownerOf(node);
-      if (!ctx.transparentPolicyParams.has(owner)) {
-        ctx.transparentPolicyParams.set(owner, generatedIdentifier(ctx, 'dataPolicies'));
-      }
+      allocatePresentationParameter(ctx, requirePresentationOwner(ctx, owner));
       const content = astFactory.jsxFragment(astFactory.jsxOpeningFragment(), astFactory.jsxClosingFragment(), element.children);
       const data = inferredGroupDataNames(ctx, element, content as unknown as BaseNode);
       const origins = groupOrigins(ctx, node, data);

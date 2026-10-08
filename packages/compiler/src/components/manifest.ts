@@ -108,7 +108,7 @@ export function analyzedComponentExport(
     hasWholeDefault: props.hasWholeDefault,
     listLightweight: isListLightweightCandidate(ctx, local) &&
       !ctx.transparentSources.has(local) &&
-      (!ctx.transparentPolicyParams.has(local) || ctx.transparentInheritedOnlyPolicyParams.has(local)),
+      ctx.presentationOwners.get(local)?.mode !== 'local',
     delegatedEvents: [...(ctx.componentHostEvents.get(local) ?? [])],
     ...(ctx.domOnlyRowComponents.has(local) ? { listResourceFree: true } : {}),
     renderProps: [...props.renderProps],

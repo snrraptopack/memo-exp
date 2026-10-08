@@ -9,7 +9,8 @@ import {
 } from '../../ast';
 import { astBindingAt } from '../../context';
 import { type DomContext as Ctx } from '../../dom/context';
-import { generatedIdentifier } from '../../dom/identifiers';
+import { allocatePresentationParameter } from '../../dom/presentation-parameters';
+import { requirePresentationOwner } from '../../planning/presentation-ownership';
 import { materializeTransparentPropBindings } from '../../dom/components/transparent-props';
 import { isCallToImported } from '../../analysis/source-calls';
 
@@ -188,10 +189,7 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
     for (const binding of sourceProps.keys()) sources.add(binding);
     if (sourceProps.size > 0) {
       ctx.transparentSourceProps.set(component, sourceProps);
-      ctx.transparentPolicyParams.set(
-        component,
-        ctx.transparentPolicyParams.get(component) ?? generatedIdentifier(ctx, 'dataPolicies'),
-      );
+      allocatePresentationParameter(ctx, requirePresentationOwner(ctx, component));
     }
     if (sources.size === 0) continue;
     ctx.usesTransparentData = true;
