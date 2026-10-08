@@ -375,7 +375,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   byte or CPU saving is claimed. Remaining module/source normalization,
   composition contracts, numeric keys and capability gates remain open.
 
-### Async source facts and DOM lowering (parent `cb24e88`)
+### Async source facts and DOM lowering (commit `91b0133`, parent `cb24e88`)
 
 - Shared analysis owns transparent source/track discovery, lexical read facts,
   Group origins and validation. Source prop plans capture lexical projections;
@@ -395,3 +395,28 @@ These are prerequisites for the runtime-size and broader precision batches.
   lazy routing 68,066 / 22,009 B in three chunks and routed/Group
   87,093 / 26,790 B. This separation adds no browser-size or CPU gain claim.
   The remaining semantic/backend and capability gates are still open.
+
+### Client environment initialization (parent `91b0133`)
+
+- Kernel state receives a resolved environment. Ordinary client initialization
+  uses its lazy client environment directly; only explicit isolated-runtime
+  creation merges overrides. Removed that dependency from ambient setup, keeping
+  one scheduler, ownership engine and environment implementation.
+- Added a stable isolated-counter fixture and retained-code assertions. Seven
+  focused suites passed 35 tests covering injected environments, independent
+  runtimes, late server context, mount ownership and hydration recovery.
+- Paired source bundles with identical compiler output reduce ordinary counter,
+  input/list, module counter, fetched and routed graphs by 222 minified bytes.
+  Counter: 8,188 -> 7,966 raw B / 3,336 -> 3,270 gzip B; input/list:
+  16,144 -> 15,922 B / 6,398 -> 6,327 gzip B. The isolated-runtime control
+  grows 4 raw / 5 gzip B; override support is intentionally retained.
+- All 21 ordinary production Chromium graphs pass interactions and retained
+  list identity. Twelve optional program-hydration graphs also pass; ordinary
+  counter/list/module fixtures reduce 222 raw B and 22–35 gzip B in that product.
+  Hydration may retain override resolution for its explicit environments.
+  Five production SSR builds preserve HTML and payload: static remains zero JS;
+  current counter is 8,393 / 3,414 raw/gzip B and todo 16,918 / 6,381 B.
+  That SSR comparison isolates compiler revisions using the same changed runtime,
+  so it is a delivery check rather than evidence of runtime byte savings.
+  No CPU improvement is claimed. Numeric keys, dynamic emission reuse and the
+  remaining compiler/composition contracts stay open.

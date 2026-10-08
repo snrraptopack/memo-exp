@@ -2200,3 +2200,13 @@ failed during upstream page navigation to CDN-styled pages and was correctly
 reported incomplete, with a nonzero exit. Neither run is a CPU improvement claim.
 Retrying the reversed order for the canonical suite passed both variants.
 VM execution remains pending configuration; the runner creates no cloud resource.
+
+The client environment initialization batch removes override merging from
+ordinary ambient setup while preserving explicit isolated/server environments.
+Paired source bundles against `91b0133`, using identical compiler output, save
+222 minified bytes across local/module counters, input/list, fetched and routed
+pages. The explicit isolated-runtime control grows 4 raw / 5 gzip bytes.
+All 21 production browser graphs and twelve optional hydration graphs pass;
+seven focused suites cover environment, ownership, server isolation and recovery.
+This is a retained-byte change, with no CPU claim. Full figures and the separate
+initial-delivery product are recorded in `browser-bundle-architecture.md`.

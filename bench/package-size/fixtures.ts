@@ -169,6 +169,14 @@ export const sizeFixtures: Record<string, Record<string, string>> = {
   static: { './App.tsx': `export function App(){return <main><h1>Static shell</h1><p>Ready.</p></main>;}` },
   'owner-counter': { './App.tsx': `export function App(){let count=0;return <main>
     <button onClick={()=>count++}>Add</button><p>{count}</p></main>;}` },
+  'isolated-counter': {
+    './App.tsx': `import './host';export function App(){let count=0;return <main>
+      <button onClick={()=>count++}>Add</button><p>{count}</p></main>;}`,
+    './host.ts': `import {createApplicationRuntime,setActiveApplicationRuntime} from '@memoized-dom/runtime';
+      setActiveApplicationRuntime(createApplicationRuntime('size-fixture',{
+        document,schedule:null,effects:'run',refs:'run',
+      }));`,
+  },
   'input-list': { './App.tsx': `export function App(){let count=0;let items=['helo','heoo3'];let temp='';
     return <main><input placeholder="enter here" value={temp} onInput={(e:any)=>{temp=e.target.value;}}/>
       <ul>{items.map((item,index)=><li key={index}>{index}-{item}</li>)}</ul>

@@ -36,7 +36,7 @@ import {
   type DirtyReasons,
   type DirtyReasonStore,
 } from './dirty-reasons';
-import { resolveEnvironment, type RenderEnvironment } from './environment';
+import { clientEnvironment, resolveEnvironment, type RenderEnvironment } from './environment';
 export type EntityId = string;
 export type { DirtyReasonInput, DirtyReasons } from './dirty-reasons';
 
@@ -137,7 +137,7 @@ interface KernelState {
 }
 
 function createKernelState(
-  environment?: Partial<RenderEnvironment>,
+  environment: RenderEnvironment,
 ): KernelState {
   return {
     registry: new Map(),
@@ -152,7 +152,7 @@ function createKernelState(
     renderCounts: null,
     markedBy: null,
     extensions: new Map(),
-    environment: resolveEnvironment(environment),
+    environment,
   };
 }
 
@@ -178,7 +178,7 @@ export function createApplicationRuntime(
   id = `runtime-${++runtimeSequence}`,
   environment?: Partial<RenderEnvironment>,
 ): ApplicationRuntime {
-  const state = createKernelState(environment);
+  const state = createKernelState(resolveEnvironment(environment));
   const runtime: ApplicationRuntime = {
     id,
     state,
@@ -225,7 +225,7 @@ export function createApplicationRuntime(
 // imports keep their exact behavior. Servers switch per request.
 const defaultRuntime: ApplicationRuntime = {
   id: 'browser-default',
-  state: createKernelState(),
+  state: createKernelState(clientEnvironment()),
   dispose() {
     throw new Error(
       '[memo-dom] the default browser runtime cannot be disposed',

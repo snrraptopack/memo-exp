@@ -2779,3 +2779,37 @@ identity. Six focused suites pass 36 tests, including marker grammar, adoption,
 recovery and ownership. Runtime build, type checking and lint pass.
 Reproduce with the preceding audit command using `--before-ref=4935119`,
 and add `--hydrate-program` for that capability. No CPU improvement is claimed.
+
+### Client defaults without environment override merging — 2026-10-08
+
+Ambient kernel initialization receives the lazy client environment directly.
+Only explicit isolated-runtime creation resolves partial overrides. Both use the
+existing kernel and ownership engine. Ordinary client bundles can omit merging
+injected documents, schedulers and lifecycle capabilities; isolated/server and
+optional hydration environments keep that support.
+
+Paired source bundles against `91b0133`, with identical compiler output:
+
+| Fixture | Before raw B | After raw B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Owner counter | 8,188 | 7,966 | 3,336 | 3,270 |
+| Input/list | 16,144 | 15,922 | 6,398 | 6,327 |
+| Module counter | 11,514 | 11,292 | 4,541 | 4,474 |
+| Fetched data | 28,228 | 28,006 | 9,764 | 9,696 |
+| Lazy routing | 55,248 | 55,026 | 18,029 | 17,973 |
+| Routed/Group | 72,353 | 72,131 | 23,196 | 23,132 |
+| Explicit isolated counter | 9,467 | 9,471 | 3,772 | 3,777 |
+
+The isolated control grows 4 raw / 5 gzip bytes and verifies retained override
+support. All 21 Chromium graphs pass. Optional program hydration reduces the
+three ordinary counter/list/module graphs by 222 raw B and 22–35 gzip B; its
+isolated control grows 3 raw / 6 gzip B. All twelve hydration-inclusive browser
+graphs pass client interaction checks; focused tests verify actual adoption,
+recovery, custom environments and server isolation. No CPU gain is claimed.
+
+Reproduce with `bun run bench:size:audit --verify --before-ref=91b0133
+--fixture=owner-counter --fixture=input-list --fixture=module-counter
+--fixture=isolated-counter --fixture=request-data --fixture=route-lazy
+--fixture=request-routed-group`. Add `--hydrate-program` for optional hydration.
+These source audits include ordinary creation; initial-delivery production builds
+are measured separately and must not be compared as identical bundles.

@@ -99,6 +99,15 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
       .filter(input => input.bytes > 0).sort((a, b) => b.bytes - a.bytes);
     const row = { fixture, graph, raw: output.contents.byteLength, gzip: gzipSync(output.contents).byteLength,
       brotli: brotliCompressSync(output.contents).byteLength, inputs };
+    if (graph !== 'source-before') {
+      const overrides = output.text.includes('.effects??');
+      if (!hydration && ['owner-counter', 'input-list', 'module-counter'].includes(fixture) && overrides) {
+        throw new Error('Ordinary client mounting must not retain environment override merging');
+      }
+      if (fixture === 'isolated-counter' && !overrides) {
+        throw new Error('An isolated runtime must retain environment override support');
+      }
+    }
     if (!hydration && graph !== 'source-before' &&
         ['owner-counter', 'input-list', 'module-counter'].includes(fixture) &&
         inputs.some(input => /\/hydration-error\.(?:ts|js)$/.test(input.path))) {
