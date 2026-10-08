@@ -5,6 +5,8 @@ import {parseEstreeOrThrow,walkAst,childNode,stringValue} from '../packages/comp
 import {createAnalysisCtx} from '../packages/compiler/src/context/model';
 import {createCtx} from '../packages/compiler/src/dom/context';
 import {allocateInstanceReasons} from '../packages/compiler/src/dom/instance-reasons';
+import {scanExternalReactiveImports} from '../packages/compiler/src/analysis/external-reactivity';
+import type * as t from '../packages/compiler/src/ast/compiler-types';
 
 const sourceRoot=resolve(import.meta.dirname,'../packages/compiler/src');
 function sourceFiles(directory:string):string[] {
@@ -44,7 +46,7 @@ it('shared analysis, planning and context cannot import DOM lowering or runtime 
 it('source analysis can be constructed without a DOM allocator or host plans',()=>{
   const context=createAnalysisCtx({moduleId:'./source-only.tsx'});
   expect(context.stateKeys.size).toBe(0);
-  expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly|instanceReasonIds|analyzedFunctions|callbackPublications|handlerHasRootCommit)/.test(key))).toEqual([]);
+  expect(Object.keys(context).filter(key=>/^(emission|initialDom|initialServer|initialBrowser|domOnly|instanceReasonIds|analyzedFunctions|callbackPublications|handlerHasRootCommit|routeCallsiteIds|routeContextParams|externalReactiveImports)/.test(key))).toEqual([]);
 });
 
 it('allocates deterministic runtime reasons from complete source facts in the backend',()=>{
@@ -61,4 +63,21 @@ it('allocates deterministic runtime reasons from complete source facts in the ba
   context.instanceReasonSources.delete('Other');
   allocateInstanceReasons(context);
   expect(context.instanceReasonIds.has('Other')).toBe(false);
+});
+
+it('captures external subscription metadata in source-only analysis without generating bindings',()=>{
+  const context=createAnalysisCtx({externalReactiveSources:[{
+    module:'external-store',source:'value',subscribe:{module:'external-store/adapter',export:'observe'},
+  }]});
+  const program=parseEstreeOrThrow("import {value as first,value as second} from 'external-store';",{filename:'./external.ts'}).program;
+  const before=JSON.stringify(program);
+  scanExternalReactiveImports(context,{node:program as unknown as t.Program});
+  expect([...context.externalReactiveBindings]).toEqual([
+    ['first',{module:'external-store/adapter',export:'observe'}],
+    ['second',{module:'external-store/adapter',export:'observe'}],
+  ]);
+  expect(context.importedState.has('first')).toBe(true);
+  expect(context.state.get('first')).toBe('computed');
+  expect(JSON.stringify(program)).toBe(before);
+  expect(context).not.toHaveProperty('externalReactiveImports');
 });

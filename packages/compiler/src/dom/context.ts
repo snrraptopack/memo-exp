@@ -29,6 +29,9 @@ export interface DomContext extends AnalysisContext {
   callbackPublications:Set<BaseNode>;
   handlerHasRootCommit:WeakMap<t.Node,boolean>;
   moduleCallbacks:ModuleCallbacks|null;
+  routeCallsiteIds:WeakMap<t.JSXElement,string>;
+  routeContextParams:Map<string,string>;
+  externalReactiveImports:Map<string,{module:string;imported:string;local:string}>;
   initialDelivery:InitialDelivery|undefined;
   initialBrowserRoot:InitialBrowserRoot|null;
   initialDomRoot:InitialDomRoot|null;
@@ -41,6 +44,7 @@ export interface DomContext extends AnalysisContext {
 export function createCtx(opts:InternalMemoDomOptions={}):DomContext {
   return {...createAnalysisCtx(opts),instanceReasonIds:new Map(),analyzedFunctions:new WeakSet(),
     callbackPublications:new Set(),handlerHasRootCommit:new WeakMap(),moduleCallbacks:null,initialDelivery:opts.initialDelivery,
+    routeCallsiteIds:new WeakMap(),routeContextParams:new Map(),externalReactiveImports:new Map(),
     initialBrowserRoot:opts.initialBrowserRoot??null,initialDomRoot:opts.initialDomRoot??null,
     initialDomComponents:opts.initialDomComponents??{},initialServerComponents:opts.initialServerComponents??{},
     domOnlyRowComponents:new Set(),emission:createDomEmissionState()};

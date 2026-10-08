@@ -403,19 +403,12 @@ export interface Ctx {
   emitRouteManifest: boolean;
   lazyRouteImports: Readonly<Record<string, string>>;
   routeElements: WeakMap<t.JSXElement, CompilerRouteElement>;
-  routeCallsiteIds: WeakMap<t.JSXElement, string>;
-  routeContextParams: Map<string, string>;
   localRoutes: CompilerRouteDefinition[];
   usesRouter: boolean;
-  /** Authored live-value binding -> generated subscription adapter binding. */
-  externalReactiveBindings: Map<string, string>;
+  /** Authored live-value binding -> subscription metadata. */
+  externalReactiveBindings: Map<string, ExternalReactiveSourceDefinition['subscribe']>;
   /** Imported router `route` bindings eligible for selected subscriptions. */
   routeReactiveBindings: Set<string>;
-  /** Generated subscription imports, keyed by adapter module and export. */
-  externalReactiveImports: Map<
-    string,
-    { module: string; imported: string; local: string }
-  >;
   usesTransparentData: boolean;
   /** Local import bindings classified by provider metadata. */
   transparentSourceFactories: Set<string>;
@@ -736,14 +729,11 @@ export function createAnalysisCtx(opts: AnalysisOptions = {}): Ctx {
       opts.emitRouteManifest ?? opts.linkedRoutes === undefined,
     lazyRouteImports: opts.lazyRouteImports ?? {},
     routeElements: new WeakMap(),
-    routeCallsiteIds: new WeakMap(),
-    routeContextParams: new Map(),
     localRoutes: [],
     astAnalysis: null,
     usesRouter: false,
     externalReactiveBindings: new Map(),
     routeReactiveBindings: new Set(),
-    externalReactiveImports: new Map(),
     usesTransparentData: false,
     transparentSourceFactories,
     transparentProviderFactories,

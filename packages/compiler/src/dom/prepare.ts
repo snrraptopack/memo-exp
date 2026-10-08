@@ -13,7 +13,8 @@ import { normalizeComponentDeclarations } from '../components/declarations';
 import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
 import { normalizeConditionalJsxDirectives } from '../jsx/conditional-directives';
 import { initializeGeneratedIdentifiers } from './identifiers';
-import { scanExternalReactiveImports } from '../external-reactivity';
+import {scanExternalReactiveImports} from '../analysis/external-reactivity';
+import {allocateExternalSubscriptions} from './external-reactivity';
 import { lowerRouterJsx } from './router';
 import {planRouterJsx} from '../analysis/routes';
 import { installCompilerIntrinsics } from './intrinsics';
@@ -26,6 +27,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);
   scanExternalReactiveImports(ctx, programPath);
+  allocateExternalSubscriptions(ctx);
   scanTransparentSourceImports(ctx, programPath);
   let sourceAnalysis = refreshAstAnalysis(ctx, programPath.node);
   const bodylessFetches = ctx.dataRuntimePath === '@memoized-dom/data/internal'

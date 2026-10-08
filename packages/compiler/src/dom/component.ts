@@ -30,7 +30,7 @@ import { applyRepeatedDomTemplate } from './dom-template';
 import { prepareServerWriter } from './server-writer';
 import { applyStaticMarkup } from './markup';
 import { transparentSourceMounts } from '../data-sources';
-import { selectedRouteSubscriptionBinding } from '../external-reactivity';
+import {selectedRouteSubscriptionBinding,externalSubscriptionBinding} from './external-reactivity';
 import { routeSelectorExpression } from './route-selectors';
 import { listProvenanceVariable } from './list-bindings';
 
@@ -487,7 +487,7 @@ export function transformComponent(
   }
   body.push(...sourceMounts, ...eventSourceDisposals);
   for (const source of externalSources) {
-    const subscribe = ctx.externalReactiveBindings.get(source)!;
+    const subscribe = externalSubscriptionBinding(ctx,source);
     const selectors = routeSelectors.get(source);
     const subscriptions = selectors === undefined || selectors === null
       ? [astFactory.callExpression(astFactory.identifier(subscribe), [

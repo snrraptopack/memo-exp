@@ -50,7 +50,7 @@ import {
 } from '../data-sources';
 import {
   externalReactiveImportStatements,
-} from '../external-reactivity';
+} from './external-reactivity';
 
 /**
  * R13: rewrite each computed declaration (`const` or `let` initialized from state)

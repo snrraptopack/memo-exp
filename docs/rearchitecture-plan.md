@@ -228,6 +228,16 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
 - Type checking, compiler build and lint passed. Eight affected suites passed
   104 tests. The 123-case output/graph/delivery comparison remained identical.
 
+### External subscriptions and route ABI state (parent `174aa74`)
+
+- External source analysis retains authored subscription metadata instead of
+  generated adapter names. The DOM backend allocates imports from that contract
+  in the original evaluation/allocation order. Deleted the mixed root module.
+- Generated route context parameters, transient callsite IDs and subscription
+  imports moved out of source context into DOM context.
+- Type checking, compiler build and lint passed. Five affected suites passed
+  60 tests; all 123 output/graph/delivery comparisons matched the baseline.
+
 Next in area 1: finish semantic normalization; complete ownership inputs and
 move remaining generated ABI state out of source facts.
 These are prerequisites for the runtime-size and broader precision batches.
