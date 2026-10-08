@@ -40,8 +40,9 @@ The remaining deliverables retain the original five-area scope:
 
 - [ ] Finish remaining semantic normalization, ownership inputs and generated
   ABI separation; delete replaced implementations (area 1).
-- [ ] Intern graph-known state keys across the build, including lazy modules,
-  and verify multiple applications and conservative dynamic resolution (area 2).
+- Deferred: numeric state-key interning. Preserve canonical string keys unless
+  paired measurements establish a worthwhile runtime gain. It is not a gate for
+  removing unnecessary component JavaScript (area 2).
 - [ ] Reduce duplicated initialization/update emission and retained creation
   where evaluation, adoption and future lifetime proofs permit it (areas 2/5).
 - [ ] Extend exact alias/callback/module/row targeting and affected opaque work,
@@ -97,9 +98,9 @@ former implementations are removed, representative generated behavior is unchang
 - Make local-only updates independent of the module access resolver; retain one
   scheduler and ownership engine.
 - Isolate optional adoption, request restoration, routing and opaque polling.
-- Intern graph-known state keys at linking time with deterministic build-wide
-  numeric IDs, including lazy modules. Conservative dynamic resolution remains
-  an optional capability where exact targets cannot be proven.
+- Retain canonical string keys. Numeric interning is deferred until profiling
+  and paired measurements justify its setup and runtime cost. Concentrate bundle
+  work on unnecessary component programs and retained creation/capabilities.
 - Share dynamic initialization/update emission only when evaluation order,
   getter calls and adoption semantics are preserved.
 
@@ -553,3 +554,16 @@ These are prerequisites for the runtime-size and broader precision batches.
   pending-selector fix also preserves those controls.
 - This type-only separation changes no browser bytes and makes no timing claim.
   Other semantic/backend contracts and the bundle deliverables remain open.
+
+### Priority correction: component JavaScript retention
+
+- The requested bundle goal is to omit component JavaScript when authored
+  behavior does not require it. Key representation is a separate optimization.
+- Removed the uncommitted numeric-key prototype, its runtime setup, temporary
+  regressions/fixture and related audit changes. It had correctness checks but
+  no completed measurements demonstrating a worthwhile runtime gain. No numeric
+  resolver or second compiler path is retained. Canonical string routing remains.
+- Keep the verified row ABI cleanup (`b01d5ae`). Numeric interning is deferred;
+  remaining delivery/creation work requires a demonstrated retained-code case,
+  not a speculative architecture expansion. Preserve routing, Group and dynamic
+  lifetimes even when they legitimately require browser code.
