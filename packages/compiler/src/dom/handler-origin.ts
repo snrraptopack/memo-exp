@@ -9,7 +9,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import type { DomContext as Ctx } from './context';
-import type { RowCtx } from '../context';
+import type { RowCtx } from './row-context';
 import { appendScopeCommit } from './handler-commits';
 import { componentId, generatedIdentifier, md } from './identifiers';
 

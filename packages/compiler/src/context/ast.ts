@@ -12,7 +12,6 @@ import {
 } from '../ast';
 export { unwrapTypeExpression } from '../ast';
 import type { Ctx, StateKind } from './model';
-import type { RowWriteFacts } from '../handlers/write-facts';
 import { canonicalKeyFor } from './state-keys';
 
 /** Rebuild parser-neutral parent and lexical-scope facts after AST mutation. */
@@ -151,13 +150,6 @@ export function memberKey(node: MemberLike): string | null {
   if (!astFactory.isIdentifier(current)) return null;
   parts.unshift(current.name);
   return parts.join('.');
-}
-
-/** Reactive list-row context used during event-handler analysis. */
-export interface RowCtx extends Omit<RowWriteFacts, 'localRefresh'> {
-  rowIdVar: string;
-  refreshVar?: string;
-  ownerIdVar?: string;
 }
 
 /** Extract a row key path relative to its item parameter. */

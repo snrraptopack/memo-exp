@@ -3,7 +3,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode } from '../ast';
 import type { DomContext as Ctx } from './context';
-import type { RowCtx } from '../context';
+import type { RowCtx } from './row-context';
 import type { HandlerWritePlan } from '../handlers/plan';
 import { finalizeHandlerInstrumentation } from './handler-execution';
 import { applyListOperations } from './list-update';

@@ -1,7 +1,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode, walkAst, type BaseNode } from '../ast';
-import { attrExpr, exprReadsState, nodeHasJsx, type ComponentPath, type RowCtx } from '../context';
+import { attrExpr, exprReadsState, nodeHasJsx, type ComponentPath } from '../context';
+import type { RowCtx } from './row-context';
 import { type DomContext as Ctx } from './context';
 import { generatedIdentifier, md, mr } from './identifiers';
 import type { EmitScope } from './scope';

@@ -9,7 +9,8 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { ESTREE_VISITOR_KEYS } from '../ast';
 import { freshReasonConst, freshWriteConst } from './constants';
-import { canonicalStateKey, type RowCtx } from '../context';
+import { canonicalStateKey } from '../context';
+import type { RowCtx } from './row-context';
 import { type DomContext as Ctx } from './context';
 import { componentId, generatedIdentifier, md, mdd } from './identifiers';
 

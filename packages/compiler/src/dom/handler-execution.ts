@@ -2,7 +2,7 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode as cloneEstreeNode } from '../ast';
 import { type DomContext as Ctx } from './context';
-import { type RowCtx } from '../context';
+import type { RowCtx } from './row-context';
 import { appendScopeCommit, buildScopeCommit } from './handler-commits';
 import { createScopeWrites, type ScopeWrites } from '../handlers/write-facts';
 import { buildEventOriginCommit } from './handler-origin';

@@ -539,3 +539,17 @@ These are prerequisites for the runtime-size and broader precision batches.
   next source-boundary cleanup is generated row ABI state still declared in
   shared context; numeric keys, duplicated emission and retained creation remain
   bundle deliverables. Dependencies, examples and numbered docs were untouched.
+
+### Row ABI ownership (parent `d49c901`)
+
+- Moved generated row identifiers and refresh/owner bindings from shared AST
+  context to `dom/row-context.ts`; migrated all 17 DOM consumers. The authored
+  `RowWriteFacts` contract remains shared. Deleted the former declaration and
+  import; no compatibility export or mirrored state remains.
+- Six focused suites passed 72 tests covering the transitive boundary, component
+  and inline rows, Group, render props and callback completion. Compiler build,
+  root type checking and DOM-source lint passed. All 135 existing generated
+  output/graph/delivery comparisons are unchanged against `d4023e3`; the intervening
+  pending-selector fix also preserves those controls.
+- This type-only separation changes no browser bytes and makes no timing claim.
+  Other semantic/backend contracts and the bundle deliverables remain open.

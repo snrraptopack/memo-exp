@@ -1,5 +1,6 @@
 import type * as t from '../ast/compiler-types';
-import type { ComponentPath, RowCtx } from '../context';
+import type { ComponentPath } from '../context';
+import type { RowCtx } from './row-context';
 import type { DomContext as Ctx } from './context';
 import type { JsxNode } from '../jsx/children';
 import type { EmitScope } from './scope';

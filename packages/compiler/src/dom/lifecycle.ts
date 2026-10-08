@@ -14,7 +14,8 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import { astBindingAt, nodeHasJsx, type ComponentPath, type RowCtx } from '../context';
+import { astBindingAt, nodeHasJsx, type ComponentPath } from '../context';
+import type { RowCtx } from './row-context';
 import { type DomContext as Ctx } from './context';
 import { extractPatternIdentifiers } from '../ast';
 import {

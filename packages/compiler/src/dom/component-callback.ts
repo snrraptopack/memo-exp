@@ -1,6 +1,6 @@
 /** Bind shared callback write plans to this renderer's owner and row ABI. */
 import type { DomContext as Ctx } from './context';
-import type { RowCtx } from '../context';
+import type { RowCtx } from './row-context';
 import type { CallbackSourcePlan } from '../planning/component-callbacks';
 import { emitHandlerWrites } from './handler';
 import { mutationJournalVariable } from './list-bindings';

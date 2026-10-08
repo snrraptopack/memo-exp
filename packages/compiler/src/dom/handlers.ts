@@ -23,7 +23,8 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import { cloneNode, type BaseNode } from '../ast';
 import { generatedIdentifier } from './identifiers';
-import { astBindingAt, memberRootName, variableDeclaratorFor, type ComponentPath, type RowCtx } from '../context';
+import { astBindingAt, memberRootName, variableDeclaratorFor, type ComponentPath } from '../context';
+import type { RowCtx } from './row-context';
 import { type DomContext as Ctx } from './context';
 import {
   buildScopeCommit,
