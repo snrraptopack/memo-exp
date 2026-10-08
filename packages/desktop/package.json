@@ -1,0 +1,19 @@
+{
+  "name": "@memoized-dom/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./host": { "types": "./dist/bridge/process.d.ts", "import": "./dist/host.js" }
+  },
+  "scripts": {
+    "build": "rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
+    "test": "bun run test:rust && bun run build:host && bun test --isolate ./tests && bun check -p tsconfig.test.json",
+    "test:rust": "cd rust && cargo test --locked",
+    "build:host": "cd rust && cargo build --locked",
+    "counter": "bun run ./examples/counter.ts"
+  },
+  "devDependencies": { "@memoized-dom/compiler": "workspace:*" }
+}

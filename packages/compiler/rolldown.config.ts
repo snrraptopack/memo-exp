@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path';
 import { defineConfig } from 'rolldown';
 
 export default defineConfig({
-  input: './src/index.ts',
+  input: { index: './src/index.ts', desktop: './src/desktop/index.ts' },
   platform: 'node',
   transform: { target: 'node24' },
   // Only bare specifiers (dependencies) are external. Resolved ids arrive as
@@ -15,7 +15,7 @@ export default defineConfig({
     dir: './dist',
     format: 'esm',
     minify: true,
-    entryFileNames: 'index.js',
+    entryFileNames: '[name].js',
     chunkFileNames: 'chunks/[name]-[hash].js',
   },
 });

@@ -11,8 +11,8 @@
     "examples/octopulse"
   ],
   "scripts": {
-    "test": "bun run test:root && bun run test:adapters && bun run test:data && bun run test:utils && bun run test:router && bun run test:server && bun run test:language-service && bun run test:vite && bun run test:bench",
-    "build": "bun run --cwd packages/adapters build && bun run --cwd packages/runtime build && bun run --cwd packages/data build && bun run --cwd packages/utils build && bun run --cwd packages/router build && bun run --cwd packages/server build && bun run --cwd packages/compiler build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
+    "test": "bun run test:root && bun run test:adapters && bun run test:data && bun run test:utils && bun run test:router && bun run test:server && bun run test:language-service && bun run test:vite && bun run test:bench && bun run test:desktop",
+    "build": "bun run --cwd packages/adapters build && bun run --cwd packages/runtime build && bun run --cwd packages/data build && bun run --cwd packages/utils build && bun run --cwd packages/router build && bun run --cwd packages/server build && bun run --cwd packages/compiler build && bun run --cwd packages/desktop build && bun run --cwd packages/vite build && bun run --cwd packages/language-service build",
     "test:root": "bun test --parallel=2 ./tests",
     "test:adapters": "bun run --cwd packages/adapters test",
     "test:data": "bun run --cwd packages/data test",
@@ -22,6 +22,8 @@
     "test:server": "bun run --cwd packages/server test",
     "test:language-service": "bun run --cwd packages/language-service test",
     "test:bench": "bun run --cwd bench/frameworks test",
+    "test:desktop": "bun run --cwd packages/desktop test",
+    "desktop:counter": "bun run --cwd packages/desktop build:host && bun run --cwd packages/desktop counter",
     "lint": "oxlint .",
     "typecheck": "bun check",
     "dev": "bun run build && bun test --isolate --watch ./tests",

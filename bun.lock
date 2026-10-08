@@ -68,6 +68,13 @@
         "@memoized-dom/runtime": "workspace:*",
       },
     },
+    "packages/desktop": {
+      "name": "@memoized-dom/desktop",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@memoized-dom/compiler": "workspace:*",
+      },
+    },
     "packages/language-service": {
       "name": "@memoized-dom/language-service",
       "version": "0.0.5",
@@ -196,6 +203,8 @@
     "@memoized-dom/compiler": ["@memoized-dom/compiler@workspace:packages/compiler"],
 
     "@memoized-dom/data": ["@memoized-dom/data@workspace:packages/data"],
+
+    "@memoized-dom/desktop": ["@memoized-dom/desktop@workspace:packages/desktop"],
 
     "@memoized-dom/example-octopulse": ["@memoized-dom/example-octopulse@workspace:examples/octopulse"],
 

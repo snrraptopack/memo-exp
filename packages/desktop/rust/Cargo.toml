@@ -1,0 +1,9 @@
+[package]
+name = "memoized-dom-desktop-host"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"

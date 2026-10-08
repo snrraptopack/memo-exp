@@ -11,6 +11,11 @@
     "dist"
   ],
   "exports": {
+    "./desktop": {
+      "types": "./dist/desktop/index.d.ts",
+      "import": "./dist/desktop.js",
+      "default": "./dist/desktop.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",

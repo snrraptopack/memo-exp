@@ -70,26 +70,26 @@ Keep authored JavaScript evaluation order, exceptions, alias behavior, and callb
 
 ## Package and compiler boundaries
 
-Place the desktop backend in `packages/desktop/src/compiler/`. The desktop package also owns its JavaScript runtime, host bridge, launcher, and Rust scene implementation. Desktop-specific emission and host dependencies belong to that package.
+Start the desktop backend in `packages/compiler/src/desktop/`, beside the DOM backend. It directly reuses the core compiler's source analysis and planning. The desktop package owns its JavaScript runtime, host bridge, examples, and Rust scene implementation.
 
 ```text
 packages/compiler/
     src/analysis/       shared source facts
     src/planning/       shared semantic plans
     src/dom/            existing DOM backend
+    src/desktop/        desktop lowering and emission
 
 packages/desktop/
-    src/compiler/       desktop lowering and emission
     src/runtime/        application scheduling and scene publication
     src/bridge/         host transactions and events
-    rust/               scene engine and GPUI integration
+    rust/               scene engine; GPUI integration follows
 ```
 
-Provide a separately built shared-analysis entry in the compiler package, proposed as `@memoized-dom/compiler/analysis`. The desktop compiler imports that entry. Its exported plans and transitive executable imports must be independent of DOM lowering and desktop host code. The compiler's current root entry includes DOM compilation and does not provide this boundary yet.
+Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` entry. The compiler root continues to expose DOM compilation. Both backends use the existing core modules; desktop compilation does not invoke the DOM emitter. A separately exported shared pipeline can follow once desktop fixtures establish its required inputs and outputs.
 
-Expose desktop build tooling through `@memoized-dom/desktop/compiler`, independently of the desktop application's runtime entry. Keep the dependency direction explicit: desktop compilation depends on shared analysis; shared analysis does not depend on either backend. Desktop application execution does not import the compiler tooling.
+Keep the dependency direction explicit: desktop compilation depends on shared analysis; shared analysis does not depend on either backend. Desktop application execution does not import compiler tooling or parsing dependencies. A build/example runner imports the desktop compiler entry separately from the application runtime.
 
-Reuse the same semantic analysis and ownership contracts across targets. Separately built entry points and enforced import boundaries establish this separation; directory placement alone does not. The public entry points above are proposed interfaces to implement and verify.
+Reuse the same semantic analysis and ownership contracts across targets. Separately built entry points and enforced import boundaries establish this separation; directory placement alone does not. Extract desktop emission into its own tooling package only when working fixtures demonstrate a useful shared pipeline boundary.
 
 ## Compiler output
 
@@ -197,6 +197,24 @@ Use native window, GPU, text, and accessibility services behind interfaces owned
 Define supported primitive and style semantics explicitly. Desktop refs and input events need their own typed contracts. Text editing, font fallback, keyboard navigation, DPI changes, and accessibility must be exercised as architectural behavior rather than added after the drawing path is assumed complete.
 
 ## First implementation and validation
+
+The first implementation compiles fixed `<container>`, `<button>`, and `<text>` scenes, primitive text expressions, and synchronous component-local click handlers. It reuses core parsing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
+
+`packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
+
+The counter example compiles authored TypeScript/JSX, mounts it in the Rust host, dispatches events from the diagnostic runner, inspects the retained text records, and disposes its owner. It is a headless scene prototype. Native input delivery, GPUI drawing, geometry, text shaping, accessibility, and branch/list publication are subsequent work, not capabilities of this prototype.
+
+Run the current prototype from the repository root:
+
+```sh
+bun run build
+bun run test:desktop
+bun run desktop:counter
+```
+
+The desktop test command runs Bun compiler/runtime/bridge tests and type checks, plus Cargo tests for the Rust scene engine. The Rust host uses the installed Rust 1.96.0 toolchain pinned in its directory. Generated templates are shared module constants; an application installs each template object once, then mounts independent live instances.
+
+The upstream GPUI source selected for the next window/presentation experiment is [Zed commit `9ab0715969e9854f2efe61a9d782e7698e5fe6d2`](https://github.com/zed-industries/zed/tree/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui). GPUI is not yet a dependency of the scene prototype. A custom GPUI element should consume the retained scene; retained geometry and paint reuse still need implementation and measurement.
 
 Build one native window with containers, rectangles, text, clipping, pointer input, and an editable text control. Implement templates, live instances, typed slots, publication acknowledgments, and disposal before expanding the control set.
 
