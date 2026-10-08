@@ -1,6 +1,8 @@
 # React Package Assimilation RFC — React as a Compiler Dialect
 
 Status: draft for debate
+Scheduling: exploratory proposal, outside the current rearchitecture execution
+checklist. This document is not evidence of an implemented compiler feature.
 Audience: compiler, vite plugin, language-service, and testing contributors
 
 ## Goal
@@ -247,7 +249,8 @@ Already-landed enablers:
 - `diagnoseModules` — the diagnostics path used by the language service;
 - `requireApplicationRoot` on `CompileModulesOptions` — compiling graphs
   without a `mount()` root;
-- `packages/css` precedent for a compiler-owned language surface.
+- Historical precedent: the removed CSS package explored a compiler-owned
+  language surface. It is no longer a workspace package or an implementation target.
 
 New infrastructure required:
 

@@ -61,10 +61,6 @@
         "yuku-parser": "^0.9.3",
       },
     },
-    "packages/css": {
-      "name": "@memoized-dom/css",
-      "version": "0.0.1",
-    },
     "packages/data": {
       "name": "@memoized-dom/data",
       "version": "0.0.5",
@@ -202,8 +198,6 @@
     "@memoized-dom/adapters": ["@memoized-dom/adapters@workspace:packages/adapters"],
 
     "@memoized-dom/compiler": ["@memoized-dom/compiler@workspace:packages/compiler"],
-
-    "@memoized-dom/css": ["@memoized-dom/css@workspace:packages/css"],
 
     "@memoized-dom/data": ["@memoized-dom/data@workspace:packages/data"],
 
