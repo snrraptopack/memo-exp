@@ -814,3 +814,18 @@ Compiler build, type checking, lint and the transitive import boundary pass.
 All 123 output/graph/delivery comparisons match `7e59b93`; five paired production
 SSR builds preserve HTML, payload and JavaScript sizes with identical runtime
 packages. This boundary change claims no additional byte or CPU improvement.
+
+### Async source analysis and DOM lowering — 2026-10-08
+
+Source discovery, lexical reads, validation and Group origins now live in shared
+analysis. Shared prop plans capture the exact lexical reads; DOM normalization
+returns an explicit binding map for source analysis. Module source identities
+publish from validated source plans before generated declarations are lowered.
+Runtime imports, aliases, replay callbacks, Group/TSRX factories and data-read
+rewrites live under `dom/`. Former implementations are removed, without facades.
+
+Twelve focused suites pass 134 tests; the transitive boundary, compiler build,
+type checking and lint pass. All 123 compiler output/graph/delivery comparisons
+match `cb24e88`, and five production SSR fixtures preserve HTML/payload/JS bytes
+with identical runtime packages. Further contracts and bundle reduction remain
+tracked in the [execution checklist](./rearchitecture-plan.md).

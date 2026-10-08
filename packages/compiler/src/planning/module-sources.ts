@@ -2,6 +2,7 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {childNode, cloneNode, extractPatternIdentifiers, nodeField, unwrapTypeExpression, variableDeclaratorForBinding, walkAst, type BaseNode, type Binding, type Identifier, type ScopeAnalysis} from '../ast';
+import type {Ctx} from '../context';
 
 type SourceInput = t.CallExpression['arguments'][number];
 
@@ -20,6 +21,16 @@ export type ModuleSourcePlan = ModuleSourceBase & (
 export interface ModuleSourceStatementPlan {
   readonly statement: t.Statement;
   readonly sources: readonly ModuleSourcePlan[];
+}
+
+/** Publish validated source identities independently of runtime lowering. */
+export function recordModuleSourceBindings(
+  ctx: Pick<Ctx, 'transparentModuleSources'>,
+  plans: readonly ModuleSourceStatementPlan[],
+): void {
+  for (const {sources} of plans) {
+    for (const {name, key} of sources) ctx.transparentModuleSources.set(name, key);
+  }
 }
 
 export function planModuleSources(

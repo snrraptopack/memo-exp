@@ -1,9 +1,9 @@
 /** Lower planned read operations; never rediscover their source or lexical scope. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
-import {cloneNode} from '../../ast';
-import { generatedIdentifier, type IdentifierOwner } from '../../dom/identifiers';
-import type {ReadReplayPlan} from '../../planning/read-replay';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import {cloneNode} from '../ast';
+import { generatedIdentifier, type IdentifierOwner } from './identifiers';
+import type {ReadReplayPlan} from '../planning/read-replay';
 
 export function lowerReadReplays(owner: IdentifierOwner, plans: readonly ReadReplayPlan[]): void {
   const factories = new Map<t.VariableDeclarator, t.Identifier>();

@@ -1,6 +1,6 @@
 /** AST transformations used by transparent-source read rewriting. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   overwriteNode,
@@ -8,19 +8,19 @@ import {
   type BaseNode,
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
-} from '../../ast';
-import { astBindingAt } from '../../context';
-import { type DomContext as Ctx } from '../../dom/context';
-import { generatedIdentifier, mdd } from '../../dom/identifiers';
-import {annotateAsyncRead} from '../../planning/async-reads';
+} from '../ast';
+import { astBindingAt } from '../context';
+import { type DomContext as Ctx } from './context';
+import { generatedIdentifier, mdd } from './identifiers';
+import {annotateAsyncRead} from '../planning/async-reads';
 import {
   isBoundTo,
   isEventSourceHolderReference,
   isPassthroughArgument,
   sourceDependencies,
   type TransparentDerivation,
-} from './read-analysis';
-import { sourceArray, type RenderGatedExpression } from '../../dom/data-subscriptions';
+} from '../analysis/transparent-reads';
+import { sourceArray, type RenderGatedExpression } from './data-subscriptions';
 
 export function replaceDerivedReads(
   ctx: Ctx,

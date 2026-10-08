@@ -4,8 +4,8 @@ import type * as t from '../packages/compiler/src/ast/compiler-types';
 import {planGroupPresentations,planPresentationCaptures,planPresentationComponent} from '../packages/compiler/src/planning/presentation-policy';
 import { createCtx } from '../packages/compiler/src/dom/context';
 import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
-import {emitPresentationComponent} from '../packages/compiler/src/features/data-sources/group-policy-components';
-import {lowerTransparentGroups} from '../packages/compiler/src/features/data-sources/group-lowering';
+import {emitPresentationComponent} from '../packages/compiler/src/dom/presentation-components';
+import {lowerTransparentGroups} from '../packages/compiler/src/dom/group-lowering';
 
 const errorAt={buildCodeFrameError:(message:string)=>new Error(message)};
 function fixture(callback:string,kind:'pending'|'error'='pending') {

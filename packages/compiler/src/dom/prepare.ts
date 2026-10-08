@@ -3,9 +3,9 @@ import { refreshAstAnalysis, type ProgramPath } from '../context';
 import { type DomContext as Ctx } from './context';
 import { planGroupPresentations } from '../planning/presentation-policy';
 import { planReadReplays } from '../planning/read-replay';
-import { planModuleSources } from '../planning/module-sources';
+import { planModuleSources, recordModuleSourceBindings } from '../planning/module-sources';
 import { planBodylessFetchImports } from '../planning/fetch-encoding';
-import { lowerBodylessFetchImports } from '../features/data-sources/fetch-encoding';
+import { lowerBodylessFetchImports } from './fetch-encoding';
 import { runAnalysis } from './analyze';
 import {allocateInstanceReasons} from './instance-reasons';
 import { analyzeDomOnlyRows } from './row-eligibility';
@@ -19,10 +19,10 @@ import { lowerRouterJsx } from './router';
 import {planRouterJsx} from '../analysis/routes';
 import { installCompilerIntrinsics } from './intrinsics';
 import { scanTransparentSourceImports } from '../analysis/transparent-imports';
-import { lowerReadReplays } from '../features/data-sources/read-replay';
-import { lowerTransparentGroups } from '../features/data-sources/group-lowering';
-import { lowerModuleSourceDeclarations } from '../features/data-sources/module-sources';
-import { rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } from '../features/data-sources/component-sources';
+import { lowerReadReplays } from './read-replay';
+import { lowerTransparentGroups } from './group-lowering';
+import { lowerModuleSourceDeclarations } from './source-declarations';
+import { rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } from '../analysis/transparent-sources';
 
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   installCompilerIntrinsics(ctx, programPath);
@@ -49,6 +49,7 @@ export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void
   const moduleSources = planModuleSources(programPath.node, refreshAstAnalysis(ctx, programPath.node), ctx.moduleId,
     {sources: ctx.transparentSourceFactories, forms: ctx.transparentFormFactories, reads: ctx.transparentReadFactories,
       bodylessFetches, clientOnly:ctx.dataDelivery === 'client'}, programPath);
+  recordModuleSourceBindings(ctx, moduleSources);
   lowerModuleSourceDeclarations(ctx, programPath.node, moduleSources);
   lowerRouterJsx(ctx,planRouterJsx(programPath,ctx.moduleId,ctx.linkedRoutes));
   runAnalysis(ctx, programPath);

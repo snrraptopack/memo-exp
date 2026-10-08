@@ -6,20 +6,20 @@
  * imperative resolution guard; source transitions push the owning component
  * through the ordinary runtime dirty queue.
  */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
-import { refreshAstAnalysis, nodeHasJsx, type TransparentPresentationPolicy } from '../../context';
-import { type DomContext as Ctx } from '../../dom/context';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import { refreshAstAnalysis, nodeHasJsx, type TransparentPresentationPolicy } from '../context';
+import { type DomContext as Ctx } from './context';
 import {
   childNode,
   replaceNode,
   walkAst,
   type BaseNode,
-} from '../../ast';
-import { allocatePresentationParameter } from '../../dom/presentation-parameters';
-import { requirePresentationOwner } from '../../planning/presentation-ownership';
-import { wrapAutomaticSite } from '../../dom/data-sites';
-import { atomicSite, markAtomicRoute } from './atomic-sites';
+} from '../ast';
+import { allocatePresentationParameter } from './presentation-parameters';
+import { requirePresentationOwner } from '../planning/presentation-ownership';
+import { wrapAutomaticSite } from './data-sites';
+import { atomicSite, markAtomicRoute } from '../features/data-sources/atomic-sites';
 import {
   annotateGroupComponentCalls,
   expressionOrigins,
@@ -27,13 +27,13 @@ import {
   inferredGroupDataNames,
   isLoweredGroupExpression,
   jsxTagName,
-} from './group-analysis';
-import { emitPresentationComponent } from './group-policy-components';
-import type {GroupPresentationPlan} from '../../planning/presentation-policy';
+} from '../analysis/group-origins';
+import { emitPresentationComponent } from './presentation-components';
+import type {GroupPresentationPlan} from '../planning/presentation-policy';
 import {
   consumeSuspendDirective,
   suspendDirective,
-} from './suspend-directive';
+} from '../features/data-sources/suspend-directive';
 import {
   lowerTsrxTryBoundary,
   tsrxTryMetadata,

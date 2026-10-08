@@ -1,7 +1,7 @@
 /** Lower proved imports without changing source binding identities or calls. */
-import type * as t from '../../ast/compiler-types';
-import * as factory from '../../ast/factory';
-import type { BodylessFetchImport } from '../../planning/fetch-encoding';
+import type * as t from '../ast/compiler-types';
+import * as factory from '../ast/factory';
+import type { BodylessFetchImport } from '../planning/fetch-encoding';
 
 export function lowerBodylessFetchImports(program: t.Program, plans: readonly BodylessFetchImport[],
   delivery: 'universal' | 'client' = 'universal'): ReadonlySet<string> {

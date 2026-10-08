@@ -356,7 +356,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   87,093 / 26,790 B. The preceding runtime-size improvement is preserved;
   this compiler boundary batch makes no additional size or CPU claim.
 
-### Calculated list-source contracts (parent `7e59b93`)
+### Calculated list-source contracts (commit `cb24e88`, parent `7e59b93`)
 
 - Shared planning captures calculated receivers, source snapshots and containing
   statements in the existing source order without binding allocation or AST
@@ -374,3 +374,24 @@ These are prerequisites for the runtime-size and broader precision batches.
   including static zero JS, lazy chunks and routed/Group delivery. No additional
   byte or CPU saving is claimed. Remaining module/source normalization,
   composition contracts, numeric keys and capability gates remain open.
+
+### Async source facts and DOM lowering (parent `cb24e88`)
+
+- Shared analysis owns transparent source/track discovery, lexical read facts,
+  Group origins and validation. Source prop plans capture lexical projections;
+  DOM normalization allocates aliases and returns its normalized binding map
+  explicitly. Validated module source identities publish before lowering rather
+  than being a side effect of generated runtime declarations.
+- Moved fetch encoding, source declarations, replay, Group lowering, presentation
+  parameters, TSRX boundaries and read transformation into `dom/`. Deleted their
+  former implementations and the mixed source scanner. Generated data-call
+  recognition is backend-specific; shared read queries no longer depend on it.
+- Compiler build, type checking, lint and the transitive import boundary passed.
+  Twelve focused suites passed 134 tests across lexical shadows, destructuring,
+  module sources, transported props, Group, diagnostics and TSRX.
+- All 123 output/graph/delivery comparisons match `cb24e88`. Five paired
+  production SSR fixtures preserve HTML/payload/raw/gzip bytes with the same
+  runtime: static zero JS, counter 8,613 / 3,483 B, todo 17,140 / 6,443 B,
+  lazy routing 68,066 / 22,009 B in three chunks and routed/Group
+  87,093 / 26,790 B. This separation adds no browser-size or CPU gain claim.
+  The remaining semantic/backend and capability gates are still open.

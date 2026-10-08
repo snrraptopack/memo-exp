@@ -7,7 +7,7 @@ import {annotateAsyncRead} from '../packages/compiler/src/planning/async-reads';
 import { createCtx } from '../packages/compiler/src/dom/context';
 import { refreshAstAnalysis } from '../packages/compiler/src/context';
 import { initializeGeneratedIdentifiers, mdd } from '../packages/compiler/src/dom/identifiers';
-import {isGeneratedDataCall} from '../packages/compiler/src/features/data-sources/read-analysis';
+import {isGeneratedDataCall} from '../packages/compiler/src/dom/data-read-recognition';
 
 function fixture(expression:string,parameter='') {
   const program=parseEstreeOrThrow(`let resource=[];function App(${parameter}){const alias=${expression};return alias.length;}`).program;

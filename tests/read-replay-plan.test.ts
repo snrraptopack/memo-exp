@@ -6,7 +6,7 @@ import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { createCtx } from '../packages/compiler/src/dom/context';
 import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
 import {planReadReplays} from '../packages/compiler/src/planning/read-replay';
-import {lowerReadReplays} from '../packages/compiler/src/features/data-sources/read-replay';
+import {lowerReadReplays} from '../packages/compiler/src/dom/read-replay';
 
 function fixture(source: string) {
   const program = parseEstreeOrThrow(`import {$read} from '@memoized-dom/data';${source}`).program;

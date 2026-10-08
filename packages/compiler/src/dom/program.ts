@@ -45,7 +45,7 @@ import {
   initialRoutePreparationStatements,
 } from './router';
 import { analyzeRoutedPreparations } from '../routed';
-import { rewriteTransparentDataReads } from '../features/data-sources/read-rewriting';
+import { rewriteTransparentDataReads } from './read-rewriting';
 import {
   externalReactiveImportStatements,
 } from './external-reactivity';

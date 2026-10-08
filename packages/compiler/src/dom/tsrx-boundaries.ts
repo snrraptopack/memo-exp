@@ -1,32 +1,32 @@
 /** Lowering for TSRX @try, @pending, and @catch boundaries. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   cloneNode as cloneEstreeNode,
   nodeFields as fields,
   type BaseNode,
   type Identifier as AstIdentifier,
-} from '../../ast';
-import type { DomContext as Ctx } from '../../dom/context';
-import type { TransparentPresentationComponent, TransparentPresentationPolicy } from '../../context';
-import { generatedComponentIdentifier, generatedIdentifier } from '../../dom/identifiers';
-import { allocatePresentationParameter } from '../../dom/presentation-parameters';
-import { requirePresentationOwner } from '../../planning/presentation-ownership';
+} from '../ast';
+import type { DomContext as Ctx } from './context';
+import type { TransparentPresentationComponent, TransparentPresentationPolicy } from '../context';
+import { generatedComponentIdentifier, generatedIdentifier } from './identifiers';
+import { allocatePresentationParameter } from './presentation-parameters';
+import { requirePresentationOwner } from '../planning/presentation-ownership';
 import {
   componentSourceProps,
   jsxTagName,
   type ComponentSourceProp,
-} from './group-analysis';
+} from '../analysis/group-origins';
 import {
   objectBindingPattern,
   presentationCaptureProps,
-} from './group-policy-components';
-import {planPresentationCaptures} from '../../planning/presentation-policy';
-import { atomicSite, markAtomicRoute } from './atomic-sites';
+} from './presentation-components';
+import {planPresentationCaptures} from '../planning/presentation-policy';
+import { atomicSite, markAtomicRoute } from '../features/data-sources/atomic-sites';
 import {
   consumeSuspendDirective,
   suspendDirective,
-} from './suspend-directive';
+} from '../features/data-sources/suspend-directive';
 
 export interface TsrxTryHandlerMetadata {
   param: BaseNode | null;

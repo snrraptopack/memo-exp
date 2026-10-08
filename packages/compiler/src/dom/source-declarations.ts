@@ -1,27 +1,15 @@
-/** Module source registration and lowering from explicit source plans. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
-import {cloneNode} from '../../ast';
-import type { DomContext as Ctx } from '../../dom/context';
-import { mdd, type IdentifierOwner } from '../../dom/identifiers';
-import type {ModuleSourceStatementPlan} from '../../planning/module-sources';
-import {carrySourceEffectInputs, sourceReplayConsumption} from '../../effects/source-inputs';
-
-/** Register source holders as push-owned roots for derivation analysis. */
-export function registerTransparentSourceRoots(ctx: Ctx): void {
-  for (const [component, sources] of ctx.transparentSources) {
-    let roots = ctx.opaqueBindings.get(component);
-    if (roots === undefined) {
-      roots = new Set();
-      ctx.opaqueBindings.set(component, roots);
-    }
-    for (const source of sources) roots.add(source);
-  }
-}
+/** DOM module source lowering from explicit source plans. */
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import {cloneNode} from '../ast';
+import type { DomContext as Ctx } from './context';
+import { mdd, type IdentifierOwner } from './identifiers';
+import type {ModuleSourceStatementPlan} from '../planning/module-sources';
+import {carrySourceEffectInputs, sourceReplayConsumption} from '../effects/source-inputs';
 
 /** Lower module sources into lazy request-local descriptions and stable refs. */
 export function lowerModuleSourceDeclarations(
-  ctx: Pick<Ctx, 'transparentModuleSources' | 'usesTransparentData' | 'compilerLifecycleCalls'> & IdentifierOwner,
+  ctx: Pick<Ctx, 'usesTransparentData' | 'compilerLifecycleCalls'> & IdentifierOwner,
   program: t.Program,
   plans: readonly ModuleSourceStatementPlan[],
 ): void {
@@ -29,8 +17,7 @@ export function lowerModuleSourceDeclarations(
     const sourceDescriptions: t.Statement[] = [];
     const requestInputEffects: t.Statement[] = [];
     for (const source of sources) {
-      const {name, key, declarator} = source;
-      ctx.transparentModuleSources.set(name, key);
+      const {key, declarator} = source;
       ctx.usesTransparentData = true;
       const readSource = source.kind === 'read';
       const inputs = (): t.CallExpression['arguments'] => source.kind === 'read'

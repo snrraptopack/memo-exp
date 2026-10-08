@@ -1,6 +1,6 @@
 /** Coordinates transparent-source read lowering for every component. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   childNode,
   cloneNode as cloneEstreeNode,
@@ -10,13 +10,13 @@ import {
   type BaseNode,
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
-} from '../../ast';
-import { astBindingAt, nodeHasJsx, refreshAstAnalysis } from '../../context';
-import { type DomContext as Ctx } from '../../dom/context';
-import { mdd } from '../../dom/identifiers';
-import {annotateAsyncRead, annotateTransparentSources, excludeTransparentSubscriptions} from '../../planning/async-reads';
-import { initialReadPlacement } from '../../dom/initial-dom';
-import { wrapAutomaticSite } from '../../dom/data-sites';
+} from '../ast';
+import { astBindingAt, nodeHasJsx, refreshAstAnalysis } from '../context';
+import { type DomContext as Ctx } from './context';
+import { mdd } from './identifiers';
+import {annotateAsyncRead, annotateTransparentSources, excludeTransparentSubscriptions} from '../planning/async-reads';
+import { initialReadPlacement } from './initial-dom';
+import { wrapAutomaticSite } from './data-sites';
 import { lowerModuleRefReadsEstree } from './module-read-lowering';
 import {
   isActionRefreshTarget,
@@ -24,7 +24,6 @@ import {
   isDirectSourceComponentProp,
   isEventOrRefContainer,
   isEventSourceHolderReference,
-  isGeneratedDataCall,
   isGroupDataContainer,
   isPassthroughArgument,
   isWithinDirectSourceComponentProp,
@@ -32,7 +31,8 @@ import {
   sourceBindings,
   sourceDependencies,
   type TransparentDerivation,
-} from './read-analysis';
+} from '../analysis/transparent-reads';
+import { isGeneratedDataCall } from './data-read-recognition';
 import {
   gateEventSourceEffects,
   isInsideRenderGate,
@@ -41,7 +41,7 @@ import {
   resolvedRenderExpression,
   trackDependencies,
 } from './read-transforms';
-import type { RenderGatedExpression } from '../../dom/data-subscriptions';
+import type { RenderGatedExpression } from './data-subscriptions';
 
 export function rewriteTransparentDataReads(ctx: Ctx): void {
   const refresh = (): void => {

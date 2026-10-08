@@ -1,6 +1,6 @@
 /** Shared source and origin analysis for Group and TSRX boundaries. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   childNode,
   extractPatternIdentifiers,
@@ -8,10 +8,10 @@ import {
   type BaseNode,
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
-} from '../../ast';
-import { astBindingAt, type TransparentPresentationComponent } from '../../context';
-import { type Ctx } from '../../context';
-import { isCallToImported } from '../../analysis/source-calls';
+} from '../ast';
+import { astBindingAt, type TransparentPresentationComponent } from '../context';
+import { type Ctx } from '../context';
+import { isCallToImported } from './source-calls';
 
 export function jsxTagName(element: t.JSXElement): string | null {
   return astFactory.isJSXIdentifier(element.openingElement.name)

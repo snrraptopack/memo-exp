@@ -3,8 +3,8 @@ import {analyzeScope, cloneNode, findNode, parseEstreeOrThrow, printEstree, type
 import type * as t from '../packages/compiler/src/ast/compiler-types';
 import { createCtx } from '../packages/compiler/src/dom/context';
 import { initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
-import {planModuleSources} from '../packages/compiler/src/planning/module-sources';
-import {lowerModuleSourceDeclarations} from '../packages/compiler/src/features/data-sources/module-sources';
+import {planModuleSources, recordModuleSourceBindings} from '../packages/compiler/src/planning/module-sources';
+import {lowerModuleSourceDeclarations} from '../packages/compiler/src/dom/source-declarations';
 import {sourceEffectInputs} from '../packages/compiler/src/effects/source-inputs';
 
 const catalog = {sources: new Set(['$fetch', '$read', '$forms']), forms: new Set(['$forms']), reads: new Set(['$read'])};
@@ -22,6 +22,12 @@ it('plans declaration identity, canonical keys and owned request inputs without 
   expect(JSON.stringify(value.program)).toBe(value.before);
   expect(value.plans).toHaveLength(1);
   const [users, detail] = value.plans[0]!.sources;
+  const facts = {transparentModuleSources: new Map<string, string>()};
+  recordModuleSourceBindings(facts, value.plans);
+  expect([...facts.transparentModuleSources]).toEqual([
+    ['users', './source.ts#users'], ['detail', './source.ts#detail'],
+  ]);
+  expect(JSON.stringify(value.program)).toBe(value.before);
   expect(users).toMatchObject({kind: 'fetch', name: 'users', key: './source.ts#users'});
   expect(users!.inputs.map(input => input.name)).toEqual(['search']);
   expect(users!.inputs[0]!.binding).toBe(value.analysis.rootScope.getBinding('search'));
@@ -76,6 +82,7 @@ it('lowers owned inputs and recorded references after the source and scope are c
   const ctx = createCtx();initializeGeneratedIdentifiers(ctx, value.program);
   ctx.astAnalysis = analyzeScope(parseEstreeOrThrow('const unrelated=0;').program);
   value.plans[0]!.sources[0]!.declarator.init = ({type: 'Literal', value: 'changed'} as unknown as t.Expression);
+  recordModuleSourceBindings(ctx, value.plans);
   lowerModuleSourceDeclarations(ctx, value.program as unknown as t.Program, value.plans);
   const output = printEstree(value.program).code;
   expect(output).toContain("createSource('/users'");

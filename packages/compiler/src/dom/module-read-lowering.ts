@@ -1,6 +1,6 @@
 /** Module-source read lowering for transparent data. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   childNode,
   cloneNode as cloneEstreeNode,
@@ -9,19 +9,19 @@ import {
   type BaseNode,
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
-} from '../../ast';
-import { astBindingAt } from '../../context';
-import { type DomContext as Ctx } from '../../dom/context';
-import { generatedIdentifier, mdd } from '../../dom/identifiers';
-import {annotateAsyncRead, annotateTransparentSources, transparentExpressionSources} from '../../planning/async-reads';
-import { initialReadPlacement } from '../../dom/initial-dom';
+} from '../ast';
+import { astBindingAt } from '../context';
+import { type DomContext as Ctx } from './context';
+import { generatedIdentifier, mdd } from './identifiers';
+import {annotateAsyncRead, annotateTransparentSources, transparentExpressionSources} from '../planning/async-reads';
+import { initialReadPlacement } from './initial-dom';
 import {
   isActionRefreshTarget,
   isBoundTo,
   isEventOrRefContainer,
-  isGeneratedDataCall,
   isPassthroughArgument,
-} from './read-analysis';
+} from '../analysis/transparent-reads';
+import { isGeneratedDataCall } from './data-read-recognition';
 
 /**
  * Lower reads of module-scope source refs inside a component:

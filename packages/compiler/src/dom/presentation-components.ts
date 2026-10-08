@@ -1,11 +1,11 @@
 /** Presentation component/prop ABI shared by Group and TSRX lowering. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
-import {cloneNode} from '../../ast';
-import type { DomContext as Ctx } from '../../dom/context';
-import type { TransparentPresentationComponent } from '../../context';
-import { generatedComponentIdentifier, generatedIdentifier } from '../../dom/identifiers';
-import type {PresentationCapture,PresentationComponentPlan} from '../../planning/presentation-policy';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
+import {cloneNode} from '../ast';
+import type { DomContext as Ctx } from './context';
+import type { TransparentPresentationComponent } from '../context';
+import { generatedComponentIdentifier, generatedIdentifier } from './identifiers';
+import type {PresentationCapture,PresentationComponentPlan} from '../planning/presentation-policy';
 
 export function presentationCaptureProps(captures:readonly PresentationCapture[]) {
   return captures.map((capture,index)=>({prop:`capture${index}`,name:capture.name}));

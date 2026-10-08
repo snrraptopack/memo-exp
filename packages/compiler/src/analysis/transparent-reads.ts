@@ -1,17 +1,16 @@
 /** Semantic analysis for transparent-source read rewriting. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   childNode,
   walkAst,
   type BaseNode,
   type Binding as AstBinding,
   type Identifier as AstIdentifier,
-} from '../../ast';
-import { astBindingAt } from '../../context';
-import { type Ctx } from '../../context';
-import { jsxAttributeName } from '../../jsx/attributes';
-import { isGeneratedDataMember } from '../../dom/identifiers';
+} from '../ast';
+import { astBindingAt } from '../context';
+import { type Ctx } from '../context';
+import { jsxAttributeName } from '../jsx/attributes';
 
 export interface TransparentDerivation {
   binding: AstBinding;
@@ -132,16 +131,6 @@ export function isActionRefreshTarget(ctx: Ctx, identifier: BaseNode): boolean {
     (!objectProperty.computed && astFactory.isIdentifier(key, { name: 'refresh' })) ||
     astFactory.isStringLiteral(key, { value: 'refresh' })
   );
-}
-
-export function isGeneratedDataCall(ctx: Ctx, node: BaseNode): boolean {
-  let call = ctx.astAnalysis?.parentByNode.get(node) ?? null;
-  while (call !== null && call.type !== 'CallExpression') {
-    call = ctx.astAnalysis?.parentByNode.get(call) ?? null;
-  }
-  if (call === null) return false;
-  const callee = (call as unknown as t.CallExpression).callee;
-  return isGeneratedDataMember(callee);
 }
 
 export function sourceBindings(

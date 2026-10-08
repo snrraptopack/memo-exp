@@ -1,18 +1,14 @@
 /** Component source discovery, event slots, and render-time validation. */
-import type * as t from '../../ast/compiler-types';
-import * as astFactory from '../../ast/factory';
+import type * as t from '../ast/compiler-types';
+import * as astFactory from '../ast/factory';
 import {
   childNode,
   walkAst,
   type BaseNode,
   type Identifier,
-} from '../../ast';
-import { astBindingAt } from '../../context';
-import { type DomContext as Ctx } from '../../dom/context';
-import { allocatePresentationParameter } from '../../dom/presentation-parameters';
-import { requirePresentationOwner } from '../../planning/presentation-ownership';
-import { materializeTransparentPropBindings } from '../../dom/components/transparent-props';
-import { isCallToImported } from '../../analysis/source-calls';
+} from '../ast';
+import { astBindingAt, type Ctx } from '../context';
+import { isCallToImported } from './source-calls';
 
 const RENDER_FUNCTION_TYPES = new Set([
   'FunctionDeclaration',
@@ -127,8 +123,8 @@ export function scanEventSourceAssignments(ctx: Ctx): void {
 }
 
 /** Find direct component-local source declarations and tracked aliases. */
-export function scanTransparentSourceBindings(ctx: Ctx): void {
-  for (const [component, componentPath] of ctx.compPaths) {
+export function scanComponentSources(ctx: Ctx, component: string, sourceProps: ReadonlyMap<string,string>): void {
+    const componentPath = ctx.compPaths.get(component)!;
     const componentNode = componentPath.node as unknown as BaseNode;
     const sources = new Set<string>();
     const trackCandidates: Array<{
@@ -185,13 +181,11 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
       });
     }
 
-    const sourceProps = materializeTransparentPropBindings(ctx, component);
     for (const binding of sourceProps.keys()) sources.add(binding);
     if (sourceProps.size > 0) {
-      ctx.transparentSourceProps.set(component, sourceProps);
-      allocatePresentationParameter(ctx, requirePresentationOwner(ctx, component));
+      ctx.transparentSourceProps.set(component, new Map(sourceProps));
     }
-    if (sources.size === 0) continue;
+    if (sources.size === 0) return;
     ctx.usesTransparentData = true;
     ctx.transparentSources.set(component, sources);
 
@@ -217,5 +211,13 @@ export function scanTransparentSourceBindings(ctx: Ctx): void {
       if (found.size > 0) tracks.set(candidate.name, [...found].sort());
     }
     if (tracks.size > 0) ctx.transparentTrackBindings.set(component, tracks);
+}
+
+/** Source holders are push-owned roots for derivation analysis. */
+export function registerTransparentSourceRoots(ctx: Ctx): void {
+  for (const [component,sources] of ctx.transparentSources) {
+    let roots = ctx.opaqueBindings.get(component);
+    if (roots === undefined) ctx.opaqueBindings.set(component,roots = new Set());
+    for (const source of sources) roots.add(source);
   }
 }
