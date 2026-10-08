@@ -1,5 +1,15 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  'dynamic-tags': {
+    './App.tsx': `import {selectView} from './views';export function App(){let compact=true;let value=0;
+      const Host=compact?'section':'article';const View=selectView(compact);return <main>
+      <button class="swap" onClick={()=>compact=!compact}>Swap</button>
+      <button class="next" onClick={()=>value++}>Next</button>
+      <Host data-role="host"><View value={value}/></Host><p>{value}</p></main>;}`,
+    './views.tsx': `export function Summary({value}){return <strong>summary:{value}</strong>;}
+      export function Details({value}){return <output>details:{value}</output>;}
+      export function selectView(compact){return compact?Summary:Details;}`,
+  },
   'request-variable-extents': {
     './App.tsx': `export function App(){const user=$fetch('/api/user');const request=$track(user);let n=0;return <main>
       <button class="next" onClick={()=>n++}>Next</button><button class="reload" onClick={()=>request.refresh()}>Reload</button>

@@ -24,6 +24,7 @@ const snapshot = resolve(output, `baseline-${baseline.slice(0, 8)}`);
 const before = await compilerBaseline(repository, baseline, snapshot);
 
 const fixtures = {
+  'dynamic-tags': sizeFixtures['dynamic-tags']!,
   'request-variable-extents': sizeFixtures['request-variable-extents']!,
   'closed-nested-structures': sizeFixtures['closed-nested-structures']!,
   'request-component-structures': sizeFixtures['request-component-structures']!,

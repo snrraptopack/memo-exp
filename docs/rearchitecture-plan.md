@@ -396,7 +396,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   87,093 / 26,790 B. This separation adds no browser-size or CPU gain claim.
   The remaining semantic/backend and capability gates are still open.
 
-### Client environment initialization (parent `91b0133`)
+### Client environment initialization (commit `16214b6`, parent `91b0133`)
 
 - Kernel state receives a resolved environment. Ordinary client initialization
   uses its lazy client environment directly; only explicit isolated-runtime
@@ -420,3 +420,24 @@ These are prerequisites for the runtime-size and broader precision batches.
   so it is a delivery check rather than evidence of runtime byte savings.
   No CPU improvement is claimed. Numeric keys, dynamic emission reuse and the
   remaining compiler/composition contracts stay open.
+
+### Finite JSX selection contracts (parent `16214b6`)
+
+- Shared planning captures lexical finite-tag candidates, ordered authored sites
+  and scalar/render prop classifications without changing syntax or allocating
+  bindings. DOM lowering owns native-name validation, selector scratch bindings,
+  generated imports and JSX replacement. Linked import normalization returns
+  explicit source publication results. Deleted the former mixed JSX module.
+- Eight focused suites passed 76 tests, including nested hosts/components,
+  helper/registry candidates, linked imports, render props, source-only planning,
+  parser-neutral lowering and initial conditionals. All 129 stable compiler
+  output/graph/delivery comparisons match `16214b6`, excluding source maps.
+- Nine production Chromium graphs pass. The new dynamic host/linked component
+  fixture checks swaps, later text updates and retained host identity. Paired
+  source bytes remain unchanged: dynamic tags 15,568 / 5,574 raw/gzip B;
+  owner counter 7,966 / 3,270 B; input/list 15,922 / 6,327 B.
+  Compiler build, type checking, lint and the transitive boundary pass. Six paired
+  SSR fixtures retain equal HTML/payload/JS bytes, including static zero JS and
+  dynamic tags at 505 B HTML / 78 B payload / 25,577 B JS (8,622 B gzip).
+  This boundary change makes no additional size or CPU gain claim. Further
+  normalization, optional capabilities, numeric keys and composition gates remain.

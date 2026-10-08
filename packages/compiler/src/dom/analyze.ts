@@ -39,9 +39,11 @@ import { normalizeRenderFunctions } from '../components/render-functions';
 import { planCalculatedListSources } from '../planning/calculated-list-sources';
 import { lowerCalculatedListSources } from './calculated-list-sources';
 import {
-  normalizeDynamicTags,
+  planDynamicTags,
+  recordDynamicTagPropModes,
   scanLocalDynamicComponentCandidates,
-} from '../jsx/dynamic-tags';
+} from '../planning/dynamic-tags';
+import {lowerDynamicTags} from './dynamic-tags';
 import { lexicalBindingStringCandidates } from '../analysis/type-candidates';
 import { foldRenderCallbackSubtreeReads } from '../analysis/component-reads';
 import { analyzeComponent } from '../analysis/component-validation';
@@ -88,7 +90,9 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   scanLocalDynamicComponentCandidates(ctx, programPath);
   scanRenderProps(ctx);
   normalizeComponentJsxValues(ctx);
-  normalizeDynamicTags(ctx);
+  const dynamicTags = planDynamicTags(ctx);
+  lowerDynamicTags(ctx, dynamicTags);
+  recordDynamicTagPropModes(ctx, dynamicTags.propModes);
   lowerCalculatedListSources(ctx, planCalculatedListSources(ctx));
   // Normalization can replace declarations and expressions. Rebuild the
   // parser-neutral index before binding-aware analysis consumes those nodes.

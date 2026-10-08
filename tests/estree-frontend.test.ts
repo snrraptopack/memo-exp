@@ -55,7 +55,8 @@ import { normalizeComponentJsxValues } from '../packages/compiler/src/components
 import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
 import { lowerRouterJsx } from '../packages/compiler/src/dom/router';
 import {planRouterJsx} from '../packages/compiler/src/analysis/routes';
-import { normalizeDynamicTags } from '../packages/compiler/src/jsx/dynamic-tags';
+import { planDynamicTags, recordDynamicTagPropModes } from '../packages/compiler/src/planning/dynamic-tags';
+import { lowerDynamicTags } from '../packages/compiler/src/dom/dynamic-tags';
 import { liftModuleStateCells } from '../packages/compiler/src/cells';
 import {
   discoverTopLevelFunctions,
@@ -1094,7 +1095,9 @@ describe('ESTree parser and printer boundary', () => {
     } as unknown as Ctx;
 
     expect(component).not.toBeNull();
-    normalizeDynamicTags(context);
+    const tags = planDynamicTags(context);
+    lowerDynamicTags(context, tags);
+    recordDynamicTagPropModes(context, tags.propModes);
 
     const output = printEstree(parsed.program).code;
     expect(output).toContain('<section />');

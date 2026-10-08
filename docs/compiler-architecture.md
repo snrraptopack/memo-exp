@@ -829,3 +829,19 @@ type checking and lint pass. All 123 compiler output/graph/delivery comparisons
 match `cb24e88`, and five production SSR fixtures preserve HTML/payload/JS bytes
 with identical runtime packages. Further contracts and bundle reduction remain
 tracked in the [execution checklist](./rearchitecture-plan.md).
+
+### Finite JSX selections — 2026-10-08
+
+The shared planner captures finite intrinsic/component candidates, lexical
+selectors and ordered authored sites before target lowering. It produces prop
+classification facts without mutation. The DOM backend validates native names,
+allocates selector scratch bindings and replaces captured JSX sites without
+rediscovery. Generated linked imports return explicit normalized bindings to the
+source publisher. The former mixed JSX implementation is removed.
+
+Eight focused suites pass 76 tests, including nested alternatives, linked helpers,
+render props, lexical planning, parser-neutral ASTs and initial conditionals.
+All 129 output/graph/delivery comparisons match `16214b6`. Nine production browser
+graphs pass interaction/identity checks and retain identical paired source bytes.
+This separation makes no additional byte or CPU claim; the execution checklist
+continues to track the remaining contracts and bundle work.

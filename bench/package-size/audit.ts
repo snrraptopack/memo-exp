@@ -241,6 +241,18 @@ if (process.argv.includes('--verify')) {
           const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
           const check = (condition: boolean) => { if (!condition) throw new Error(`Failed ${fixture} interaction`); };
           if (fixture === 'static') { check(main.textContent === 'Static shellReady.'); return; }
+          if (fixture === 'dynamic-tags') {
+            const host=()=>main.querySelector('[data-role="host"]')!;
+            check(host().tagName==='SECTION' && host().textContent==='summary:0');
+            const original=host();main.querySelector<HTMLButtonElement>('.next')!.click();await settle();
+            check(host()===original && host().textContent==='summary:1');
+            main.querySelector<HTMLButtonElement>('.swap')!.click();await settle();
+            check(host().tagName==='ARTICLE' && host().textContent==='details:1');
+            const article=host();main.querySelector<HTMLButtonElement>('.next')!.click();await settle();
+            check(host()===article && host().textContent==='details:2');
+            main.querySelector<HTMLButtonElement>('.swap')!.click();await settle();
+            check(host().tagName==='SECTION' && host().textContent==='summary:2');return;
+          }
           if (fixture === 'route-lazy') {check(main.querySelector('article button')?.textContent==='0');return;}
           if (fixture === 'route-helper') {
             check(main.querySelector('a')?.getAttribute('href') === '/person/1');

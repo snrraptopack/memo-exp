@@ -10,7 +10,8 @@ import { runAnalysis } from './analyze';
 import {allocateInstanceReasons} from './instance-reasons';
 import { analyzeDomOnlyRows } from './row-eligibility';
 import { normalizeComponentDeclarations } from '../components/declarations';
-import { installLinkedDynamicComponentImports } from '../jsx/dynamic-tags';
+import { lowerLinkedDynamicComponentImports } from './dynamic-tags';
+import { recordLinkedDynamicComponentBindings } from '../analysis/dynamic-imports';
 import { normalizeConditionalJsxDirectives } from '../jsx/conditional-directives';
 import { initializeGeneratedIdentifiers } from './identifiers';
 import {scanExternalReactiveImports} from '../analysis/external-reactivity';
@@ -27,7 +28,9 @@ import { rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } fro
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   installCompilerIntrinsics(ctx, programPath);
   normalizeComponentDeclarations(programPath);
-  installLinkedDynamicComponentImports(ctx, programPath);
+  const dynamicImports = lowerLinkedDynamicComponentImports(ctx, programPath);
+  recordLinkedDynamicComponentBindings(ctx, dynamicImports);
+  ctx.emission.header.push(...dynamicImports.imports);
   normalizeConditionalJsxDirectives(programPath);
   initializeGeneratedIdentifiers(ctx, programPath.node);
   scanExternalReactiveImports(ctx, programPath);
