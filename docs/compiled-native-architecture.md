@@ -1,225 +1,207 @@
-# GPUIX architecture and Memoized DOM bundle research
+# Compiled native desktop architecture
 
-Date: 2026-10-08. Proposal for Memoized DOM, with GPUIX used as a comparative reference rather than a dependency or architectural requirement. No native engine is implemented by this document.
+Date: 2026-10-08. Architecture proposal for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The desktop backend and native scene engine described here are proposed work.
 
-## How GPUIX works
+## The technique we aim to use
 
-Source snapshot: upstream commit `1a007487ac4c1f0be2ec4e090281ae01e25ec17c`, inspected on 2026-10-08. Implementation statements below refer to that snapshot. This is the single research document for this investigation.
+Compile authored TypeScript and JSX into **persistent native scene templates and direct updates to typed scene slots**. Instantiate structure when its owner mounts, retain that structure in the native host, and update the specific records affected by application state. The host retains layout and paint results and invalidates them according to their dependencies.
 
-GPUIX connects React or Solid to Zed's Rust GPUI renderer. Desktop uses Node-API through napi-rs; the browser target uses wasm-bindgen. GPU rendering uses the platform backend, with Taffy providing flexbox layout. This renders native elements rather than a DOM document. [Official architecture](https://www.gpuix.dev/#architecture).
+The compiler determines the connection between an authored expression and its native destination. Application behavior continues to execute as JavaScript. A native engine owns windows, scene records, text, geometry, input, accessibility, and GPU presentation. A transaction connects application updates to the visible scene.
 
-```text
-Authored React / Solid components
-  -> adapter: React reconciliation / Solid direct reactive updates
-  -> shared JavaScript mutation queue, numeric host IDs
-  -> JSON batch across Node-API or WebAssembly
-  -> typed Rust operations and shared style resolution
-  -> retained native element tree, one lock per desktop batch
-  -> invalidation of GPUI view
-  -> ephemeral GPUI elements, layout and GPU paint
-
-Native input -> host callback -> authored JavaScript behavior -> next batch
-```
-
-Its shared JavaScript queue stores mutation tuples such as `createElement`, `setText`, `setStyle`, and `insertBefore`. Flushing calls `applyBatch(JSON.stringify(queue))`. Host IDs are numeric, and the queue shares the transport across adapters. [Pinned mutation queue](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/js/mutations.ts).
-
-The Rust batch path decodes operations and resolves styles before changing elements. Desktop acquires the retained-tree mutex once per batch, then requests invalidation. `GpuixView::render()` builds ephemeral GPUI elements from the retained root; GPUI lays out and paints the requested frame. Native events return through the host callback. Requested rendering, animation, and native interaction should be distinguished from an assumption that JavaScript reconciles continuously while idle. [Pinned renderer](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/src/renderer.rs).
-
-The retained tree already uses a fast numeric-key map, shared immutable styles, and revision information. Virtual lists defer offscreen GPUI element construction, layout, and paint; the documented React path still retains the complete keyed children in React and Rust. Consequently, virtualization saves frame work without eliminating all initial JavaScript allocation or transfer. [Pinned retained tree](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/src/retained_tree.rs), [virtualization contract](https://www.gpuix.dev/#how-virtualization-works).
-
-Solid already provides fine-grained updates, so avoiding React reconciliation alone would not establish an advantage over GPUIX. The relevant experiments are compiler-prepared structure, fewer bridge commands, retained geometry/paint work, and build-time capability selection. They are hypotheses until compared on equivalent fixtures. Browser JavaScript bytes and desktop executable size need separate budgets: the latter also includes the JavaScript engine, native libraries, text/rendering facilities, and packaging.
-
-Do not propose optimizations against an obsolete GPUIX baseline. Its serialization report records shipped typed decoding and style sharing, with parse/apply falling from 127.1 ms to 30.1 ms and retained-tree memory from 224.5 MB to 42.6 MB for its large chat fixture. A codec-only MessagePack comparison was much smaller, reported as 1.24x. Those are the project's measurements, not measurements reproduced on this Windows machine. The report contains historical sections labelled “today”; the opening shipped-results section and pinned implementation establish the current path. [GPUIX serialization benchmark](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/docs/serialization-benchmark.md).
-
-Current work focuses on browser bundle size. Native implementation is deferred; the native sections preserve one proposal for later evaluation. The existing rearchitecture checklist remains the execution record.
-
-Latest routed/Group result: **20,139 B gzip in the source graph**, down from 23,132 B (12.9%). The identified default-router control retention has been removed, along with dynamic match validation, public option parsing, general navigation/query serialization and full snapshot subscriptions from compiler-only graphs. The completed changes and verification are recorded below.
-
-## Design
-
-Compile UI structure into persistent native scene templates and compile behavior into direct updates to typed scene slots. The native engine owns layout, input, text, hit testing, and drawing. JavaScript owns authored application behavior and compiler-directed state updates. Changes cross a narrow, transactional interface; an application does not reconstruct an element description tree every frame.
+The intended advantage comes from preparing structure ahead of time and retaining host work between updates. Whether that produces better performance must be established with an implementation and equivalent workloads.
 
 ```text
-Plain TypeScript / JSX
-          |
-Shared source analysis, structural plans, ownership
-          |
-          +-- DOM emitter --> direct DOM / initial HTML bindings
-          |
-          +-- Native emitter
-                 |
-                 +-- immutable scene templates / static style records
-                 +-- closures for authored state and guarded slot updates
-                 +-- manifest selecting runtime and native capabilities
-                                      |
-                       accepted slot / structural changes
-                                      |
-                         persistent native scene arena
-                                      |
-                 affected layout + retained paint commands
-                                      |
-                           platform GPU presentation
+Authored TypeScript / JSX
+             |
+Shared analysis: state, reads, writes, structure, ownership
+             |
+             +-- DOM backend --> DOM creation and direct bindings
+             |
+             +-- Desktop backend
+                    |
+                    +-- immutable scene templates
+                    +-- typed dynamic slots and structural regions
+                    +-- application closures and update functions
+                                 |
+                       accepted scene transaction
+                                 |
+                       persistent native scene
+                                 |
+                   dependent layout and paint updates
+                                 |
+                        platform GPU presentation
+
+Native input --> live handler --> authored state change --> next transaction
 ```
 
-The scene arena is the actual host state, analogous to DOM nodes. It is not a second speculative tree diffed against host nodes. Dynamic branches and lists still need live topology and lifetime ownership; eliminating that necessary information is not the objective.
+## GPUIX as an architectural reference
 
-## A concrete update
+The reference snapshot is GPUIX commit `1a007487ac4c1f0be2ec4e090281ae01e25ec17c`, inspected on 2026-10-08. The following describes that implementation, independently of our proposal.
 
-A counter template declares a button, its text record, style references, hit-test identity, and the event binding. Mount instantiates that template once. The generated callback changes its plain number and marks the compiler-known update closure. The closure compares the new text against its acknowledged value and writes the text slot.
-
-The host marks that text's shaping/measurement dirty and invalidates geometry dependents when its measured size changes. If the dimensions stay equal, unrelated layout can remain cached. A background-color change only dirties the relevant paint data. Neither update rebuilds the application's scene structure.
-
-Native pointer feedback and caret animation can change host presentation without a JavaScript callback. An authored click still dispatches to JavaScript, so its actual application semantics are preserved.
-
-## Seven architectural decisions
-
-1. **One source analysis, target-specific lowering.** Keep lexical state identity, dependency facts, derivations, callback writes, and owner semantics shared. DOM anchors, HTML parsing, and DOM refs stay in the DOM backend. Native templates, typed handles, style schemas, and native refs belong in a native backend. Do not emulate `DocumentLike` to reuse DOM lowering.
-2. **Persistent compact host storage.** Use typed records and side tables for variable-sized text/images/custom data. Static styles are immutable template data. Event kinds can use compact masks with handler IDs held separately. Handles carry generation information or equivalent lifetime protection so delayed events cannot target reused records. Dense storage is a candidate to measure, not an assumption that every allocation should be a flat array.
-3. **Direct, typed updates.** The compiler names each dynamic slot and emits only the relevant setter. Static structural/style definitions are installed once. A compact buffer with typed values is a candidate ABI; compare it with simpler batching on real small and large updates. Queue commands, decode allocation, and bridge crossings can cost more than the choice of JSON versus binary.
-4. **Separate dirtiness domains.** Track content/measurement, structure, geometry, paint, hit testing, and accessibility work separately. Geometry invalidation follows real dependencies: intrinsic dimensions can affect ancestors and siblings. Avoid promising that every update costs only the changed node. Layout libraries may supply an initial implementation behind our interface; replace or specialize their work only where profiles justify it.
-5. **Retain paint work.** Cache scene paint records and glyph results across frames. Update affected records and reuse unchanged commands. A GPU may still draw/present the complete frame; CPU-side reuse and partial surface presentation are separate techniques. Invalidate clips, inherited paint properties, ordering, and focus/selection correctly.
-6. **Control publication and scheduling.** Drain state updates coherently, then publish an accepted host transaction. Render failures do not publish partial structure or advance value caches for rejected changes. Bounds-reading refs/effects have an explicit host acknowledgment phase. The rendering thread can consume a stable scene snapshot while the behavior thread prepares the next transaction. Add thread separation only when its latency and synchronization costs are justified.
-7. **Select features at build time.** Emit a capability manifest for both JavaScript and the native executable. The compiler selects required runtime operations and native feature modules across all reachable/lazy application code. A public general-purpose constructor remains complete when it escapes to unknown code. One ownership/transaction engine supplies both specialized compiled applications and full public APIs; avoid maintaining divergent semantics.
-
-Ordinary authored TypeScript can continue running in a JavaScript engine. This design removes generic UI reconstruction from that engine; it does not require changing JavaScript semantics through a blanket translation to Rust. The engine is independently replaceable and measured for derived-list speed, modern language features, host APIs, startup, and executable size.
-
-## Platform scope and dependencies
-
-Own the scene model, source-to-slot mapping, update ABI, lifetime engine, and capability selection. Start with rectangles, rounded borders, text, clipping, pointer input, and one editable text control. Native text input, IME, font fallback, selection, accessibility, and DPI are first-class contracts, even while the primitive set is small.
-
-Use platform text/window/GPU facilities or independent libraries behind narrow interfaces. Candidate reusable components include [Taffy for layout](https://github.com/DioxusLabs/taffy), [Parley for text layout](https://github.com/linebender/parley), and [Vello for 2D rendering](https://github.com/linebender/vello). These demonstrate separable building blocks, not a chosen stack or a claim that combining them yields the smallest executable. Measure dependency contribution and consider system text services before embedding an entire text stack. Core primitives should not require markdown, syntax highlighting, editor features, SVG parsing, or developer automation unless the application uses them.
-
-## Browser-size baseline before the first change
-
-At framework HEAD `937eefbee194741e14aa6475464fe014d15da225`, before the router change below, rebuilt the runtime and compiler successfully, then ran:
-
-```powershell
-bun run bench/package-size/audit.ts --verify --fixture=static --fixture=owner-counter --fixture=input-list --fixture=owner-list --fixture=request-data --fixture=request-routed-group
-```
-
-All 12 selected package/source browser graphs passed the suite's applicable interaction checks, including input reset, whitespace rejection, duplicate values, and retained list identity. These are correctness and byte measurements, not CPU timings or native tests. Runtime/compiler builds were refreshed; source graphs below read current runtime/data/router source. Package graphs use the workspace's distributed exports and are reported separately by the audit.
-
-| Client-only fixture, source graph | Whole minified JS B | Whole gzip B |
-|---|---:|---:|
-| Static DOM creation | 5,413 | 2,310 |
-| Owner-local counter | 7,966 | 3,270 |
-| Positional input/list | 15,922 | 6,327 |
-| Keyed owner list | 23,301 | 9,077 |
-| Fetched data | 28,006 | 9,696 |
-| Fetched data, routing, Group | 72,131 | 23,132 |
-
-The static row measures JavaScript that creates a document. Proven static HTML delivery is a different product and already ships zero JavaScript, as documented in [browser delivery architecture](./browser-bundle-architecture.md). This run did not repeat the production SSR audit.
-
-The audit writes an ignored report to `bench/package-size/dist/audit/results.md`, with JSON and per-fixture esbuild metafiles beside it. Each run replaces those artifacts; the tables here preserve the pre-change measurements. Their top source contributions identify investigation targets:
-
-| Fixture | Largest retained modules, minified raw B |
-|---|---|
-| Counter | Kernel 4,379; mount core 1,442; ordinary mount 671 |
-| Keyed list | Keyed list 9,084; kernel 4,579; list update 1,921; list DOM 1,639 |
-| Fetched data | Resource 7,545; kernel 4,498; request 2,185; conditional 2,051 |
-| Routed Group | Router runtime 21,547; resource 7,572; route path 4,846; scroll 3,954 |
-
-Attribution is raw emitted bytes, not removable code or additive gzip savings. A large module may contain behavior the fixture needs. Follow each retained function into generated calls before splitting it, then remeasure whole bundles and verify the affected behavior.
-
-## What the original 23 KB bundle retained
-
-The original figure was **23,132 B gzip for the complete client-only fetched/routed/Group fixture**, not the core runtime. It includes authored/generated application code, runtime ownership, data, and routing. Measurements and checks are in [browser-size baseline](#browser-size-baseline-before-the-first-change).
-
-The fixture declares a fetched name, a pending Group, and two literal routes (`/` and `/about`). Inspection of the pre-change compiler output showed these six router namespace members:
+GPUIX connects React or Solid to Zed's Rust GPUI renderer. Its desktop bridge uses Node-API through napi-rs, and its browser bridge uses wasm-bindgen. GPUI supplies the platform rendering path, with Taffy used for flexbox layout. [Official architecture](https://www.gpuix.dev/#architecture).
 
 ```text
-createRouteManifest
-ensureRouterConnected
-replaceRouteResolver
-route
-routeRegionIdentity
-subscribeRouteSelected
+React / Solid behavior
+    -> framework adapter
+    -> shared JavaScript mutation queue with numeric element IDs
+    -> serialized batch across the host bridge
+    -> Rust retained element tree
+    -> requested GPUI view rendering
+    -> GPUI element construction, layout and GPU paint
+
+Native event -> JavaScript callback -> another mutation batch
 ```
 
-Nonetheless, the emitted bundle retains the `blockNavigation`, `navigateRelative`, and `installResolver` methods on its default runtime object. Blocker installation and synchronous-blocker diagnostics also survive. The authored fixture declares no blocker or relative-navigation API call.
+The shared queue records operations such as element creation, text/style changes, and child insertion. It flushes through `applyBatch(JSON.stringify(queue))`. [Pinned mutation queue](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/js/mutations.ts).
 
-The retention chain is:
+Rust retains element identity and topology, shared immutable styles, and revision information. The GPUIX view builds ephemeral GPUI elements from that retained tree when rendering is requested. Virtual lists defer offscreen subtree construction until layout requests it. This is already a retained mutation architecture; JavaScript does not need to rebuild a complete tree continuously while idle. [Pinned retained tree](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/src/retained_tree.rs), [pinned renderer](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/src/renderer.rs).
+
+Solid already targets reactive updates directly. Our architectural hypothesis therefore concerns compiler-defined templates and slot destinations, explicit publication contracts, and retained native layout and paint work. GPUIX provides a useful comparison; our scene model and compiler interface should stand independently of its adapters and GPUI element lifecycle.
+
+## What the existing framework contributes
+
+Memoized DOM already analyzes lexical bindings, source reads and writes, callbacks, component relationships, list/branch structure, and presentation ownership. Shared planning lives under `packages/compiler/src/analysis/` and `packages/compiler/src/planning/`. The DOM backend coordinates lowering and emission under `packages/compiler/src/dom/`.
+
+Those source facts are the starting point for desktop compilation. The current public compiler entry still invokes the DOM transform. The desktop target needs its own lowering and emission path, with explicit shared inputs; the existing separation does not mean a desktop emitter is implemented.
+
+The existing ownership, scheduling, preparation, and cleanup contracts establish behavior to preserve. Their implementations must be reviewed for host assumptions before reuse. DOM anchors, ranges, markup parsing, hydration addressing, and `DocumentLike` operations belong to the DOM target. Native structure requires native handles, regions, properties, refs, and publication results.
+
+Keep authored JavaScript evaluation order, exceptions, alias behavior, and callback semantics consistent across targets. Dependency proofs can target known updates precisely. Hidden reads and unknown mutations still require a conservative update path.
+
+## Package and compiler boundaries
+
+Place the desktop backend in `packages/desktop/src/compiler/`. The desktop package also owns its JavaScript runtime, host bridge, launcher, and Rust scene implementation. Desktop-specific emission and host dependencies belong to that package.
 
 ```text
-compiled route operations
-  -> router/internal
-  -> active runtime selection
-  -> defaultRouteRuntime = createRouteRuntime()
-  -> returned complete RouteRuntime object
-  -> public methods and the implementation they reference
+packages/compiler/
+    src/analysis/       shared source facts
+    src/planning/       shared semantic plans
+    src/dom/            existing DOM backend
+
+packages/desktop/
+    src/compiler/       desktop lowering and emission
+    src/runtime/        application scheduling and scene publication
+    src/bridge/         host transactions and events
+    rust/               scene engine and GPUI integration
 ```
 
-Source evidence at that baseline: `packages/router/src/default-runtime.ts:3`, `packages/router/src/runtime.ts:312`, and the returned runtime object at `packages/router/src/runtime.ts:1677`. The pre-change inspection is summarized above; temporary inspection files were removed after consolidation. Audit bundle files are replaced on each run.
+Provide a separately built shared-analysis entry in the compiler package, proposed as `@memoized-dom/compiler/analysis`. The desktop compiler imports that entry. Its exported plans and transitive executable imports must be independent of DOM lowering and desktop host code. The compiler's current root entry includes DOM compilation and does not provide this boundary yet.
 
-This is concrete evidence of unused public API retention in this fixture. It is not a byte count for everything that can safely disappear. Blocker checks are also integrated into shared navigation, so removing only a method property would not remove the complete blocker path. Some history, query/hash handling, error recovery, scroll behavior, and request/Group lifetime work is implicit framework behavior even when not explicitly authored.
+Expose desktop build tooling through `@memoized-dom/desktop/compiler`, independently of the desktop application's runtime entry. Keep the dependency direction explicit: desktop compilation depends on shared analysis; shared analysis does not depend on either backend. Desktop application execution does not import the compiler tooling.
 
-The source metafile attributes 21,547 raw minified bytes to router runtime, 7,572 to data resources, 4,846 to route path handling, 3,954 to scroll, and 2,826 to the manifest. Those are attribution numbers; they are not separately compressed or wholly unused.
+Reuse the same semantic analysis and ownership contracts across targets. Separately built entry points and enforced import boundaries establish this separation; directory placement alone does not. The public entry points above are proposed interfaces to implement and verify.
 
-Other boundaries already work: this fixture's bundle omits the routed server endpoint and server-request-context marker. Previous capability checks establish omission of unnecessary resource-write implementations, transfer/restoration machinery, and build tooling from supported client-only graphs. Do not classify those whole subsystems as new leaks based on the total size.
+## Compiler output
 
-## Browser architecture improvement
+Each component or structural region produces a template describing its fixed native structure. A template contains primitive kinds, parent/child relationships, immutable style references, event binding sites, and declarations for dynamic slots. Branches and repeated rows reference their own templates.
 
-Compiled applications now reach a core router with shared state, transactions and lifetimes. Blocker processing, navigation observers, general and relative navigation, resolver installation, explicit history controls, manual matches, dynamic match validation and full snapshot subscriptions are separately reachable. Imported public operations activate their required controls on the same engine. Explicit public constructors and escaped public runtime objects expose the complete API. Required browser navigation recovery and scroll behavior remain in the engine.
+A template is a reusable definition. Mounting creates a live instance with an owner, native handles, and application closures. Static structure is installed once per instance. Dynamic text, properties, styles, and child regions remain addressable throughout that instance's lifetime.
 
-The compiler already knows literal route patterns and parent relationships. Emit their resolver/matching plan ahead of time rather than build a general manifest in the browser. Preserve normalization, query/hash behavior, base paths, unknown locations, inherited matches, and lazy module registration. General dynamic route APIs retain general path machinery when used. The first measured implementation is recorded below.
+The desktop backend emits three connected parts:
 
-Apply the same principle to resources and native features: a read-only compiled fetch should reach its required settlement/cache/cancellation contract, while schema validation, mutable operations, transfer, and dynamic public construction are selected when needed. Avoid creating a separate read-only engine with different errors or cleanup.
+| Output | Responsibility |
+| --- | --- |
+| Scene template | Describe fixed structure, static values, slot types, and structural boundaries |
+| Setup and behavior | Initialize authored state, bind live callbacks, establish ownership and cleanup |
+| Update functions | Evaluate affected expressions and stage changes to known native destinations |
 
-## First implemented bundle reduction
+Slots name their type and invalidation consequences. A text slot affects text content and potentially measurement; a background slot affects paint; a branch slot controls a child region. The host validates operations against the installed template schema.
 
-The DOM emitter now writes validated full route patterns, local parameter names, parent-chain indexes, and existing lazy/preparation metadata. It calls `createPreparedRouteMatcher` instead of `createRouteManifest`. The public manifest builder uses that same matching implementation after validating dynamic definitions. The public router constructor supplies manifest construction to the shared engine; the compiled default runtime no longer imports it. There is one matching engine and one navigation engine.
+Template identity, slot identity, and live instance identity are distinct. Several rows can instantiate the same template while holding different state, callbacks, and handles. Compiler identifiers must not accidentally become process-global instance identities.
 
-This first batch moved manifest graph validation/composition and its public build-by-ID API out of compiled browser graphs. General navigation still needs path building. The shared trie is still built in the browser; this is not a fully prebuilt trie. This batch left the unused public-method retention in place; the subsequent changes below remove it.
+## Persistent native scene
 
-After rebuilding router/compiler, the identical fixture measured:
+The native scene is the authoritative host state. It stores live topology, properties, geometry, clips, text resources, and interaction identities. These records survive presentation frames.
 
-| Fetched/routed/Group graph | Raw B before | Raw B after | Gzip B before | Gzip B after | Gzip saved |
-|---|---:|---:|---:|---:|---:|
-| Source | 72,131 | 69,794 | 23,132 | 22,389 | 743 (3.2%) |
-| Package | 71,525 | 69,228 | 23,039 | 22,314 | 725 (3.1%) |
+Use typed records for common fields and separate storage for variable text, images, and custom control data. Share immutable template/style records across instances. Start with straightforward indexed storage; choose more specialized layouts only after observing actual access patterns.
 
-The five non-router source controls in the baseline table retain exactly the same raw/gzip sizes. The added lazy-route fixture measures 52,698 raw / 17,250 gzip B in the source graph and 52,232 raw / 17,183 gzip B in the package graph; no paired baseline was taken for that fixture, so it establishes correctness and current size rather than a claimed saving.
+Every externally addressable handle includes an instance generation or equivalent lifetime protection. A delayed event, acknowledgment, or asynchronous result must not reach a new object that reused a retired index. Each window and application owns its scene and event registry.
 
-```powershell
-bun run bench/package-size/audit.ts --verify --fixture=static --fixture=owner-counter --fixture=input-list --fixture=owner-list --fixture=request-data --fixture=request-routed-group --fixture=route-lazy
+Branches and lists retain their necessary live topology. The compiler can prepare their operations, but runtime state still determines which branch exists, which rows are live, and how those rows are ordered.
+
+## A concrete state update
+
+Consider a button displaying an authored counter.
+
+1. The compiler emits a button/text template, a numeric state binding, an event handler site, and a text update function.
+2. Mounting creates one scene instance and connects its handler to the live owner.
+3. A native click carries the button's instance identity and handler identity to JavaScript.
+4. The authored callback changes the counter. Compiler-directed scheduling marks its dependent text update.
+5. The update function evaluates the text with the framework's normal semantics and stages a typed text-slot change when publication is necessary.
+6. The host accepts the transaction, updates the record, and marks text shaping and measurement dirty.
+7. A changed measurement invalidates dependent geometry. Unchanged measurements allow unaffected geometry to remain cached.
+8. The host refreshes affected paint records and presents the resulting scene.
+
+The button and its owner remain the same instance. A background-color change follows the paint path without requesting text shaping. A row movement follows the structural path without reconstructing the row's authored state.
+
+## Structural regions and lifetime
+
+Branch replacement prepares a candidate subtree and its ownership before publication. Acceptance makes the new subtree visible and retires the old one. A failed preparation or rejected transaction leaves the previous visible subtree intact; staged owners and host resources are released.
+
+Keyed rows preserve the association between a key, its application owner, and its native instance. Reordering changes placement while preserving state, focus where applicable, and handler identity. Removing a row retires its subscriptions, callbacks, pending work, and native resources according to the same lifetime contract. Positional lists preserve their own established semantics.
+
+Cleanup must run exactly once for each retired owner. Late asynchronous work checks ownership before publishing. Reentrant callbacks cannot resurrect a retired handle or publish against an obsolete scene generation.
+
+Virtualization needs a separate authoring contract. Deferring paint and layout does not automatically permit deferring component setup, effects, or data work. Define which row lifetimes are visible, retained, or suspended before using viewport visibility to change execution.
+
+## Transaction and acknowledgment contract
+
+The bridge exposes template installation, instance creation, typed slot updates, region insertion/movement/removal, disposal, and event registration. Commands refer to installed definitions and live handles. Their encoding can evolve while the operation semantics remain stable.
+
+An update transaction carries its application/window identity, sequence, expected scene generation, and ordered operations. The host checks handles, slot types, structural constraints, and resources before committing. Validation and staging must be sufficient to prevent partial visible publication when an operation fails.
+
+The publication sequence is:
+
+```text
+Authored mutation
+    -> dependency scheduling and expression evaluation
+    -> staged scene operations
+    -> host validation and resource preparation
+    -> atomic scene acceptance
+    -> publication acknowledgment
+    -> dependent layout and presentation
 ```
 
-All 14 package/source graphs pass browser interaction checks. The router package passes 126 tests and its TypeScript check; 10 focused root suites pass 68 tests covering compiler routes, nested runtime behavior, lazy retries, routed preparations/readiness, destination identity, hydration fragments, bundle boundaries, and shared-analysis boundaries. Bundled source/package public-constructor controls verify blockers and relative navigation still work, while metafiles verify that compiled graphs retain the shared prepared matcher and omit public manifest construction. These establish the reported byte reduction and tested behavior, not a CPU-speed gain.
+Host acceptance, completed layout, and presentation are separate milestones. Value caches that suppress later writes advance only after acceptance. A rejected update retains a pending publication or reports failure through the owning operation. Scene transactions do not automatically roll back arbitrary authored JavaScript side effects.
 
-Two selected production Chrome tests also pass: lazy route lifecycles with compiler-selected hydration, and routing/Group request presentation with client navigation. The root `bun run typecheck` passes. These are focused checks, not a new full-repository stability checkpoint. Router/compiler builds pass; targeted lint has no errors and reports array/spread style warnings.
+Native refs expose supported host operations. A bounds-reading effect waits for the corresponding layout acknowledgment; a focus request needs a live accepted control. Callbacks cannot synchronously read geometry for a transaction the host has not processed.
 
-## Completed router control and match changes
+Repeated pure writes to one slot can be coalesced within a transaction when their contract permits it. Structural operations, focus transitions, event delivery, and authored expression evaluation preserve their required ordering.
 
-The default runtime no longer returns blocker, observer, general/relative-navigation, resolver-installation, explicit back/forward, manual-match, snapshot or full-subscription methods. Their modules attach operations to that same object only when used. A private control context supplies the shared engine's publication, preparation, guards and recovery operations; it does not introduce a second state store or navigation engine. The public constructor and `getActiveRouteRuntime()` still expose the full API and preserve runtime identity.
+## Layout and paint invalidation
 
-Compiler-only navigation with no observer capability now skips event-record allocation through guarded calls. With no blocker capability it skips blocker-set allocation, snapshots and redirect processing. No timing gain is claimed from these structural reductions.
+Track content/measurement, structure, geometry, paint, hit testing, and accessibility as distinct work domains. Their dependencies determine what must be recomputed.
 
-The compiler emits `replacePreparedRouteResolver` for the validated matcher. Its already-frozen match records are reused, and the engine merges route parameters without repeating per-record validation/copying. Custom resolvers, public construction, escaped public runtime objects and manual matches select the existing validation/copying implementation. Parameter collisions introduced by linked component routes are rejected during source analysis. Public options/environment overload parsing also moved to the public constructor.
+| Change | Initial invalidation | Possible dependent work |
+| --- | --- | --- |
+| Text content or font | Shaping and measurement | Parent/sibling geometry, paint, accessibility |
+| Background color | Paint | Compositing where required |
+| Width or layout constraint | Geometry | Descendant layout, clips, hit testing, paint |
+| Child insertion or movement | Structure and layout | Ordering, focus traversal, accessibility |
+| Scroll offset | Visible placement and clipping | Hit testing, visibility, paint |
 
-Literal-link compiled graphs omit general programmatic navigation and its query serializer. Public `navigate` still builds parameterized paths, repeated query values and hashes when selected. Compiler-selected subscriptions remain in the engine; full snapshots and subscriptions use an optional hook in the same coherent publication loop. Reentrant listener replacement is covered by a regression test, including unsubscribe-all, navigation and resubscription during publication. Linked route analysis also rejects children under a terminal catch-all parent.
+Intrinsic dimensions can affect ancestors and siblings. A local write therefore does not guarantee that layout work stays local. An initial implementation may use a general layout engine behind the scene interface, then add proven incremental behavior without changing application contracts.
 
-The final identical fetched/routed/Group fixture measures:
+Retain shaped text, measured results, and paint records using the inputs that actually determine them. Font changes, scale changes, wrapping constraints, inherited properties, clipping, and ordering invalidate the appropriate caches. Retained CPU work and partial GPU presentation are separate mechanisms; the GPU may still draw the complete frame.
 
-| Graph | Original raw B | Final raw B | Original gzip B | Final gzip B | Total gzip saved |
-|---|---:|---:|---:|---:|---:|
-| Source | 72,131 | 61,393 | 23,132 | 20,139 | 2,993 (12.9%) |
-| Package | 71,525 | 61,020 | 23,039 | 20,074 | 2,965 (12.9%) |
+## Input, scheduling, and platform services
 
-The later work saves another 2,250 gzip B in source and 2,240 gzip B in package, beyond the first manifest reduction. The lazy-route fixture falls from the first batch's 52,698 raw / 17,250 gzip B to 44,304 raw / 15,048 gzip B in source, and from 52,232 raw / 17,183 gzip B to 44,043 raw / 14,994 gzip B in package. All five non-router controls retain their baseline raw/gzip sizes.
+The host owns hit testing, pointer capture, focus traversal, selection, caret presentation, and IME integration. Native feedback can update presentation without an authored callback. Application-defined behavior dispatches through the live handler registry and participates in normal state scheduling.
 
-Source/package metafiles prove omission of `navigation-blockers`, `navigation-observers`, `relative-navigation`, `resolver-installation`, `history-controls`, `runtime-controls`, `match-controls`, `match-validation`, `general-navigation`, `snapshot-controls` and query serialization from compiled-only route graphs. A blocker-only public entry includes blockers while omitting unrelated controls. Custom resolver controls retain validation, reject duplicate active IDs, copy mutable records and preserve the previous route after a failed publication. Complete escaped runtimes keep all public methods, preserve identity, and reject controls after disposal.
+Begin with a clear platform event-loop integration and one ordered publication path. Render on demand when accepted changes, platform damage, or active animation require it. Idle applications should not reconstruct scene descriptions or poll authored state unnecessarily.
 
-The final seven-fixture audit passes all 14 package/source browser graphs, including routed/Group and lazy navigation. Router tests and their TypeScript check pass (127 tests). Compiler/router bundle tests pass (33 tests); the other focused root suites passed during this change, including route readiness, preparations, destination identity, hydration fragments and package boundaries. The root TypeScript check also passes after the final code changes. Six real-browser history/scroll cases pass, including pending traversal, failed traversal recovery, Navigation API entry keys, late-resource hash restoration and obsolete restoration cancellation. Two selected production Chrome tests passed earlier in the investigation for lazy route hydration and routing/Group client navigation. The build-based bundle tests use a 30-second deadline after one earlier 5-second deadline was exceeded during parallel audits.
+The renderer consumes a stable accepted scene. If JavaScript and rendering use different threads, event sequencing, scene publication, acknowledgments, and resource retirement need explicit synchronization. Thread separation is an implementation choice to evaluate after the initial path works, subject to each platform's UI-thread requirements.
 
-The broad size-only audit built all 90 graphs across 45 stable fixtures during the control split. It was not an all-fixture browser interaction run; the final selected browser run supplies the interaction evidence above. No paired saving is claimed for fixtures without a captured baseline.
+Use native window, GPU, text, and accessibility services behind interfaces owned by the scene engine. Rust is the proposed host implementation language; the JavaScript engine and binding mechanism remain open choices. The compiler continues to emit JavaScript for ordinary application behavior.
 
-The remaining bytes include shared navigation/history recovery and readiness, URL handling, scroll restoration, fetched-resource settlement/cache/cancellation, Group lifetime work and generated application code. The fetched-resource module remains large, but size attribution alone does not prove that its complete cache/abort/refresh/public-resource contract can be removed. Existing boundaries already omit resource-write execution, transfer/restoration and server endpoint machinery in supported client-only graphs. No speculative deletion of those contracts was used to reach the reported savings.
+Define supported primitive and style semantics explicitly. Desktop refs and input events need their own typed contracts. Text editing, font fallback, keyboard navigation, DPI changes, and accessibility must be exercised as architectural behavior rather than added after the drawing path is assumed complete.
 
-## Validation
+## First implementation and validation
 
-When native work resumes, build a small independent native scene engine and compile four fixtures: counter, child prop update, branch replacement, and keyed row movement. Verify state, identity, cleanup, focus, and failed publication. Establish a release-build empty host, then measure bytes added by each capability and each fixture.
+Build one native window with containers, rectangles, text, clipping, pointer input, and an editable text control. Implement templates, live instances, typed slots, publication acknowledgments, and disposal before expanding the control set.
 
-For further browser experiments, identify a retained operation and its authoring/host contract before changing it. Compare identical package/source fixtures and verify production navigation, history, failure recovery and public API controls. Preserve shared transactions and required behavior. A smaller fixture alone is not a valid result if it silently removes promised browser behavior.
+Compile fixtures for a counter, child prop update, branch replacement, keyed row movement, and text editing. Verify visible state, instance identity, callback ordering, cleanup, focus, measurement dependencies, and rejected publication. Exercise delayed events, asynchronous cancellation, reentrant updates, and handle reuse.
 
-For native speed, record callback-to-presentation latency, layout/paint reuse, bridge commands/bytes, allocations, startup, idle CPU, and memory after repeated disposal. GPUIX can be one competitor in that comparison; the architecture should stand on its own measurements.
+Instrument update functions, bridge calls, touched scene records, layout visits, text shaping, and paint regeneration. The resulting traces must show that unrelated instances remain untouched where dependency proofs permit it. Measure input-to-presentation latency, frame work, idle CPU activity, and repeated mount/disposal behavior.
 
+Choose the layout implementation, text services, GPU backend, bridge encoding, and thread arrangement using those fixtures. Comparisons with GPUIX must match visible behavior and lifecycle guarantees. Performance claims follow those measurements; the core commitment is compiled structure, direct native slot updates, persistent host records, and coherent publication.
