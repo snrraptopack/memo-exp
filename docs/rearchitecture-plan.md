@@ -337,7 +337,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   detection. No DOM CPU improvement is claimed; broader capability isolation
   and numeric keys remain open.
 
-### Private row-prop contracts (parent `0133339`)
+### Private row-prop contracts (commit `7e59b93`, parent `0133339`)
 
 - Shared planning now proves single-field envelope use with lexical identities,
   including shadowed bindings, direct keyed calls, escape/receiver checks and
@@ -355,3 +355,22 @@ These are prerequisites for the runtime-size and broader precision batches.
   lazy routing 68,066 / 22,009 B in three chunks and routed/Group
   87,093 / 26,790 B. The preceding runtime-size improvement is preserved;
   this compiler boundary batch makes no additional size or CPU claim.
+
+### Calculated list-source contracts (parent `7e59b93`)
+
+- Shared planning captures calculated receivers, source snapshots and containing
+  statements in the existing source order without binding allocation or AST
+  mutation. Direct sources, optional chains and nested callback boundaries retain
+  their existing treatment. Library methods remain ordinary authored behavior.
+- DOM lowering consumes these contracts and allocates derivation declarations;
+  it does not rediscover source candidates. Deleted the mixed list normalization
+  implementation. Existing derivation replay and list reconciliation remain the
+  only execution path.
+- Compiler build, type checking, lint and the transitive import boundary passed.
+  Seven focused suites passed 111 tests across opaque control flow, helper/list
+  updates, retained rows, calculated sources and initial list adoption.
+- All 123 output/graph/delivery comparisons match `7e59b93`. Five production SSR
+  fixtures retain identical HTML/payload/raw/gzip sizes with the same runtime,
+  including static zero JS, lazy chunks and routed/Group delivery. No additional
+  byte or CPU saving is claimed. Remaining module/source normalization,
+  composition contracts, numeric keys and capability gates remain open.

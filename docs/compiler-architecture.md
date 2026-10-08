@@ -797,3 +797,20 @@ All 123 compiler output/graph/delivery comparisons match `0133339`; five paired
 production SSR fixtures retain identical HTML, payload and JS sizes with the same
 runtime. This separates source proof from emission, with no additional byte or
 CPU claim. Calculated-source and remaining semantic normalization stay open.
+
+### Calculated list-source planning — 2026-10-08
+
+Shared planning captures calculated collection expressions and their source
+placements before generated derivation allocation. Plans retain source snapshots,
+ordered receiver locations and callback scope boundaries without changing authored
+syntax. DOM lowering consumes those contracts through the existing derivation/list
+pipeline; it no longer searches the program for candidates. The former mixed list
+normalization implementation is deleted. No method whitelist or list interpreter
+was introduced.
+
+Seven focused suites pass 111 checks, including optional chains, unknown methods,
+opaque control flow, retained keys, helper operations and initial list adoption.
+Compiler build, type checking, lint and the transitive import boundary pass.
+All 123 output/graph/delivery comparisons match `7e59b93`; five paired production
+SSR builds preserve HTML, payload and JavaScript sizes with identical runtime
+packages. This boundary change claims no additional byte or CPU improvement.

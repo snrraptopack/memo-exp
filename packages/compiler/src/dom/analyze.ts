@@ -36,7 +36,8 @@ import { planPrivateRowProps } from '../planning/private-row-props';
 import { lowerPrivateRowProps } from './private-row-props';
 import { analyzeComponentProps } from '../components/props';
 import { normalizeRenderFunctions } from '../components/render-functions';
-import { normalizeCalculatedListSources } from '../lists/calculated-sources';
+import { planCalculatedListSources } from '../planning/calculated-list-sources';
+import { lowerCalculatedListSources } from './calculated-list-sources';
 import {
   normalizeDynamicTags,
   scanLocalDynamicComponentCandidates,
@@ -88,7 +89,7 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   scanRenderProps(ctx);
   normalizeComponentJsxValues(ctx);
   normalizeDynamicTags(ctx);
-  normalizeCalculatedListSources(ctx);
+  lowerCalculatedListSources(ctx, planCalculatedListSources(ctx));
   // Normalization can replace declarations and expressions. Rebuild the
   // parser-neutral index before binding-aware analysis consumes those nodes.
   refreshAstAnalysis(ctx, programPath.node);

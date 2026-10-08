@@ -1,24 +1,32 @@
 /**
- * Calculated list-source normalization.
+ * Shared calculated list-source planning.
  *
  * A direct expression such as `items.filter(predicate).map(renderRow)` is
- * hoisted to one component-local derivation before ordinary instance analysis.
- * Existing derivation replay and R7 reconciliation then provide update
- * scheduling and keyed retention without adding a runtime list-expression
- * interpreter.
+ * planned as one component-local derivation before ordinary instance analysis.
+ * A backend lowers the plan; existing derivation replay and R7 reconciliation
+ * provide scheduling and keyed retention without a list-expression interpreter.
  */
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../ast';
-import { walkAst, type BaseNode } from '../ast';
-import { refreshAstAnalysis, type MapCallExpression } from '../context';
-import { type DomContext as Ctx } from '../dom/context';
-import { generatedIdentifier } from '../dom/identifiers';
-import { matchMapCall } from '../lists';
+import { cloneNode, walkAst, type BaseNode } from '../ast';
+import type { Ctx } from '../context';
 import {
   isStaticPrimitiveList,
   transparentListExpression,
-} from './source-shapes';
+  matchMapCall,
+} from '../lists/source-shapes';
+
+export interface CalculatedListSource {
+  readonly receiver: t.MemberExpression | t.OptionalMemberExpression;
+  readonly source: t.Expression;
+  readonly statement: t.Statement;
+}
+
+export interface CalculatedListSourcePlan {
+  readonly component: string;
+  readonly body: t.BlockStatement;
+  readonly sources: readonly CalculatedListSource[];
+}
 
 function directSourceShape(expression: t.Expression): boolean {
   const current = transparentListExpression(expression);
@@ -46,17 +54,14 @@ function containingTopLevelStatement(
 }
 
 /**
- * Hoist calculated roots of structural `.map()` calls into generated const
- * derivations consumed by the existing R14/R7 pipeline. Method behavior and
- * return values remain ordinary author-owned JavaScript contracts.
+ * Capture calculated roots in authored traversal/statement order. This pass
+ * neither allocates derivation bindings nor changes any receiver or declaration.
+ * Method behavior and return values remain ordinary authored JavaScript.
  */
-export function normalizeCalculatedListSources(ctx: Ctx): void {
-  for (const [, componentPath] of ctx.compPaths) {
-    const candidates: Array<{
-      call: MapCallExpression;
-      source: t.Expression;
-      statement: t.Statement;
-    }> = [];
+export function planCalculatedListSources(ctx: Ctx): readonly CalculatedListSourcePlan[] {
+  const plans: CalculatedListSourcePlan[] = [];
+  for (const [component, componentPath] of ctx.compPaths) {
+    const candidates: CalculatedListSource[] = [];
     const componentBody = componentPath.node.body as unknown as BaseNode;
 
     walkAst(componentBody, {
@@ -75,10 +80,10 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
         ) {
           return;
         }
-        const call = node as unknown as MapCallExpression;
+        const call = matchMapCall(node as unknown as t.Node);
+        if (call === null) return;
         const callee = call.callee;
         if (
-          matchMapCall(call) === null ||
           (!astFactory.isMemberExpression(callee) &&
             !astFactory.isOptionalMemberExpression(callee)) ||
           !astFactory.isExpression(callee.object) ||
@@ -92,11 +97,11 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
           componentBody,
         );
         if (statement === null) return;
-        candidates.push({
-          call,
-          source: cloneEstreeNode(callee.object, true),
+        candidates.push(Object.freeze({
+          receiver: callee,
+          source: cloneNode(callee.object, true),
           statement,
-        });
+        }));
       },
     });
 
@@ -111,30 +116,7 @@ export function normalizeCalculatedListSources(ctx: Ctx): void {
         (statementOrder.get(right.statement) ?? 0),
     );
 
-    const declarations: t.VariableDeclarator[] = [];
-    for (const candidate of candidates) {
-      const binding = generatedIdentifier(ctx, 'listView');
-      declarations.push(
-        astFactory.variableDeclarator(cloneEstreeNode(binding), candidate.source),
-      );
-      const callee = candidate.call.callee;
-      if (
-        (!astFactory.isMemberExpression(callee) && !astFactory.isOptionalMemberExpression(callee)) ||
-        !astFactory.isExpression(callee.object)
-      ) {
-        continue;
-      }
-      callee.object = cloneEstreeNode(binding);
-    }
-
-    const insertionIndex = body.indexOf(candidates[0]!.statement);
-    if (insertionIndex < 0) continue;
-    body.splice(
-      insertionIndex,
-      0,
-      astFactory.variableDeclaration('const', declarations),
-    );
-    const program = ctx.astAnalysis?.rootScope.block;
-    if (program !== undefined) refreshAstAnalysis(ctx, program);
+    plans.push(Object.freeze({component,body:componentPath.node.body,sources:Object.freeze(candidates)}));
   }
+  return Object.freeze(plans);
 }
