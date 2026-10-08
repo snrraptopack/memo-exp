@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createScrollCoordinator } from '../src/scroll';
-import { createRouteRuntime } from '../src/runtime';
+import { createRouteRuntime } from '../src/runtime-full';
 import { createMemoryRouteHistory } from '../src/history';
 
 describe('scroll restoration coordinator', () => {

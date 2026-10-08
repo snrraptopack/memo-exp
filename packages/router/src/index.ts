@@ -11,8 +11,15 @@ import {
   activeRoute,
   back as activeBack,
   forward as activeForward,
-  getActiveRouteRuntime,
+  getActiveRouteRuntime as getActiveCoreRouteRuntime,
+  setActiveRouteRuntime as setActiveCoreRouteRuntime,
 } from './active-runtime';
+import { exposeRouteRuntime } from './runtime-controls';
+import { enableNavigationBlockers } from './navigation-blockers';
+import { enableNavigationObservers } from './navigation-observers';
+import { enableRelativeNavigation } from './relative-navigation';
+import { enableGeneralNavigation } from './general-navigation';
+import type { RouteRuntime } from './runtime';
 
 export const route = activeRoute;
 
@@ -36,21 +43,21 @@ export function navigate<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: NavigateArguments<Path>
 ) {
-  return getActiveRouteRuntime().navigate(pattern, ...arguments_);
+  return enableGeneralNavigation(getActiveCoreRouteRuntime()).navigate(pattern, ...arguments_);
 }
 export function navigateRelative<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: RelativeNavigateArguments<Path>
 ) {
-  return getActiveRouteRuntime().navigateRelative(pattern, ...arguments_);
+  return enableRelativeNavigation(getActiveCoreRouteRuntime()).navigateRelative(pattern, ...arguments_);
 }
 export function blockNavigation(blocker: RouteNavigationBlocker): () => void {
-  return getActiveRouteRuntime().blockNavigation(blocker);
+  return enableNavigationBlockers(getActiveCoreRouteRuntime()).blockNavigation(blocker);
 }
 export function subscribeNavigation(
   listener: RouteNavigationListener,
 ): () => void {
-  return getActiveRouteRuntime().subscribeNavigation(listener);
+  return enableNavigationObservers(getActiveCoreRouteRuntime()).subscribeNavigation(listener);
 }
 export function back() {
   return activeBack();
@@ -58,7 +65,13 @@ export function back() {
 export function forward() {
   return activeForward();
 }
-export { getActiveRouteRuntime, setActiveRouteRuntime, runWithRouteRuntime } from './active-runtime';
+export { runWithRouteRuntime } from './active-runtime';
+export function getActiveRouteRuntime(): RouteRuntime {
+  return exposeRouteRuntime(getActiveCoreRouteRuntime());
+}
+export function setActiveRouteRuntime(runtime: RouteRuntime | null): RouteRuntime {
+  return exposeRouteRuntime(setActiveCoreRouteRuntime(runtime));
+}
 
 export { createRouteRuntime } from './runtime-full';
 export { supportsNavigationAPI } from './runtime';

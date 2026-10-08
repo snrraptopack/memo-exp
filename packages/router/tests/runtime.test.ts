@@ -1081,6 +1081,24 @@ describe('route runtime', () => {
     runtime.dispose();
   });
 
+  it('resumes snapshot delivery when a reentrant listener replaces the last subscription', () => {
+    const runtime = createRouteRuntime(browserEnvironment());
+    const received: string[] = [];
+    let unsubscribe = () => {};
+    unsubscribe = runtime.subscribe(value => {
+      if (value.pathname === '/first') {
+        unsubscribe();
+        runtime.setLocation('/latest');
+        runtime.subscribe(next => received.push(next.pathname));
+      }
+    });
+
+    runtime.setLocation('/first');
+
+    expect(received).toEqual(['/latest', '/latest']);
+    runtime.dispose();
+  });
+
   it('rejects duplicate IDs and parameter shadowing in an active chain', () => {
     const runtime = createRouteRuntime(browserEnvironment());
     expect(() => runtime.setMatches([

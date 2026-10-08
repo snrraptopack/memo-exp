@@ -49,6 +49,5 @@ app.get('/api/admin/stats', context => ({
   requestId: context.locals.requestId,
 }));
 
-app.ssr(Main);
-
+app.ssr(Main, { mode: 'stream', nonce: request => request.headers.get('x-csp-nonce') ?? undefined });
 export default app;

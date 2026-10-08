@@ -22,7 +22,7 @@
     "test:language-service": "bun run --cwd packages/language-service test",
     "test:corpus": "bun run scripts/corpus-e2e.ts",
     "lint": "oxlint .",
-    "typecheck": "bun run scripts/typecheck-prepare.ts && tsc --noEmit",
+    "typecheck": "bun check",
     "dev": "bun run build && vitest",
     "example:dev": "vite --config examples/vite.config.ts",
     "example:common-ground": "vite --config examples/common-ground/vite.config.ts",

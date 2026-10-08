@@ -1,4 +1,7 @@
-import type { RouteRuntime } from './runtime';
+import type { CoreRouteRuntime } from './runtime';
+import { enableNavigationBlockers } from './navigation-blockers';
+import { enableResolverInstallation } from './resolver-installation';
+import { enableGeneralNavigation } from './general-navigation';
 import type {
   RouteNavigationBlocker as Blocker,
   RouteResolver,
@@ -12,6 +15,7 @@ import {
   navigate as activeNavigate,
   navigateRelative as activeNavigateRelative,
   noteManifestResolver,
+  notePreparedManifestResolver,
   subscribe as activeSubscribe,
   subscribeNavigation as activeSubscribeNavigation,
   subscribeSelected as activeSubscribeSelected,
@@ -47,6 +51,7 @@ export { createRouteRuntime } from './runtime-full';
 export { supportsNavigationAPI } from './runtime';
 export { redirectRoute } from './types';
 export { createRouteManifest } from './manifest';
+export { createPreparedRouteMatcher } from './prepared-matcher';
 export type {
   NavigationController,
   NavigationDestinationLike,
@@ -70,20 +75,23 @@ export { buildRoutePath } from './path';
 
 /** Compiler-runtime boundary. Application code should not need these calls. */
 export const connectRouter = (): (() => void) => activeConnect();
-const connections = new WeakMap<RouteRuntime, () => void>();
+const connections = new WeakMap<CoreRouteRuntime, () => void>();
 export function ensureRouterConnected(): void {
   const runtime = getActiveRouteRuntime();
   if (!connections.has(runtime)) connections.set(runtime, runtime.connect());
 }
 export function installRouteResolver(resolver: RouteResolver): () => void {
-  return getActiveRouteRuntime().installResolver(resolver);
+  return enableResolverInstallation(getActiveRouteRuntime()).installResolver(resolver);
 }
 export function replaceRouteResolver(resolver: RouteResolver): () => void {
   return noteManifestResolver(resolver);
 }
+export function replacePreparedRouteResolver(resolver: RouteResolver): () => void {
+  return notePreparedManifestResolver(resolver);
+}
 export const navigateRouteRelative = activeNavigateRelative;
 export function blockRouteNavigation(blocker: Blocker): () => void {
-  return getActiveRouteRuntime().blockNavigation(blocker);
+  return enableNavigationBlockers(getActiveRouteRuntime()).blockNavigation(blocker);
 }
 export const subscribeRouteNavigation = activeSubscribeNavigation;
 export const subscribeRoute = activeSubscribe;
@@ -117,7 +125,7 @@ export async function prepareInitialRoute(): Promise<void> {
   }
   const outcome = await prepareInitialRoutedRuntime(runtime, { reusePrepared: true });
   if (outcome.kind === 'redirect') {
-    const result = runtime.navigate(outcome.redirect.to.toString(), {
+    const result = enableGeneralNavigation(runtime).navigate(outcome.redirect.to.toString(), {
       replace: outcome.redirect.replace ?? true,
       state: outcome.redirect.state ?? null,
     });

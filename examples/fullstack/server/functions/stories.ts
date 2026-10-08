@@ -60,6 +60,7 @@ function delay(ms: number) {
 
 /** @GET */
 export async function getStories() {
+  await delay(3000);
   return stories;
 }
 
@@ -70,7 +71,7 @@ export async function getStory(id: number) {
 }
 
 /** @POST */
-export async function postVote(id: number) {
+export async function vote(id: number) {
   const { locals } = getServerContext();
   const story = stories.find((candidate) => candidate.id === id)!;
 
@@ -83,10 +84,10 @@ export async function postVote(id: number) {
 }
 
 /** @DELETE */
-export async function deleteStory(id: number) {
+export async function removeStory(id: number) {
   const { request } = getServerContext();
   if (request.headers.get('x-admin') !== 'yes') {
-    throw new Error('deleteStory requires the x-admin: yes header');
+    throw new Error('removeStory requires the x-admin: yes header');
   }
   const index = stories.findIndex((story) => story.id === id);
   if (index === -1) {

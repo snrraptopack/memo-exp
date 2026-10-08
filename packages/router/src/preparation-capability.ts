@@ -1,7 +1,7 @@
 /** Navigation discovers preparation work without importing its execution code. */
 import type { RouteMatch } from './types';
 import type { RoutedPreparationInput, RoutedPreparationOutcome, RoutedPreparationMetadata } from './preparation';
-import type { RouteRuntime } from './runtime';
+import type { CoreRouteRuntime as RouteRuntime } from './runtime';
 
 export interface RoutePreparationTransaction {
   prepare(match: RouteMatch): Promise<RoutedPreparationOutcome | undefined>;

@@ -1,8 +1,7 @@
-import { createRouteMatcher } from './matcher';
+import { createPreparedRouteMatcher } from './prepared-matcher';
 import {
   buildRoutePath,
   joinRoutePaths,
-  matchRoutePattern,
   pathSegments,
   validateRoutePattern,
 } from './path';
@@ -11,7 +10,6 @@ import type {
   RouteLocationSnapshot,
   RouteManifest,
   RouteManifestEntry,
-  RouteMatch,
   RoutePatternDefinition,
 } from './types';
 
@@ -19,8 +17,6 @@ interface PreparedManifestEntry extends RouteManifestEntry {
   readonly ownParamNames: readonly string[];
   readonly parent: PreparedManifestEntry | null;
 }
-
-const EMPTY_MATCHES: readonly RouteMatch[] = Object.freeze([]);
 
 function patternSignature(pattern: string): string {
   return pathSegments(pattern)
@@ -158,10 +154,16 @@ export function createRouteManifest(
     }
   }
 
-  const table = createRouteMatcher(entries.map(entry => ({
-    id: entry.id,
-    pattern: entry.fullPattern,
-  })));
+  const indexes = new Map(entries.map((entry, index) => [entry.id, index]));
+  const matchAll = createPreparedRouteMatcher(entries.map(entry => {
+    const chain: number[] = [];
+    let current: PreparedManifestEntry | null = entry;
+    while (current !== null) {
+      chain.push(indexes.get(current.id)!);
+      current = current.parent;
+    }
+    return { ...entry, chain: chain.reverse() };
+  }));
   const publicEntries: readonly RouteManifestEntry[] = Object.freeze(
     entries.map(entry => Object.freeze({
       id: entry.id,
@@ -172,43 +174,6 @@ export function createRouteManifest(
       depth: entry.depth,
     })),
   );
-
-  function matchAll(pathname: string): readonly RouteMatch[] {
-    const leafMatch = table.match(pathname);
-    if (leafMatch === null) return EMPTY_MATCHES;
-    const leaf = preparedById.get(leafMatch.id)!;
-    const chain: PreparedManifestEntry[] = [];
-    let current: PreparedManifestEntry | null = leaf;
-    while (current !== null) {
-      chain.push(current);
-      current = current.parent;
-    }
-    chain.reverse();
-
-    const matches: RouteMatch[] = new Array(chain.length);
-    for (let index = 0; index < chain.length; index++) {
-      const entry = chain[index]!;
-      const patternMatch = matchRoutePattern(entry.fullPattern, pathname, {
-        end: index === chain.length - 1,
-      });
-      if (patternMatch === null) {
-        throw new Error(`Resolved route '${entry.id}' did not match '${pathname}'`);
-      }
-      const params: Record<string, string> = {};
-      for (const name of entry.ownParamNames) {
-        const value = patternMatch.params[name];
-        if (value !== undefined) params[name] = value;
-      }
-      matches[index] = Object.freeze({
-        id: entry.id,
-        pattern: entry.pattern,
-        pathname: patternMatch.consumed,
-        params: Object.freeze(params),
-        metadata: entry.metadata,
-      });
-    }
-    return Object.freeze(matches);
-  }
 
   return Object.freeze({
     entries: publicEntries,

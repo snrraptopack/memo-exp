@@ -17,7 +17,7 @@ if (executablePath === undefined) {
 }
 
 const source = `
-import { createRouteRuntime } from './packages/router/src/runtime';
+import { createRouteRuntime } from './packages/router/src/runtime-full';
 import { registerRoutedPreparation } from './packages/router/src/preparation';
 import { createScrollCoordinator } from './packages/router/src/scroll';
 

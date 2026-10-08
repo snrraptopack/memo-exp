@@ -1,11 +1,11 @@
 import {
-  buildRoutePath,
   normalizeRoutePath,
   resolveRoutePath,
   validateRoutePattern,
 } from './path';
-import { createRouteManifest } from './manifest';
 import { createScrollCoordinator } from './scroll';
+import { registerRouteControlContext, type RouteControlContext,
+  type PreparedRouteNavigation, type RouteNavigationPreparation, type PreparedRouteMatches } from './control-context';
 import { collectRenderReadiness } from '@memoized-dom/runtime';
 import {
   hasRoutedPreparations,
@@ -24,7 +24,6 @@ import type {
   RouteMatch,
   RouteNavigation,
   RouteNavigationBlocker,
-  RouteNavigationEvent,
   RouteNavigationListener,
   RouteNavigationLocation,
   RouteNavigationResult,
@@ -38,7 +37,6 @@ import type {
   RouteSnapshot,
   RouteState,
   RelativeNavigateArguments,
-  RelativeNavigateOptions,
 } from './types';
 
 const FALLBACK_ORIGIN = 'http://memoized-dom.local';
@@ -120,6 +118,10 @@ export interface RouteRuntime {
   dispose(): void;
 }
 
+/** Operations needed by compiled routing; optional public controls attach to this engine. */
+export type CoreRouteRuntime = Omit<RouteRuntime,
+  'installResolver' | 'navigate' | 'navigateRelative' | 'blockNavigation' | 'subscribeNavigation' | 'back' | 'forward' | 'setMatches' | 'snapshot' | 'subscribe'>;
+
 export function supportsNavigationAPI(
   environment: RouteEnvironment = typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment),
 ): boolean {
@@ -129,13 +131,6 @@ export function supportsNavigationAPI(
 function initialURL(environment: RouteEnvironment): URL {
   const href = environment.location?.href;
   return new URL(href ?? '/', href ?? FALLBACK_ORIGIN);
-}
-
-function frozenMatch(match: RouteMatch): RouteMatch {
-  return Object.freeze({
-    ...match,
-    params: Object.freeze({ ...match.params }),
-  });
 }
 
 const queryParamsCache = new WeakMap<FastRouteQuery, URLSearchParams>();
@@ -214,56 +209,11 @@ export interface RouteRuntimeOptions {
   readonly basePath?: string;
 }
 
-function prepareMatches(nextMatches: readonly RouteMatch[]): {
-  readonly matches: readonly RouteMatch[];
-  readonly params: Readonly<Record<string, string>>;
-} {
-  const len = nextMatches.length;
-  if (len === 0) {
-    return {
-      matches: Object.freeze([]),
-      params: Object.freeze({}),
-    };
-  }
-
-  // Fast single-match path (no Set allocation, for..in iteration)
-  if (len === 1) {
-    const match = nextMatches[0]!;
-    if (match.id.trim() === '') throw new TypeError('Route match IDs must not be empty');
-    const pattern = validateRoutePattern(match.pattern);
-    const merged: Record<string, string> = {};
-    for (const key in match.params) {
-      merged[key] = match.params[key]!;
-    }
-    return {
-      matches: Object.freeze([frozenMatch({ ...match, pattern })]),
-      params: Object.freeze(merged),
-    };
-  }
-
-  const identifiers = new Set<string>();
-  const merged: Record<string, string> = {};
-  const frozen: RouteMatch[] = new Array(len);
-  for (let i = 0; i < len; i++) {
-    const match = nextMatches[i]!;
-    if (match.id.trim() === '') throw new TypeError('Route match IDs must not be empty');
-    if (identifiers.has(match.id)) {
-      throw new TypeError(`Duplicate active route ID '${match.id}'`);
-    }
-    identifiers.add(match.id);
-    const pattern = validateRoutePattern(match.pattern);
-    for (const key in match.params) {
-      if (Object.hasOwn(merged, key)) {
-        throw new TypeError(`Duplicate active route parameter '${key}'`);
-      }
-      merged[key] = match.params[key]!;
-    }
-    frozen[i] = frozenMatch({ ...match, pattern });
-  }
-  return {
-    matches: Object.freeze(frozen),
-    params: Object.freeze(merged),
-  };
+/** Compiler/manifest producers already validate graph facts and freeze each record. */
+function prepareKnownMatches(nextMatches: readonly RouteMatch[]): PreparedRouteMatches {
+  const params: Record<string, string> = {};
+  for (const match of nextMatches) Object.assign(params, match.params);
+  return { matches: Object.freeze(nextMatches), params: Object.freeze(params) };
 }
 
 function sameMatches(
@@ -310,19 +260,11 @@ function generateHistoryKey(): string {
 }
 
 export function createRouteRuntime(
-  optionsOrEnvironment: RouteEnvironment | RouteRuntimeOptions = typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment),
-): RouteRuntime {
-  const isOptions = typeof optionsOrEnvironment === 'object' && optionsOrEnvironment !== null &&
-    ('routes' in optionsOrEnvironment ||
-      'resolver' in optionsOrEnvironment ||
-      'environment' in optionsOrEnvironment ||
-      'routeHistory' in optionsOrEnvironment ||
-      'basePath' in optionsOrEnvironment);
-
-  const options: RouteRuntimeOptions = isOptions
-    ? (optionsOrEnvironment as RouteRuntimeOptions)
-    : { environment: optionsOrEnvironment as RouteEnvironment };
-
+  options: RouteRuntimeOptions = {},
+  resolveDefinitions?: (definitions: readonly (RoutePatternDefinition | string)[]) => RouteResolver,
+  normalizeMatches: (matches: readonly RouteMatch[]) => PreparedRouteMatches = prepareKnownMatches,
+): CoreRouteRuntime {
+  let prepareMatches = normalizeMatches;
   const environment: RouteEnvironment = options.environment ?? (typeof window === 'undefined' ? {} : (window as unknown as RouteEnvironment));
   const routeHistory = options.routeHistory;
   const basePath = validateRoutePattern(options.basePath ?? '/');
@@ -386,8 +328,7 @@ export function createRouteRuntime(
   let resolver: RouteResolver | null = options.resolver ?? null;
   let resolverRevision = 0;
   if (resolver === null && options.routes !== undefined) {
-    const manifest = createRouteManifest(options.routes);
-    resolver = manifest.resolve.bind(manifest);
+    resolver = resolveDefinitions!(options.routes);
   }
   let resolving = false;
   let blocking = false;
@@ -423,15 +364,13 @@ export function createRouteRuntime(
   }
   let emitting = false;
   let emissionPending = false;
-  const listeners = new Set<RouteListener>();
+  let notifySnapshots: RouteControlContext['notifySnapshots'];
   const selectedListeners = new Set<{
     selector: RouteSelector<unknown>;
     listener: RouteSelectionListener<unknown>;
     equals: RouteSelectionEquality<unknown>;
     value: unknown;
   }>();
-  const navigationBlockers = new Set<RouteNavigationBlocker>();
-  const navigationListeners = new Set<RouteNavigationListener>();
   let unsubscribeRouteHistory: (() => void) | null = null;
 
   const route: RouteState = Object.freeze({
@@ -451,22 +390,6 @@ export function createRouteRuntime(
     },
   });
 
-  function snapshot(): RouteSnapshot {
-    return Object.freeze({
-      href: route.href,
-      pathname: route.pathname,
-      search: route.search,
-      query: route.query,
-      hash: route.hash,
-      state: route.state,
-      navigationType: route.navigationType,
-      params: route.params,
-      matches: route.matches,
-      matched: route.matched,
-      signal: route.signal,
-    });
-  }
-
   function locationSnapshot(): RouteLocationSnapshot {
     return Object.freeze({
       href: url.href,
@@ -485,7 +408,7 @@ export function createRouteRuntime(
 
   function emit(): void {
     revision++;
-    if (listeners.size === 0 && selectedListeners.size === 0) return;
+    if (notifySnapshots === undefined && selectedListeners.size === 0) return;
     if (emitting) {
       emissionPending = true;
       return;
@@ -497,22 +420,11 @@ export function createRouteRuntime(
       do {
         emissionPending = false;
         const emittedRevision = revision;
-        if (listeners.size !== 0) {
-          const value = snapshot();
-          for (const listener of [...listeners]) {
-            if (!listeners.has(listener)) continue;
-            try {
-              listener(value);
-            } catch (error) {
-              errors.push(error);
-            }
-            if (revision !== emittedRevision) {
-              emissionPending = true;
-              break;
-            }
-          }
+        notifySnapshots?.(errors, emittedRevision);
+        if (revision !== emittedRevision) {
+          emissionPending = true;
+          continue;
         }
-        if (revision !== emittedRevision) continue;
         for (const subscription of [...selectedListeners]) {
           if (!selectedListeners.has(subscription)) continue;
           try {
@@ -723,110 +635,15 @@ export function createRouteRuntime(
     });
   }
 
-  function emitNavigation(event: RouteNavigationEvent): void {
-    const errors: unknown[] = [];
-    for (const listener of [...navigationListeners]) {
-      if (!navigationListeners.has(listener)) continue;
-      try {
-        listener(event);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) {
-      throw new AggregateError(errors, 'Route navigation listeners failed');
-    }
-  }
-
   function prepareNavigation(
-    initial: URL,
-    initialOptions: Pick<NavigateOptions, 'replace' | 'state'>,
-    initialType: Exclude<NavigationType, 'load'> = initialOptions.replace
-      ? 'replace'
-      : 'push',
-  ):
-    | {
-        readonly status: 'ready';
-        readonly next: URL;
-        readonly options: Pick<NavigateOptions, 'replace' | 'state'>;
-        readonly navigation: RouteNavigation;
-        readonly redirects: number;
-      }
-    | Extract<RouteNavigationResult, { readonly status: 'blocked' }> {
-    const id = ++navigationId;
-    const from = navigationLocation(url, state);
-    let next = initial;
-    let nextOptions = initialOptions;
-    let nextType = initialType;
-    let redirects = 0;
-
-    while (true) {
-      const navigation = navigationRecord(id, from, next, nextOptions, nextType);
-      if (redirects === 0) {
-        emitNavigation(Object.freeze({ phase: 'start', navigation }));
-      }
-
-      let redirected = false;
-      blocking = true;
-      try {
-        for (const blocker of [...navigationBlockers]) {
-          if (!navigationBlockers.has(blocker)) continue;
-          const decision = blocker(navigation);
-          if (
-            typeof decision === 'object' &&
-            decision !== null &&
-            'then' in decision
-          ) {
-            throw new TypeError(
-              'Route navigation blockers must be synchronous; async work belongs to the data boundary',
-            );
-          }
-          if (decision === false) {
-            emitNavigation(Object.freeze({ phase: 'blocked', navigation }));
-            return Object.freeze({ status: 'blocked', navigation, redirects });
-          }
-          if (typeof decision === 'object' && decision !== null && 'to' in decision) {
-            redirects++;
-            if (redirects > 16) {
-              throw new Error('Route navigation exceeded 16 redirects');
-            }
-            emitNavigation(Object.freeze({
-              phase: 'redirect',
-              navigation,
-              redirect: decision,
-            }));
-            if (decision.to instanceof URL) {
-              next = new URL(decision.to.href);
-            } else {
-              const redirectedPath = resolveRoutePath(
-                navigation.to.pathname,
-                decision.to,
-              );
-              next = applicationURL(redirectedPath);
-            }
-            nextOptions = {
-              replace: decision.replace ?? nextOptions.replace,
-              state: decision.state ?? null,
-            };
-            nextType = nextOptions.replace ? 'replace' : 'push';
-            redirected = true;
-            break;
-          }
-        }
-      } finally {
-        blocking = false;
-      }
-      if (!redirected) {
-        return {
-          status: 'ready',
-          next,
-          options: nextOptions,
-          navigation,
-          redirects,
-        };
-      }
-    }
+    next: URL,
+    options: Pick<NavigateOptions, 'replace' | 'state'>,
+    type: Exclude<NavigationType, 'load'> = options.replace ? 'replace' : 'push',
+  ): RouteNavigationPreparation {
+    const navigation = navigationRecord(++navigationId, navigationLocation(url, state), next, options, type);
+    controls.emit?.(Object.freeze({ phase: 'start', navigation }));
+    const prepared: PreparedRouteNavigation = { status: 'ready', next, options, navigation, redirects: 0 };
+    return controls.prepare?.(prepared) ?? prepared;
   }
 
   let rollbackHistoryHref: string | null = null;
@@ -851,13 +668,13 @@ export function createRouteRuntime(
         throw preparation?.signal.reason ?? new DOMException('Route navigation was superseded', 'AbortError');
       }
       if (activePreparation === preparation) activePreparation = null;
-      emitNavigation(Object.freeze({ phase: 'complete', navigation }));
+      controls.emit?.(Object.freeze({ phase: 'complete', navigation }));
       return Object.freeze({ status: 'completed', navigation, redirects });
     };
     if (ready === undefined) return complete();
     const waiting = preparation ?? new AbortController();
     activePreparation = waiting;
-    if (!preparingAlready) emitNavigation(Object.freeze({ phase: 'prepare', navigation }));
+    if (!preparingAlready) controls.emit?.(Object.freeze({ phase: 'prepare', navigation }));
     const finished = new Promise<void>((resolve, reject) => {
       const aborted = () => reject(waiting.signal.reason ?? new DOMException('Route navigation was superseded', 'AbortError'));
       if (waiting.signal.aborted) { aborted(); return; }
@@ -871,7 +688,7 @@ export function createRouteRuntime(
       if (!disposed && !waiting.signal.aborted && navigationId === navigation.id) {
         // Entry already succeeded. The failed owned region's Group arm owns
         // retry; rerunning navigation would duplicate history or replay gates.
-        emitNavigation(Object.freeze({ phase: 'error', navigation, error }));
+        controls.emit?.(Object.freeze({ phase: 'error', navigation, error }));
       }
       throw error;
     });
@@ -933,7 +750,7 @@ export function createRouteRuntime(
       if (preparation.signal.aborted || disposed || entryCommitted || navigationId !== prepared.navigation.id) return;
       pendingBrowserHref = null;
       recoverBrowserTraversal(previousIndex, index);
-      emitNavigation(Object.freeze({
+      controls.emit?.(Object.freeze({
         phase: 'error', navigation: prepared.navigation, error,
         retry: () => {
           if (disposed || navigationId !== prepared.navigation.id) {
@@ -988,7 +805,7 @@ export function createRouteRuntime(
         if (url.href === location.href) throw error;
         supersedePreparation();
         recoverBrowserTraversal(currentHistoryIndex, index);
-        emitNavigation(Object.freeze({
+        controls.emit?.(Object.freeze({
           phase: 'error', error,
           navigation: navigationRecord(navigationId, navigationLocation(url, state), new URL(location.href), {
             replace: true, state: userState,
@@ -1131,7 +948,7 @@ export function createRouteRuntime(
           return finishNavigation(prepared.navigation, prepared.redirects, probe, true);
         }, error => {
           if (!entryCommitted && !probe.signal.aborted && navigationId === prepared.navigation.id) {
-            emitNavigation(Object.freeze({
+            controls.emit?.(Object.freeze({
               phase: 'error',
               navigation: prepared.navigation,
               error,
@@ -1246,19 +1063,6 @@ export function createRouteRuntime(
     };
   }
 
-  function subscribe(listener: RouteListener): () => void {
-    if (disposed) throw new Error('Cannot subscribe to a disposed route runtime');
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
-    listeners.add(listener);
-    try {
-      listener(snapshot());
-    } catch (error) {
-      listeners.delete(listener);
-      throw error;
-    }
-    return () => listeners.delete(listener);
-  }
-
   function subscribeSelected<Value>(
     selector: RouteSelector<Value>,
     listener: RouteSelectionListener<Value>,
@@ -1284,32 +1088,6 @@ export function createRouteRuntime(
     return () => selectedListeners.delete(subscription);
   }
 
-  function blockNavigation(blocker: RouteNavigationBlocker): () => void {
-    if (disposed) throw new Error('Cannot install a blocker on a disposed route runtime');
-    if (resolving || blocking) {
-      throw new Error('Route resolvers and blockers must not mutate router state');
-    }
-    navigationBlockers.add(blocker);
-    return () => navigationBlockers.delete(blocker);
-  }
-
-  function subscribeNavigation(listener: RouteNavigationListener): () => void {
-    if (disposed) throw new Error('Cannot subscribe to a disposed route runtime');
-    if (resolving || blocking) {
-      throw new Error('Route resolvers and blockers must not mutate router state');
-    }
-    navigationListeners.add(listener);
-    return () => navigationListeners.delete(listener);
-  }
-
-  function installResolver(nextResolver: RouteResolver): () => void {
-    if (disposed) throw new Error('Cannot install a resolver on a disposed route runtime');
-    if (blocking) throw new Error('Route blockers must not mutate router state');
-    if (resolver !== null) {
-      throw new Error('A route runtime can only have one structural resolver');
-    }
-    return publishResolver(nextResolver);
-  }
 
   function replaceResolver(nextResolver: RouteResolver): () => void {
     if (disposed) throw new Error('Cannot replace a resolver on a disposed route runtime');
@@ -1345,65 +1123,14 @@ export function createRouteRuntime(
     };
   }
 
-  function setMatches(nextMatches: readonly RouteMatch[]): void {
-    if (disposed) throw new Error('Cannot set matches on a disposed route runtime');
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
-    if (resolver !== null) {
-      throw new Error('Cannot set matches while a structural resolver is installed');
-    }
-    const prepared = prepareMatches(nextMatches);
+  function publishMatches(prepared: PreparedRouteMatches): void {
     if (sameMatches(matches, prepared.matches)) return;
     matches = prepared.matches;
     params = prepared.params;
     emit();
   }
 
-  function navigate<Path extends string>(
-    pattern: Path,
-    ...arguments_: NavigateArguments<Path>
-  ): RouteNavigationResult {
-    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving) throw new Error('Route resolvers must not mutate router state');
-    const options = (arguments_[0] ?? {}) as NavigateOptions<Path>;
-    const href = buildRoutePath(
-      pattern,
-      options.params,
-      options.query,
-      options.hash,
-    );
-    const next = applicationURL(href);
-    return navigateToURL(next, options);
-  }
 
-  function navigateRelative<Path extends string>(
-    pattern: Path,
-    ...arguments_: RelativeNavigateArguments<Path>
-  ): RouteNavigationResult {
-    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving || blocking) {
-      throw new Error('Route resolvers and blockers must not mutate router state');
-    }
-    const options = (arguments_[0] ?? {}) as RelativeNavigateOptions<Path>;
-    let destination: string;
-    if (
-      (pattern.startsWith('?') || pattern.startsWith('#') || pattern === '') &&
-      options.params === undefined &&
-      options.query === undefined &&
-      options.hash === undefined
-    ) {
-      destination = pattern;
-    } else {
-      destination = buildRoutePath(
-        pattern,
-        options.params,
-        options.query,
-        options.hash,
-      );
-      if (!pattern.startsWith('/')) destination = destination.slice(1);
-    }
-    const href = resolveRoutePath(options.from ?? route.pathname, destination);
-    return navigateToURL(applicationURL(href), options);
-  }
 
   function commitNavigation(
     next: URL,
@@ -1481,7 +1208,7 @@ export function createRouteRuntime(
     redirect = (to: URL, options: Pick<NavigateOptions, 'replace' | 'state'>) => navigateToURL(to, options),
   ): RouteNavigationResult {
     activePreparation = preparation;
-    emitNavigation(Object.freeze({ phase: 'prepare', navigation: prepared.navigation }));
+    controls.emit?.(Object.freeze({ phase: 'prepare', navigation: prepared.navigation }));
     const finished: Promise<RouteNavigationSettledResult> = prepareRoutedMatches(runtime, destination.matches, {
       href: prepared.next.href, params: destination.params, signal: preparation.signal,
     }).then(outcome => {
@@ -1533,7 +1260,7 @@ export function createRouteRuntime(
         return finishNavigation(routeNavigation, redirects, preparation, true);
       }, error => {
         if (!entryCommitted && !preparation.signal.aborted && navigationId === routeNavigation.id) {
-          emitNavigation(Object.freeze({
+          controls.emit?.(Object.freeze({
             phase: 'error',
             navigation: routeNavigation,
             error,
@@ -1565,87 +1292,6 @@ export function createRouteRuntime(
       : executePreparedNavigation(prepared);
   }
 
-  function traverseRouteHistory(delta: -1 | 1): RouteNavigationResult | null {
-    if (routeHistory === undefined) return null;
-    const target = routeHistory.peek(delta);
-    if (target === undefined) return null;
-    const destination = new URL(target.href, url);
-    const prepared = prepareNavigation(destination, {
-      replace: true,
-      state: target.state,
-    }, 'pop');
-    if (prepared.status === 'blocked') return prepared;
-
-    supersedePreparation();
-    if (prepared.next.href !== destination.href) return executePreparedNavigation(prepared);
-
-    const preparation = new AbortController();
-    const destinationMatches = resolveDestination(
-      prepared.next,
-      'pop',
-      target.state,
-      preparation.signal,
-    );
-    if (!isHashOnlyDestination(prepared.next, target.state) && hasRoutedPreparations(destinationMatches.matches)) {
-      let entryCommitted = false;
-      return prepareRouteEntry(prepared, destinationMatches, preparation, () => {
-        routeHistory.go(delta);
-        entryCommitted = true;
-        return finishNavigation(prepared.navigation, prepared.redirects, preparation, true);
-      }, error => {
-        if (!entryCommitted && !preparation.signal.aborted && navigationId === prepared.navigation.id) {
-          emitNavigation(Object.freeze({
-            phase: 'error',
-            navigation: prepared.navigation,
-            error,
-            retry: () => {
-              if (
-                disposed || navigationId !== prepared.navigation.id ||
-                routeHistory.peek(delta)?.key !== target.key
-              ) {
-                return Object.freeze({
-                  status: 'blocked', navigation: prepared.navigation, redirects: prepared.redirects,
-                });
-              }
-              return traverseRouteHistory(delta)!;
-            },
-          }));
-        }
-      });
-    }
-
-    if (
-      prepared.navigation.type === 'pop' &&
-      prepared.next.href === destination.href
-    ) {
-      routeHistory.go(delta);
-    } else {
-      commitNavigation(prepared.next, prepared.options);
-    }
-    return finishNavigation(prepared.navigation, prepared.redirects);
-  }
-
-  function back(): RouteNavigationResult | null {
-    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving || blocking) {
-      throw new Error('Route resolvers and blockers must not mutate router state');
-    }
-    if (routeHistory !== undefined) return traverseRouteHistory(-1);
-    if (environment.navigation !== undefined) environment.navigation.back();
-    else environment.history?.back();
-    return null;
-  }
-
-  function forward(): RouteNavigationResult | null {
-    if (disposed) throw new Error('Cannot navigate with a disposed route runtime');
-    if (resolving || blocking) {
-      throw new Error('Route resolvers and blockers must not mutate router state');
-    }
-    if (routeHistory !== undefined) return traverseRouteHistory(1);
-    if (environment.navigation !== undefined) environment.navigation.forward();
-    else environment.history?.forward();
-    return null;
-  }
 
   function dispose(): void {
     if (disposed) return;
@@ -1666,33 +1312,52 @@ export function createRouteRuntime(
     browserRetry?.reject(new DOMException('Route runtime was disposed', 'AbortError'));
     browserRetry = null;
     controller.abort();
-    listeners.clear();
     selectedListeners.clear();
-    navigationBlockers.clear();
-    navigationListeners.clear();
+    controls.dispose?.();
     resolver = null;
     matches = Object.freeze([]);
     params = Object.freeze({});
   }
 
-  const runtime: RouteRuntime = {
+  const runtime: CoreRouteRuntime = {
     route,
-    snapshot,
-    subscribe,
     subscribeSelected,
-    subscribeNavigation,
-    blockNavigation,
     connect,
-    installResolver,
     replaceResolver,
-    navigate,
-    navigateRelative,
-    back,
-    forward,
     setLocation,
-    setMatches,
     dispose,
   };
+
+  const controls: RouteControlContext = {
+    environment,
+    history: routeHistory,
+    get disposed() { return disposed; },
+    get resolving() { return resolving; },
+    get blocking() { return blocking; },
+    set blocking(value) { blocking = value; },
+    get resolver() { return resolver; },
+    get navigationId() { return navigationId; },
+    get revision() { return revision; },
+    get notifySnapshots() { return notifySnapshots; },
+    set notifySnapshots(value) { notifySnapshots = value; },
+    get url() { return url; },
+    applicationURL,
+    publishResolver,
+    publishMatches,
+    get prepareMatches() { return prepareMatches; },
+    set prepareMatches(value) { prepareMatches = value; },
+    navigationRecord,
+    navigateToURL,
+    prepareNavigation,
+    supersedePreparation,
+    executePreparedNavigation,
+    resolveDestination,
+    isHashOnlyDestination,
+    prepareRouteEntry,
+    finishNavigation,
+    commitNavigation,
+  };
+  registerRouteControlContext(runtime, controls);
 
   return runtime;
 }

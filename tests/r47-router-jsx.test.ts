@@ -48,13 +48,25 @@ describe('compiler-owned JSX routing', () => {
     `, { moduleId: './App.tsx' });
 
     expect(code).toContain('@memoized-dom/router/internal');
-    expect(code).toContain('createRouteManifest');
-    expect(code).toContain('replaceRouteResolver');
+    expect(code).toContain('createPreparedRouteMatcher');
+    expect(code).not.toContain('createRouteManifest');
+    expect(code).toContain('replacePreparedRouteResolver');
     expect(code).toContain('subscribeRouteSelected');
     expect(code).toContain('pattern: "/projects"');
     expect(code).toContain('pattern: "/:projectId"');
     expect(code).toContain('pattern: "/*"');
     expect(code).not.toContain('setAttribute("route"');
+  });
+
+  it('rejects invalid ancestry introduced by linked component routes', () => {
+    expect(() => compileModules({
+      './App.tsx': `import {Detail} from './Detail';export function App(){return <Detail route="/:id"/>;}`,
+      './Detail.tsx': `export function Detail(){return <p route="/:id">Detail</p>;}`,
+    })).toThrow("duplicate route parameter 'id'");
+    expect(() => compileModules({
+      './App.tsx': `import {Detail} from './Detail';export function App(){return <Detail route="/*"/>;}`,
+      './Detail.tsx': `export function Detail(){return <p route="/">Detail</p>;}`,
+    })).toThrow(/catch-all route .* cannot have child routes/);
   });
 
   it('lowers route-to into anchor hrefs', () => {
@@ -154,7 +166,7 @@ describe('compiler-owned JSX routing', () => {
       `,
     });
 
-    expect(output['./App.tsx']).toContain('createRouteManifest');
+    expect(output['./App.tsx']).toContain('createPreparedRouteMatcher');
     expect(output['./App.tsx']).toContain('subscribeRouteSelected');
   });
 

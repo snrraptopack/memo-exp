@@ -1,4 +1,4 @@
-import type { RouteRuntime } from './runtime';
+import type { CoreRouteRuntime as RouteRuntime } from './runtime';
 import { getActiveRouteRuntime } from './active-runtime';
 import {installRoutePreparationRunner, installRouteModuleLoader, prepareRoutedMatches,
   type RoutePreparationTransaction} from './preparation-capability';

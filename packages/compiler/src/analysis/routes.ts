@@ -297,10 +297,16 @@ export function validateCompilerRouteGraph(
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
   const signatures = new Map<string, CompilerRouteDefinition>();
   for (const definition of definitions) {
+    // Linked callsites can introduce parameter collisions across modules.
+    validateCompilerRoutePattern(definition.fullPattern);
     if (definition.parentId !== undefined && !byId.has(definition.parentId)) {
       throw new TypeError(
         `route '${definition.fullPattern}' references a missing compiler parent`,
       );
+    }
+    const parent = definition.parentId === undefined ? undefined : byId.get(definition.parentId);
+    if (parent?.fullPattern.endsWith('/*')) {
+      throw new TypeError(`catch-all route '${parent.fullPattern}' cannot have child routes`);
     }
     const signature = routeSignature(definition.fullPattern);
     const existing = signatures.get(signature);

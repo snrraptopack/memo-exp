@@ -11,14 +11,21 @@
  * a memory-history runtime for the duration of its synchronous work.
  *
  * Compiled modules install their route manifest once at module evaluation
- * (`replaceRouteResolver` at top level). That resolver is recorded here and
+ * (`replacePreparedRouteResolver` at top level). That resolver is recorded here and
  * replayed onto every newly activated runtime, so each request resolves its
  * own URL against the application graph.
  */
 
 import { createStorage } from '@memoized-dom/runtime';
 import { defaultRouteRuntime } from './default-runtime';
-import type { RouteRuntime } from './runtime';
+import type { CoreRouteRuntime as RouteRuntime } from './runtime';
+import { enableNavigationBlockers } from './navigation-blockers';
+import { enableNavigationObservers } from './navigation-observers';
+import { enableRelativeNavigation } from './relative-navigation';
+import { enableHistoryControls } from './history-controls';
+import { enableGeneralNavigation } from './general-navigation';
+import { enableRouteSnapshots } from './snapshot-controls';
+import { enableMatchValidation } from './match-controls';
 import type {
   ApplicationRoutePath,
   NavigateArguments,
@@ -36,6 +43,7 @@ import type {
 const asyncLocalStorage = createStorage<RouteRuntime>('router');
 let activeOverride: RouteRuntime | null = null;
 let manifestResolver: RouteResolver | null = null;
+let manifestRequiresValidation = false;
 const manifestApplied = new WeakSet<RouteRuntime>();
 
 export function getActiveRouteRuntime(): RouteRuntime {
@@ -45,6 +53,7 @@ export function getActiveRouteRuntime(): RouteRuntime {
 export function runWithRouteRuntime<T>(runtime: RouteRuntime, fn: () => T): T {
   if (manifestResolver !== null && !manifestApplied.has(runtime)) {
     manifestApplied.add(runtime);
+    if (manifestRequiresValidation) enableMatchValidation(runtime);
     runtime.replaceResolver(manifestResolver);
   }
   return asyncLocalStorage.run(runtime, fn);
@@ -67,6 +76,7 @@ export function setActiveRouteRuntime(
   ) {
     // Compiled route manifests evaluate once per module record; replay the
     // recorded resolver so this request resolves its own location.
+    if (manifestRequiresValidation) enableMatchValidation(runtime);
     runtime.replaceResolver(manifestResolver);
     manifestApplied.add(runtime);
   }
@@ -74,13 +84,25 @@ export function setActiveRouteRuntime(
 }
 
 /**
- * Bridge for compiler-emitted `replaceRouteResolver` calls. Records the
- * application's structural resolver for future activations and installs it
+ * Records the application's structural resolver for future activations and installs it
  * on the currently active runtime.
  */
-export function noteManifestResolver(resolver: RouteResolver): () => void {
+function recordManifestResolver(resolver: RouteResolver): () => void {
   manifestResolver = resolver;
   return getActiveRouteRuntime().replaceResolver(resolver);
+}
+
+/** Custom resolvers retain dynamic match validation on every activated engine. */
+export function noteManifestResolver(resolver: RouteResolver): () => void {
+  manifestRequiresValidation = true;
+  enableMatchValidation(getActiveRouteRuntime());
+  return recordManifestResolver(resolver);
+}
+
+/** The compiler selects this boundary only for its validated, frozen producer. */
+export function notePreparedManifestResolver(resolver: RouteResolver): () => void {
+  manifestRequiresValidation = false;
+  return recordManifestResolver(resolver);
 }
 
 /** Getter-backed facade over whichever runtime is currently active. */
@@ -124,36 +146,36 @@ export function navigate<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: NavigateArguments<Path>
 ) {
-  return getActiveRouteRuntime().navigate(pattern, ...arguments_);
+  return enableGeneralNavigation(getActiveRouteRuntime()).navigate(pattern, ...arguments_);
 }
 
 export function navigateRelative<Path extends ApplicationRoutePath>(
   pattern: Path,
   ...arguments_: RelativeNavigateArguments<Path>
 ) {
-  return getActiveRouteRuntime().navigateRelative(pattern, ...arguments_);
+  return enableRelativeNavigation(getActiveRouteRuntime()).navigateRelative(pattern, ...arguments_);
 }
 
 export function blockNavigation(blocker: RouteNavigationBlocker): () => void {
-  return getActiveRouteRuntime().blockNavigation(blocker);
+  return enableNavigationBlockers(getActiveRouteRuntime()).blockNavigation(blocker);
 }
 
 export function subscribeNavigation(
   listener: RouteNavigationListener,
 ): () => void {
-  return getActiveRouteRuntime().subscribeNavigation(listener);
+  return enableNavigationObservers(getActiveRouteRuntime()).subscribeNavigation(listener);
 }
 
 export function back() {
-  return getActiveRouteRuntime().back();
+  return enableHistoryControls(getActiveRouteRuntime()).back();
 }
 
 export function forward() {
-  return getActiveRouteRuntime().forward();
+  return enableHistoryControls(getActiveRouteRuntime()).forward();
 }
 
 export function subscribe(listener: RouteListener): () => void {
-  return getActiveRouteRuntime().subscribe(listener);
+  return enableRouteSnapshots(getActiveRouteRuntime()).subscribe(listener);
 }
 
 export function subscribeSelected<Value>(

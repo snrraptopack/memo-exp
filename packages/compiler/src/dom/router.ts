@@ -89,25 +89,36 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
   const definitions = ctx.linkedRoutes ?? ctx.localRoutes;
   if (definitions.length === 0) return [];
   ctx.usesRouter = true;
-  const manifest = generatedIdentifier(ctx, 'routeManifest');
+  const matcher = generatedIdentifier(ctx, 'routeMatcher');
+  const location = generatedIdentifier(ctx, 'routeLocation');
+  const byId = new Map(definitions.map(definition => [definition.id, definition]));
+  const chainFor = (id: string): string[] => {
+    const chain: string[] = [];
+    for (let current = byId.get(id); current !== undefined; current =
+      current.parentId === undefined ? undefined : byId.get(current.parentId)) chain.push(current.id);
+    return chain.reverse();
+  };
+  // Match precedence for equal ancestor/descendant patterns follows depth.
+  const ordered = [...definitions].sort((left, right) => chainFor(left.id).length - chainFor(right.id).length);
+  const indexes = new Map(ordered.map((definition, index) => [definition.id, index]));
   return [
     astFactory.variableDeclaration('const', [
       astFactory.variableDeclarator(
-        cloneEstreeNode(manifest),
-        astFactory.callExpression(mr(ctx, 'createRouteManifest'), [
+        cloneEstreeNode(matcher),
+        astFactory.callExpression(mr(ctx, 'createPreparedRouteMatcher'), [
           astFactory.arrayExpression(
-            definitions.map((definition) =>
+            ordered.map((definition) =>
               astFactory.objectExpression([
                 astFactory.objectProperty(astFactory.identifier('id'), astFactory.stringLiteral(definition.id)),
                 astFactory.objectProperty(astFactory.identifier('pattern'), astFactory.stringLiteral(definition.pattern)),
-                ...(definition.parentId === undefined
-                  ? []
-                  : [
-                      astFactory.objectProperty(
-                        astFactory.identifier('parentId'),
-                        astFactory.stringLiteral(definition.parentId),
-                      ),
-                    ]),
+                astFactory.objectProperty(astFactory.identifier('fullPattern'), astFactory.stringLiteral(definition.fullPattern)),
+                astFactory.objectProperty(astFactory.identifier('ownParamNames'), astFactory.arrayExpression(
+                  definition.pattern.split('/').filter(segment => segment === '*' || segment.startsWith(':'))
+                    .map(segment => astFactory.stringLiteral(segment === '*' ? '*' : segment.slice(1))),
+                )),
+                astFactory.objectProperty(astFactory.identifier('chain'), astFactory.arrayExpression(
+                  chainFor(definition.id).map(id => astFactory.numericLiteral(indexes.get(id)!)),
+                )),
                 ...((definition.preparations === undefined ||
                   definition.preparations.length === 0) &&
                   definition.componentKey === undefined &&
@@ -174,8 +185,10 @@ export function routeManifestStatements(ctx: Ctx): t.Statement[] {
       ),
     ]),
     astFactory.expressionStatement(
-      astFactory.callExpression(mr(ctx, 'replaceRouteResolver'), [
-        astFactory.memberExpression(cloneEstreeNode(manifest), astFactory.identifier('resolve')),
+      astFactory.callExpression(mr(ctx, 'replacePreparedRouteResolver'), [
+        astFactory.arrowFunctionExpression([cloneEstreeNode(location)], astFactory.callExpression(cloneEstreeNode(matcher), [
+          astFactory.memberExpression(cloneEstreeNode(location), astFactory.identifier('pathname')),
+        ])),
       ]),
     ),
     astFactory.expressionStatement(astFactory.callExpression(mr(ctx, 'ensureRouterConnected'), [])),

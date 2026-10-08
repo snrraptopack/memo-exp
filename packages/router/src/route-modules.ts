@@ -1,5 +1,5 @@
 /** Optional lazy module cache; independent of routed data and transfer. */
-import type {RouteRuntime} from './runtime';
+import type {CoreRouteRuntime as RouteRuntime} from './runtime';
 import type {RouteMatch} from './types';
 import type {RoutedPreparationMetadata} from './preparation';
 import {installRouteModuleLoader} from './preparation-capability';
