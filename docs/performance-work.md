@@ -2123,9 +2123,11 @@ on this list.
 Status correction: closed module selection, proved mutation targeting, local-only
 routing, primitive slot/pull precision, static client omission and supported HTML
 bindings are implemented in the later batches. Their broader unknown/hidden-read
-extensions remain open. Numeric/direct routing is deferred. Component template
-cloning and single dynamic emission remain measured-case candidates. This list is
-historical context; the canonical checklist controls further work.
+cases retain conservative behavior intentionally. Extending them requires a
+concrete failing reproduction or measured unnecessary work, rather than a generic
+reactivity/ownership rewrite. Numeric/direct routing is deferred. Component
+template cloning and single dynamic emission remain measured-case candidates.
+This list is historical context; the canonical checklist controls further work.
 
 The initial-HTML list batch adds closed-array planning and shared row factories
 that bind first and create later. Unchanged composed lists ship zero browser JS;

@@ -52,8 +52,9 @@ route manifests and module loading live in `dom/router.ts`.
 Source replay causes are symbolic; the DOM backend allocates numeric reasons.
 Backend callback publication is passed explicitly to pull-plan finalization.
 Native event and component callbacks share captured source/helper contracts.
-Remaining normalization and ownership work are tracked in
-the execution checklist; these migrations do not complete the rearchitecture.
+Current status, minor configuration cleanup and optional proof extensions are
+tracked in the execution checklist. These source/backend contracts are implemented;
+further migrations require a concrete gap rather than a generic ownership rewrite.
 
 Presentation ownership is a shared contract describing local policy/source
 requirements or inherited propagation. DOM-only parameter allocation consumes

@@ -35,7 +35,10 @@ The first separation of HTML and browser execution is implemented. Proven static
 pages ship zero JavaScript. Supported interactive roots bind server/build HTML;
 closed static composition no longer adds browser factories. The linker emits
 one browser graph, and runtime scheduling, ownership and settlement remain
-shared. The entire compiler is not yet independent of the DOM backend.
+shared. Shared analysis/planning is isolated by the transitive import-boundary
+check; the DOM compilation entry still coordinates source passes and lowering.
+That coordinator and its output configuration are not a second state model or a
+missing authoring mechanism. Minor cleanup there is an optional compiler task.
 
 Zero JavaScript is an automatic result for proven noninteractive pages, not a
 constraint on authoring. Routing, `Group`, pending/error presentation, retries
@@ -73,20 +76,23 @@ containers bind arbitrary initial row counts through the shared list engine. A
 single fetched list can also bind fixed siblings in the same host.
 Subsequent batches through `7abcf55` also bind supported component rows,
 component-owned request structures, absent branches, closed nested structures
-and multiple variable sibling regions. Structural caller slots, broader render
-values and routing/Group delivery still need work. See the active checklist and
-merged delivery audit for the current scope and measured results.
+and multiple variable sibling regions. Caller slots and JSX render props have
+implemented contracts and coverage; routed/Group delivery is also verified.
+Some initial-HTML shapes retain ordinary creation conservatively. The current
+checklist distinguishes those optional proof extensions from implemented behavior.
 
 | Area | Status |
 |---|---|
-| Shared source/render facts and one browser graph | Implemented foundations; some emission planning remains DOM-specific |
+| Shared source/render facts and one browser graph | Source contracts and transitive import boundary implemented; DOM planning belongs to the backend |
 | Closed static HTML, primitive props and supported composition | Implemented and verified in production Chrome |
 | Initial host, conditional and list bindings | Supported host/component rows, absent branches, closed nested structures and multiple variable extents implemented; uncertain shapes retain creation |
-| Request-dependent HTML plus minimal browser bindings | Supported fetched layouts, component rows and nested/component-owned structures implemented; broader caller slots, render values and routed/Group shapes remain open |
+| Request-dependent HTML plus minimal browser bindings | Supported fetched layouts, component rows, caller slots and routed/Group flows verified; uncertain initial shapes retain ordinary creation |
 | Runtime capabilities | Shared data settlement, optional promise reads/payload/polling, unused cursor removal, lean markup adoption and lazy state-cell storage implemented |
 
-Callback props, escaping mutable values, hidden reads and unknown initialization
-still require conservative ownership/creation proofs. Supported refs, inline
+Callback props and cross-component mutations are implemented. Escaping mutable
+values, hidden reads and unknown initialization can require conservative replay
+or creation intentionally; they are not evidence of missing state propagation.
+Supported refs, inline
 effects and cleanup retain their existing lifetime owner beside bound HTML. Fixed-shape
 composed factories now bind initial instances and create later conditional
 instances. Entirely static authored child slots, including forwarding and

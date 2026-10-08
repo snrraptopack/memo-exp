@@ -2,17 +2,18 @@
 
 ## Current checklist
 
-Original baseline: `7abcf55`; audited revision: `6c48d1c` plus the caller-slot batch
-below. All five areas have verified milestones. Further extensions remain open;
-the initial HTML and unused-capability work is implemented, not pending.
+Original baseline: `7abcf55`; audited revision: `258a25a` plus the verification
+review below. The implemented rearchitecture is usable and verified. Optional
+cleanup, further measured optimizations and additional HTML-binding proofs are
+not unfinished state propagation or a reason to introduce another architecture.
 
 | Order | Area | Status | Completion gate |
 | --- | --- | --- | --- |
-| 1 | Analysis and DOM backend separation | In progress | Shared facts independent of backend imports; replaced implementations removed; behavior verified |
-| 2 | Fixed cost of interactivity | In progress | Production bundle savings and capability isolation verified across local, lazy and routed applications |
-| 3 | Reactivity precision | Implemented proofs; broader cases open | Correct visible updates and demonstrated exclusion of unrelated row/slot work |
-| 4 | List execution costs | Implemented reductions; further gains unverified | Correctness, retained identity and disposal pass; paired timing supports each claimed gain |
-| 5 | Composition and delivery coverage | Supported shapes verified; broader proofs open | Initial delivery and subsequent interaction verified with shared factories, graph and lifetimes |
+| 1 | Analysis and DOM backend separation | Boundary implemented and verified; minor cleanup optional | Shared facts independent of backend imports; replaced implementations removed; behavior verified |
+| 2 | Fixed cost of interactivity | Implemented and measured; further reductions need concrete cases | Production bundle savings and capability isolation verified across local, lazy and routed applications |
+| 3 | Reactivity precision | Targeting implemented and verified; conservative fallbacks intentional | Correct visible updates and demonstrated exclusion of unrelated row/slot work |
+| 4 | List execution costs | Implemented reductions; latest consolidated VM timing pending | Correctness, retained identity and disposal pass; paired timing supports each claimed gain |
+| 5 | Composition and delivery coverage | Supported shapes implemented and verified; fallback expansion optional | Initial delivery and subsequent interaction verified with shared factories, graph and lifetimes |
 
 This is the execution checklist. Detailed historical evidence remains in
 [Compiler phase boundaries](./compiler-architecture.md),
@@ -56,26 +57,37 @@ recorded under the corresponding commits below:
   guarded creation after initial delivery; verify adoption, remounts, fetched
   row reuse/removal/append and paired production bundle savings.
 
-The remaining deliverables retain the original five-area scope:
+### Concrete limits and optional follow-ups
 
-- [ ] Finish remaining semantic normalization, ownership inputs and generated
-  ABI separation; delete replaced implementations (area 1).
-- Deferred: numeric state-key interning. Preserve canonical string keys unless
-  paired measurements establish a worthwhile runtime gain. It is not a gate for
-  removing unnecessary component JavaScript (area 2).
-- [ ] Reduce duplicated initialization/update emission and retained creation
-  where evaluation, adoption and future lifetime proofs permit it (areas 2/5).
-- [ ] Extend exact alias/callback/module/row targeting and affected opaque work,
-  with instrumentation proving skipped unrelated updates (area 3).
-- [ ] Reduce measured list replay/setup/range costs while preserving retained
-  identity, cleanup and recovery across the full benchmark matrix (area 4).
-- [ ] Complete structural caller-slot/render-value ownership and combined
-  composition/routing/Group/request/ref/cleanup coverage; remove superseded
-  scaffolding (area 5).
+- Shared context types still carry output configuration such as `runtimePath`
+  and `hotRuntimePath`. Moving these fields or splitting the DOM preparation
+  coordinator further is minor compiler housekeeping, not a missing dependency
+  mechanism or demonstrated browser-size saving. The transitive import boundary,
+  explicit source plans and backend ABI allocation are already implemented.
+- Indexed item writes, row targeting, aliases and linked/forwarded callback
+  writes are implemented. A child can mutate an array passed through props;
+  state placement does not impose a new authoring restriction. Hidden reads,
+  unknown calls, dynamic keys and overridden methods retain conservative behavior
+  intentionally. Do not schedule a generic targeting rewrite without a concrete
+  failing reproduction or measured unnecessary work.
+- Initial HTML binding deliberately falls back to ordinary creation for some
+  parser-sensitive shapes, including adjacent text belonging to distinct caller
+  and callee update sites. Supported slots, render props, routing, Group and
+  cleanup already have contracts and coverage. Extending a fallback is an
+  optional delivery optimization, not unimplemented composition in general.
+- Future row/branch creation and legitimate routing/lifecycle capabilities must
+  remain when needed. Further emission sharing or list replay/setup/range work
+  requires an identified retained-code case or paired profile before changing it.
+- [ ] Optional: obtain a consolidated VM comparison for the current revision when a VM is
+  available. Existing identity/correctness gates and historical measurements stay
+  valid for their recorded revisions; noisy local timings establish no new gain.
+- Numeric state-key interning remains deferred. Preserve canonical string keys
+  unless paired measurements establish a worthwhile runtime gain.
 
-A consolidated stability checkpoint is separate from these optimization gates.
-Passing it establishes a tested revision; it does not complete the remaining
-architecture or justify an unmeasured performance claim.
+A focused verification run is not a new full-repository stability checkpoint.
+Passing it does not guarantee arbitrary JavaScript support or an unmeasured
+performance gain. The original batch requirements below record the scope that
+produced these implemented foundations; they are not a fresh mandatory backlog.
 
 ## Architecture boundary
 
@@ -640,6 +652,26 @@ These are prerequisites for the runtime-size and broader precision batches.
   adoption, live slots, remounts and request-row reuse/removal/append/recreation.
   Namespace/unsafe-text fallbacks, effects, refs and disposal remain covered.
 - These three requested steps are complete for the demonstrated caller-slot
-  gap. The broader remaining-deliverable checklist still applies; unknown
-  initialization/update evaluation cannot be reordered to force smaller output.
+  gap. At that revision, the broader checklist remained open; the status review
+  below supersedes that scheduling. Unknown initialization/update evaluation
+  cannot be reordered to force smaller output.
   Details and reproduction commands are in the browser architecture document.
+
+### Architecture status correction and mutation verification (parent `258a25a`)
+
+- Rechecked the source plans, semantic write facts, DOM coordinators, emission
+  state and import-boundary gate. Indexed writes, source aliases, callback props,
+  module targeting, opaque slot precision and render-slot contracts already
+  exist; the former generic remaining-work list overstated these as incomplete.
+- Added four stable authored regressions for a child mutating a forwarded array
+  through named/object props with module/component state. Child `push()` and
+  item-field mutation update parent and sibling readers, while retaining existing
+  row identity. All four pass without compiler/runtime changes.
+- Nine suites pass 91 checks, including the new regressions, transitive backend
+  boundaries, targeted row work, aliases, named callback forwarding, opaque
+  precision and JSX render props. This is a focused audit, not a full-suite or
+  VM-performance claim. No dependency, public API or state model was changed.
+- Core separation and supported delivery/composition are implemented. Minor
+  output-configuration cleanup, conservative fallback expansion and further
+  measured optimizations are optional follow-ups. The current checklist now
+  records concrete limits rather than requiring speculative rewrites.
