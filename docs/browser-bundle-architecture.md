@@ -2813,3 +2813,30 @@ Reproduce with `bun run bench:size:audit --verify --before-ref=91b0133
 --fixture=request-routed-group`. Add `--hydrate-program` for optional hydration.
 These source audits include ordinary creation; initial-delivery production builds
 are measured separately and must not be compared as identical bundles.
+
+### Proven primitive text results — 2026-10-08
+
+Shared expression facts let the DOM backend omit object/function checks when a
+completed expression must be primitive, such as `item.value * 2`. Every operand
+read and coercion still runs; unknown values and calls retain conservative
+handling. Cache invalidation after throws and nested writes is preserved.
+No runtime helper or second cache engine was added.
+
+Paired production builds against compiler `d1cd2e9`, with identical runtime:
+
+| Fixture | Before raw B | After raw B | Before gzip B | After gzip B |
+|---|---:|---:|---:|---:|
+| Primitive inline list | 24,141 | 24,029 | 8,769 | 8,754 |
+| Primitive component list | 24,295 | 24,183 | 8,831 | 8,816 |
+
+Both client-only and initial-delivery modes have these sizes and retain 355 B
+HTML / zero payload. Static remains zero JS; the counter and todo controls are
+unchanged. The delivery planner still retains creation for these list shapes;
+further creation-code reduction is open. These small fixture savings do not
+establish a universal application-size reduction.
+
+Reproduce using `bun run bench:size:ssr --before-ref=d1cd2e9
+--fixture=primitive-inline-list --fixture=primitive-component-list`, then add
+`--client-only` for that product. Nine production browser graphs pass update,
+reorder and identity checks. The compiler-only canonical DOM comparison has
+identical browser artifacts and makes no CPU gain claim.

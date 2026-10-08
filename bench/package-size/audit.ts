@@ -241,6 +241,14 @@ if (process.argv.includes('--verify')) {
           const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
           const check = (condition: boolean) => { if (!condition) throw new Error(`Failed ${fixture} interaction`); };
           if (fixture === 'static') { check(main.textContent === 'Static shellReady.'); return; }
+          if (fixture.startsWith('primitive-')) {
+            const originals=[...main.querySelectorAll('li')];
+            const values=()=>[...main.querySelectorAll('li')].map(node=>node.textContent).join('|');
+            check(values()==='2|4|6');button.click();await settle();check(values()==='2|6|6');
+            main.querySelector<HTMLButtonElement>('.reverse')!.click();await settle();
+            check([...main.querySelectorAll('li')].every((node,index)=>node===originals[2-index]));
+            check(values()==='6|6|2');button.click();await settle();check(values()==='6|8|2');return;
+          }
           if (fixture === 'dynamic-tags') {
             const host=()=>main.querySelector('[data-role="host"]')!;
             check(host().tagName==='SECTION' && host().textContent==='summary:0');

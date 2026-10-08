@@ -421,7 +421,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   No CPU improvement is claimed. Numeric keys, dynamic emission reuse and the
   remaining compiler/composition contracts stay open.
 
-### Finite JSX selection contracts (parent `16214b6`)
+### Finite JSX selection contracts (commit `d1cd2e9`, parent `16214b6`)
 
 - Shared planning captures lexical finite-tag candidates, ordered authored sites
   and scalar/render prop classifications without changing syntax or allocating
@@ -441,3 +441,31 @@ These are prerequisites for the runtime-size and broader precision batches.
   dynamic tags at 505 B HTML / 78 B payload / 25,577 B JS (8,622 B gzip).
   This boundary change makes no additional size or CPU gain claim. Further
   normalization, optional capabilities, numeric keys and composition gates remain.
+
+### Primitive text-cache result facts (parent `d1cd2e9`)
+
+- Shared analysis proves completed primitive results from JavaScript expression
+  semantics. It does not infer runtime values from type annotations or classify
+  unknown identifiers, members and calls. DOM text-cache emission removes only
+  the redundant object/function result guard, preserving operand reads, coercion,
+  string normalization and cache invalidation after exceptions/reentrant writes.
+  The existing cache and concatenation implementation remain in use.
+- Six focused suites passed 106 distinct tests across the initial run and the
+  corrected BigInt snapshot rerun. Inline/component regressions verify repeated
+  numeric coercion, getters, nested updates, throwing setters and retained nodes;
+  existing opaque text, concatenation, Group and initial-list gates also pass.
+  Compiler build, type checking, lint and the transitive import boundary pass.
+- All 135 stable compiler comparisons preserve semantic graph and delivery
+  facts. Output changes in five fixtures consist solely of proven result-guard
+  removal; 120 whole results are unchanged. No generated fixture was edited.
+- Paired production compiler builds with identical runtime packages: inline
+  list 24,141 -> 24,029 raw B / 8,769 -> 8,754 gzip B; component list
+  24,295 -> 24,183 B / 8,831 -> 8,816 gzip B. Both ordinary and initial-delivery
+  modes retain identical HTML/payload. Static remains zero JS; counter and todo
+  sizes remain unchanged. Creation-code retention for these list shapes remains
+  open; this saving is in text-cache emission.
+- Nine production browser graphs pass updates, reorders and retained identity.
+  A paired compiler-only DOM run against `d1cd2e9` passes all 21 scenarios and
+  mixed sequences before timing, plus identity checks after every timed sample.
+  It uses one update sample at 10k rows in ABBA order; the before/after canonical
+  DOM artifacts are identical. These timings establish no CPU improvement.

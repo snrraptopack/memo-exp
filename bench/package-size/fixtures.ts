@@ -1,5 +1,14 @@
 /** Stable authored graphs; examples are measured separately and may change. */
 export const sizeFixtures: Record<string, Record<string, string>> = {
+  ...Object.fromEntries(['inline','component'].map(kind=>[`primitive-${kind}-list`,{
+    './App.tsx':`${kind==='component' ? "import {Row} from './Row';" : ''}export function App(){
+      let items=[{id:1,value:1},{id:2,value:2},{id:3,value:3}];return <main>
+      <button class="next" onClick={()=>items[1].value++}>Next</button>
+      <button class="reverse" onClick={()=>items=items.toReversed()}>Reverse</button>
+      <ul>{items.map(item=>${kind==='component' ? '<Row key={item.id} item={item}/>'
+        : '<li key={item.id}>{item.value*2}</li>'})}</ul></main>;}`,
+    ...(kind==='component' ? {'./Row.tsx':'export function Row({item}){return <li>{item.value*2}</li>;}' } : {}),
+  }])),
   'dynamic-tags': {
     './App.tsx': `import {selectView} from './views';export function App(){let compact=true;let value=0;
       const Host=compact?'section':'article';const View=selectView(compact);return <main>

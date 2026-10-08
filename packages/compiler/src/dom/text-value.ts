@@ -4,6 +4,7 @@ import { cloneNode } from '../ast';
 import type { DomContext as Ctx } from './context';
 import { generatedIdentifier } from './identifiers';
 import { freshSlot, type EmitScope } from './scope';
+import {expressionProducesPrimitive} from '../analysis/expression-values';
 
 /** Read every input, but normalize an unchanged primitive only once. */
 export function cachedTextValue(
@@ -13,6 +14,7 @@ export function cachedTextValue(
 ): (write: (value: t.Expression) => t.Statement, initialize?: boolean) => t.Statement {
   const previous = freshSlot(ctx, scope);
   const current = generatedIdentifier(ctx, 'textValue');
+  const primitiveResult = expressionProducesPrimitive(expression);
   const previousId = () => astFactory.identifier(previous);
   const currentId = () => cloneNode(current);
   const assign = (value: t.Expression) => astFactory.expressionStatement(
@@ -36,7 +38,7 @@ export function cachedTextValue(
         handler: null,
         finalizer: astFactory.blockStatement([invalidate()]),
       },
-      astFactory.ifStatement(cloneNode(primitive), assign(currentId())),
+      primitiveResult ? assign(currentId()) : astFactory.ifStatement(cloneNode(primitive), assign(currentId())),
     ]);
     return astFactory.blockStatement([
       astFactory.variableDeclaration('const', [astFactory.variableDeclarator(currentId(), cloneNode(expression))]),

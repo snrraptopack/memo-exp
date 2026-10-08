@@ -2210,3 +2210,14 @@ All 21 production browser graphs and twelve optional hydration graphs pass;
 seven focused suites cover environment, ownership, server isolation and recovery.
 This is a retained-byte change, with no CPU claim. Full figures and the separate
 initial-delivery product are recorded in `browser-bundle-architecture.md`.
+
+Primitive-result facts remove redundant text-cache type guards while retaining
+operand evaluation, opaque numeric coercion and exception/reentrant recovery.
+The two stable formula-list production fixtures each save 112 raw / 15 gzip
+bytes against compiler `d1cd2e9` with identical runtime packages. Their initial
+HTML/payload and the static/counter/todo controls are unchanged. Six focused
+suites pass 106 distinct checks and nine production browser graphs pass updates
+and retained identity. A compiler-only DOM comparison (one 10k update sample,
+ABBA order) passes all 21 correctness scenarios and mixed sequences; its browser
+artifacts are identical, so no CPU gain is claimed. Reproduction commands and
+creation-code limitations are in `browser-bundle-architecture.md`.
