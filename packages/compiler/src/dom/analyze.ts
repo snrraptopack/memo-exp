@@ -45,11 +45,10 @@ import { analyzeComponent } from '../analysis/component-validation';
 import { scanRefProps } from '../components/ref-props';
 import { allocatePresentationParameter } from './presentation-parameters';
 import { requirePresentationOwner } from '../planning/presentation-ownership';
-import {
-  normalizeTransparentSourceDestructuring,
-  registerTransparentSourceRoots,
-  scanTransparentSourceBindings,
-} from '../data-sources';
+import { registerTransparentSourceRoots } from '../features/data-sources/module-sources';
+import { scanTransparentSourceBindings } from '../features/data-sources/component-sources';
+import { planSourceDestructuring } from '../planning/source-destructuring';
+import { lowerSourceDestructuring } from './source-destructuring';
 import {
   scanComponents,
   scanModuleState,
@@ -71,7 +70,9 @@ export function runAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   scanModuleState(ctx, programPath);
   scanComponents(ctx, programPath);
   normalizePrivateRowProps(ctx, programPath);
-  normalizeTransparentSourceDestructuring(ctx, programPath);
+  lowerSourceDestructuring(ctx, planSourceDestructuring(ctx, programPath.node,
+    refreshAstAnalysis(ctx, programPath.node), programPath));
+  refreshAstAnalysis(ctx, programPath.node);
   scanTransparentSourceBindings(ctx);
   scanRefProps(ctx);
   scanRenderCallbacks(ctx);

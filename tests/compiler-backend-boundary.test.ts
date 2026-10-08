@@ -21,6 +21,7 @@ function sourceFiles(directory:string):string[] {
 it('shared analysis, planning and context cannot import DOM lowering or runtime types',()=>{
   const files=['analysis','planning','context'].flatMap(folder=>sourceFiles(join(sourceRoot,folder)));
   files.push(join(sourceRoot,'context.ts'));
+  files.push(join(sourceRoot,'components/manifest.ts'));
   const violations:string[]=[];
   const visited=new Set<string>();
   const pending=files.map(file=>({file,path:[relative(sourceRoot,file)]}));

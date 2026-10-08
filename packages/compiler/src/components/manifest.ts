@@ -9,7 +9,7 @@
 import { walkAst, type BaseNode } from '../ast';
 import { isListLightweightCandidate } from '../analysis/component-graph';
 import { canonicalStateKey, keyPathOf } from '../context';
-import { type DomContext as Ctx } from '../dom/context';
+import type { Ctx } from '../context/model';
 import {
   type ComponentGraphEdge,
   type ComponentGraphNode,
@@ -98,6 +98,7 @@ export function analyzedComponentExport(
   ctx: Ctx,
   moduleId: string,
   local: string,
+  publication: { readonly listResourceFree: boolean },
 ): ComponentExportInfo {
   const props = ctx.componentProps.get(local)!;
   return {
@@ -110,7 +111,7 @@ export function analyzedComponentExport(
       !ctx.transparentSources.has(local) &&
       ctx.presentationOwners.get(local)?.mode !== 'local',
     delegatedEvents: [...(ctx.componentHostEvents.get(local) ?? [])],
-    ...(ctx.domOnlyRowComponents.has(local) ? { listResourceFree: true } : {}),
+    ...(publication.listResourceFree ? { listResourceFree: true } : {}),
     renderProps: [...props.renderProps],
     renderCallbacks: [...props.renderCallbacks],
     refProps: [...props.refProps],

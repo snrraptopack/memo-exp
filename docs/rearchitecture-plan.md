@@ -268,7 +268,7 @@ These are prerequisites for the runtime-size and broader precision batches.
   chunks, routed/Group 86,981 / 26,764 B. This checks delivery compatibility,
   not an isolated before/after runtime-size comparison.
 
-### Presentation ownership and DOM data emission (parent `4da52c8`)
+### Presentation ownership and DOM data emission (commit `0dcdf97`, parent `4da52c8`)
 
 - Replaced generated presentation parameters and their parallel inherited-only
   marker in shared context with one semantic ownership contract. Local policy
@@ -290,3 +290,30 @@ These are prerequisites for the runtime-size and broader precision batches.
 - Area 1 remains open: mixed source normalization and backend component export
   publication still need explicit contracts. Areas 2–5 retain their unfinished
   gates; this source-boundary batch makes no bundle or CPU improvement claim.
+
+### Source normalization and explicit export publication (parent `0dcdf97`)
+
+- Extracted provider import facts into shared analysis. Shared destructuring
+  plans now validate the complete pass and describe bindings, defaults, array
+  positions/rest and object projections without generated bindings or AST
+  mutation. DOM lowering allocates source holders/default caches from the plans.
+  Deleted the former mixed discovery implementation and both data-source
+  facade modules; consumers use the actual implementation owners.
+- Corrected the declaration-location check rejecting direct component source
+  patterns such as `const {name} = $fetch('/user')`. Existing unsupported
+  assignment/helper/object-rest forms keep their diagnostics. The new live DOM
+  regression verifies settling data, retained nodes and no repeated fetch on an
+  unrelated local update. Captured default callbacks retain nested placements.
+- Component export publication consumes an explicit backend row-eligibility
+  result instead of reading DOM state. The transitive boundary check includes
+  the source publisher. Its source-only regression requires no DOM context.
+- Compiler build, type checking and lint passed. Eight focused suites passed
+  64 distinct tests across the initial and targeted follow-up runs. All 123
+  output/graph/delivery comparisons match `0dcdf97`, excluding source maps and
+  the newly supported direct declaration regression.
+- Five production fixtures matched HTML/payload/raw/gzip bytes in both SSR
+  and client-only builds against `0dcdf97`, using the same runtime. Static
+  remains zero JS, counter 8,613 / 3,483 B and todo 17,140 / 6,443 B. Lazy routing
+  remains three chunks; routed/Group and fetched delivery remain supported.
+  This batch removes mixed compiler code; it makes no browser-size or CPU gain
+  claim. Remaining normalization/composition and capability gates stay open.

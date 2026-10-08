@@ -59,6 +59,14 @@ use ownership facts, not the existence of generated names. Policy rendering,
 source-subscription emission and automatic DOM data sites live in `dom/`;
 their former feature modules and exports are removed.
 
+Source import discovery and destructuring validation/projection plans are now
+shared. A complete plan is validated before the DOM backend allocates holders
+or default-value caches. Direct component source declarations use the same
+projection lowering as aliases; nested/default callback placement is retained.
+The former mixed discovery implementation and both data-source facade modules
+are removed. Component export publication accepts backend row eligibility
+explicitly; the source publisher and its dependency graph are backend-free.
+
 Separate authored-language meaning from the code a rendering target needs.
 Normalized JSX, lexical reads/writes, opaque and async provenance, component
 composition and control-flow plans belong to shared analysis/planning. Node

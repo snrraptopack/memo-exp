@@ -473,7 +473,9 @@ export function analyzeManifest(
           if (ctx.comps.has(local)) {
             exports[exported] = {
               type: 'component',
-              ...analyzedComponentExport(ctx, entry.id, local),
+              ...analyzedComponentExport(ctx, entry.id, local, {
+                listResourceFree: ctx.domOnlyRowComponents.has(local),
+              }),
             };
             continue;
           }

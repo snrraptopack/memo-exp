@@ -18,7 +18,11 @@ import {allocateExternalSubscriptions} from './external-reactivity';
 import { lowerRouterJsx } from './router';
 import {planRouterJsx} from '../analysis/routes';
 import { installCompilerIntrinsics } from './intrinsics';
-import { scanTransparentSourceImports, lowerReadReplays, lowerTransparentGroups, lowerModuleSourceDeclarations, rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } from '../data-sources';
+import { scanTransparentSourceImports } from '../analysis/transparent-imports';
+import { lowerReadReplays } from '../features/data-sources/read-replay';
+import { lowerTransparentGroups } from '../features/data-sources/group-lowering';
+import { lowerModuleSourceDeclarations } from '../features/data-sources/module-sources';
+import { rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } from '../features/data-sources/component-sources';
 
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
   installCompilerIntrinsics(ctx, programPath);
