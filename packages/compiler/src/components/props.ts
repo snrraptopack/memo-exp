@@ -1,18 +1,10 @@
-/**
- * components/props.ts - component prop patterns and reactive replay builders.
- *
- * JSX always supplies named properties. This module normalizes supported
- * function parameters into either positional slots or one object envelope,
- * then emits assignments that replay defaults and destructuring after a prop
- * box update. It contains no runtime or component-placement policy.
- */
+/** Authored component parameter contracts and lexical binding facts. */
 
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {
   cloneNode,
   extractPatternIdentifiers,
-  walkAst,
   type BaseNode,
 } from '../ast';
 import { analyzeComponentPropShape } from './prop-shape';
@@ -21,18 +13,18 @@ export type ComponentParam = Exclude<
   t.FunctionDeclaration['params'][number],
   t.TSParameterProperty
 >;
-type PropTarget = t.Identifier | t.ObjectPattern | t.ArrayPattern;
+export type PropTarget = t.Identifier | t.ObjectPattern | t.ArrayPattern;
 
 function cloneCompilerNode<TNode extends t.Node>(node: TNode): TNode {
   return cloneNode(node as unknown as BaseNode) as unknown as TNode;
 }
 
-function isObjectProperty(node: t.Node): node is t.ObjectProperty {
+export function isObjectProperty(node: t.Node): node is t.ObjectProperty {
   return astFactory.isObjectProperty(node) ||
     (node as unknown as BaseNode).type === 'Property';
 }
 
-function propertyName(node: t.Node): string | null {
+export function propertyName(node: t.Node): string | null {
   if (astFactory.isIdentifier(node)) return node.name;
   if (astFactory.isStringLiteral(node)) return node.value;
   if ((node as unknown as BaseNode).type !== 'Literal') return null;
@@ -153,39 +145,6 @@ export function analyzeComponentProps(
   };
 }
 
-/** Initial locals for an entity factory whose inputs live in a props box. */
-export function buildPropDeclaration(
-  plan: ComponentPropsPlan,
-  sources: t.Expression[],
-): t.VariableDeclaration | null {
-  if (plan.params.length === 0) return null;
-  return astFactory.variableDeclaration(
-    'let',
-    plan.params.map((param, index) =>
-      astFactory.variableDeclarator(
-        declarationTarget(parameterTarget(param)),
-        inputWithDefault(param, sources[index] ?? astFactory.identifier('undefined')),
-      ),
-    ),
-  );
-}
-
-/** Replay original parameter semantics from new slot values. */
-export function buildPropReplay(
-  plan: ComponentPropsPlan,
-  sources: t.Expression[],
-): t.Statement[] {
-  return plan.params.map((param, index) =>
-    astFactory.expressionStatement(
-      astFactory.assignmentExpression(
-        '=',
-        assignmentTarget(parameterTarget(param)),
-        inputWithDefault(param, sources[index] ?? astFactory.identifier('undefined')),
-      ),
-    ),
-  );
-}
-
 /** All lexical bindings introduced by an identifier or destructuring pattern. */
 export function bindingNames(node: t.LVal): string[] {
   return extractPatternIdentifiers(node as unknown as BaseNode).map(
@@ -248,54 +207,7 @@ export function propNameForBinding(
   return null;
 }
 
-/**
- * Extra `registerProps` arguments mapping each declared prop key to the dirty
- * reasons of the bindings it introduces, plus the reason for undeclared keys
- * (object rest / whole `props` binding). Null when the envelope shape gives
- * the runtime nothing exact to attribute, so it falls back to a full update.
- */
-export function propReasonArguments(
-  plan: ComponentPropsPlan,
-  reasonIds: ReadonlyMap<string, number>,
-): t.Expression[] | null {
-  if (plan.mode !== 'object' || plan.params.length !== 1) return null;
-  const target = parameterTarget(plan.params[0]!);
-  const reasonsOf = (pattern: t.Node): t.Expression | null => {
-    const reasons = bindingNames(pattern as t.LVal).map((name) =>
-      reasonIds.get(name),
-    );
-    if (reasons.some((reason) => reason === undefined)) return null;
-    if (reasons.length === 1) return astFactory.numericLiteral(reasons[0]!);
-    return astFactory.arrayExpression(
-      (reasons as number[]).map((reason) => astFactory.numericLiteral(reason)),
-    );
-  };
-  if (astFactory.isIdentifier(target)) {
-    const rest = reasonsOf(target);
-    return rest === null ? null : [astFactory.objectExpression([]), rest];
-  }
-  if (!astFactory.isObjectPattern(target)) return null;
-  const keys: t.ObjectProperty[] = [];
-  let rest: t.Expression | null = null;
-  for (const property of target.properties) {
-    if (astFactory.isRestElement(property)) {
-      rest = reasonsOf(property.argument);
-      if (rest === null) return null;
-      continue;
-    }
-    if (!isObjectProperty(property) || property.computed) return null;
-    const name = propertyName(property.key);
-    const reasons = reasonsOf(property.value);
-    if (name === null || reasons === null) return null;
-    keys.push(astFactory.objectProperty(astFactory.stringLiteral(name), reasons));
-  }
-  return [
-    astFactory.objectExpression(keys),
-    ...(rest === null ? [] : [rest]),
-  ];
-}
-
-function parameterTarget(param: ComponentParam): PropTarget {
+export function parameterTarget(param: ComponentParam): PropTarget {
   if (astFactory.isRestElement(param)) {
     throw new Error('rest component parameters are not supported');
   }
@@ -308,52 +220,4 @@ function parameterTarget(param: ComponentParam): PropTarget {
     throw new Error('unsupported component parameter target');
   }
   return target;
-}
-
-/** Clone an authored parameter for emitted JavaScript factory syntax. */
-export function runtimeParameter(param: ComponentParam): ComponentParam {
-  const cloned = cloneCompilerNode(param);
-  stripTypeSyntax(cloned);
-  return cloned;
-}
-
-function inputWithDefault(
-  param: ComponentParam,
-  source: t.Expression,
-): t.Expression {
-  if (!astFactory.isAssignmentPattern(param)) return cloneCompilerNode(source);
-  return astFactory.conditionalExpression(
-    astFactory.binaryExpression(
-      '===',
-      cloneCompilerNode(source),
-      astFactory.identifier('undefined'),
-    ),
-    cloneCompilerNode(param.right),
-    cloneCompilerNode(source),
-  );
-}
-
-function declarationTarget(target: PropTarget): PropTarget {
-  const cloned = cloneCompilerNode(target);
-  stripTypeSyntax(cloned);
-  return cloned;
-}
-
-export function assignmentTarget(target: PropTarget): PropTarget {
-  const cloned = cloneCompilerNode(target);
-  stripTypeSyntax(cloned);
-  return cloned;
-}
-
-function stripTypeSyntax(node: t.Node): void {
-  walkAst(node, {
-    enter(current) {
-      const typed = current as t.Node & {
-        typeAnnotation?: t.TypeAnnotation | t.TSTypeAnnotation | null;
-        optional?: boolean | null;
-      };
-      if ('typeAnnotation' in typed) typed.typeAnnotation = null;
-      if ('optional' in typed) typed.optional = null;
-    },
-  });
 }

@@ -1,5 +1,4 @@
 /** Binding-aware authoring intrinsics. Only the framework's named catalog is implicit. */
-import * as astFactory from './ast/factory';
 import {
   childNode,
   identifierName,
@@ -7,7 +6,7 @@ import {
   walkAst,
   type BaseNode,
 } from './ast';
-import { astBindingAt, refreshAstAnalysis, type ProgramPath } from './context';
+import { astBindingAt, type ProgramPath } from './context';
 import { type Ctx } from './context';
 
 const providers: Readonly<Record<string, string>> = {
@@ -18,12 +17,13 @@ const providers: Readonly<Record<string, string>> = {
   $routed: '@memoized-dom/router',
 };
 
+export interface IntrinsicImport {readonly module:string;readonly names:readonly string[];}
+
 /** Generated imports keep request isolation and the existing lowering pipeline. */
-export function installCompilerIntrinsics(
+export function planCompilerIntrinsics(
   ctx: Ctx,
   program: ProgramPath,
-): void {
-  refreshAstAnalysis(ctx, program.node);
+):readonly IntrinsicImport[] {
   const needed = new Map<string, string[]>();
   walkAst(program.node as BaseNode, {
     enter(node, parent, key) {
@@ -52,28 +52,12 @@ export function installCompilerIntrinsics(
       )
         return;
       const module = providers[name]!;
-      if (name === '$routed') ctx.importedValues.add(name);
       const names = needed.get(module) ?? [];
       if (!names.includes(name)) names.push(name);
       needed.set(module, names);
     },
   });
-  for (const [module, names] of needed) {
-    program.node.body.unshift(
-      astFactory.importDeclaration(
-        names
-          .sort()
-          .map((name) =>
-            astFactory.importSpecifier(
-              astFactory.identifier(name),
-              astFactory.identifier(name),
-            ),
-          ),
-        astFactory.stringLiteral(module),
-      ),
-    );
-  }
-  if (needed.size > 0) refreshAstAnalysis(ctx, program.node);
+  return [...needed].map(([module,names])=>({module,names:[...names].sort()}));
 }
 
 /** Only prefixed lifecycle intrinsics are implicit; shadows are ordinary JS. */

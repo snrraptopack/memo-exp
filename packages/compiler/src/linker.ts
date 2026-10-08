@@ -50,7 +50,7 @@ import {
 } from './linking/resolution';
 import { compilerOptions } from './linking/options';
 import { analyzeManifest, discoverManifest, exportedLocals } from './linking/discovery';
-import { installCompilerIntrinsics } from './intrinsics';
+import { installCompilerIntrinsics } from './dom/intrinsics';
 import { resolveRenderUsage } from './components/render-usage';
 import { planInitialRendering } from './dom/render-plan';
 import { type InitialRenderPlan } from './planning/initial-content';

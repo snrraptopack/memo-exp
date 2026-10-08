@@ -217,6 +217,17 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
   85 tests. All 123 generated-output/graph/delivery comparisons matched the
   baseline. No browser-size or CPU improvement is claimed for this migration.
 
+### Prop ABI and intrinsic import planning (parent `3763d43`)
+
+- Shared component props retain authored parameter shapes and binding facts.
+  DOM prop initialization/replay, type stripping and numeric reason arguments
+  now live in `dom/props.ts`. Removed the duplicate declaration-pattern clone.
+- Shared intrinsic planning validates shadows/lifecycle syntax and returns
+  required imports without mutating the program. The backend installs imports
+  and publishes generated import metadata explicitly.
+- Type checking, compiler build and lint passed. Eight affected suites passed
+  104 tests. The 123-case output/graph/delivery comparison remained identical.
+
 Next in area 1: finish semantic normalization; complete ownership inputs and
 move remaining generated ABI state out of source facts.
 These are prerequisites for the runtime-size and broader precision batches.

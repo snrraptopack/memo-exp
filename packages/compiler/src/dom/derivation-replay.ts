@@ -2,7 +2,8 @@
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {cloneNode} from '../ast';
-import {assignmentTarget,type LocalDerivation} from '../components/props';
+import type {LocalDerivation} from '../components/props';
+import {assignmentTarget} from './props';
 import type {DomContext} from './context';
 import {mdd} from './identifiers';
 

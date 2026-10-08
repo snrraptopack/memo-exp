@@ -16,7 +16,7 @@ import { initializeGeneratedIdentifiers } from './identifiers';
 import { scanExternalReactiveImports } from '../external-reactivity';
 import { lowerRouterJsx } from './router';
 import {planRouterJsx} from '../analysis/routes';
-import { installCompilerIntrinsics } from '../intrinsics';
+import { installCompilerIntrinsics } from './intrinsics';
 import { scanTransparentSourceImports, lowerReadReplays, lowerTransparentGroups, lowerModuleSourceDeclarations, rejectNonGetServerFunctionRenderCalls, scanEventSourceAssignments } from '../data-sources';
 
 export function prepareProgramAnalysis(ctx: Ctx, programPath: ProgramPath): void {
