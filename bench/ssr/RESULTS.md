@@ -1,5 +1,10 @@
 # HTTP SSR and retained leaf writer — local experiment
 
+Historical experiment log. Its “next” proposals and old typecheck failure apply
+to the revisions recorded below; they are not active completion gates. Current
+work and the later passing stability checkpoint are tracked in
+[Rearchitecture plan](../../docs/rearchitecture-plan.md).
+
 ## Integration into main — 2026-10-04
 
 The SSR branch was integrated onto `242ac21`, preserving the newer initial

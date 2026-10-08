@@ -1,5 +1,10 @@
 # SSR and router branch integration — 2026-10-07
 
+Integration complete. The verification counts below are historical; the later
+consolidated checkpoint and current package audit are recorded in
+[Rearchitecture plan](./rearchitecture-plan.md). This is not a separate pending
+merge or execution plan.
+
 ## Reviewed inputs
 
 | Branch | Requested commit | Integration |

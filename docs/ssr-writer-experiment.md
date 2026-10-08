@@ -1,8 +1,10 @@
 # Retained leaf SSR writer experiment
 
 Status: opt-in prototype; not enabled by Vite or default compilation.
+This integrated experiment is not an active default-renderer migration plan.
+Current scheduling is maintained in [Rearchitecture plan](./rearchitecture-plan.md).
 
-The branch already replaces array child operations with intrusive sibling
+The integrated SSR implementation replaces array child operations with intrusive sibling
 links, avoids repeated escape/parse work, centralizes rendering in one request
 session, moves LinkeDOM into its oracle entry, and commits streamed responses
 after route preparation. Phase 6 measures those changes through the real

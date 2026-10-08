@@ -1,5 +1,11 @@
 # Merged delivery baseline
 
+Historical measurements and per-batch proof limits follow. Later sections
+supersede earlier “missing branches/variable extents” limitations; those supported
+cases are implemented. Current scheduling and verification status are maintained
+only in [Rearchitecture plan](./rearchitecture-plan.md); current package costs are
+in [Optional package cost](./package-capability-audit.md).
+
 Measured `91284dc` on 2026-10-07 before extending composition binding. These
 are production bytes, not timing results from this laptop.
 
@@ -149,7 +155,7 @@ work. This batch adds no new hydration path or compatibility API.
 
 ## Variable region extents — 2026-10-07
 
-The next batch completes the three extent cases listed above: absent request
+This implemented batch completes the three extent cases listed above: absent request
 branches, closed nested row structures and independent variable sibling regions.
 Empty alternatives retain their opening/closing anchors. Populated alternatives
 can bind a host element or composed component. Following siblings use anchor

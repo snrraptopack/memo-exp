@@ -75,11 +75,20 @@ separately. This isolates delivery changes; it is not a comparison of entire
 repository revisions. The baseline adapter is extracted into an ignored source
 snapshot. Results are written to `dist/ssr/results.md` and `results.json`.
 
-`--verify` checks all twelve package/source browser graphs in Chromium, including
+`--verify` checks selected supported package/source browser graphs in Chromium, including
 input reset, rejected whitespace, duplicate todo values, counter/prop updates and
 retained list nodes. Use `PUPPETEER_EXECUTABLE_PATH` to select Chromium. Omit the
 flag for size-only runs. Artifacts, checkout metadata and results live in
 ignored `dist/audit/`; examples are not test inputs.
+Its interaction verifier does not cover every newer structural/composition fixture;
+use their dedicated production tests. The current audit verified 44 graphs from
+22 supported fixtures, not all fixture interactions.
+
+`bun run bench:size:capabilities` audits optional public utility, adapter and server
+APIs independently in source/published graphs. Server probes measure server code,
+not browser payload. Findings, limits and paired evidence are in
+[Optional package cost](../../docs/package-capability-audit.md). The removed CSS
+package is no longer a probe or workspace dependency.
 
 Include the optional hydration capability in these same graphs with:
 
@@ -185,7 +194,7 @@ component state, prop updates and recreation. Read-only fetch/Group source
 audits also reject retained resource-write implementation code; public bundled
 constructor tests verify that explicitly exposed resource writes stay available.
 
-## Architecture milestone checkpoint
+## Historical architecture milestone checkpoint
 
 Source audits use archived runtime sources unchanged and require the compiler
 hooks used by the selected fixtures. Incompatible baselines fail instead of

@@ -13,6 +13,9 @@ export default defineConfig({
   output: {
     dir: './dist',
     format: 'esm',
+    // Response helpers must not initialize an unused renderer or request host.
+    preserveModules: true,
+    preserveModulesRoot: './src',
     minify: true,
     entryFileNames: '[name].js',
     chunkFileNames: 'chunks/[name]-[hash].js',

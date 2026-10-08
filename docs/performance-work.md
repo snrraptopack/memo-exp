@@ -3,6 +3,10 @@
 The current compiler, bundle and performance execution checklist is
 [Rearchitecture plan](./rearchitecture-plan.md). Historical reports below are
 evidence for individual revisions, not current-HEAD performance claims.
+The [cross-package audit](./package-capability-audit.md) records the current
+capability review. Historical bundle deferrals and “next” steps below apply to
+their revisions: bundle work resumed, local routing/static client omission and
+supported initial bindings are implemented, and numeric dispatch remains deferred.
 
 The rearchitecture remains active. The 2026-10-06 initial-content/browser-program
 checkpoint verifies an implemented milestone, not completion of the architecture.
@@ -496,10 +500,10 @@ the optimization priorities.
 | 2 | Structural reconciliation and safe list mutations | Closed plain-record content writes can collect row keys; opaque-produced collections retain full replay. Append/truncate/reorder specialization and arbitrary alias handling remain open. |
 | 2 | Creation/replacement/teardown | The `60e1dbe` VM measures DOM 10k replacement at 14.0–16.1 ms versus vanilla's 9.5 ms, and clear at 2.0–2.6 ms versus 0.5 ms. Creation varied substantially between its two runs, including vanilla. Registered leaf teardown avoids traversal buffers and empty error arrays. Main DOM/Octane row entries already omit registration, so their closure, event and DOM-range costs remain open. |
 | 3 | Duplicated dynamic initialization/update emission | Check creation order, getter calls, transparent-source reads and hydration before sharing emitted expressions. |
-| Deferred | Browser runtime size and routing | Deferred at the user's request. Browser/server separation, local-only routing, numeric/direct reader dispatch and string-key interning remain candidates. |
+| In progress | Browser runtime size and routing | Bundle work resumed. Browser/server separation, local-only routing and supported capability selection are implemented; current residual costs are in the package audit. Numeric/direct routing is deferred pending measured gain. |
 | 3 | Component template cloning and static registration | Row templates exist; broader component cloning and skipping static entity registration still require proof and measurement. |
 | 3 | Slot granularity and opaque pulls | Proven primitive local DOM slots and ordinary primitive derivations can ignore pull-only causes. Control-flow results, structural regions, object/getter reads and unknown calls retain conservative replay. |
-| 4 | SSR client omission and Marko emission ideas | Investigate hydration ownership/markers, per-binding/shared-input updates and region setup; these remain design candidates. |
+| Partial | SSR client omission and Marko emission ideas | Proved static and noninteractive fetched pages already ship zero JS; supported static composition no longer grows component programs. Broader unproved ownership/creation and Marko emission comparisons remain candidates. |
 
 The DOM matrix now also checks retained node identity after every validated
 operation. Untimed 1k/10k sequences select a key, reverse it into the removal
@@ -2078,7 +2082,7 @@ existing DOM source graphs and the Octane graph remain byte-identical against
 the Octane pin are unchanged. The general suites therefore receive no timing
 claim from this batch.
 
-## Earlier candidates retained for tracking
+## Historical candidates reconciled with the execution checklist
 
 Bundle work resumed on 2026-10-04. The measured starting point, first packaging
 reduction and ordered architecture work are in `browser-bundle-architecture.md`.
@@ -2116,8 +2120,12 @@ for all state placements and retained identity; local timing drift prevents a
 CPU speed claim. General keyed-list, opaque and resource-bearing row work remains
 on this list.
 
-These candidates are not completed work. Each needs a correctness test and a
-measurement before it becomes a default optimization.
+Status correction: closed module selection, proved mutation targeting, local-only
+routing, primitive slot/pull precision, static client omission and supported HTML
+bindings are implemented in the later batches. Their broader unknown/hidden-read
+extensions remain open. Numeric/direct routing is deferred. Component template
+cloning and single dynamic emission remain measured-case candidates. This list is
+historical context; the canonical checklist controls further work.
 
 The initial-HTML list batch adds closed-array planning and shared row factories
 that bind first and create later. Unchanged composed lists ship zero browser JS;
@@ -2136,7 +2144,7 @@ has no CPU speed claim. Initial binding itself is checked separately in compiled
 DOM fixtures and production Chrome, including later row events and disposal
 before/during failed binding.
 
-The next architecture batch binds closed empty list anchors and text-like input
+The implemented follow-up batch binds closed empty list anchors and text-like input
 values. Future empty-list rows retain ordinary component ownership and lifecycle;
 input binding preserves native reset behavior. With sixty static cards rather
 than one, an empty todo adds five binding JS bytes versus 3,408 ordinary creation

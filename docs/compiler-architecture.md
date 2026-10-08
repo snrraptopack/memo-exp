@@ -4,6 +4,9 @@ The current five-area execution checklist is maintained in
 [Rearchitecture plan](./rearchitecture-plan.md). Its completion gates include
 moving DOM-specific proofs and output into `packages/compiler/src/dom/` and
 enforcing the shared-analysis import boundary.
+The [package capability audit](./package-capability-audit.md) records current
+unused-feature costs. The boundary table below reflects the later migrations;
+historical validation sections retain evidence for their recorded revisions.
 
 ## Captured application handles — 2026-10-06
 
@@ -102,7 +105,7 @@ Contracts are read-only. No generated identifiers, DOM node operations,
 registration policy or runtime
 namespace is allocated by this pass.
 
-`emission/dom.ts` consumes the complete module plan. Component emission receives
+`dom/program.ts` consumes the complete module plan. Component emission receives
 one `PlannedComponent`, and no longer discovers return control flow. All return
 plans are validated before any factory is replaced. This removes dependence on
 which earlier component has already been emitted.
@@ -183,8 +186,8 @@ through the shared site planner.
 
 `handlers/analyze.ts` captures callback writes as a `HandlerWritePlan` over an
 exact parser-neutral clone. It leaves the authored callback and emission header
-untouched. The coordinator in `handlers.ts` passes that plan to
-`emission/handler.ts`, which lowers guarded list operations and scheduling
+untouched. The coordinator in `dom/handlers.ts` passes that plan to
+`dom/handler.ts`, which lowers guarded list operations and scheduling
 commits after analysis completes. `handlers/plan.ts` owns the shared contract;
 write routing no longer imports its execution-site type from instrumentation.
 The plan carries captured operation facts rather than rediscovering them after
@@ -226,11 +229,11 @@ suffix allocation and the explicit normalized-body replacement stay in a
 separate adapter. No DOM instructions or generated names are allocated by the
 site planner.
 
-This boundary still recognizes already lowered transparent-data helper calls
-using the captured runtime namespace identifier. That compatibility is an
-explicit remaining dependency on shared runtime-producing normalization;
-semantic async provenance must eventually replace it. These source contracts
-do not constitute a complete target-neutral IR or broaden optimization proofs.
+Semantic async-read metadata now replaces the former runtime-helper recognizers.
+List planning consumes captured source/availability facts without a generated
+runtime namespace. The later async-source batch moves generated read operations
+into `dom/`. These contracts do not constitute a reusable multi-backend IR or
+broaden optimization proofs.
 
 `lists/item-write.ts` supplies one indexed-item write parser for journal
 discovery and handler key construction. `analysis/list-mutation-journals.ts`
@@ -249,10 +252,11 @@ per-call journal map is removed from `Ctx`; one source registry remains for
 shared discovery and closed-record analysis. Two independent list consumers
 of one source still disable the journal.
 
-Runtime journal binding names and reason addresses are still allocated by the
-read-analysis adapter to preserve allocation order and generated output. They
-are explicit compatibility data in the snapshot. Fully separating publication
-and binding allocation from shared discovery remains work for a later phase.
+Journal plans now carry symbolic source/write contracts. Runtime journal binding
+names and numeric reasons are allocated by the DOM backend; native-event and
+module-callback snapshots are captured before instrumentation. The historical
+allocation-coupling item is complete. Broader normalization/ownership contracts
+remain tracked in the canonical checklist.
 
 `analysis/owner-list-structure.ts` proves closed array/record ownership and
 which writes preserve retained contents. Each inline row render reads only
@@ -330,16 +334,16 @@ subsequence and suffix-range removal still avoid map transfer and LIS.
 | Concern | Current ownership | Next boundary |
 | --- | --- | --- |
 | Exact slot-source inputs | Semantic snapshot consumed through `ComponentExpressionSources` | Extend shared facts to other consumers while preserving lexical identity |
-| Primitive pull safety | Authored fact plan plus explicit late callback-publication input; component callbacks have immutable source plans | Extend explicit publication to remaining native-event and normalization consumers |
+| Primitive pull safety | Authored fact plan and explicit callback-publication input; native events, component and module callbacks have captured source plans | Preserve completion, exceptions and deferred writes in further normalization proofs |
 | Async provenance and effects | Explicit source/availability/direct-read facts and lifetime owner requirements | Finish authored normalization before target lowering; extend callback lifetime reachability |
 | Component placement and route selectors | Semantic snapshot consumed by component emission | Extend to structural regions and composition without moving host ABI into shared plans |
-| Structural replay eligibility | Semantic contract inherited by lexical emission scopes | Extend to callback shape, branch structure and mutation journals |
-| List syntax, sources, targets and keys | Pure normalizers plus captured per-component semantic contracts and async provenance, including clone lookups | Extend the contracts to mutation journals |
-| Mutation journals | Shared candidate/path analysis and frozen backend snapshots; one source registry | Move binding allocation and reason publication behind explicit backend contracts |
+| Structural replay eligibility | Shared callback/branch/list contracts inherited by lexical emission scopes | Broaden producer/hidden-read proofs only where correctness and measurements support them |
+| List syntax, sources, targets and keys | Pure normalizers and captured list/mutation/async contracts, including clone lookups | Preserve lexical identities across further normalization |
+| Mutation journals | Shared source/write plans; DOM allocates bindings and numeric reasons | Allocation separation complete; broader mutation targeting remains conservative |
 | Retained row replay for owner writes | Closed structural-only sources capture original-call/source/reason facts; other numeric/journal causes keep full replay | Extend to per-write content/opaque publication and component-row props while preserving mixed-cause fallback |
 | Props and region identities | Shared analysis plus backend lowering; authored slots carry caller ownership, mount sites and future-creation guards | Extend publication contracts to structural slots, JSX render props and escaping render values |
-| DOM-only row proof and ABI | Shared metadata and DOM-specific eligibility | Target-specific ownership/ABI plan derived from shared composition facts |
-| Normalization and transparent read/callback lowering | Group policies, read replay operations and lazy module sources have explicit plans before target lowering; other transforms remain mixed | Extend source contracts to remaining callback transforms and TSRX validation |
+| DOM-only row proof and ABI | Shared authored write facts; DOM eligibility and generated row context live in `dom/` | Row ABI move complete; broader composition ownership remains open |
+| Normalization and transparent read/callback lowering | Group/read/module sources, destructuring, calculated lists, async and finite JSX have source plans before DOM lowering | Remaining coordinator normalization and broader composition/lifetime contracts need review |
 | Generated IDs, headers, imports and output buffers | DOM context owns emission, runtime reasons, route/subscription ABI and presentation parameters; shared context retains source contracts | Replace remaining runtime-producing normalization with explicit target lowering |
 | Generated-header coverage | Deferred header insertion after some rewrites | Passes explicitly cover authored, generated or complete module trees |
 

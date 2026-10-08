@@ -19,12 +19,17 @@ those improvements. Correctness safeguards for arbitrary keys, getter reads,
 opaque calls, reentry, failed renders and cleanup belong to the paths that need
 them; they cannot be deleted merely because a small example does not exercise them.
 
-## Current checkpoint — 2026-10-07
+## Current checkpoint — 2026-10-08
 
 The active priorities and completion gates are in
 [Rearchitecture plan](./rearchitecture-plan.md). The tables below record an
 earlier fixture checkpoint; later production measurements are in
 [Merged delivery audit](./merged-delivery-audit.md).
+The [cross-package audit](./package-capability-audit.md) verifies optional
+capabilities and records the server/utility fixes and CSS package removal.
+Later batch evidence supersedes historical “remaining” lists below; those lists
+are not separate active plans. Numeric keys are deferred, and bundle work targets
+concrete unnecessary component/capability code.
 
 The first separation of HTML and browser execution is implemented. Proven static
 pages ship zero JavaScript. Supported interactive roots bind server/build HTML;
@@ -1720,7 +1725,7 @@ emitted event-origin statement. Row write facts share one authored shape with
 the DOM row context, while generated row/owner IDs and refresh bindings are
 provided separately to lowering. Guard flags and temporary bindings belong to
 the emission stage. Commit instrumentation moved out of `handlers/` into
-`emission/handler-execution.ts`.
+`dom/handler-execution.ts`.
 
 Targeted item mutations are captured as source/key/site facts during analysis.
 Only emission inserts the key-journal operation. The regression test clears
@@ -1994,7 +1999,7 @@ ABBA order. Every timed sample checks text, classes, order and retained node
 identity outside timing. Both revisions emit identical browser artifacts for
 this suite, so these results verify unchanged behavior rather than a CPU gain.
 
-### Remaining completion requirements
+### Historical completion requirements — superseded by the execution checklist
 
 #### Closure batch 1: explicit async read facts
 
@@ -2148,7 +2153,8 @@ The complete architecture remains open in these concrete areas:
   address/shape proofs before general adoption can be removed.
 - Resource, router and kernel capability costs still dominate interactive fetched
   and routed pages. The request cleanup removes duplication, not those subsystems.
-  Numeric key interning also remains unimplemented.
+  Numeric key interning was subsequently deferred by `9b4896d`; it is not a
+  current bundle-completion requirement.
 - A stable VM timing comparison remains outstanding. The full local DOM gate
   validates all 21 scenarios and mixed sequences with retained identity, but its
   byte-identical browser artifacts establish no speed gain.

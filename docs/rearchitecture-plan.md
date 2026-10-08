@@ -2,22 +2,26 @@
 
 ## Current checklist
 
-Baseline: `7abcf55`. All five areas remain open. Existing initial HTML binding
-is a foundation, not completion of the compiler or runtime rearchitecture.
+Original baseline: `7abcf55`; audited revision: `9b4896d` plus the package batch
+below. All five areas have verified milestones. Further extensions remain open;
+the initial HTML and unused-capability work is implemented, not pending.
 
 | Order | Area | Status | Completion gate |
 | --- | --- | --- | --- |
 | 1 | Analysis and DOM backend separation | In progress | Shared facts independent of backend imports; replaced implementations removed; behavior verified |
 | 2 | Fixed cost of interactivity | In progress | Production bundle savings and capability isolation verified across local, lazy and routed applications |
-| 3 | Reactivity precision | Open | Correct visible updates and demonstrated exclusion of unrelated row/slot work |
-| 4 | List execution costs | Open | Correctness, retained identity and disposal pass; paired timing supports each claimed gain |
-| 5 | Composition and delivery coverage | Open | Initial delivery and subsequent interaction verified with shared factories, graph and lifetimes |
+| 3 | Reactivity precision | Implemented proofs; broader cases open | Correct visible updates and demonstrated exclusion of unrelated row/slot work |
+| 4 | List execution costs | Implemented reductions; further gains unverified | Correctness, retained identity and disposal pass; paired timing supports each claimed gain |
+| 5 | Composition and delivery coverage | Supported shapes verified; broader proofs open | Initial delivery and subsequent interaction verified with shared factories, graph and lifetimes |
 
 This is the execution checklist. Detailed historical evidence remains in
 [Compiler phase boundaries](./compiler-architecture.md),
 [Browser JavaScript architecture](./browser-bundle-architecture.md),
 [Performance work](./performance-work.md) and
 [Merged delivery audit](./merged-delivery-audit.md).
+Current cross-package findings are in [Optional package cost](./package-capability-audit.md).
+Historical “next”, “open” and “deferred” statements in batch journals describe
+their recorded revision; this checklist supersedes them for current scheduling.
 
 ### Verified foundations and remaining deliverables
 
@@ -35,6 +39,19 @@ recorded under the corresponding commits below:
   environment override merging; verify the measured production savings.
 - [x] Preserve zero-JavaScript static delivery and exercise interactive, fetched,
   lazy and routed/Group delivery in production browser fixtures.
+- [x] Keep local-only counters independent of module access routing; select
+  optional polling, hydration, request restoration/encoding and lazy/routed-data
+  capabilities in supported generated graphs.
+- [x] Implement proved selection/callback targeting, primitive opaque-pull slot
+  exclusion and closed-list mutation/replay contracts. Broader hidden reads keep
+  conservative behavior; these implemented cases are not an outstanding task.
+- [x] Implement ordered removal, cyclic reuse and DOM-only row lifetime reductions;
+  verify retained identity, mixed operations, cleanup and interrupted-frame recovery.
+- [x] Bind supported empty inputs/lists, component rows, absent branches, nested
+  structures and multiple variable extents with the existing factories/lifetimes.
+- [x] Move generated row ABI into `dom/row-context.ts`; delete the shared declaration.
+- [x] Audit other packages and remove measured server-helper/full form-tracker
+  retention; remove the CSS package and its obsolete implementation plan.
 
 The remaining deliverables retain the original five-area scope:
 
@@ -276,8 +293,9 @@ Parent: `a09eded` (the saved execution checklist). Area 1 remains in progress.
 - Type checking, compiler build and lint passed. Five affected suites passed
   60 tests; all 123 output/graph/delivery comparisons matched the baseline.
 
-Next in area 1: finish semantic normalization; complete ownership inputs and
-move remaining generated ABI state out of source facts.
+Historical next step at this revision: semantic normalization and generated ABI
+separation. Subsequent source/async/JSX/row-ABI batches below complete the named
+migrations; only broader contracts in the current checklist remain open.
 These are prerequisites for the runtime-size and broader precision batches.
 
 ### Optional hydration recovery (commit `4da52c8`, parent `2c57535`)
@@ -537,9 +555,10 @@ These are prerequisites for the runtime-size and broader precision batches.
   request/Group 86,872 / 26,759 B. No size or CPU gain is claimed for this fix.
 - This checkpoint closes the historical full-root rerun gap recorded above.
   It establishes the tested baseline, not completion of the five areas. The
-  next source-boundary cleanup is generated row ABI state still declared in
-  shared context; numeric keys, duplicated emission and retained creation remain
-  bundle deliverables. Dependencies, examples and numbered docs were untouched.
+  then-next row ABI cleanup was completed by `b01d5ae`; numeric keys were later
+  deferred by `9b4896d`. Duplicated emission and retained creation remain candidates
+  where a concrete unnecessary-code case is demonstrated. Dependencies, examples
+  and numbered docs were untouched.
 
 ### Row ABI ownership (parent `d49c901`)
 
@@ -567,3 +586,36 @@ These are prerequisites for the runtime-size and broader precision batches.
   remaining delivery/creation work requires a demonstrated retained-code case,
   not a speculative architecture expansion. Preserve routing, Group and dynamic
   lifetimes even when they legitimately require browser code.
+
+### Optional package cost and plan reconciliation (parent `8144d00`)
+
+- CSS removal is committed as `8144d00`: 18 package files and its obsolete design
+  are deleted, root build/test references and lockfile workspace entries removed.
+  No dependency version changed. Ignored generated CSS files were also removed
+  individually after automatic review rejected recursive directory cleanup.
+- Audited runtime/data/router generated graphs and public utility/adapter/server
+  entries. Preserve server module boundaries so JSON responses omit renderer/Node
+  host initialization; optimistic operations use the existing resource tracker
+  without the full form tracker. No second engine, tracker or compatibility API.
+- Published JSON probe: 8,016 → 520 raw B, 2,968 → 325 gzip B. Optimistic probe:
+  26,773 → 26,102 raw B, 8,618 → 8,449 gzip B. These isolated API probes include
+  export wrappers; server measurements are not browser savings. Full findings and
+  retained generic data costs are in [Optional package cost](./package-capability-audit.md).
+- All nine remaining packages build. Final focused root run: seven files / 73
+  tests; server suite: 14 files / 147 tests; utility suite: seven tests plus its
+  typecheck. Root typecheck, changed-file lint and diff checks pass. No new full
+  root-suite pass is claimed; the prior consolidated checkpoint remains recorded.
+- 44 supported package/source browser graphs passed; ten controls reran after
+  the final package rebuild with unused-package exclusion guards. The size audit
+  compiled all 45 fixtures, but its generic browser verifier cannot check every
+  newer structural fixture; the first unsupported case timed out rather than
+  establishing a runtime failure or an all-fixture pass.
+- Nine production SSR controls preserve HTML/payload/chunks against compiler/Vite
+  `9b4896d` with identical current runtimes. Static/fetched-only pages stay at
+  zero JS; one/sixty static child slots both retain 8,393 raw / 3,414 gzip B.
+- Reconciled compiler ownership tables, package audit instructions, historical
+  performance candidates and delivery/SSR checkpoints. Completed migrations are
+  marked accordingly; historical measurements remain intact. Numbered docs and
+  personal examples are untouched. Generic data dispatch/restoration, unproved
+  composition/creation and further performance proofs remain explicit open items;
+  numeric routing stays deferred.

@@ -1,6 +1,6 @@
-import { $read, $track } from '@memoized-dom/data';
+import { $read } from '@memoized-dom/data';
 import type { FetchResource, RequestError, ResolvedValue } from '@memoized-dom/data';
-import { disposeFetchResource, isFetchResource } from '@memoized-dom/data/internal';
+import { disposeFetchResource, isFetchResource, trackResolvedValue } from '@memoized-dom/data/internal';
 
 type OperationResult =
   | PromiseLike<unknown>
@@ -61,7 +61,7 @@ export function optimistic<TPayload, TResult extends OperationResult>(
     const source: FetchResource<unknown> = existingSource
       ? result
       : $read(result) as unknown as FetchResource<unknown>;
-    const tracker = $track(source);
+    const tracker = trackResolvedValue(source as unknown as ResolvedValue<unknown>);
     const operationId = tracker.id;
     const previousId = seenOperations.get(source);
     if (previousId === operationId) {

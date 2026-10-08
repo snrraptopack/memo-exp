@@ -175,6 +175,9 @@ for (const [fixture, sources] of Object.entries(sizeFixtures)) {
         !output.text.includes('Serialized data state sources must be an array')) {
       throw new Error('SSR-capable fetches must retain transfer restoration');
     }
+    if (inputs.some(input => /(?:^|\/)packages\/(?:compiler|vite|language-service|server|adapters|utils)\//.test(input.path))) {
+      throw new Error('Ordinary browser fixtures must not retain unused utility, server or tooling packages');
+    }
     rows.push(row);
     writeFileSync(resolve(directory, `${fixture}-${graph}.js`), output.contents);
     writeFileSync(resolve(directory, `${fixture}-${graph}.meta.json`), JSON.stringify(result.metafile, null, 2));
