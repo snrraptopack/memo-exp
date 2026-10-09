@@ -1,4 +1,4 @@
-/** First desktop lowering: fixed primitive scenes with synchronous local events. */
+/** Desktop lowering: fixed component trees with synchronous lexical state. */
 import type * as t from '../ast/compiler-types';
 import * as b from '../ast/factory';
 import { parseWithEstreeFrontendOrThrow, type EstreeFrontend } from '../ast/parser';
@@ -17,6 +17,8 @@ import { planExpressionSources } from '../planning/expression-sources';
 import { compilerError } from '../errors';
 import { lowerDesktopScene, valueExpression } from './lower-scene';
 import { desktopCssRules } from './css';
+import { desktopProps } from './components';
+import { desktopComponentImports, type DesktopModuleReader } from './imports';
 
 export interface DesktopCompileOptions {
   moduleId?: string;
@@ -24,6 +26,8 @@ export interface DesktopCompileOptions {
   frontend?: EstreeFrontend;
   /** Build adapter resolves ordinary side-effect CSS imports. */
   readStylesheet?: (specifier: string) => string;
+  /** Resolve authored component modules; core discovery verifies exported identities. */
+  readModule?: DesktopModuleReader;
 }
 
 export interface DesktopCompiledSource {
@@ -52,7 +56,8 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   normalizeEstreeDialect(program);
   const path: ProgramPath = { node: program, buildCodeFrameError: (message, at) => compilerError(message, moduleId, at) };
   normalizeComponentDeclarations(path);
-  const ctx = createAnalysisCtx({ moduleId });
+  const linkedImports = desktopComponentImports(program, moduleId, options.frontend ?? memoizedEstreeFrontend, options.readModule);
+  const ctx = createAnalysisCtx({ moduleId, linkedImports });
   refreshAstAnalysis(ctx, program);
   validateLinkedImports(ctx, path);
   scanModuleState(ctx, path);
@@ -76,7 +81,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
 
   for (const [name, component] of ctx.compPaths) {
     const fn = component.node;
-    if (fn.async || fn.generator || fn.params.length) fail('components must be synchronous and take no props in this first slice', fn);
+    if (fn.async || fn.generator) fail('components must be synchronous', fn);
     const statements = fn.body.body;
     const last = statements.at(-1);
     if (!last || !b.isReturnStatement(last) || !last.argument) fail('components need a final fixed JSX return', fn);
@@ -93,18 +98,24 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     if (ctx.instanceDerivations.get(name)?.length) {
       fail('reactive setup derivations are not implemented yet; use the expression directly in JSX', fn);
     }
-    const { nodes, slots, events, bindings, handlers } = lowerDesktopScene(root, {
+    const { nodes, slots, events, bindings, handlers, children } = lowerDesktopScene(root, {
       callbacks: planComponentCallbacks(ctx, name, component),
-      sources: expressionFacts.get(name)!, instrument, fail,
+      sources: expressionFacts.get(name)!, instrument, fail, components: ctx.componentProps, imports: ctx.importedComponents,
     });
+    const props = desktopProps(ctx.componentProps.get(name)!, fresh, fail);
+    fn.params = props.params;
     eventsUsed ||= handlers.length > 0;
     const template = { id: `${moduleId}#${name}`, nodes, slots, events, stylesheets };
     const templateId = fresh(`__desktopTemplate${name}`);
     templates.push(b.variableDeclaration('const', [b.variableDeclarator(templateId, valueExpression(template))]));
-    fn.body.body = [...statements.slice(0, -1),
+    const mountOptions = b.objectExpression([
+      ...(children.length ? [b.objectProperty(b.identifier('children'), b.arrayExpression(children))] : []),
+      ...(props.receive ? [b.objectProperty(b.identifier('receiveProps'), props.receive)] : []),
+    ]);
+    fn.body.body = [...props.setup, ...statements.slice(0, -1),
       b.variableDeclaration('let', [b.variableDeclarator(instance, null)]),
       b.expressionStatement(b.assignmentExpression('=', instance, b.callExpression(mount, [
-        templateId, b.arrayExpression(bindings), b.arrayExpression(handlers),
+        templateId, b.arrayExpression(bindings), b.arrayExpression(handlers), mountOptions,
       ]))), b.returnStatement(instance)];
   }
   if (!ctx.compPaths.size) fail('no desktop components were found');

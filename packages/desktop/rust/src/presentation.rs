@@ -18,6 +18,7 @@ pub enum ItemKind {
     Paragraph,
     Button,
     Input,
+    Region,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct FlowItem {
@@ -55,9 +56,26 @@ impl PresentationPlan {
             groups: Vec::new(),
             group_for_node: vec![None; template.nodes.len()],
         };
-        let mut jobs = vec![Job::Element(0, None)];
+        let mut jobs = template
+            .nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, node)| node.parent().is_none())
+            .map(|(index, _)| Job::Element(index, None))
+            .collect::<Vec<_>>();
         while let Some(job) = jobs.pop() {
             match job {
+                Job::Element(node, parent)
+                    if matches!(template.nodes[node], Node::Region { .. }) =>
+                {
+                    plan.items.push(FlowItem {
+                        kind: ItemKind::Region,
+                        source: node,
+                        parent,
+                        group: None,
+                    });
+                }
                 Job::Element(node, parent) => match tags[node].map(|tag| tag.layout) {
                     Some(Layout::Block) => {
                         let item = plan.items.len();
@@ -70,7 +88,9 @@ impl PresentationPlan {
                         let mut sequence = Vec::new();
                         let mut inline = Vec::new();
                         for &child in &children[node] {
-                            if tags[child].is_none_or(|tag| tag.layout == Layout::Inline) {
+                            if !matches!(template.nodes[child], Node::Region { .. })
+                                && tags[child].is_none_or(|tag| tag.layout == Layout::Inline)
+                            {
                                 inline.push(child);
                             } else {
                                 if !inline.is_empty() {

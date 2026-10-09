@@ -1,6 +1,7 @@
 //! Persistent scene state and atomic publication, independent of window presentation.
 pub mod bridge;
 pub mod css;
+pub mod forest;
 pub mod presentation;
 pub mod tags;
 pub mod template;
@@ -17,6 +18,12 @@ pub struct Handle {
     pub id: u64,
     pub generation: u64,
 }
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Attachment {
+    pub handle: Handle,
+    pub node: usize,
+}
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextWrite {
@@ -30,6 +37,8 @@ pub enum Operation {
         handle: Handle,
         template: String,
         values: Vec<TextWrite>,
+        #[serde(default)]
+        attach_to: Option<Attachment>,
     },
     Update {
         handle: Handle,
@@ -48,6 +57,7 @@ pub struct Transaction {
 #[derive(Clone)]
 pub struct Instance {
     pub handle: Handle,
+    pub attach_to: Option<Attachment>,
     pub template: Arc<PreparedTemplate>,
     pub texts: Vec<String>,
     pub dirty: BTreeSet<usize>,
@@ -69,6 +79,8 @@ pub struct Snapshot {
 #[derive(Serialize)]
 pub struct InstanceSnapshot {
     pub handle: Handle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_to: Option<Attachment>,
     pub template: String,
     pub texts: Vec<String>,
     pub dirty: Vec<usize>,
@@ -82,6 +94,9 @@ impl Scene {
     }
     pub fn sequence(&self) -> u64 {
         self.sequence
+    }
+    pub fn presentation_order(&self) -> forest::SceneOrder {
+        forest::order(&self.instances)
     }
     pub fn has_event(&self, handle: Handle, site: usize) -> bool {
         self.instances.get(&handle.id).is_some_and(|instance| {
@@ -130,13 +145,16 @@ impl Scene {
         }
         let mut staged = BTreeMap::<u64, Option<Instance>>::new();
         let mut generations = BTreeMap::<u64, u64>::new();
+        let mut topology_changed = false;
         for operation in transaction.operations {
             match operation {
                 Operation::Mount {
                     handle,
                     template,
                     values,
+                    attach_to,
                 } => {
+                    topology_changed = true;
                     validate_handle(handle)?;
                     let previous = staged
                         .get(&handle.id)
@@ -169,6 +187,7 @@ impl Scene {
                         .collect();
                     let mut instance = Instance {
                         handle,
+                        attach_to,
                         text_groups: Vec::new(),
                         texts,
                         dirty: (0..template.source.nodes.len()).collect(),
@@ -186,10 +205,48 @@ impl Scene {
                     apply_writes(instance, values)?;
                 }
                 Operation::Dispose { handle } => {
+                    topology_changed = true;
                     stage_instance(&self.instances, &mut staged, handle)?;
-                    staged.insert(handle.id, None);
+                    let records = self
+                        .instances
+                        .values()
+                        .filter_map(|instance| {
+                            staged
+                                .get(&instance.handle.id)
+                                .map_or(Some(instance), Option::as_ref)
+                        })
+                        .chain(
+                            staged
+                                .iter()
+                                .filter(|(id, _)| !self.instances.contains_key(id))
+                                .filter_map(|(_, instance)| instance.as_ref()),
+                        );
+                    for id in forest::descendants(records, handle) {
+                        staged.insert(id, None);
+                    }
                 }
             }
+        }
+        if topology_changed {
+            let candidate: BTreeMap<_, _> = self
+                .instances
+                .iter()
+                .filter_map(|(&id, live)| {
+                    staged
+                        .get(&id)
+                        .map_or(Some(live), Option::as_ref)
+                        .map(|instance| (id, instance))
+                })
+                .chain(
+                    staged
+                        .iter()
+                        .filter(|(id, _)| !self.instances.contains_key(id))
+                        .filter_map(|(&id, instance)| {
+                            instance.as_ref().map(|instance| (id, instance))
+                        }),
+                )
+                .collect();
+            forest::validate(&candidate)?;
         }
         // All operations have validated. Prepare each affected paragraph once,
         // on candidate state, before swapping any instance into the live scene.
@@ -221,6 +278,7 @@ impl Scene {
                 .values()
                 .map(|instance| InstanceSnapshot {
                     handle: instance.handle,
+                    attach_to: instance.attach_to,
                     template: instance.template.source.id.clone(),
                     texts: instance.texts.clone(),
                     dirty: instance.dirty.iter().copied().collect(),

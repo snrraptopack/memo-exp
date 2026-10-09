@@ -3,9 +3,10 @@ import type { FlowItem, SceneTemplate, TextGroupValue } from '../scene/schema';
 export type { SceneTemplate } from '../scene/schema';
 
 export interface SceneHandle { readonly id: number; readonly generation: number }
+export interface SceneAttachment { readonly handle: SceneHandle; readonly node: number }
 export interface TextWrite { readonly slot: number; readonly value: string }
 export type SceneOperation =
-  | { readonly kind: 'mount'; readonly handle: SceneHandle; readonly template: string; readonly values: readonly TextWrite[] }
+  | { readonly kind: 'mount'; readonly handle: SceneHandle; readonly template: string; readonly values: readonly TextWrite[]; readonly attach_to?: SceneAttachment }
   | { readonly kind: 'update'; readonly handle: SceneHandle; readonly values: readonly TextWrite[] }
   | { readonly kind: 'dispose'; readonly handle: SceneHandle };
 
@@ -37,6 +38,7 @@ export interface SceneSnapshot {
       readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] };
   readonly instances: readonly {
     readonly handle: SceneHandle;
+    readonly attach_to?: SceneAttachment;
     readonly template: string;
     readonly texts: readonly string[];
     readonly dirty: readonly number[];

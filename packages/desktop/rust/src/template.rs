@@ -30,12 +30,17 @@ pub enum Node {
         parent: Option<usize>,
         text: String,
     },
+    Region {
+        parent: Option<usize>,
+    },
 }
 
 impl Node {
     pub fn parent(&self) -> Option<usize> {
         match self {
-            Self::Element { parent, .. } | Self::Text { parent, .. } => *parent,
+            Self::Element { parent, .. } | Self::Text { parent, .. } | Self::Region { parent } => {
+                *parent
+            }
         }
     }
     pub fn text(&self) -> &str {
@@ -45,6 +50,7 @@ impl Node {
             } if tag == "input" => attributes.get("value").map_or("", String::as_str),
             Self::Element { tag, .. } if tag == "br" => "\n",
             Self::Element { text, .. } | Self::Text { text, .. } => text,
+            Self::Region { .. } => "",
         }
     }
 }
@@ -115,6 +121,7 @@ impl Template {
                     )
                 }
                 Node::Text { .. } => None,
+                Node::Region { .. } => None,
             };
             match node.parent() {
                 None => {
@@ -126,10 +133,18 @@ impl Template {
                 Some(parent) if parent < index => {
                     let Some(parent_tag): Option<&tags::Tag> = resolved[parent] else {
                         return Err(invalid(format!(
-                            "Text node {parent} cannot contain children"
+                            "Non-element node {parent} cannot contain children"
                         )));
                     };
-                    if !parent_tag.accepts(tag) {
+                    if matches!(node, Node::Region { .. })
+                        && parent_tag.content != tags::Content::Flow
+                    {
+                        return Err(invalid(format!(
+                            "Component region at node {index} requires a flow container; <{}> is unsupported",
+                            parent_tag.name
+                        )));
+                    }
+                    if !matches!(node, Node::Region { .. }) && !parent_tag.accepts(tag) {
                         return Err(invalid(format!(
                             "<{}> at node {parent} accepts phrasing content; <{}> at node {index} is not supported inside it",
                             parent_tag.name,
@@ -147,8 +162,8 @@ impl Template {
             }
             resolved.push(tag);
         }
-        if roots != 1 {
-            return Err(invalid("Template must contain exactly one root".into()));
+        if roots == 0 {
+            return Err(invalid("Template must contain a root".into()));
         }
         let mut slots = BTreeSet::new();
         for slot in &self.slots {

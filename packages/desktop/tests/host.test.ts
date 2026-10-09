@@ -12,6 +12,30 @@ const template: SceneTemplate = { id: 'host-counter', nodes: [
 ], slots: [{ node: 1, type: 'text' }], events: [{ node: 0, type: 'click' }] };
 
 describe('Rust retained scene bridge', () => {
+  it('publishes compiled fragment children and grandchild props atomically and cascades retirement', async () => {
+    const { code }=compileDesktop(`
+      function Leaf({value}){return <><p>{value}</p><button>Last</button></>;}
+      function Child(props){let clicks=0;return <section><button onClick={()=>clicks++}>Clicks: {clicks}</button><Leaf value={props.count}/></section>;}
+      export function App(){let count=0;return <main><button onClick={()=>count++}>{count}</button><Child count={count}/></main>;}
+    `,{moduleId:'native-tree.tsx',runtimePath:pathToFileURL(resolve(import.meta.dirname,'../src/index.ts')).href});
+    const compiled=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`) as {App():SceneInstance};
+    const host=createProcessHost({executable}); const app=createDesktopApplication(host);
+    try {
+      const root=app.mount(compiled.App); await root.ready;
+      const before=await host.inspect(); expect(before.sequence).toBe(1); expect(before.instances).toHaveLength(3);
+      const child=before.instances[1]!; const leaf=before.instances[2]!;
+      expect(child.attach_to!.handle).toEqual(root.handle); expect(leaf.attach_to!.handle).toEqual(child.handle);
+      expect(leaf.presentation.filter(item=>item.parent===null)).toHaveLength(2);
+      expect(leaf.text_groups.map(group=>group.text)).toEqual(['0','Last']);
+      await app.dispatch(child.handle,0); await root.dispatch(0);
+      const after=await host.inspect(); expect(after.sequence).toBe(3);
+      expect(after.instances.map(instance=>instance.handle)).toEqual(before.instances.map(instance=>instance.handle));
+      expect(after.instances[1]!.text_groups[0]!.text).toBe('Clicks: 1');
+      expect(after.instances[2]!.text_groups.map(group=>group.text)).toEqual(['1','Last']);
+      expect(after.instances[2]!.text_groups[1]!.revision).toBe(leaf.text_groups[1]!.revision);
+      await root.dispose(); expect(await host.inspect()).toEqual({sequence:4,instances:[]});
+    } finally { await app.dispose(); await host.close(); }
+  });
   it('publishes and retires multiple runtime owners in atomic native batches', async () => {
     const host = createProcessHost({ executable });
     const app = createDesktopApplication(host);

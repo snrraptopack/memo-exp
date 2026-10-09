@@ -3,6 +3,7 @@ import type { DesktopHost, SceneOperation, SceneTemplate } from '../bridge/proto
 /** Prepared changes advance owner caches only after the whole batch is accepted. */
 export interface PreparedPublication {
   readonly operation?: SceneOperation;
+  readonly operations?: readonly SceneOperation[];
   accept(): void;
   reject(): void;
 }
@@ -35,7 +36,7 @@ export function createPublicationQueue(host: DesktopHost) {
         if (failure) throw failure;
         // No command reaches the host until every destination has been read.
         for (const request of batch) prepared.push(request.prepare());
-        const operations = prepared.flatMap(item => item.operation ? [item.operation] : []);
+        const operations = prepared.flatMap(item => item.operations ? [...item.operations] : item.operation ? [item.operation] : []);
         if (operations.length) {
           const expected = sequence + 1;
           if (!Number.isSafeInteger(expected)) throw new Error('Desktop transaction sequence exhausted');

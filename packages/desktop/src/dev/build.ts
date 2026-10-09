@@ -20,6 +20,11 @@ export async function buildDesktopEntry(entry: string, options: DesktopBuildOpti
         contents: compileDesktop(readFileSync(args.path, 'utf8'), {
           moduleId: args.path, runtimePath: runtime,
           readStylesheet: (specifier: string) => readFileSync(resolve(dirname(args.path), specifier), 'utf8'),
+          readModule: (specifier: string, importer: string) => {
+            if (!specifier.startsWith('.')) return undefined;
+            const moduleId = Bun.resolveSync(specifier, dirname(importer));
+            return { moduleId, source: readFileSync(moduleId, 'utf8') };
+          },
         }).code,
         loader: 'js',
       }));

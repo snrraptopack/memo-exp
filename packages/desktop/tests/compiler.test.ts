@@ -201,7 +201,7 @@ describe('desktop compilation and publication', () => {
   });
 
   it.each([
-    [`export function Counter(){ return <Counter />; }`, 'component tags require desktop component linking'],
+    [`export function Counter(){ return <Missing />; }`, 'unresolved desktop component'],
     [`export function Counter(){ let x=0; return <button onClick={async()=>x++}>{x}</button>; }`, 'asynchronous callbacks'],
     [`export function Counter(){ let x=0; const y=x+1; return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
     [`export function Counter(){ let x=0; function label(){return x+1;} const y=label(); return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],

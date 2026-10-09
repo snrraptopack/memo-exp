@@ -6,7 +6,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use memoized_dom_desktop_host::{
-    Handle, Scene,
+    Attachment, Handle, Scene,
     presentation::{ItemKind, TextValue},
     tags::{self, Layout},
     template::{Node, PreparedTemplate},
@@ -52,6 +52,7 @@ pub struct Renderer {
 }
 struct FrameInstance {
     handle: Handle,
+    attach_to: Option<Attachment>,
     template: Arc<PreparedTemplate>,
     values: Vec<TextValue>,
     cache: Vec<Rc<RefCell<TextCache>>>,
@@ -123,10 +124,20 @@ impl Renderer {
         let mut live_text = BTreeSet::new();
         let mut live_controls = BTreeSet::new();
         let mut live_inputs = BTreeSet::new();
-        let mut tab_index = 0;
-        let instances = scene
+        let order = scene.presentation_order();
+        let ranks: BTreeMap<_, _> = order
+            .controls
+            .iter()
+            .enumerate()
+            .map(|(index, (handle, source))| {
+                ((handle.id, handle.generation, *source), index as isize + 1)
+            })
+            .collect();
+        let records: BTreeMap<_, _> = scene
             .instances()
-            .map(|instance| {
+            .map(|instance| (instance.handle.id, instance))
+            .collect();
+        let instances = order.instances.iter().map(|handle| records[&handle.id]).map(|instance| {
                 let handle = instance.handle;
                 let cache = instance
                     .text_groups
@@ -143,13 +154,12 @@ impl Renderer {
                 for item in &instance.template.presentation.items {
                     if matches!(item.kind, ItemKind::Button | ItemKind::Input) {
                         let key = (handle.id, handle.generation, item.source);
-                        tab_index += 1;
                         live_controls.insert(key);
                         let tracked = self
                             .controls
                             .entry(key)
                             .or_insert_with(|| cx.focus_handle());
-                        *tracked = tracked.clone().tab_index(tab_index).tab_stop(true);
+                        *tracked = tracked.clone().tab_index(ranks[&key]).tab_stop(true);
                         focus.insert(item.source, tracked.clone());
                         if matches!(item.kind, ItemKind::Input) {
                             live_inputs.insert(key);
@@ -170,6 +180,7 @@ impl Renderer {
                 }
                 FrameInstance {
                     handle,
+                    attach_to: instance.attach_to,
                     template: instance.template.clone(),
                     values: instance.text_groups.clone(),
                     cache,
@@ -214,11 +225,20 @@ impl Element for SceneElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        for instance in &self.instances {
+        let mut attached = BTreeMap::<Identity, Vec<AnyElement>>::new();
+        for instance in self.instances.iter().rev() {
             let plan = &instance.template.presentation;
-            let mut elements: Vec<Option<AnyElement>> =
+            let mut elements: Vec<Option<Vec<AnyElement>>> =
                 (0..plan.items.len()).map(|_| None).collect();
             for (index, item) in plan.items.iter().enumerate().rev() {
+                if matches!(item.kind, ItemKind::Region) {
+                    elements[index] = attached.remove(&(
+                        instance.handle.id,
+                        instance.handle.generation,
+                        item.source,
+                    ));
+                    continue;
+                }
                 let identity = SharedString::from(format!(
                     "{}:{}:{}",
                     instance.handle.id, instance.handle.generation, index
@@ -322,7 +342,9 @@ impl Element for SceneElement {
                         .child(instance.inputs[&item.source].clone());
                 }
                 for &child in &plan.children[index] {
-                    element = element.child(elements[child].take().unwrap());
+                    if let Some(children) = elements[child].take() {
+                        element = element.children(children);
+                    }
                 }
                 let (tag, id) = match &instance.template.source.nodes[item.source] {
                     Node::Element {
@@ -350,14 +372,26 @@ impl Element for SceneElement {
                     stats: self.stats.clone(),
                 }
                 .into_any_element();
-                elements[index] = Some(observed);
+                elements[index] = Some(vec![observed]);
             }
+            let mut roots = Vec::new();
             for (index, item) in plan.items.iter().enumerate() {
-                if item.parent.is_none() {
-                    self.roots.push(elements[index].take().unwrap());
+                if item.parent.is_none()
+                    && let Some(elements) = elements[index].take()
+                {
+                    roots.extend(elements);
                 }
             }
+            if let Some(parent) = instance.attach_to {
+                attached.insert(
+                    (parent.handle.id, parent.handle.generation, parent.node),
+                    roots,
+                );
+            } else {
+                self.roots.extend(roots.into_iter().rev());
+            }
         }
+        self.roots.reverse();
         let layouts = self
             .roots
             .iter_mut()

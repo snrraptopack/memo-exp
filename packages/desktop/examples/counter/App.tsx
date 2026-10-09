@@ -1,5 +1,6 @@
 import type {} from '@memoized-dom/compiler/jsx';
 import type { DesktopInputEvent } from '@memoized-dom/desktop';
+import { CounterDetails } from './CounterDetails';
 import './app.css';
 
 export function App() {
@@ -17,6 +18,7 @@ export function App() {
       <input type="text" value={input} onChange={(e: DesktopInputEvent) => input = e.target.value} />
       <p id="input-echo">Typed: {input}</p>
     </section>
+    <CounterDetails count={count} value={input} />
     <section class="samples">
       <h2>Native tag and CSS playground</h2>
       <p>A paragraph with <strong>bold</strong>, <em>italic</em>, <code>inline code</code> and <mark>highlighted text</mark>.</p>

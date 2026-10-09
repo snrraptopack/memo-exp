@@ -2,7 +2,8 @@
 export type SceneNode =
   | { readonly kind: 'element'; readonly tag: string; readonly parent: number | null; readonly text: '';
       readonly attributes?: Readonly<Record<string, string>>; readonly style?: readonly CssDeclaration[] }
-  | { readonly kind: 'text'; readonly parent: number | null; readonly text: string };
+  | { readonly kind: 'text'; readonly parent: number | null; readonly text: string }
+  | { readonly kind: 'region'; readonly parent: number | null };
 
 export interface SceneTemplate {
   readonly id: string;
@@ -18,7 +19,7 @@ export interface CssRule { readonly selectors: readonly (readonly CssSelector[])
 
 /** Renderer preparation, before geometry or GPU presentation exists. */
 export interface FlowItem {
-  readonly kind: 'container' | 'paragraph' | 'button' | 'input';
+  readonly kind: 'container' | 'paragraph' | 'button' | 'input' | 'region';
   readonly source: number;
   readonly parent: number | null;
   readonly group: number | null;
