@@ -12,13 +12,30 @@ export interface DesktopProcessHost extends DesktopHost {
   close(): Promise<void>;
 }
 
+export interface DesktopProcessOptions {
+  executable: string;
+  args?: readonly string[];
+  window?: boolean;
+  /** Default 30 seconds. Zero disables this deadline. */
+  startupTimeoutMs?: number;
+  /** Default 30 seconds. A timeout retires the connection; acceptance is unknown. */
+  requestTimeoutMs?: number;
+  /** Default 5 seconds, including exit after shutdown acknowledgment. */
+  shutdownTimeoutMs?: number;
+}
+
 /** Bun owns authored behavior; the child Rust process owns the retained scene. */
-export function createProcessHost(options: { executable: string; args?: readonly string[]; window?: boolean }): DesktopProcessHost {
+export function createProcessHost(options: DesktopProcessOptions): DesktopProcessHost {
+  const startupTimeout = timeoutValue(options.startupTimeoutMs, 30_000);
+  const requestTimeout = timeoutValue(options.requestTimeoutMs, 30_000);
+  const shutdownTimeout = timeoutValue(options.shutdownTimeoutMs, 5_000);
   const child = Bun.spawn([options.executable, ...(options.args ?? [])], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', windowsHide: !options.window });
   let nextId = 1;
   let closed = false;
   let closing: Promise<void> | undefined;
   let failure: Error | undefined;
+  let started = !options.window;
+  let startupDeadline: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<(event: NativeSceneEvent) => void>();
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
@@ -31,6 +48,7 @@ export function createProcessHost(options: { executable: string; args?: readonly
   const fail = (error: Error): void => {
     if (failure) return;
     failure = error;
+    clearTimeout(startupDeadline);
     rejectReady(error);
     resolveClosed();
     for (const request of pending.values()) request.reject(error);
@@ -41,6 +59,9 @@ export function createProcessHost(options: { executable: string; args?: readonly
       try { child.kill('SIGKILL'); } catch {}
     }
   };
+  if (options.window && startupTimeout) startupDeadline = setTimeout(() => {
+    fail(new Error('Desktop host timed out during startup'));
+  }, startupTimeout);
   const output = (async () => {
     const decoder = new TextDecoder();
     let buffer = '';
@@ -51,7 +72,7 @@ export function createProcessHost(options: { executable: string; args?: readonly
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
         const response = decodeResponse(line);
-        if (response.type === 'ready') { resolveReady(); continue; }
+        if (response.type === 'ready') { started = true; clearTimeout(startupDeadline); resolveReady(); continue; }
         if (response.type === 'closed') { resolveClosed(); continue; }
         if (response.type === 'event') {
           const event = response as unknown as NativeSceneEvent;
@@ -84,6 +105,8 @@ export function createProcessHost(options: { executable: string; args?: readonly
   void child.exited.then(async code => {
     await output;
     await stderr;
+    clearTimeout(startupDeadline);
+    if (!started) rejectReady(failure ?? new Error('Desktop host closed before ready'));
     resolveClosed();
     if ((!closed && !closing) || code !== 0 || pending.size) {
       fail(new Error(`Desktop host exited (${code}): ${diagnostics.trim()}`));
@@ -98,7 +121,13 @@ export function createProcessHost(options: { executable: string; args?: readonly
     try { line = `${JSON.stringify({ id, version: 1, ...command })}\n`; }
     catch (error) { return Promise.reject(error); }
     return new Promise((resolveRequest, reject) => {
-      pending.set(id, { resolve: resolveRequest, reject });
+      const deadline = requestTimeout ? setTimeout(() => {
+        fail(new Error(`Desktop host timed out during ${(command as { kind: string }).kind}`));
+      }, requestTimeout) : undefined;
+      pending.set(id, {
+        resolve(value) { clearTimeout(deadline); resolveRequest(value); },
+        reject(error) { clearTimeout(deadline); reject(error); },
+      });
       try {
         child.stdin.write(line);
         const flushed = child.stdin.flush();
@@ -121,6 +150,10 @@ export function createProcessHost(options: { executable: string; args?: readonly
     async redraw() { await request({ kind: 'redraw' }); },
     close() {
       if (!closing) {
+        clearTimeout(startupDeadline);
+        const deadline = shutdownTimeout ? setTimeout(() => {
+          fail(new Error('Desktop host timed out during shutdown'));
+        }, shutdownTimeout) : undefined;
         closing = (async () => {
           let shutdownError: unknown;
           if (child.exitCode === null) {
@@ -134,12 +167,18 @@ export function createProcessHost(options: { executable: string; args?: readonly
           if (failure) throw failure;
           if (shutdownError !== undefined) throw shutdownError;
           if (code !== 0) throw new Error(`Desktop host exited (${code}): ${diagnostics.trim()}`);
-        })().finally(() => { closed = true; });
+        })().finally(() => { clearTimeout(deadline); closed = true; });
         void closing.catch(() => {});
       }
       return closing;
     },
   };
+}
+
+function timeoutValue(value: number | undefined, fallback: number): number {
+  const timeout = value ?? fallback;
+  if (!Number.isSafeInteger(timeout) || timeout < 0 || timeout > 2_147_483_647) throw new RangeError('Desktop host deadlines require a nonnegative timer duration');
+  return timeout;
 }
 
 type HostResponse =

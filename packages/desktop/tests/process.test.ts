@@ -1,9 +1,9 @@
 import { expect, it } from 'bun:test';
-import { createProcessHost } from '../src/bridge/process';
+import { createProcessHost, type DesktopProcessOptions } from '../src/bridge/process';
 
 // Keep generated literals out of Windows command-line quote parsing.
-const child = (script: string) => createProcessHost({ executable: process.execPath,
-  args: ['-e', `await import('data:text/javascript;base64,${Buffer.from(script).toString('base64')}');`], window: true });
+const child = (script: string, options: Partial<DesktopProcessOptions> = {}) => createProcessHost({ executable: process.execPath,
+  args: ['-e', `await import('data:text/javascript;base64,${Buffer.from(script).toString('base64')}');`], window: true, ...options });
 const receive = `import {createInterface} from 'node:readline';
   const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
   console.log(JSON.stringify({type:'ready'}));`;
@@ -92,4 +92,53 @@ it('bounds retained native diagnostics while preserving the end of a crash repor
   expect((error as Error).message).toContain('final crash diagnostic');
   expect((error as Error).message.length).toBeLessThan(17_000);
   expect((await rejection(host.close())).message).toContain('final crash diagnostic');
+});
+
+it('retires a host that never announces readiness', async () => {
+  const host = child('setInterval(()=>{},1000);', { startupTimeoutMs: 500 });
+  expect((await rejection(host.ready)).message).toContain('timed out during startup');
+  await host.windowClosed;
+  expect((await rejection(host.close())).message).toContain('timed out during startup');
+});
+
+it('retires all requests after a lost response and never retries ambiguous publication', async () => {
+  const host = child(`${receive} for await(const line of lines) {}`, { requestTimeoutMs: 500 });
+  await host.ready;
+  const publication = rejection(host.commit({ sequence: 1, operations: [] }));
+  const inspection = rejection(host.inspect());
+  const errors = await Promise.all([publication, inspection]);
+  expect(errors.map(error => error.message)).toEqual(['Desktop host timed out during apply', 'Desktop host timed out during apply']);
+  expect((await rejection(host.commit({ sequence: 1, operations: [] }))).message).toContain('timed out during apply');
+  expect((await rejection(host.close())).message).toContain('timed out during apply');
+});
+
+it('bounds shutdown even when it is acknowledged but the process never exits', async () => {
+  const host = child(`${receive}
+    for await(const line of lines) {
+      const request=JSON.parse(line);
+      console.log(JSON.stringify({id:request.id,result:null}));
+      setInterval(()=>{},1000); break;
+    }
+  `, { shutdownTimeoutMs: 500 });
+  await host.ready;
+  const first = rejection(host.close()); const second = rejection(host.close());
+  expect((await first).message).toContain('timed out during shutdown');
+  expect((await second).message).toContain('timed out during shutdown');
+});
+
+it('settles readiness when a host is closed before startup completes', async () => {
+  const host = child(`import {createInterface} from 'node:readline';
+    for await(const line of createInterface({input:process.stdin})) {
+      const request=JSON.parse(line); console.log(JSON.stringify({id:request.id,result:null})); break;
+    }
+  `);
+  const ready = rejection(host.ready);
+  await host.close();
+  expect((await ready).message).toContain('closed before ready');
+});
+
+it('validates deadline configuration before spawning a process', () => {
+  for (const value of [-1, 1.5, Infinity, NaN, 2_147_483_648]) {
+    expect(() => createProcessHost({ executable: 'must-not-be-spawned', requestTimeoutMs: value })).toThrow('nonnegative timer duration');
+  }
 });
