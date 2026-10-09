@@ -1,5 +1,5 @@
 //! Wire definitions and validated, immutable native templates.
-use crate::{presentation::PresentationPlan, tags};
+use crate::{css, presentation::PresentationPlan, tags};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -10,6 +10,8 @@ pub struct Template {
     pub nodes: Vec<Node>,
     pub slots: Vec<TextSlot>,
     pub events: Vec<Event>,
+    #[serde(default)]
+    pub stylesheets: Vec<css::Rule>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -19,6 +21,10 @@ pub enum Node {
         tag: String,
         parent: Option<usize>,
         text: String,
+        #[serde(default)]
+        attributes: std::collections::BTreeMap<String, String>,
+        #[serde(default)]
+        style: Vec<css::Declaration>,
     },
     Text {
         parent: Option<usize>,
@@ -34,6 +40,7 @@ impl Node {
     }
     pub fn text(&self) -> &str {
         match self {
+            Self::Element { tag, .. } if tag == "br" => "\n",
             Self::Element { text, .. } | Self::Text { text, .. } => text,
         }
     }
@@ -65,6 +72,7 @@ pub enum EventKind {
 pub struct PreparedTemplate {
     pub source: Template,
     pub presentation: PresentationPlan,
+    pub styles: Vec<css::CascadedStyle>,
 }
 
 impl Template {
@@ -93,7 +101,12 @@ impl Template {
                 Node::Text { .. } => None,
             };
             match node.parent() {
-                None => roots += 1,
+                None => {
+                    if tag.is_some_and(|tag| tag.name == "li") {
+                        return Err(invalid("<li> requires an <ul> or <ol> parent".into()));
+                    }
+                    roots += 1;
+                }
                 Some(parent) if parent < index => {
                     let Some(parent_tag): Option<&tags::Tag> = resolved[parent] else {
                         return Err(invalid(format!(
@@ -104,8 +117,13 @@ impl Template {
                         return Err(invalid(format!(
                             "<{}> at node {parent} accepts phrasing content; <{}> at node {index} is not supported inside it",
                             parent_tag.name,
-                            tag.unwrap().name
+                            tag.map_or("text", |tag| tag.name)
                         )));
+                    }
+                    if tag.is_some_and(|tag| tag.name == "li")
+                        && !matches!(parent_tag.name, "ul" | "ol")
+                    {
+                        return Err(invalid("<li> requires an <ul> or <ol> parent".into()));
                     }
                     children[parent].push(index);
                 }
@@ -136,10 +154,12 @@ impl Template {
                 ));
             }
         }
+        let styles = css::prepare(&self.nodes, &self.stylesheets).map_err(invalid)?;
         let presentation = PresentationPlan::prepare(&self, &resolved, &children);
         Ok(PreparedTemplate {
             source: self,
             presentation,
+            styles,
         })
     }
 }

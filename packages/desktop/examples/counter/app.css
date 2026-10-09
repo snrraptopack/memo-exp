@@ -1,0 +1,19 @@
+/* Ordinary authored CSS; GPUI styles and Taffy perform native presentation. */
+main.card { display: flex; flex-direction: column; gap: 18px; padding: 24px; width: 100%; max-width: 720px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; color: #0f172a; font-family: "Segoe UI"; font-size: 16px; line-height: 1.5; }
+h1 { font-size: 28px; margin: 0; }
+h2 { font-size: 20px; margin: 0 0 10px; }
+p { margin: 0 0 8px; }
+.intro { color: #64748b; }
+.counter { display: flex; flex-direction: column; gap: 10px; padding: 16px; background-color: #f1f5f9; border-radius: 8px; }
+.value { font-size: 24px; }
+.actions { display: flex; flex-direction: row; gap: 12px; }
+button { padding: 10px 18px; background-color: #2563eb; color: white; border: 2px solid #2563eb; border-radius: 6px; font-weight: 600; }
+button:hover { background-color: #1d4ed8; }
+button:focus { border-color: #93c5fd; }
+.accent { color: #7c3aed; font-weight: bold; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 8px 0; }
+.tile { padding: 12px; background-color: #f5f3ff; border-radius: 6px; }
+.wrap-wide { width: 100%; max-width: 480px; }
+.wrap-narrow { width: 100%; max-width: 220px; }
+code { color: #be123c; background-color: #fff1f2; }
+blockquote { margin: 8px 0; padding: 12px; border-width: 0 0 0 3px; border-color: #94a3b8; color: #475569; }

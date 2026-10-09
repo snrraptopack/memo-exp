@@ -27,6 +27,24 @@ function recordingHost() {
 }
 
 describe('desktop compilation and publication', () => {
+  it('keeps ordinary CSS imports and static style objects in native template definitions', async () => {
+    const source = `import './app.css'; export function Counter(){ return <p id="title" className="label" aria-label="A title" style={{paddingTop: 12, lineHeight: 1.5, color: 'red'}}>Hi</p>; }`;
+    const output = compileDesktop(source, { moduleId: 'styles.tsx', runtimePath, readStylesheet: () => '.label { color: blue; }' });
+    const compiled = await import(`data:text/javascript;base64,${Buffer.from(output.code).toString('base64')}`) as { Counter(): SceneInstance };
+    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(compiled.Counter); await root.ready;
+    expect(recording.templates[0]!.nodes[0]).toMatchObject({ attributes: { id: 'title', class: 'label', 'aria-label': 'A title' }, style: [{ property: 'padding-top', value: '12px' }, { property: 'line-height', value: '1.5' }, { property: 'color', value: 'red' }] });
+    expect(recording.templates[0]!.stylesheets).toHaveLength(1); await app.dispose();
+  });
+
+  it('reuses scoped TSRX CSS processing and preserves scope selectors', async () => {
+    const output = compileDesktop(`export function Counter(){ return <div class="outer"><p class="inner">Hi</p><style>.outer .inner { color: red; }</style></div>; }`, { moduleId: 'scoped.tsrx', runtimePath });
+    const compiled = await import(`data:text/javascript;base64,${Buffer.from(output.code).toString('base64')}`) as { Counter(): SceneInstance };
+    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(compiled.Counter); await root.ready;
+    const template = recording.templates[0]!;
+    expect(template.nodes[0]).toMatchObject({ attributes: { class: expect.stringContaining('tsrx-') } });
+    expect(template.stylesheets![0]!.selectors[0]).toHaveLength(2);
+    expect(template.stylesheets![0]!.declarations[0]).toEqual({ property: 'color', value: 'red' }); await app.dispose();
+  });
   it('compiles local state into one template and preserves scene identity across updates', async () => {
     const { Counter } = await load(`export function Counter() {
       let count: number = 0;
@@ -174,7 +192,7 @@ describe('desktop compilation and publication', () => {
     [`export function Counter(){ let x=0; const y=x+1; return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
     [`export function Counter(){ let x=0; function label(){return x+1;} const y=label(); return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
     [`export function Counter(){ let x=true; return <button onClick={()=>x=!x}>{x && <text>yes</text>}</button>; }`, 'structural expressions'],
-    [`export function Counter(){ return <button style={{color:'red'}}>Hi</button>; }`, 'only onClick'],
+    [`export function Counter(){ let color='red'; return <button style={{color}}>Hi</button>; }`, 'style objects currently require static values'],
   ])('rejects unsupported contracts with an authored diagnostic', (source, message) => {
     expect(() => compileDesktop(source, { moduleId: 'unsupported.tsx' })).toThrow(message);
   });

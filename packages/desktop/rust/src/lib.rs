@@ -1,4 +1,6 @@
 //! Persistent scene state and atomic publication, independent of window presentation.
+pub mod bridge;
+pub mod css;
 pub mod presentation;
 pub mod tags;
 pub mod template;
@@ -75,7 +77,27 @@ pub struct InstanceSnapshot {
 }
 
 impl Scene {
+    pub fn instances(&self) -> impl Iterator<Item = &Instance> {
+        self.instances.values()
+    }
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
+    pub fn has_event(&self, handle: Handle, site: usize) -> bool {
+        self.instances.get(&handle.id).is_some_and(|instance| {
+            instance.handle == handle && site < instance.template.source.events.len()
+        })
+    }
+
     pub fn install(&mut self, template: Template) -> Result<(), String> {
+        self.install_with(template, |_| Ok(()))
+    }
+
+    pub fn install_with(
+        &mut self,
+        template: Template,
+        prepare: impl FnOnce(&PreparedTemplate) -> Result<(), String>,
+    ) -> Result<(), String> {
         if let Some(existing) = self.templates.get(&template.id) {
             return if existing.source == template {
                 Ok(())
@@ -84,6 +106,7 @@ impl Scene {
             };
         }
         let template = template.prepare()?;
+        prepare(&template)?;
         self.templates
             .insert(template.source.id.clone(), Arc::new(template));
         Ok(())

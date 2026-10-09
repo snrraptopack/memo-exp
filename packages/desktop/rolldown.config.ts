@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path';
 import { defineConfig } from 'rolldown';
 
 export default defineConfig({
-  input: { index: './src/index.ts', host: './src/bridge/process.ts' },
+  input: { index: './src/index.ts', host: './src/bridge/process.ts', dev: './src/dev/build.ts' },
   platform: 'neutral',
   transform: { target: 'es2022' },
   external: id => !id.startsWith('.') && !isAbsolute(id),

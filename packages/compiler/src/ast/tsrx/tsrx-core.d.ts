@@ -42,6 +42,8 @@ declare module '@tsrx/core' {
   ): AnalyzeTsrxResult;
 
   export function prepareStylesheetForRender(stylesheet: object): object;
+  export function parseStyle(source: string, location: { filename: string; line: number; column: number }, options: { loose?: boolean }): unknown;
+  export function normalizeCssPropertyName(property: string): string;
   export function annotateWithHash(
     node: object,
     hash: string,

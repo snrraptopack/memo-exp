@@ -12,12 +12,14 @@ export interface SceneHandler {
 export interface SceneInstance {
   readonly handle: SceneHandle;
   readonly ready: Promise<void>;
+  readonly mounted: boolean;
   flush(): Promise<void>;
   dispatch(event: number, payload?: unknown): Promise<unknown>;
   dispose(): Promise<void>;
 }
 export interface DesktopApplication {
   mount<T>(factory: () => T): T;
+  dispatch(handle: SceneHandle, event: number, payload?: unknown): Promise<unknown>;
   flush(): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -96,6 +98,7 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
       };
       const instance: SceneInstance = {
         handle, ready,
+        get mounted() { return mounted; },
         flush() {
           const task = work.then(async () => {
             await ready;
@@ -175,6 +178,15 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
         for (const instance of instances) if (!before.has(instance)) void instance.dispose().catch(() => {});
         throw error;
       } finally { active = previous; }
+    },
+    async dispatch(handle, event, payload) {
+      if (closed) throw new Error('Desktop application is disposed');
+      for (const instance of instances) {
+        if (instance.handle.id === handle.id && instance.handle.generation === handle.generation) {
+          return instance.dispatch(event, payload);
+        }
+      }
+      throw new Error('Native desktop event targets an unknown or retired owner');
     },
     async flush() { for (const instance of instances) await instance.flush(); },
     async dispose() {

@@ -1,6 +1,6 @@
 # Compiled native desktop architecture
 
-Date: 2026-10-08. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, native tag translation, and headless retained scene are implemented; GPUI windows, geometry, input, and drawing remain planned work.
+Date: 2026-10-08. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, GPUI window adapter, static CSS, native button events, and persistent paragraph shaping are implemented. Structural publication, editable controls, and native incremental geometry remain future work.
 
 ## The technique we aim to use
 
@@ -83,10 +83,15 @@ packages/desktop/
     src/runtime/        application scheduling and scene publication
     src/bridge/         host transactions and events
     src/scene/          scene wire types
+    src/dev/            TSX entry building and target import resolution
     rust/src/tags.rs         native tag translation and content contracts
+    rust/src/css.rs          source selector matching and static cascade
     rust/src/template.rs     template validation and native preparation
     rust/src/presentation.rs immutable flow and text-group plans
     rust/src/lib.rs          live instances and atomic publication
+    rust/gpui/src/styles.rs   CSS values to GPUI style refinements
+    rust/gpui/src/renderer.rs GPUI element phases, focus, input, bounds
+    rust/gpui/src/text.rs     persistent GPUI paragraph shaping cache
 ```
 
 Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` entry. The compiler root continues to expose DOM compilation. Both backends use the existing core modules; desktop compilation does not invoke the DOM emitter. A separately exported shared pipeline can follow once desktop fixtures establish its required inputs and outputs.
@@ -105,14 +110,19 @@ Reuse the same semantic analysis and ownership contracts across targets. Separat
 | `p` | Paragraph | Text and inline spans | One paragraph item and combined text group |
 | `span` | Inline range | Text and nested spans | Remains within its containing text group; no independent flex box |
 | `button` | Button control | Text and inline spans | Control item, combined label group, permitted click site |
+| Semantic blocks (`main`, `section`, `article`, etc.) | Explicit block flow contracts | Supported flow content | Ordered native containers |
+| `h1`–`h6`, `pre`, `dt` | Text blocks | Supported phrasing content | Paragraph groups with native default styles |
+| `strong`, `em`, `code`, `mark`, etc. | Styled inline ranges | Supported phrasing content | UTF-8 text runs within one paragraph |
+| `br`, `hr` | Line break / separator | Empty | Paragraph newline / styled block |
+| `ul`, `ol`, `li`, `dl`, `dd` | List / definition flow | Explicit list or flow rules | Retained items; ordered and bullet marker text |
 | `container` | Prototype alias for `div` | Same as `div` | Same as `div` |
 | `text` | Prototype alias for `span` | Same as `span` | Same inline behavior |
 
-These are the first desktop contracts. They do not implement the full HTML content model or a browser's default stylesheet. Buttons inside paragraphs, links, images, headings, lists, inputs, and arbitrary attributes require explicit work and currently fail validation or compilation. Paragraph/control roles in the registry describe the intended accessibility mapping; accessibility publication and keyboard activation are not implemented yet. Default margins, fonts, decoration, and style inheritance still need a defined desktop style contract.
+The registry defines supported tags, CSS defaults, and recognized HTML names with pending native behavior. Links, images, forms, editable inputs, tables, media, and other unfinished controls fail explicitly. Adding their names to the pending catalogue does not enable them. The implemented content model is a desktop subset: buttons are separate controls, paragraphs contain phrasing content, and `li` requires a list parent. Buttons use GPUI focus, click activation, and accessibility roles; headings and paragraph labels use GPUI accessibility nodes. Full HTML semantics, landmark roles, selection, and editing are not implemented.
 
-Adjacent text expressions and spans inside a paragraph form one text group. Rust retains their original source records and text-slot addresses. A text change rebuilds the affected group's combined content once per accepted transaction; a revision advances only when that combined content changes. Other groups keep their revisions and identities. In a `div`, consecutive phrasing children form an anonymous paragraph before the next block or control. A root span receives its own paragraph presentation item. These rules preserve authored order without treating every string as a separate layout child.
+Adjacent text expressions and spans inside a paragraph form one text group. Rust retains their source records, text-slot addresses, and UTF-8 run boundaries. A text change rebuilds the affected group once per accepted transaction; its revision advances when content or run boundaries change. Other groups retain their revisions and identities. In a block container, consecutive phrasing children form an anonymous paragraph before the next block or control. A root span receives its own paragraph presentation item. These rules preserve authored order without treating every string as a separate layout child.
 
-`template.rs` resolves and validates immutable definitions. `presentation.rs` prepares flow items and text-group membership once per installed template. Live instances retain group content independently. The current revision covers content only; it is not a proof that shaping or geometry can be reused after width, font, style, scale, or platform changes.
+`template.rs` validates immutable definitions. `presentation.rs` prepares flow items and text-group membership once per installed template. Live instances retain group content independently. `text.rs` adds effective text styles, native text runs, font size, line height, wrapping width, and scale to the shaping key. A content revision alone never establishes that geometry or shaping is reusable.
 
 To expand the registry, define the tag's content model and layout category, then implement its native preparation, supported properties, input behavior, focus and accessibility semantics. Add fixtures that exercise rejection, retained identity, and publication failure as well as visible behavior. A tag with no working implementation must remain unsupported; adding a name alone does not enable it.
 
@@ -120,23 +130,39 @@ To expand the registry, define the tag's content model and layout category, then
 
 GPUI keeps application data in entities. An entity implementing `Render` produces elements for a requested frame; `RenderOnce` supplies reusable element recipes. The ordinary element tree and its callbacks are temporary. Stable element IDs associate appropriate framework state across frames, but do not make every element allocation or layout result persistent. Our retained scene and caches therefore belong outside the returned element tree. [Pinned element lifecycle](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/element.rs).
 
-The standard application pattern is `gpui_platform::application().run(...)`, `cx.open_window(...)`, and `cx.new(...)` to create a root view. Its render method can compose `div()` elements through styling and child-builder traits. For our host, the root view should own the accepted scene and renderer caches, and return a small custom scene element for each requested frame. This is an integration design, not an implemented GPUI window. [Pinned application example](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/examples/hello_world.rs).
+The standard application pattern is `gpui_platform::application().run(...)`, `cx.open_window(...)`, and `cx.new(...)` to create a root view. Its render method composes elements through styling and child-builder traits. Our window follows this pattern: the root view owns the accepted scene and renderer caches, and returns a custom scene element for each requested frame. [Pinned application example](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/examples/hello_world.rs).
 
 The custom element must participate in GPUI's actual phases:
 
-| Phase | GPUI contract | Proposed scene adapter responsibility |
+| Phase | GPUI contract | Implemented scene adapter responsibility |
 | --- | --- | --- |
-| `request_layout` | Return a layout ID and request state | Describe the scene's required dimensions and measurement inputs |
-| `prepaint` | Receive computed bounds and prepare frame state | Resolve placement, clipping, visibility, hitboxes, and accessible geometry |
-| `paint` | Emit drawing using layout/prepaint state | Draw accepted native records using reusable content and shaping caches |
+| `request_layout` | Return a layout ID and request state | Build GPUI styled elements from prepared flow; measure paragraphs through GPUI |
+| `prepaint` | Receive computed bounds and prepare frame state | Delegate GPUI clipping, hitboxes and accessibility; observe actual Taffy bounds |
+| `paint` | Emit drawing using layout/prepaint state | Delegate visual painting and draw cached native shaped lines |
 
 The adapter can initially use GPUI layout participation while native incremental geometry is developed. `Window::request_layout` registers style and child layout IDs for the current frame; `request_measured_layout` provides a measurement callback receiving known dimensions and available space. Reusing our own measured results is possible only when their inputs match. Do not retain a GPUI frame's layout IDs as native scene handles. Hitboxes and mouse listeners also participate in the current frame and must refer back to a live instance generation and event site. These are adapter obligations, not capabilities established by retaining templates alone. [Pinned window layout and input APIs](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/window.rs).
 
-GPUI text provides `Text` for uniform content and `StyledText::with_runs` for styled runs within one string. Run lengths are UTF-8 byte lengths and must cover the complete string on valid character boundaries. When span styles are added, the adapter must map source fragments to valid run ranges inside the combined paragraph; joining strings alone does not implement styled spans. Persistent cache keys must include content, effective styles/font inputs, wrapping constraints, and scale-sensitive inputs. [Pinned text implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/text.rs).
+GPUI text provides `Text` for uniform content and `StyledText::with_runs` for styled runs within one string. Run lengths are UTF-8 byte lengths and must cover the complete string on valid character boundaries. Our paragraph adapter uses GPUI's text system directly with retained source ranges and inherited inline refinements. It caches both intrinsic and constrained measurement probes; unchanged redraws reuse shaped lines. GPUI uses one font size for a shaping call, so per-span font sizes require additional implementation and currently receive an explicit diagnostic. [Pinned text implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/text.rs).
 
-GPUI's `canvas` supplies prepaint and paint callbacks for short custom drawing, but does not implement our scene's control, text, layout, or ownership contracts. A custom `Element` is the planned boundary for coordinated scene layout, input and painting. Keep the GPUI adapter separate from tag translation and transaction staging so headless fixtures continue to validate native semantics without a window. [Pinned canvas implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/canvas.rs).
+GPUI's `canvas` supplies prepaint and paint callbacks for short custom drawing, but does not implement our scene's control, text, layout, or ownership contracts. Custom `Element` implementations coordinate our scene and cached paragraphs. The GPUI crate remains separate from tag translation and transaction staging, so headless fixtures validate native semantics without requiring a window. [Pinned canvas implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/canvas.rs).
 
-Application developers author supported JSX and ordinary local JavaScript callbacks. They do not construct GPUI elements or maintain renderer caches. Renderer developers implement the native contracts and the custom element phases. In the current diagnostic prototype, the build runner imports `compileDesktop`, creates a process host, mounts the compiled component inside `createDesktopApplication(host).mount(...)`, awaits its `ready` promise, dispatches indexed events, and disposes the application. Native event delivery will replace the diagnostic dispatch path while preserving its ownership and publication rules.
+Application developers author supported JSX, ordinary CSS imports, and local JavaScript callbacks, then call the normal `mount('root', App)` from `@memoized-dom/runtime`. The desktop build redirects that import to the target runtime; `runDesktopEntry` owns entry evaluation and root publication. Developers do not construct GPUI elements or maintain renderer caches. The window runner routes native events to live instance generations, waits for window closure, and disposes the application and host. Tests can still dispatch the same event sites directly.
+
+## Styling through GPUI and Taffy
+
+Research checked on 2026-10-08 against the pinned GPUI source and the local window crate's lockfile. The window experiment resolves Taffy 0.13.0. Desktop styling should use GPUI's existing style types and Taffy's existing layout algorithms. Keep ordinary authored CSS; reuse the framework's existing CSS processing and add the translation needed to supply native style values.
+
+The verified GPUI path is `Style` -> `ToTaffy::to_taffy` -> Taffy layout -> bounds -> GPUI painting. GPUI already translates dimensions, margins, padding, border widths, alignment, gaps, flex properties and its grid representation into Taffy fields. The conversion also handles rem resolution and device-pixel snapping. The adapter should pass styles through GPUI's layout APIs so this behavior remains intact. [Pinned GPUI layout conversion](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/taffy.rs).
+
+Taffy supplies CSS block, flexbox and grid layout. Its input is a typed style for each node; its output is geometry. Text measurement connects through a measure callback. Its high-level tree provides layout caching, while its lower-level traits allow integration with an existing scene tree. These are existing capabilities to reuse. [Taffy 0.13.0 documentation](https://docs.rs/taffy/0.13.0/taffy/).
+
+Taffy 0.13.0 has an optional `parse` feature. It implements `FromStr` for individual style values, including display/flex keywords and grid placement/tracks. Our window crate enables it and uses those existing parsers. It does not accept a complete stylesheet, select `.class`/`#id` nodes, or resolve the cascade. CSS Syntax tokenization uses `cssparser`, the same parser Taffy's feature uses. The adapter normalizes unitless zero in track values to `0px` because this Taffy version rejects it. [Taffy feature declarations](https://github.com/DioxusLabs/taffy/blob/v0.13.0/Cargo.toml), [keyword parsing](https://github.com/DioxusLabs/taffy/blob/v0.13.0/src/style/mod.rs), [grid parsing](https://github.com/DioxusLabs/taffy/blob/v0.13.0/src/style/grid.rs).
+
+GPUI owns visual styles such as backgrounds, border colors/radii, text color/fonts and decoration. Its `Styled` trait writes `StyleRefinement` fields; its style implementation paints the resulting visuals. Hover and focus refinements also belong to GPUI's interaction machinery. Taffy computes the geometry for those elements. [Pinned styling API](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/styled.rs), [pinned style and painting implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/style.rs).
+
+The compiler reuses `@tsrx/core.parseStyle` for imported CSS and `packages/compiler/src/ast/tsrx/style.ts` for scoped TSRX styles. It preserves ordinary class/id attributes, stable scope classes, static inline CSS strings, and static style objects. Immutable templates carry selectors and declarations. Rust resolves specificity, source order, `!important`, shorthands, and the supported target hover/focus states once during installation. GPUI inherits text refinements through the native element hierarchy; inline ranges inherit those refinements within their paragraph.
+
+`rust/gpui/src/styles.rs` translates prepared CSS into GPUI fields for block/flex/grid layout, dimensions, spacing, alignment, overflow, borders, colors, fonts, decoration, opacity, and cursors. GPUI supplies layout and painting. Grid currently supports equal repeated `1fr` or `minmax(0, 1fr)` tracks, matching GPUI's own representation. Lengths support px, rem, percentages where applicable, zero, and auto. Unsupported properties, values, selectors, at-rules, inline box styles, and inline interaction styles fail explicitly. Dynamic style/class expressions, variables, media queries, and general grid tracks remain unimplemented; their future updates must use the scene transaction contract. This is an adapter for ordinary CSS, not a new styling syntax or layout engine.
 
 ## Compiler output
 
@@ -245,23 +271,24 @@ Define supported primitive and style semantics explicitly. Desktop refs and inpu
 
 ## First implementation and validation
 
-The first implementation compiles fixed authored-tag scenes, primitive text expressions, and synchronous component-local click handlers. Rust translates `div`, `p`, `span`, and `button`, plus the prototype aliases described above. The compiler reuses core parsing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
+The implementation compiles fixed authored-tag scenes, static CSS, primitive text expressions, and synchronous component-local click handlers. Rust translates the explicit flow/text tag registry above. The compiler reuses core parsing, CSS processing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, dynamic styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
-The counter example compiles a `div` containing a paragraph with a dynamic span and an increment button. It mounts the scene in the Rust host, dispatches events from the diagnostic runner, inspects the retained text groups and presentation identities, and disposes its owner. It is a headless scene prototype. Native input delivery, GPUI drawing, geometry, text shaping, accessibility, and branch/list publication are subsequent work, not capabilities of this prototype.
+The example lives in `packages/desktop/examples/counter/main.ts`, `App.tsx`, and `app.css`. Both the window and headless runners build this same normal mount entry. The window demonstrates native counter buttons, headings, paragraphs, styled inline runs, Unicode text, line breaks, flex spacing, constrained width, and equal grid columns. The smoke test observes actual Taffy bounds, dispatches a counter update, and checks that an unchanged redraw adds no shaping work. Native pointer/keyboard behavior still needs interactive testing; the smoke test's event dispatch does not simulate a physical click. Branch/list publication and editable controls remain future work.
 
 Run the current prototype from the repository root:
 
 ```sh
-bun run build
 bun run test:desktop
+bun run desktop:dev
+bun run desktop:test:window
 bun run desktop:counter
 ```
 
 The desktop test command runs Bun compiler/runtime/bridge tests and type checks, plus Cargo tests for the Rust scene engine. The Rust host uses the installed Rust 1.96.0 toolchain pinned in its directory. Generated templates are shared module constants; an application installs each template object once, then mounts independent live instances.
 
-The upstream GPUI source selected for the next window/presentation experiment is [Zed commit `9ab0715969e9854f2efe61a9d782e7698e5fe6d2`](https://github.com/zed-industries/zed/tree/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui). GPUI is not yet a dependency of the scene prototype. A custom GPUI element should consume the retained scene; retained geometry and paint reuse still need implementation and measurement.
+The separate window crate depends on [Zed commit `9ab0715969e9854f2efe61a9d782e7698e5fe6d2`](https://github.com/zed-industries/zed/tree/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui). Its first build compiles GPUI's platform dependencies. The headless crate remains independently buildable. The adapter constructs temporary GPUI elements on requested frames while retaining templates, styles, scene records, focus handles, and paragraph shaping. Native incremental geometry and retained paint plans still need implementation and measurement; this prototype does not establish a performance advantage over GPUIX.
 
 Build one native window with containers, rectangles, text, clipping, pointer input, and an editable text control. Implement templates, live instances, typed slots, publication acknowledgments, and disposal before expanding the control set.
 
@@ -269,4 +296,4 @@ Compile fixtures for a counter, child prop update, branch replacement, keyed row
 
 Instrument update functions, bridge calls, touched scene records, layout visits, text shaping, and paint regeneration. The resulting traces must show that unrelated instances remain untouched where dependency proofs permit it. Measure input-to-presentation latency, frame work, idle CPU activity, and repeated mount/disposal behavior.
 
-Choose the layout implementation, text services, GPU backend, bridge encoding, and thread arrangement using those fixtures. Comparisons with GPUIX must match visible behavior and lifecycle guarantees. Performance claims follow those measurements; the core commitment is compiled structure, direct native slot updates, persistent host records, and coherent publication.
+Use GPUI/Taffy for the current layout, text and presentation path. Evaluate native geometry reuse, bridge encoding, and thread arrangement with those fixtures. Comparisons with GPUIX must match visible behavior and lifecycle guarantees. Performance claims follow those measurements; the core commitment is compiled structure, direct native slot updates, persistent host records, and coherent publication.

@@ -16,11 +16,14 @@ import { planComponentCallbacks } from '../planning/component-callbacks';
 import { planExpressionSources } from '../planning/expression-sources';
 import { compilerError } from '../errors';
 import { lowerDesktopScene, valueExpression } from './lower-scene';
+import { desktopCssRules } from './css';
 
 export interface DesktopCompileOptions {
   moduleId?: string;
   runtimePath?: string;
   frontend?: EstreeFrontend;
+  /** Build adapter resolves ordinary side-effect CSS imports. */
+  readStylesheet?: (specifier: string) => string;
 }
 
 export interface DesktopCompiledSource {
@@ -37,8 +40,15 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   const fail: (message: string, at?: t.Node) => never = (message, at = program) => {
     throw compilerError(`memo-dom desktop: ${message}`, moduleId, at);
   };
-  // CSS extraction has no desktop style contract yet; never silently ignore it.
-  if (parsed.css) fail('CSS styles are not supported by the first desktop backend');
+  let css = parsed.css ?? '';
+  program.body = program.body.filter(statement => {
+    if (!b.isImportDeclaration(statement) || !statement.source.value.endsWith('.css')) return true;
+    if (statement.specifiers.length) fail('CSS module bindings are not implemented', statement);
+    if (!options.readStylesheet) fail('CSS imports require a desktop build adapter', statement);
+    css += '\n' + options.readStylesheet!(statement.source.value);
+    return false;
+  });
+  const stylesheets = css ? desktopCssRules(css, moduleId) : [];
   normalizeEstreeDialect(program);
   const path: ProgramPath = { node: program, buildCodeFrameError: (message, at) => compilerError(message, moduleId, at) };
   normalizeComponentDeclarations(path);
@@ -88,7 +98,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       sources: expressionFacts.get(name)!, instrument, fail,
     });
     eventsUsed ||= handlers.length > 0;
-    const template = { id: `${moduleId}#${name}`, nodes, slots, events };
+    const template = { id: `${moduleId}#${name}`, nodes, slots, events, stylesheets };
     const templateId = fresh(`__desktopTemplate${name}`);
     templates.push(b.variableDeclaration('const', [b.variableDeclarator(templateId, valueExpression(template))]));
     fn.body.body = [...statements.slice(0, -1),
@@ -105,4 +115,3 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   return { code: printEstree(stripTypeScript(program), { comments: parsed.comments }).code,
     components: [...ctx.compPaths.keys()] };
 }
-

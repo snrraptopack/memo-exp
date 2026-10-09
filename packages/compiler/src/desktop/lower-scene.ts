@@ -5,9 +5,11 @@ import { walkAst } from '../ast/walk';
 import { unwrapTypeExpression } from '../ast/normalize';
 import type { ComponentCallbacks } from '../planning/component-callbacks';
 import type { ComponentExpressionSources } from '../analysis/expression-sources';
+import { desktopInlineDeclarations, type DesktopDeclaration } from './css';
+import { normalizeCssPropertyName } from '@tsrx/core';
 
 type SceneNode =
-  | { kind: 'element'; tag: string; parent: number | null; text: '' }
+  | { kind: 'element'; tag: string; parent: number | null; text: ''; attributes: Record<string, string>; style: DesktopDeclaration[] }
   | { kind: 'text'; parent: number | null; text: string };
 interface TextSlot { node: number; type: 'text' }
 
@@ -68,11 +70,35 @@ export function lowerDesktopScene(root: t.Node, options: {
     const tag = opening.name.name;
     if (!/^[a-z][a-z0-9-]*$/.test(tag)) fail('component tags require desktop component linking, which is not implemented yet', opening);
     const node = nodes.length;
-    nodes.push({ kind: 'element', tag, parent, text: '' });
+    const attributes: Record<string, string> = {};
+    const style: DesktopDeclaration[] = [];
+    nodes.push({ kind: 'element', tag, parent, text: '', attributes, style });
     let hasClick = false;
+    const seen = new Set<string>();
     for (const attribute of opening.attributes) {
-      if (!b.isJSXAttribute(attribute) || !b.isJSXIdentifier(attribute.name) || attribute.name.name !== 'onClick') {
-        fail('only onClick is supported in this first desktop slice', attribute);
+      if (!b.isJSXAttribute(attribute) || !b.isJSXIdentifier(attribute.name)) fail('spread and namespaced attributes are not implemented', attribute);
+      const name = attribute.name.name === 'className' ? 'class' : attribute.name.name;
+      if (seen.has(name)) fail(`duplicate ${name} attribute`, attribute);
+      seen.add(name);
+      if (name !== 'onClick') {
+        if (!['class', 'id', 'style', 'title', 'aria-label'].includes(name)) fail(`desktop attribute ${name} is not implemented`, attribute);
+        let literal: t.Node | null | undefined = attribute.value;
+        if (literal && b.isJSXExpressionContainer(literal)) literal = unwrapTypeExpression(literal.expression);
+        if (name === 'style' && literal && b.isObjectExpression(literal)) {
+          for (const property of literal.properties) {
+            if (!b.isObjectProperty(property) || property.computed || (!b.isIdentifier(property.key) && !b.isStringLiteral(property.key))) fail('style objects require static named properties', property);
+            const key = normalizeCssPropertyName(b.isIdentifier(property.key) ? property.key.name : property.key.value);
+            const value = unwrapTypeExpression(property.value);
+            if (!b.isStringLiteral(value) && !b.isNumericLiteral(value)) fail('style objects currently require static values', property);
+            const unitless = ['opacity', 'line-height', 'font-weight', 'flex-grow', 'flex-shrink'].includes(key);
+            style.push({ property: key, value: b.isNumericLiteral(value) && !unitless && value.value !== 0 ? `${value.value}px` : String(value.value) });
+          }
+          continue;
+        }
+        if (!literal || !b.isStringLiteral(literal)) fail(`${name} currently requires a static string`, attribute);
+        if (name === 'style') style.push(...desktopInlineDeclarations(literal.value));
+        else attributes[name] = literal.value;
+        continue;
       }
       if (hasClick) fail('duplicate onClick attribute', attribute);
       hasClick = true;
@@ -108,7 +134,7 @@ export function lowerDesktopScene(root: t.Node, options: {
 export function valueExpression(value: unknown): t.Expression {
   if (Array.isArray(value)) return b.arrayExpression(value.map(valueExpression));
   if (value !== null && typeof value === 'object') return b.objectExpression(Object.entries(value).map(([key, item]) =>
-    b.objectProperty(b.identifier(key), valueExpression(item))));
+    b.objectProperty(/^[A-Za-z_$][\w$]*$/.test(key) ? b.identifier(key) : b.stringLiteral(key), valueExpression(item))));
   if (value === null) return b.nullLiteral();
   if (typeof value === 'string') return b.stringLiteral(value);
   if (typeof value === 'number') return b.numericLiteral(value);
@@ -122,4 +148,3 @@ function assertSynchronousCallback(node: t.Node, fail: (message: string, at: t.N
         ('async' in current && current.async === true)) fail('asynchronous callbacks are not implemented yet', current);
   } });
 }
-

@@ -6,14 +6,19 @@
   "sideEffects": false,
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./host": { "types": "./dist/bridge/process.d.ts", "import": "./dist/host.js" }
+    "./host": { "types": "./dist/bridge/process.d.ts", "import": "./dist/host.js" },
+    "./dev": { "types": "./dist/dev/build.d.ts", "import": "./dist/dev.js" }
   },
   "scripts": {
     "build": "rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
     "test": "bun run test:rust && bun run build:host && bun test --isolate ./tests && bun check -p tsconfig.test.json",
     "test:rust": "cd rust && cargo test --locked",
     "build:host": "cd rust && cargo build --locked",
-    "counter": "bun run ./examples/counter.ts"
+    "counter": "bun run ./examples/counter.ts",
+    "build:window": "cd rust && cargo build --manifest-path gpui/Cargo.toml --locked --jobs 2",
+    "window": "bun run ./examples/window.ts",
+    "test:styles": "cd rust && cargo test --manifest-path gpui/Cargo.toml --locked --jobs 2",
+    "test:window": "bun run test:styles && bun run ./examples/window.ts --smoke"
   },
   "devDependencies": { "@memoized-dom/compiler": "workspace:*" }
 }
