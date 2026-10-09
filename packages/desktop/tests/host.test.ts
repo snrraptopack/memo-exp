@@ -12,6 +12,28 @@ const template: SceneTemplate = { id: 'host-counter', nodes: [
 ], slots: [{ node: 1, type: 'text' }], events: [{ node: 0, type: 'click' }] };
 
 describe('Rust retained scene bridge', () => {
+  it('publishes and retires multiple runtime owners in atomic native batches', async () => {
+    const host = createProcessHost({ executable });
+    const app = createDesktopApplication(host);
+    const owner = () => app.mount(() => {
+      let count = 0;
+      return mountScene(template, [{ slot: 0, sources: ['count'], read: () => count }], [sceneEvent(() => count++, ['count'])]);
+    });
+    try {
+      const a = owner(); const b = owner();
+      await Promise.all([a.ready, b.ready]);
+      const before = await host.inspect();
+      expect(before.sequence).toBe(1);
+      expect(before.instances.map(instance => instance.texts[1])).toEqual(['0', '0']);
+      await Promise.all([a.dispatch(0), b.dispatch(0)]);
+      const after = await host.inspect();
+      expect(after.sequence).toBe(2);
+      expect(after.instances.map(instance => instance.texts[1])).toEqual(['1', '1']);
+      expect(after.instances.map(instance => instance.handle)).toEqual(before.instances.map(instance => instance.handle));
+      await app.dispose();
+      expect(await host.inspect()).toEqual({ sequence: 3, instances: [] });
+    } finally { await app.dispose(); await host.close(); }
+  });
   it('translates authored div, p, span and button in Rust and retains paragraph identity', async () => {
     const { code } = compileDesktop(`export function Counter() {
       let count = 0;

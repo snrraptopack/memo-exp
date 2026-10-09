@@ -118,7 +118,7 @@ describe('desktop compilation and publication', () => {
     await counter.dispose();
   });
 
-  it('retries rejected disposal and still disposes other owners', async () => {
+  it('retries a rejected disposal batch without retiring any participating owner', async () => {
     const { Counter } = await load(`export function Counter() {
       let count = 0;
       return <button onClick={() => count++}>{count}</button>;
@@ -130,9 +130,13 @@ describe('desktop compilation and publication', () => {
     await Promise.all([first.ready, second.ready]);
     recording.reject();
     await expect(app.dispose()).rejects.toThrow('disposal failed');
-    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({ kind: 'dispose', handle: second.handle });
+    expect(first.mounted).toBe(true);
+    expect(second.mounted).toBe(true);
+    expect(recording.transactions).toHaveLength(1);
     await app.dispose();
-    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({ kind: 'dispose', handle: first.handle });
+    expect(recording.transactions.at(-1)!.operations).toEqual([
+      { kind: 'dispose', handle: first.handle }, { kind: 'dispose', handle: second.handle },
+    ]);
     await expect(first.dispatch(0)).rejects.toThrow('disposed owner');
   });
 

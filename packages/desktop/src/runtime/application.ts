@@ -1,4 +1,5 @@
-import type { DesktopHost, SceneHandle, SceneTemplate, SceneOperation, TextWrite } from '../bridge/protocol';
+import type { DesktopHost, SceneHandle, SceneTemplate, TextWrite } from '../bridge/protocol';
+import { createPublicationQueue } from './publication';
 
 export interface TextBinding {
   readonly slot: number;
@@ -42,21 +43,10 @@ export function mountScene(template: SceneTemplate, bindings: readonly TextBindi
 /** Ordered host publication for one application; host acceptance advances value caches. */
 export function createDesktopApplication(host: DesktopHost): DesktopApplication {
   let nextId = 1;
-  let sequence = 0;
   let closed = false;
-  let queue = Promise.resolve();
+  const publication = createPublicationQueue(host);
   const instances = new Set<SceneInstance>();
   const installations = new WeakMap<SceneTemplate, Promise<void>>();
-  const publish = (operation: SceneOperation): Promise<void> => {
-    const task = queue.then(async () => {
-      const expected = sequence + 1;
-      const ack = await host.commit({ sequence: expected, operations: [operation] });
-      if (ack.sequence !== expected) throw new Error('Desktop host acknowledged the wrong transaction');
-      sequence = expected;
-    });
-    queue = task.catch(() => {});
-    return task;
-  };
   const context: ApplicationContext = {
     mount(template, bindings, handlers) {
       if (closed) throw new Error('Desktop application is disposed');
@@ -82,12 +72,15 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
       let disposal: Promise<void> | undefined;
       let install = installations.get(template);
       if (!install) {
-        install = queue.then(() => host.install(template));
+        install = publication.install(template);
         installations.set(template, install);
-        queue = install.catch(() => { installations.delete(template); });
+        void install.catch(() => { installations.delete(template); });
       }
-      const ready = install.then(() => publish({ kind: 'mount', handle, template: template.id, values: initial }))
-        .then(() => { mounted = true; for (const write of initial) acknowledged.set(write.slot, write.value); });
+      const ready = install.then(() => publication.publish(() => ({
+        operation: { kind: 'mount', handle, template: template.id, values: initial },
+        accept() { mounted = true; for (const write of initial) acknowledged.set(write.slot, write.value); },
+        reject() {},
+      })));
       // Keep rejection observable through ready/flush without an unhandled rejection
       // when a synchronous factory caller has not yet awaited initial publication.
       void ready.catch(() => {});
@@ -103,24 +96,23 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
           const task = work.then(async () => {
             await ready;
             if (disposed || !needsUpdate) return;
-            const sources = pending;
-            const writes: TextWrite[] = [];
-            for (const binding of bindings) {
-              if (sources !== null && binding.sources !== null && !binding.sources.some(source => sources.has(source))) continue;
-              const value = textValue(binding.read());
-              if (acknowledged.get(binding.slot) !== value) writes.push({ slot: binding.slot, value });
-            }
-            // Every read finishes before publication: a throwing expression cannot
-            // expose some earlier slots or poison acknowledged values.
-            needsUpdate = false;
-            pending = new Set();
-            try {
-              if (writes.length) await publish({ kind: 'update', handle, values: writes });
-              for (const write of writes) acknowledged.set(write.slot, write.value);
-            } catch (error) {
-              invalidate(sources === null ? null : [...sources]);
-              throw error;
-            }
+            await publication.publish(() => {
+              if (disposed || !needsUpdate) return { accept() {}, reject() {} };
+              const sources = pending;
+              const writes: TextWrite[] = [];
+              for (const binding of bindings) {
+                if (sources !== null && binding.sources !== null && !binding.sources.some(source => sources.has(source))) continue;
+                const value = textValue(binding.read());
+                if (acknowledged.get(binding.slot) !== value) writes.push({ slot: binding.slot, value });
+              }
+              needsUpdate = false;
+              pending = new Set();
+              return {
+                operation: writes.length ? { kind: 'update', handle, values: writes } : undefined,
+                accept() { for (const write of writes) acknowledged.set(write.slot, write.value); },
+                reject() { invalidate(sources === null ? null : [...sources]); },
+              };
+            });
           });
           work = task.catch(() => {});
           return task;
@@ -151,9 +143,12 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
           disposed = true;
           const task = work.then(async () => {
             try { await ready; } catch { instances.delete(instance); return; }
-            if (mounted) await publish({ kind: 'dispose', handle });
-            mounted = false;
-            instances.delete(instance);
+            if (mounted) await publication.publish(() => ({
+              operation: { kind: 'dispose', handle },
+              accept() { mounted = false; instances.delete(instance); },
+              reject() {},
+            }));
+            else instances.delete(instance);
           });
           work = task.catch(() => {});
           disposal = task.finally(() => { disposal = undefined; });
@@ -188,13 +183,15 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
       }
       throw new Error('Native desktop event targets an unknown or retired owner');
     },
-    async flush() { for (const instance of instances) await instance.flush(); },
+    async flush() {
+      const results = await Promise.allSettled([...instances].map(instance => instance.flush()));
+      const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+      if (errors.length) throw new AggregateError(errors, 'Desktop scene publication failed');
+    },
     async dispose() {
       closed = true;
-      const errors: unknown[] = [];
-      for (const instance of instances) {
-        try { await instance.dispose(); } catch (error) { errors.push(error); }
-      }
+      const results = await Promise.allSettled([...instances].map(instance => instance.dispose()));
+      const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
       if (errors.length) throw new AggregateError(errors, 'Desktop scene disposal failed');
     },
   };
