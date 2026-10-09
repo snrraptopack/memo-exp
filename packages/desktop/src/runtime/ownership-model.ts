@@ -1,5 +1,5 @@
 import type { SceneAttachment, SceneTemplate, TextWrite } from '../bridge/protocol';
-import type { SceneChildBinding, SceneHandler, SceneInstance, SceneRegionBinding, TextBinding } from './application';
+import type { SceneChildBinding, SceneHandler, SceneInstance, SceneRegionBinding, SceneListBinding, SceneRowKey, TextBinding } from './application';
 import type { SceneProps } from './values';
 
 export interface Child { binding?: SceneChildBinding; node: number; owner: Owner; props: SceneProps }
@@ -8,6 +8,12 @@ export interface Region {
   branch: number;
   child?: Child;
   candidate?: { branch: number; child: Child };
+}
+export interface Row extends Child { key: SceneRowKey }
+export interface ListRegion {
+  binding: SceneListBinding;
+  rows: Row[];
+  candidates: Map<SceneRowKey, Row>;
 }
 export interface Family {
   members: Owner[];
@@ -29,6 +35,7 @@ export interface Owner {
   receive?: (props: SceneProps) => void;
   children: Child[];
   regions: Region[];
+  lists: ListRegion[];
   initial: TextWrite[];
   acknowledged: Map<number, string>;
   pending: Set<string> | null;
@@ -39,4 +46,5 @@ export interface Owner {
   stagedReady?: { promise: Promise<void>; resolve(): void; reject(error: Error): void };
 }
 export interface RegionChange { region: Region; branch: number; child?: Child }
-export interface PreparedOwner { owner: Owner; sources: Set<string> | null; writes: TextWrite[]; props: [Child, SceneProps][]; regions: RegionChange[] }
+export interface ListChange { list: ListRegion; rows: Row[]; changed: boolean }
+export interface PreparedOwner { owner: Owner; sources: Set<string> | null; writes: TextWrite[]; props: [Child, SceneProps][]; regions: RegionChange[]; lists: ListChange[] }

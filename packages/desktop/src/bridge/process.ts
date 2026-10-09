@@ -9,6 +9,8 @@ export interface DesktopProcessHost extends DesktopHost {
   acknowledgeEvent(event: NativeSceneEvent): Promise<void>;
   /** Debug builds only; invokes the native platform input handler in window tests. */
   testInput(handle: NativeSceneEvent['handle'], node: number, action: 'insert' | 'compose' | 'commit' | 'backspace' | 'select-all', text?: string): Promise<void>;
+  /** Debug builds only; routes clicks and wheel movement through GPUI hit testing. */
+  testWindow(event: { action: 'click'; handle: NativeSceneEvent['handle']; node: number } | { action: 'scroll'; delta: number }): Promise<void>;
   inspect(): Promise<SceneSnapshot>;
   redraw(): Promise<void>;
   close(): Promise<void>;
@@ -130,6 +132,7 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
       if (event.edit !== undefined) await request({ kind: 'acknowledge', handle: event.handle, site: event.site, edit: event.edit });
     },
     async testInput(handle, node, action, text) { await request({ kind: 'test_input', handle, node, action, text }); },
+    async testWindow(event) { await request({ kind: 'test_window', ...event }); },
     async install(template: SceneTemplate) { await request({ kind: 'install', template }); },
     async commit(transaction: SceneTransaction) { return await request({ kind: 'apply', transaction }) as SceneAcknowledgment; },
     async inspect() { return await request({ kind: 'inspect' }) as SceneSnapshot; },

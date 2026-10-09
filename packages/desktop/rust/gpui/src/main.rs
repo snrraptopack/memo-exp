@@ -2,11 +2,13 @@ mod input;
 mod output;
 mod renderer;
 mod styles;
+#[cfg(debug_assertions)]
+mod testing;
 mod text;
 
 use gpui::{
-    App, Bounds, Context, FocusHandle, KeyBinding, Render, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, actions, div, prelude::*, px, rgb, size,
+    App, Bounds, Context, FocusHandle, KeyBinding, Render, ScrollHandle, TitlebarOptions, Window,
+    WindowBounds, WindowOptions, actions, div, prelude::*, px, size,
 };
 use memoized_dom_desktop_host::{Scene, bridge::process_line_with_prepare};
 use output::Output;
@@ -23,6 +25,7 @@ struct DesktopView {
     renderer: Renderer,
     output: Output,
     focus: FocusHandle,
+    scroll: ScrollHandle,
 }
 impl DesktopView {
     fn focus_next(&mut self, _: &FocusNext, window: &mut Window, cx: &mut Context<Self>) {
@@ -35,7 +38,9 @@ impl DesktopView {
 impl Render for DesktopView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let weak = cx.weak_entity();
+        let stats = self.renderer.stats.clone();
         let sink: EventSink = Rc::new(move |handle, site, payload, edit, cx| {
+            stats.borrow_mut().event_started();
             let weak = weak.clone();
             cx.defer(move |cx| {
                 let _ = weak.update(cx, |view, cx| {
@@ -62,14 +67,9 @@ impl Render for DesktopView {
             .on_action(cx.listener(Self::focus_next))
             .on_action(cx.listener(Self::focus_previous))
             .size_full()
-            .flex()
-            .flex_col()
+            .block()
             .overflow_y_scroll()
-            .p_8()
-            .bg(rgb(0xf8fafc))
-            .text_color(rgb(0x0f172a))
-            .font_family("Segoe UI")
-            .text_size(px(20.))
+            .track_scroll(&self.scroll)
             .child(self.renderer.element(&self.scene, sink, cx))
     }
 }
@@ -102,6 +102,7 @@ fn main() {
             renderer: Renderer::default(),
             output: output.clone(),
             focus: cx.focus_handle().tab_stop(false),
+            scroll: ScrollHandle::new(),
         });
         let root = view.clone();
         let bounds = Bounds::centered(None, size(px(800.), px(760.)), cx);
@@ -147,25 +148,23 @@ fn main() {
         cx.spawn(async move |cx| {
             while let Ok(line) = receiver.recv().await {
                 #[cfg(debug_assertions)]
-                if smoke && let Some(request) = input::testing::decode(&line) {
+                if smoke && let Some(request) = testing::decode(&line) {
                     cx.update(|cx| {
                         let response = match request {
                             Err(error) => error,
                             Ok(request) => {
                                 let result = _window
-                                    .update(cx, |view, window, cx| {
-                                        view.renderer.test_input(&view.scene, &request, window, cx)
-                                    })
+                                    .update(cx, |view, window, cx| request.apply(view, window, cx))
                                     .map_err(|error| error.to_string())
                                     .and_then(|result| result);
                                 match result {
-                                    Ok(()) => json!({"id":request.id,"result":null}),
-                                    Err(error) => json!({"id":request.id,"error":error}),
+                                    Ok(()) => json!({"id":request.id(),"result":null}),
+                                    Err(error) => json!({"id":request.id(),"error":error}),
                                 }
                             }
                         };
                         if let Err(error) = test_output.send(&response) {
-                            eprintln!("Native input test failed: {error}");
+                            eprintln!("Native window test failed: {error}");
                             cx.quit();
                         }
                     });
@@ -187,12 +186,25 @@ fn main() {
                         if outcome.inspect {
                             outcome.response["result"]["renderer"] =
                                 json!(&*view.renderer.stats.borrow());
+                            outcome.response["result"]["renderer"]["scroll"] = json!({
+                                "offset": view.scroll.offset().y.as_f32(),
+                                "max": view.scroll.max_offset().y.as_f32(),
+                                "viewport": view.scroll.bounds().size.height.as_f32(),
+                            });
+                            #[cfg(debug_assertions)]
+                            {
+                                outcome.response["result"]["renderer"]["inputs"] =
+                                    view.renderer.painted_inputs(cx);
+                            }
                         }
                         if let Err(error) = view.output.send(&outcome.response) {
                             eprintln!("Desktop response bridge failed: {error}");
                             return true;
                         }
                         if outcome.changed {
+                            if outcome.response["result"]["sequence"].is_number() {
+                                view.renderer.stats.borrow_mut().committed();
+                            }
                             cx.notify();
                         }
                         outcome.shutdown

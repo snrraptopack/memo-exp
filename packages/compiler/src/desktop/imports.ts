@@ -2,20 +2,20 @@
 import type * as t from '../ast/compiler-types';
 import * as b from '../ast/factory';
 import { parseWithEstreeFrontendOrThrow, type EstreeFrontend } from '../ast/parser';
-import { normalizeEstreeDialect } from '../ast/normalize';
+import { normalizeEstreeDialect, unwrapTypeExpression } from '../ast/normalize';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { discoverComponentExports } from '../components/manifest';
 import { exportedLocals } from '../linking/module-exports';
-import type { LinkedComponentImport, ProgramPath } from '../context/model';
+import type { LinkedImport, ProgramPath } from '../context/model';
 import { compilerError } from '../errors';
 
 export interface DesktopModuleSource { moduleId: string; source: string }
 export type DesktopModuleReader = (specifier: string, importer: string) => DesktopModuleSource | undefined;
 
-export function desktopComponentImports(program: t.Program, moduleId: string, frontend: EstreeFrontend, read?: DesktopModuleReader): Record<string, LinkedComponentImport> {
+export function desktopComponentImports(program: t.Program, moduleId: string, frontend: EstreeFrontend, read?: DesktopModuleReader): Record<string, LinkedImport> {
   const cache = new Map<string, { program: t.Program; components: ReturnType<typeof discoverComponentExports>; exports: Map<string, string> }>();
   const visiting = new Set<string>();
-  const resolveExport = (specifier: string, importer: string, exported: string): LinkedComponentImport | undefined => {
+  const resolveExport = (specifier: string, importer: string, exported: string): LinkedImport | undefined => {
     const module = read?.(specifier, importer);
     if (!module) return undefined;
     const key = `${module.moduleId}\0${exported}`;
@@ -37,6 +37,15 @@ export function desktopComponentImports(program: t.Program, moduleId: string, fr
       const component = facts.components.get(local);
       if (component) return { type: 'component', ...component };
       for (const statement of facts.program.body) {
+        const declaration = b.isExportNamedDeclaration(statement) ? statement.declaration : statement;
+        if (!declaration || !b.isVariableDeclaration(declaration) || declaration.kind !== 'const') continue;
+        const binding = declaration.declarations.find(binding => b.isIdentifier(binding.id, { name: local }));
+        const value = binding?.init && unwrapTypeExpression(binding.init);
+        // Primitive const literals cannot hide module state, getters, or writes.
+        // Other values continue through the core unlinked-import diagnostic.
+        if (value && (b.isStringLiteral(value) || b.isNumericLiteral(value) || b.isBooleanLiteral(value) || b.isNullLiteral(value))) return { type: 'value' };
+      }
+      for (const statement of facts.program.body) {
         if (!b.isImportDeclaration(statement) || statement.importKind === 'type') continue;
         const binding = statement.specifiers.find(binding => binding.local?.name === local);
         const name = binding && importedName(binding);
@@ -45,7 +54,7 @@ export function desktopComponentImports(program: t.Program, moduleId: string, fr
       return undefined;
     } finally { visiting.delete(key); }
   };
-  const linked: Record<string, LinkedComponentImport> = Object.create(null);
+  const linked: Record<string, LinkedImport> = Object.create(null);
   for (const statement of program.body) {
     if (!b.isImportDeclaration(statement) || statement.importKind === 'type') continue;
     for (const binding of statement.specifiers) {

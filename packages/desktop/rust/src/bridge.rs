@@ -79,7 +79,8 @@ pub fn process_line_with_prepare(
                             Err("Invalid native input acknowledgment".into())
                         } else {
                             input_ack = Some((handle, site, edit));
-                            changed = true;
+                            // Reconciliation belongs to the retained input entity;
+                            // acknowledging an edit does not change scene topology.
                             Ok(Value::Null)
                         }
                     }

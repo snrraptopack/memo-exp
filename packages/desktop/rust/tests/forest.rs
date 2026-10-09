@@ -165,7 +165,7 @@ fn attachment_cycles_and_region_content_are_rejected_atomically() {
         );
         assert_eq!(snapshot(&scene), json!({"sequence":0,"instances":[]}));
     }
-    for parent in ["p", "span", "button", "ul", "input"] {
+    for parent in ["p", "span", "button", "input"] {
         let template: Template=serde_json::from_value(json!({"id":parent,"nodes":[{"kind":"element","tag":parent,"parent":null,"text":""},{"kind":"region","parent":0}],"slots":[],"events":[]})).unwrap();
         assert!(
             scene

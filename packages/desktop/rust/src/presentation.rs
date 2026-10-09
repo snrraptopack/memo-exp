@@ -4,11 +4,11 @@
 //! is not a flex child. Geometry, styled runs and shaped-line caching follow in
 //! the GPUI adapter; this module does not claim to measure or draw text.
 use crate::{
-    tags::{Layout, Tag},
+    tags::{Content, Layout, Tag},
     template::{Node, Template},
 };
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -37,6 +37,7 @@ pub struct PresentationPlan {
     pub children: Vec<Vec<usize>>,
     pub groups: Vec<TextGroup>,
     pub group_for_node: Vec<Option<usize>>,
+    pub marker_groups: BTreeMap<usize, usize>,
 }
 
 enum Job {
@@ -55,6 +56,7 @@ impl PresentationPlan {
             children: Vec::new(),
             groups: Vec::new(),
             group_for_node: vec![None; template.nodes.len()],
+            marker_groups: BTreeMap::new(),
         };
         let mut jobs = template
             .nodes
@@ -62,6 +64,7 @@ impl PresentationPlan {
             .enumerate()
             .rev()
             .filter(|(_, node)| node.parent().is_none())
+            .filter(|(index, node)| !matches!(node, Node::Text { text, .. } if text.trim().is_empty() && !template.slots.iter().any(|slot| slot.node == *index)))
             .map(|(index, _)| Job::Element(index, None))
             .collect::<Vec<_>>();
         while let Some(job) = jobs.pop() {
@@ -88,6 +91,11 @@ impl PresentationPlan {
                         let mut sequence = Vec::new();
                         let mut inline = Vec::new();
                         for &child in &children[node] {
+                            if tags[node].is_some_and(|tag| tag.content == Content::List)
+                                && matches!(&template.nodes[child], Node::Text { text, .. } if text.trim().is_empty())
+                            {
+                                continue;
+                            }
                             if !matches!(template.nodes[child], Node::Region { .. })
                                 && tags[child].is_none_or(|tag| tag.layout == Layout::Inline)
                             {
@@ -151,14 +159,18 @@ impl PresentationPlan {
                             pending.extend(children[node].iter().rev().copied());
                         }
                     }
-                    let prefix = if tags[source].is_some_and(|tag| tag.name == "li")
+                    let marker = tags[source].is_some_and(|tag| tag.name == "li")
                         && !plan
                             .items
                             .iter()
-                            .any(|item| item.source == source && item.group.is_some())
-                    {
-                        let parent = template.nodes[source].parent().unwrap();
-                        if tags[parent].is_some_and(|tag| tag.name == "ol") {
+                            .any(|item| item.source == source && item.group.is_some());
+                    let prefix = if marker {
+                        plan.marker_groups.insert(source, group);
+                        let parent = template.nodes[source].parent();
+                        if parent
+                            .is_some_and(|parent| tags[parent].is_some_and(|tag| tag.name == "ol"))
+                        {
+                            let parent = parent.unwrap();
                             format!(
                                 "{}. ",
                                 children[parent]
@@ -167,8 +179,11 @@ impl PresentationPlan {
                                     .unwrap()
                                     + 1
                             )
-                        } else {
+                        } else if parent.is_some() {
                             "• ".into()
+                        } else {
+                            // Placement supplies the marker for a component root.
+                            String::new()
                         }
                     } else {
                         String::new()
@@ -199,18 +214,28 @@ impl PresentationPlan {
         self.groups
             .iter()
             .map(|group| TextValue {
-                text: self.join(group, texts).into(),
+                text: self.join(group, texts, &group.prefix).into(),
                 revision: 1,
-                runs: self.ranges(group, texts).into(),
+                runs: self.ranges(group, texts, &group.prefix).into(),
             })
             .collect()
     }
 
     /// Called on staged state before atomic acceptance, never on live state.
-    pub fn refresh(&self, texts: &[String], values: &mut [TextValue], pending: &BTreeSet<usize>) {
+    pub fn refresh(
+        &self,
+        texts: &[String],
+        values: &mut [TextValue],
+        pending: &BTreeSet<usize>,
+        markers: &BTreeMap<usize, String>,
+    ) {
         for &group in pending {
-            let text = self.join(&self.groups[group], texts);
-            let runs = self.ranges(&self.groups[group], texts);
+            let prefix = markers
+                .get(&group)
+                .map(String::as_str)
+                .unwrap_or(&self.groups[group].prefix);
+            let text = self.join(&self.groups[group], texts, prefix);
+            let runs = self.ranges(&self.groups[group], texts, prefix);
             if values[group].text.as_ref() != text || values[group].runs.as_ref() != runs {
                 values[group].text = text.into();
                 values[group].revision += 1;
@@ -219,22 +244,22 @@ impl PresentationPlan {
         }
     }
 
-    fn join(&self, group: &TextGroup, texts: &[String]) -> String {
+    fn join(&self, group: &TextGroup, texts: &[String], prefix: &str) -> String {
         let capacity: usize = group.nodes.iter().map(|&node| texts[node].len()).sum();
-        let mut text = String::with_capacity(capacity + group.prefix.len());
-        text.push_str(&group.prefix);
+        let mut text = String::with_capacity(capacity + prefix.len());
+        text.push_str(prefix);
         for &node in &group.nodes {
             text.push_str(&texts[node]);
         }
         text
     }
 
-    fn ranges(&self, group: &TextGroup, texts: &[String]) -> Vec<TextRange> {
+    fn ranges(&self, group: &TextGroup, texts: &[String], prefix: &str) -> Vec<TextRange> {
         let mut ranges = Vec::new();
-        if !group.prefix.is_empty() {
+        if !prefix.is_empty() {
             ranges.push(TextRange {
                 node: None,
-                len: group.prefix.len(),
+                len: prefix.len(),
             });
         }
         ranges.extend(

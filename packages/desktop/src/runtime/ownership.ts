@@ -6,6 +6,7 @@ import type { Child, Family, Owner } from './ownership-model';
 import { propValues, textValue, type SceneProps as Props } from './values';
 import { componentTemplates, type SceneComponent } from './definitions';
 import { readRegion, stagedReadiness } from './regions';
+import { readList } from './lists';
 
 /** Independent lexical owners form a tree; one family queue protects its caches. */
 export function createOwnerForest(publication: ReturnType<typeof createPublicationQueue>, isClosed: () => boolean, runFactory: <T>(factory: () => T) => T) {
@@ -31,16 +32,23 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
   };
   const retire = (members: readonly Owner[]): void => {
     const retired = new Set(members);
+    const parents = new Set<Owner>();
     for (const member of members) {
       member.stagedReady?.reject(new Error('Desktop branch retired before publication'));
       member.mounted = false; member.disposed = true;
       owners.delete(member.instance); handles.delete(member.instance.handle.id);
-      if (member.parent) {
-        member.parent.children = member.parent.children.filter(child => child.owner !== member);
-        for (const region of member.parent.regions) {
-          if (region.child?.owner === member) region.child = undefined;
-          if (region.candidate?.child.owner === member) region.candidate = undefined;
-        }
+      if (member.parent && !retired.has(member.parent)) parents.add(member.parent);
+    }
+    // Retiring many siblings must not repeatedly filter the same parent arrays.
+    for (const parent of parents) {
+      parent.children = parent.children.filter(child => !retired.has(child.owner));
+      for (const region of parent.regions) {
+        if (region.child && retired.has(region.child.owner)) region.child = undefined;
+        if (region.candidate && retired.has(region.candidate.child.owner)) region.candidate = undefined;
+      }
+      for (const list of parent.lists) {
+        list.rows = list.rows.filter(row => !retired.has(row.owner));
+        for (const [key, row] of list.candidates) if (retired.has(row.owner)) list.candidates.delete(key);
       }
     }
     const families = new Set(members.map(member => member.family));
@@ -49,37 +57,42 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       if (!group.members.length) group.root = undefined;
     }
     for (const member of members) {
-      member.children = []; member.regions = []; member.parent = undefined;
+      member.children = []; member.regions = []; member.lists = []; member.parent = undefined;
       member.bindings = []; member.handlers = []; member.receive = undefined;
       member.initial = []; member.acknowledged.clear(); member.pending = new Set(); member.dirty = false;
     }
   };
-  const owned = (owner: Owner): Owner[] => {
+  const owned = (roots: Owner | readonly Owner[]): Owner[] => {
+    const pending: Owner[] = 'family' in roots ? [roots] : [...roots];
+    const family = pending[0]?.family;
+    if (!family) return [];
     const children = new Map<Owner, Owner[]>();
-    for (const member of owner.family.members) if (member.parent) {
+    for (const member of family.members) if (member.parent) {
       let siblings = children.get(member.parent);
       if (!siblings) children.set(member.parent, siblings = []);
       siblings.push(member);
     }
-    const result: Owner[] = []; const pending = [owner];
+    const result: Owner[] = []; const visited = new Set<Owner>();
     while (pending.length) {
-      const member = pending.pop()!; result.push(member);
+      const member = pending.pop()!;
+      if (visited.has(member)) continue;
+      visited.add(member); result.push(member);
       pending.push(...children.get(member) ?? []);
     }
     return result;
   };
   const construct = (parent: Owner, node: number, component: SceneComponent, props: Props, staging: boolean): Child => {
     const previous = placement;
-    const before = new Set(parent.family.members);
+    const offset = parent.family.members.length;
     placement = { family: parent.family, parent, node, staging };
     try {
       const instance = runFactory(() => component(props));
       const owner = owners.get(instance);
-      const roots = parent.family.members.filter(member => !before.has(member) && member.parent === parent);
+      const roots = parent.family.members.slice(offset).filter(member => member.parent === parent);
       if (!owner || owner.parent !== parent || owner.attachment?.node !== node || roots.length !== 1 || roots[0] !== owner) throw new Error('Desktop child factory must return one compiled component owner');
       return { node, owner, props };
     } catch (error) {
-      if (staging) retire(parent.family.members.filter(member => !before.has(member)));
+      if (staging) retire(parent.family.members.slice(offset));
       throw error;
     } finally { placement = previous; }
   };
@@ -97,6 +110,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     const family = owner.family;
     const task = family.work.then(async () => {
       await family.ready;
+      if (family.failed) throw family.error;
       if (owner.disposed || !family.members.some(member => !member.disposed && member.dirty)) return;
       await publication.publish(() => prepare(family));
     });
@@ -112,9 +126,14 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     const release = (): void => retire(members);
     const task = owner.family.work.then(async () => {
       try { await owner.family.ready; } catch { release(); return; }
-      if (owner.mounted) await publication.publish(() => ({
-        operation: { kind: 'dispose', handle: owner.instance.handle }, accept: release, reject() {},
-      }));
+      if (owner.mounted) await publication.publish(() => {
+        const operations: SceneOperation[] = [{ kind: 'dispose', handle: owner.instance.handle }];
+        const parent = owner.parent;
+        const list = parent?.lists.find(list => list.rows.some(row => row.owner === owner));
+        if (parent && list) operations.push({ kind: 'order', handle: parent.instance.handle, node: list.binding.node,
+          children: list.rows.filter(row => row.owner !== owner).map(row => row.owner.instance.handle) });
+        return { operations, accept: release, reject() {} };
+      });
       else release();
     });
     owner.family.work = task.catch(() => {});
@@ -128,7 +147,9 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       if (group.failed) throw group.error;
       await publication.publish(() => {
         const live = group.members.filter(owner => !owner.disposed);
-        const operations = live.map(mountOperation);
+        const operations = [...live.map(mountOperation), ...live.flatMap(owner => owner.lists.map(list => ({
+          kind: 'order' as const, handle: owner.instance.handle, node: list.binding.node, children: list.rows.map(row => row.owner.instance.handle),
+        })))];
         return { operations, accept() {
           for (const owner of live) acceptMount(owner);
         }, reject() {} };
@@ -164,7 +185,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       const attachment = placement ? { handle: placement.parent.instance.handle, node: placement.node } : undefined;
       const handle = Object.freeze({ id: nextId++, generation: 1 });
       const owner: Owner = { instance: undefined!, family: group, parent, attachment, template, bindings, handlers,
-        receive: options.receiveProps, initial, children: [], regions: [], acknowledged: new Map(), pending: new Set(), dirty: false, disposed: false, mounted: false,
+        receive: options.receiveProps, initial, children: [], regions: [], lists: [], acknowledged: new Map(), pending: new Set(), dirty: false, disposed: false, mounted: false,
         stagedReady: staging ? stagedReadiness() : undefined };
       const instance: SceneInstance = {
         handle, ready: owner.stagedReady?.promise ?? group.ready,
@@ -195,7 +216,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       if (!staging) group.installs.push(install(template));
       const regions = new Set<number>();
       try {
-        for (const definition of componentTemplates(options.components ?? [])) {
+        for (const definition of componentTemplates([...(options.components ?? []), ...(options.lists ?? []).map(list => list.component)])) {
           if (staging && !installations.has(definition)) throw new Error('Desktop branch dependency was not installed before staging');
           if (!staging) group.installs.push(install(definition));
         }
@@ -213,6 +234,14 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
           const child = next.component ? construct(owner, binding.node, next.component, next.props, staging) : undefined;
           owner.regions.push({ binding, branch: next.branch, child });
           if (child) owner.children.push(child);
+        }
+        for (const binding of options.lists ?? []) {
+          const node = template.nodes[binding.node];
+          if (node?.kind !== 'region' || !node.multiple || regions.has(binding.node)) throw new Error('Invalid or duplicate desktop list region');
+          regions.add(binding.node);
+          const values = readList(binding);
+          const list = { binding, rows: values.map(value => ({ ...construct(owner, binding.node, binding.component, value.props, staging), key: value.key })), candidates: new Map() };
+          owner.lists.push(list); owner.children.push(...list.rows);
         }
         owner.children.sort((a,b) => a.node-b.node);
       } catch (error) { if (!staging) { group.failed = true; group.error = error; } throw error; }

@@ -3,7 +3,7 @@ export type SceneNode =
   | { readonly kind: 'element'; readonly tag: string; readonly parent: number | null; readonly text: '';
       readonly attributes?: Readonly<Record<string, string>>; readonly style?: readonly CssDeclaration[] }
   | { readonly kind: 'text'; readonly parent: number | null; readonly text: string }
-  | { readonly kind: 'region'; readonly parent: number | null };
+  | { readonly kind: 'region'; readonly parent: number | null; readonly multiple?: boolean };
 
 export interface SceneTemplate {
   readonly id: string;

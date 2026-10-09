@@ -18,3 +18,13 @@ taffy = { version = "=0.13.0", default-features = false, features = ["parse"] }
 
 [profile.dev]
 debug = 0
+
+# Keep native layout responsive in development as the authored scene grows.
+[profile.dev.package.taffy]
+opt-level = 3
+
+[profile.dev.package.gpui]
+opt-level = 2
+
+[profile.dev.package.memoized-dom-desktop-window]
+opt-level = 2

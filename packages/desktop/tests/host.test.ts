@@ -12,6 +12,34 @@ const template: SceneTemplate = { id: 'host-counter', nodes: [
 ], slots: [{ node: 1, type: 'text' }], events: [{ node: 0, type: 'click' }] };
 
 describe('Rust retained scene bridge', () => {
+  it('retains keyed native row records and rejects malformed row order atomically', async () => {
+    const { code } = compileDesktop(`function Row({name,index}){let clicks=0;return <li><p>{name}: {index}</p><button onClick={()=>clicks++}>Clicks: {clicks}</button></li>;}export function App(){let items=['a','b','c'];return <main><button onClick={()=>items=items.toReversed()}>Reverse</button><button onClick={()=>items=['d',...items.slice(1)]}>Replace</button><ul>{items.map((name,index)=><Row key={name} name={name} index={index}/>)}</ul></main>;}`,
+      { moduleId: 'native-list.tsx', runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href });
+    const compiled = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`) as { App(): SceneInstance };
+    const host = createProcessHost({ executable }); let reject = true;
+    const app = createDesktopApplication({ install: template => host.install(template), async commit(transaction) {
+      if (transaction.sequence === 3 && reject) {
+        reject = false; return host.commit({ ...transaction, operations: transaction.operations.map(operation => operation.kind === 'order'
+          ? { ...operation, children: [operation.children[0]!, operation.children[0]!, operation.children[2]!] } : operation) });
+      }
+      return host.commit(transaction);
+    } });
+    try {
+      const root = app.mount(compiled.App); await root.ready; const initial = await host.inspect();
+      const [a, b, c] = initial.instances.slice(1); await app.dispatch(b!.handle, 0); const before = await host.inspect();
+      const failure = await root.dispatch(0).then(() => undefined, error => error as Error);
+      expect(failure).toBeInstanceOf(Error); expect(await host.inspect()).toEqual(before);
+      await root.flush(); const after = await host.inspect(); expect(after.sequence).toBe(3);
+      expect(Object.values(after.instances[0]!.orders!)[0]).toEqual([c!.handle, b!.handle, a!.handle]);
+      expect(after.instances.map(instance => instance.handle)).toEqual(initial.instances.map(instance => instance.handle));
+      expect(after.instances[2]!.text_groups).toEqual(before.instances[2]!.text_groups);
+      await app.dispatch(b!.handle, 0); expect((await host.inspect()).instances[2]!.text_groups.some(group => group.text === 'Clicks: 2')).toBe(true);
+      await root.dispatch(1); const replaced = await host.inspect(); expect(replaced.instances).toHaveLength(4);
+      expect(replaced.instances.some(instance => instance.handle.id === c!.handle.id)).toBe(false);
+      expect(replaced.instances.some(instance => instance.handle.id === a!.handle.id)).toBe(true);
+      await root.dispose(); expect((await host.inspect()).instances).toEqual([]);
+    } finally { await app.dispose(); await host.close(); }
+  });
   it('preserves native branch records on rejection and replaces the whole subtree on retry', async () => {
     const {code}=compileDesktop(`function Leaf({value}){return <p>{value}</p>;}function A(){return <section><Leaf value="A"/></section>;}function B(){return <section><Leaf value="B"/></section>;}export function App(){let shown=true;return <main><button onClick={()=>shown=!shown}>Toggle</button>{shown?<A/>:<B/>}</main>;}`,
       {moduleId:'native-region.tsx',runtimePath:pathToFileURL(resolve(import.meta.dirname,'../src/index.ts')).href});

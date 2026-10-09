@@ -30,6 +30,14 @@ fn input_value_and_paragraph_publish_atomically_and_control_keeps_identity() {
     ));
     assert_eq!(instance.presentation[1].group, None);
     assert!(scene.has_change_event(instance.handle, 0));
+    let before = serde_json::to_value(scene.snapshot()).unwrap();
+    let acknowledged = memoized_dom_desktop_host::bridge::process_line(
+        &mut scene,
+        r#"{"id":3,"version":1,"kind":"acknowledge","handle":{"id":1,"generation":1},"site":0,"edit":1}"#,
+    );
+    assert!(acknowledged.input_ack.is_some());
+    assert!(!acknowledged.changed);
+    assert_eq!(serde_json::to_value(scene.snapshot()).unwrap(), before);
 }
 #[test]
 fn invalid_types_slots_events_and_children_never_enable_fake_inputs() {

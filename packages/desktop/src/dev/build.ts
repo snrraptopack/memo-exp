@@ -18,6 +18,7 @@ export async function buildDesktopEntry(entry: string, options: DesktopBuildOpti
       });
       build.onLoad({ filter: /\.(tsx|tsrx)$/ }, args => ({
         contents: compileDesktop(readFileSync(args.path, 'utf8'), {
+          allowComponentFree: true,
           moduleId: args.path, runtimePath: runtime,
           readStylesheet: (specifier: string) => readFileSync(resolve(dirname(args.path), specifier), 'utf8'),
           readModule: (specifier: string, importer: string) => {

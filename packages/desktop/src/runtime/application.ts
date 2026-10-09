@@ -16,6 +16,14 @@ export interface SceneMountOptions {
   readonly receiveProps?: (props: Readonly<Record<string, unknown>>) => void;
   readonly components?: readonly SceneComponent[];
   readonly regions?: readonly SceneRegionBinding[];
+  readonly lists?: readonly SceneListBinding[];
+}
+export type SceneRowKey = string | number;
+export interface SceneListBinding {
+  readonly node: number;
+  readonly sources: readonly string[] | null;
+  readonly component: SceneComponent;
+  readonly read: () => readonly { readonly key: SceneRowKey; readonly props: Readonly<Record<string, unknown>> }[];
 }
 export interface SceneRegionBinding {
   readonly node: number;

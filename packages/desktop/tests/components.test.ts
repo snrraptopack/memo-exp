@@ -155,7 +155,7 @@ it('links default and renamed component exports through shared core prop discove
 it('does not treat arbitrary value imports as compiled components', () => {
   expect(()=>compileDesktop(`import {Value} from './value.ts'; export function App(){return <Value/>;}`,{
     readModule:()=>({moduleId:'value.ts',source:'export const Value=1;'}),
-  })).toThrow("value import 'Value'");
+  })).toThrow('unresolved desktop component <Value>');
 });
 
 it('reports cyclic component re-exports without recursing indefinitely', () => {

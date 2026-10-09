@@ -32,15 +32,17 @@ pub enum Node {
     },
     Region {
         parent: Option<usize>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        multiple: bool,
     },
 }
 
 impl Node {
     pub fn parent(&self) -> Option<usize> {
         match self {
-            Self::Element { parent, .. } | Self::Text { parent, .. } | Self::Region { parent } => {
-                *parent
-            }
+            Self::Element { parent, .. }
+            | Self::Text { parent, .. }
+            | Self::Region { parent, .. } => *parent,
         }
     }
     pub fn text(&self) -> &str {
@@ -84,6 +86,7 @@ pub struct PreparedTemplate {
     pub source: Template,
     pub presentation: PresentationPlan,
     pub styles: Vec<css::CascadedStyle>,
+    pub children: Vec<Vec<usize>>,
 }
 
 impl Template {
@@ -125,9 +128,7 @@ impl Template {
             };
             match node.parent() {
                 None => {
-                    if tag.is_some_and(|tag| tag.name == "li") {
-                        return Err(invalid("<li> requires an <ul> or <ol> parent".into()));
-                    }
+                    // Component roots receive their parent content contract at attachment.
                     roots += 1;
                 }
                 Some(parent) if parent < index => {
@@ -137,14 +138,23 @@ impl Template {
                         )));
                     };
                     if matches!(node, Node::Region { .. })
-                        && parent_tag.content != tags::Content::Flow
+                        && !matches!(
+                            parent_tag.content,
+                            tags::Content::Flow | tags::Content::List
+                        )
                     {
                         return Err(invalid(format!(
                             "Component region at node {index} requires a flow container; <{}> is unsupported",
                             parent_tag.name
                         )));
                     }
-                    if !matches!(node, Node::Region { .. }) && !parent_tag.accepts(tag) {
+                    let list_whitespace = parent_tag.content == tags::Content::List
+                        && matches!(node, Node::Text { text, .. } if text.trim().is_empty())
+                        && !self.slots.iter().any(|slot| slot.node == index);
+                    if !matches!(node, Node::Region { .. })
+                        && !list_whitespace
+                        && !parent_tag.accepts(tag)
+                    {
                         return Err(invalid(format!(
                             "<{}> at node {parent} accepts phrasing content; <{}> at node {index} is not supported inside it",
                             parent_tag.name,
@@ -197,6 +207,7 @@ impl Template {
         let styles = css::prepare(&self.nodes, &self.stylesheets).map_err(invalid)?;
         let presentation = PresentationPlan::prepare(&self, &resolved, &children);
         Ok(PreparedTemplate {
+            children,
             source: self,
             presentation,
             styles,

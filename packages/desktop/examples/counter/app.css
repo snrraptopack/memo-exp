@@ -1,4 +1,7 @@
 /* Ordinary authored CSS; GPUI styles and Taffy perform native presentation. */
+.desktop-page { width: 100%; min-height: 100%; padding: 32px; background-color: #f8fafc; color: #0f172a; font-family: "Segoe UI"; font-size: 20px; }
+.native-list { display: flex; flex-direction: column; gap: 12px; padding: 0; margin: 0; }
+.list-row { display: flex; flex-direction: column; gap: 8px; padding: 12px; background-color: white; border: 1px solid #cbd5e1; border-radius: 6px; }
 main.card { display: flex; flex-direction: column; gap: 18px; padding: 24px; width: 100%; max-width: 720px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; color: #0f172a; font-family: "Segoe UI"; font-size: 16px; line-height: 1.5; }
 h1 { font-size: 28px; margin: 0; }
 h2 { font-size: 20px; margin: 0 0 10px; }

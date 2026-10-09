@@ -44,6 +44,11 @@ pub enum Operation {
         handle: Handle,
         values: Vec<TextWrite>,
     },
+    Order {
+        handle: Handle,
+        node: usize,
+        children: Vec<Handle>,
+    },
     Dispose {
         handle: Handle,
     },
@@ -62,6 +67,8 @@ pub struct Instance {
     pub texts: Vec<String>,
     pub dirty: BTreeSet<usize>,
     pub text_groups: Vec<TextValue>,
+    pub orders: BTreeMap<usize, Vec<Handle>>,
+    markers: BTreeMap<usize, String>,
     pending_groups: BTreeSet<usize>,
 }
 #[derive(Default)]
@@ -86,6 +93,8 @@ pub struct InstanceSnapshot {
     pub dirty: Vec<usize>,
     pub presentation: Vec<FlowItem>,
     pub text_groups: Vec<TextValue>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub orders: BTreeMap<usize, Vec<Handle>>,
 }
 
 impl Scene {
@@ -192,6 +201,8 @@ impl Scene {
                         texts,
                         dirty: (0..template.source.nodes.len()).collect(),
                         pending_groups: BTreeSet::new(),
+                        orders: BTreeMap::new(),
+                        markers: BTreeMap::new(),
                         template,
                     };
                     apply_writes(&mut instance, values)?;
@@ -203,6 +214,21 @@ impl Scene {
                 Operation::Update { handle, values } => {
                     let instance = stage_instance(&self.instances, &mut staged, handle)?;
                     apply_writes(instance, values)?;
+                }
+                Operation::Order {
+                    handle,
+                    node,
+                    children,
+                } => {
+                    topology_changed = true;
+                    let instance = stage_instance(&self.instances, &mut staged, handle)?;
+                    if !matches!(
+                        instance.template.source.nodes.get(node),
+                        Some(Node::Region { multiple: true, .. })
+                    ) {
+                        return Err("Child order requires an ordered region destination".into());
+                    }
+                    instance.orders.insert(node, children);
                 }
                 Operation::Dispose { handle } => {
                     topology_changed = true;
@@ -247,6 +273,15 @@ impl Scene {
                 )
                 .collect();
             forest::validate(&candidate)?;
+            let markers = forest::markers(&candidate);
+            for (handle, group, prefix) in markers {
+                let instance = stage_instance(&self.instances, &mut staged, handle)?;
+                instance.markers.insert(group, prefix);
+                instance.pending_groups.insert(group);
+                if !self.instances.contains_key(&handle.id) {
+                    instance.text_groups[group].revision = 0;
+                }
+            }
         }
         // All operations have validated. Prepare each affected paragraph once,
         // on candidate state, before swapping any instance into the live scene.
@@ -255,6 +290,7 @@ impl Scene {
                 &instance.texts,
                 &mut instance.text_groups,
                 &instance.pending_groups,
+                &instance.markers,
             );
             instance.pending_groups.clear();
         }
@@ -284,6 +320,7 @@ impl Scene {
                     dirty: instance.dirty.iter().copied().collect(),
                     presentation: instance.template.presentation.items.clone(),
                     text_groups: instance.text_groups.clone(),
+                    orders: instance.orders.clone(),
                 })
                 .collect(),
         }

@@ -1,4 +1,4 @@
-/** Desktop lowering: fixed component trees with synchronous lexical state. */
+/** Desktop lowering: retained component regions with synchronous lexical state. */
 import type * as t from '../ast/compiler-types';
 import * as b from '../ast/factory';
 import { parseWithEstreeFrontendOrThrow, type EstreeFrontend } from '../ast/parser';
@@ -8,7 +8,7 @@ import { stripTypeScript } from '../ast/strip-typescript';
 import { walkAst } from '../ast/walk';
 import { normalizeEstreeDialect, unwrapTypeExpression } from '../ast/normalize';
 import { createAnalysisCtx, type ProgramPath } from '../context/model';
-import { refreshAstAnalysis } from '../context/ast';
+import { refreshAstAnalysis, nodeHasJsx } from '../context/ast';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { scanComponents, scanModuleState, validateLinkedImports } from '../analysis/module-scan';
 import { scanInstanceState, scanInstanceDerivations } from '../analysis/instance';
@@ -19,8 +19,11 @@ import { lowerDesktopScene, valueExpression } from './lower-scene';
 import { desktopCssRules } from './css';
 import { desktopProps } from './components';
 import { desktopComponentImports, type DesktopModuleReader } from './imports';
+import { analyzeMapSite, matchMapCall } from '../lists';
 
 export interface DesktopCompileOptions {
+  /** Build adapters may load component-free TSX utilities without a runtime import. */
+  allowComponentFree?: boolean;
   moduleId?: string;
   runtimePath?: string;
   frontend?: EstreeFrontend;
@@ -56,12 +59,22 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   normalizeEstreeDialect(program);
   const path: ProgramPath = { node: program, buildCodeFrameError: (message, at) => compilerError(message, moduleId, at) };
   normalizeComponentDeclarations(path);
+  if (options.allowComponentFree && !nodeHasJsx(program)) {
+    if (stylesheets.length) fail('component-free CSS imports require a desktop stylesheet linking contract');
+    return { code: printEstree(stripTypeScript(program), { comments: parsed.comments }).code, components: [] };
+  }
   const linkedImports = desktopComponentImports(program, moduleId, options.frontend ?? memoizedEstreeFrontend, options.readModule);
   const ctx = createAnalysisCtx({ moduleId, linkedImports });
   refreshAstAnalysis(ctx, program);
   validateLinkedImports(ctx, path);
   scanModuleState(ctx, path);
   scanComponents(ctx, path);
+  if (!ctx.compPaths.size && options.allowComponentFree) {
+    walkAst<t.Node>(program, { enter(node) {
+      if (b.isJSXElement(node) || b.isJSXFragment(node)) fail('JSX outside a desktop component is not implemented', node);
+    } });
+    return { code: printEstree(stripTypeScript(program), { comments: parsed.comments }).code, components: [] };
+  }
   scanInstanceState(ctx);
   scanInstanceDerivations(ctx);
   if (ctx.state.size) fail('reactive module state requires desktop graph scheduling, which is not implemented yet');
@@ -88,7 +101,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const last = statements.at(-1);
     if (!last || !b.isReturnStatement(last) || !last.argument) fail('components need a final fixed JSX return', fn);
     const root = unwrapTypeExpression(last.argument);
-    if (!b.isJSXElement(root) && !b.isJSXFragment(root) && !b.isConditionalExpression(root) && !b.isLogicalExpression(root)) fail('dynamic component roots are not implemented yet', root);
+    if (!b.isJSXElement(root) && !b.isJSXFragment(root) && !b.isConditionalExpression(root) && !b.isLogicalExpression(root) && !matchMapCall(root)) fail('dynamic component roots are not implemented yet', root);
     for (const statement of statements.slice(0, -1)) {
       if (b.isReturnStatement(statement)) fail('early component returns are not implemented yet', statement);
       walkAst<t.Node>(statement, { enter(node) {
@@ -96,13 +109,14 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
         if (node.type === 'AwaitExpression' || node.type === 'YieldExpression') fail('asynchronous callbacks are not implemented yet', node);
       } });
     }
-    const instance = fresh('__desktopInstance');
     if (ctx.instanceDerivations.get(name)?.length) {
       fail('reactive setup derivations are not implemented yet; use the expression directly in JSX', fn);
     }
-    const { nodes, slots, events, bindings, handlers, children, regions, componentNames } = lowerDesktopScene(root, {
+    const listPrefixes = new Map<string, number>();
+    const { nodes, slots, events, bindings, handlers, children, regions, lists, componentNames } = lowerDesktopScene(root, {
       callbacks: planComponentCallbacks(ctx, name, component),
       sources: expressionFacts.get(name)!, instrument, fail, fresh, components: ctx.componentProps, imports: ctx.importedComponents,
+      listSite: call => analyzeMapSite(ctx, call, path, name, listPrefixes),
     });
     const props = desktopProps(ctx.componentProps.get(name)!, fresh, fail);
     fn.params = props.params;
@@ -110,19 +124,19 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const template = { id: `${moduleId}#${name}`, nodes, slots, events, stylesheets };
     const templateId = fresh(`__desktopTemplate${name}`);
     templates.push(b.variableDeclaration('const', [b.variableDeclarator(templateId, valueExpression(template))]));
-    const dependencies = b.arrayExpression(componentNames.map(b.identifier));
-    definitions.push(b.expressionStatement(b.callExpression(define, [b.identifier(name), templateId, b.arrowFunctionExpression([], dependencies)])));
+    const dependencies = () => b.arrayExpression(componentNames.map(b.identifier));
+    definitions.push(b.expressionStatement(b.callExpression(define, [b.identifier(name), templateId, b.arrowFunctionExpression([], dependencies())])));
     const mountOptions = b.objectExpression([
       ...(children.length ? [b.objectProperty(b.identifier('children'), b.arrayExpression(children))] : []),
       ...(regions.length ? [b.objectProperty(b.identifier('regions'), b.arrayExpression(regions))] : []),
-      ...(componentNames.length ? [b.objectProperty(b.identifier('components'), dependencies)] : []),
+      ...(lists.length ? [b.objectProperty(b.identifier('lists'), b.arrayExpression(lists))] : []),
+      ...(componentNames.length ? [b.objectProperty(b.identifier('components'), dependencies())] : []),
       ...(props.receive ? [b.objectProperty(b.identifier('receiveProps'), props.receive)] : []),
     ]);
     fn.body.body = [...props.setup, ...statements.slice(0, -1),
-      b.variableDeclaration('let', [b.variableDeclarator(instance, null)]),
-      b.expressionStatement(b.assignmentExpression('=', instance, b.callExpression(mount, [
+      b.returnStatement(b.callExpression(mount, [
         templateId, b.arrayExpression(bindings), b.arrayExpression(handlers), mountOptions,
-      ]))), b.returnStatement(instance)];
+      ]))];
   }
   if (!ctx.compPaths.size) fail('no desktop components were found');
   program.body.unshift(b.importDeclaration([

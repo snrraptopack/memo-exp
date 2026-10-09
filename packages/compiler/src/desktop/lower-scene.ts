@@ -12,11 +12,14 @@ import type { LinkedComponentImport } from '../context/model';
 import { desktopComponentCall } from './component-call';
 import { desktopRegionPlan } from './regions';
 import { nodeHasJsx } from '../context/ast';
+import { matchMapCall, type MapSite } from '../lists';
+import type { MapCallExpression } from '../context';
+import { desktopListPlan } from './lists';
 
 type SceneNode =
   | { kind: 'element'; tag: string; parent: number | null; text: ''; attributes: Record<string, string>; style: DesktopDeclaration[] }
   | { kind: 'text'; parent: number | null; text: string }
-  | { kind: 'region'; parent: number | null };
+  | { kind: 'region'; parent: number | null; multiple?: boolean };
 interface TextSlot { node: number; type: 'text' | 'value' }
 
 export function lowerDesktopScene(root: t.Node, options: {
@@ -26,6 +29,7 @@ export function lowerDesktopScene(root: t.Node, options: {
   components: ReadonlyMap<string, ComponentPropsPlan>;
   imports: ReadonlyMap<string, LinkedComponentImport>;
   fresh: (name: string) => t.Identifier;
+  listSite: (call: MapCallExpression) => MapSite;
   fail: (message: string, at: t.Node) => never;
 }) {
   const { callbacks, sources, instrument } = options;
@@ -37,6 +41,7 @@ export function lowerDesktopScene(root: t.Node, options: {
   const handlers: t.Expression[] = [];
   const children: t.Expression[] = [];
   const regions: t.Expression[] = [];
+  const lists: t.Expression[] = [];
   const componentNames = new Set<string>();
   const dependenciesFor = (expression: t.Expression): readonly string[] | null => {
     let dependencies = sources.sourcesFor(expression);
@@ -44,6 +49,18 @@ export function lowerDesktopScene(root: t.Node, options: {
     return dependencies;
   };
   const componentCall = (element: t.JSXElement) => desktopComponentCall(element, { ...options, sourcesFor: dependenciesFor });
+  const addList = (call: MapCallExpression, parent: number | null): void => {
+    if (call.arguments[0]) assertSynchronousCallback(call.arguments[0], fail);
+    const plan = desktopListPlan(options.listSite(call), { call: componentCall, fresh: options.fresh, fail, sourcesFor: dependenciesFor });
+    const node = nodes.length; nodes.push({ kind: 'region', parent, multiple: true });
+    componentNames.add(plan.component.name);
+    lists.push(b.objectExpression([
+      b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
+      b.objectProperty(b.identifier('sources'), valueExpression(plan.sources)),
+      b.objectProperty(b.identifier('component'), plan.component),
+      b.objectProperty(b.identifier('read'), plan.read),
+    ]));
+  };
   const addRegion = (expression: t.ConditionalExpression | t.LogicalExpression, parent: number | null): void => {
     const plan = desktopRegionPlan(expression, { call: componentCall, sourcesFor: dependenciesFor, fresh: options.fresh, fail });
     const node = nodes.length; nodes.push({ kind: 'region', parent });
@@ -75,6 +92,8 @@ export function lowerDesktopScene(root: t.Node, options: {
     ]));
   };
   const emit = (element: t.Node, parent: number | null): void => {
+    const map = matchMapCall(element);
+    if (map && nodeHasJsx(element)) { addList(map, parent); return; }
     if (b.isConditionalExpression(element) || b.isLogicalExpression(element)) { addRegion(element, parent); return; }
     if (b.isJSXFragment(element)) {
       for (const child of element.children) emit(child, parent);
@@ -87,6 +106,8 @@ export function lowerDesktopScene(root: t.Node, options: {
     if (b.isJSXExpressionContainer(element)) {
       const expression = unwrapTypeExpression(element.expression);
       if (b.isJSXEmptyExpression(expression)) return;
+      const map = matchMapCall(expression);
+      if (map && nodeHasJsx(expression)) { addList(map, parent); return; }
       if ((b.isConditionalExpression(expression) || b.isLogicalExpression(expression)) && nodeHasJsx(expression)) { addRegion(expression, parent); return; }
       addBinding(expression as t.Expression, addText('', parent), 'text');
       return;
@@ -173,7 +194,7 @@ export function lowerDesktopScene(root: t.Node, options: {
   emit(root, null);
   // A component handle owns all fragment roots; regions flatten them at placement.
   if (!nodes.length) fail('empty desktop fragments are not implemented yet', root);
-  return { nodes, slots, events, bindings, handlers, children, regions, componentNames: [...componentNames] };
+  return { nodes, slots, events, bindings, handlers, children, regions, lists, componentNames: [...componentNames] };
 }
 
 export function valueExpression(value: unknown): t.Expression {

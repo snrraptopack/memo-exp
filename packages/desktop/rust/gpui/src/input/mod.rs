@@ -64,6 +64,8 @@ struct CachedLine {
     line: ShapedLine,
 }
 pub struct TextInput {
+    #[cfg(debug_assertions)]
+    pub painted_text: String,
     focus: FocusHandle,
     state: EditState,
     placeholder: String,
@@ -86,6 +88,8 @@ impl TextInput {
     ) -> Self {
         let state = EditState::new(value);
         Self {
+            #[cfg(debug_assertions)]
+            painted_text: String::new(),
             binding: BindingState::new(value, &state, options.controlled, options.expect_ack),
             state,
             focus,
@@ -470,6 +474,10 @@ impl Element for InputText {
         cx: &mut App,
     ) {
         let focus = self.input.read(cx).focus.clone();
+        #[cfg(debug_assertions)]
+        self.input.update(cx, |input, _| {
+            input.painted_text = input.state.text.clone();
+        });
         window.handle_input(
             &focus,
             ElementInputHandler::new(bounds, self.input.clone()),

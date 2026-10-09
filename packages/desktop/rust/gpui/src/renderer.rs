@@ -17,6 +17,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     rc::Rc,
     sync::Arc,
+    time::Instant,
 };
 
 #[derive(Default, Serialize)]
@@ -28,17 +29,42 @@ pub struct Stats {
     pub width: f32,
     pub height: f32,
     pub boxes: Vec<LayoutBox>,
+    pub event_to_commit_ms: Option<f64>,
+    pub event_to_paint_ms: Option<f64>,
+    pub commit_to_paint_ms: Option<f64>,
+    pub layout_ms: f64,
+    pub frame_ms: f64,
+    #[serde(skip)]
+    event_started: Option<Instant>,
+    #[serde(skip)]
+    commit_started: Option<Instant>,
+    #[serde(skip)]
+    render_started: Option<Instant>,
+}
+impl Stats {
+    pub fn event_started(&mut self) {
+        self.event_started = Some(Instant::now());
+        self.event_to_commit_ms = None;
+        self.event_to_paint_ms = None;
+    }
+    pub fn committed(&mut self) {
+        let now = Instant::now();
+        self.event_to_commit_ms = self
+            .event_started
+            .map(|start| now.duration_since(start).as_secs_f64() * 1000.);
+        self.commit_started = Some(now);
+    }
 }
 #[derive(Serialize)]
 pub struct LayoutBox {
-    handle: Handle,
-    source: usize,
+    pub handle: Handle,
+    pub source: usize,
     id: Option<String>,
-    tag: String,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+    pub tag: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 type Identity = (u64, u64, usize);
 pub type EventSink = Rc<dyn Fn(Handle, usize, Option<serde_json::Value>, Option<u64>, &mut App)>;
@@ -69,6 +95,12 @@ pub struct SceneElement {
 }
 
 impl Renderer {
+    #[cfg(debug_assertions)]
+    pub fn painted_inputs(&self, cx: &App) -> serde_json::Value {
+        serde_json::json!(self.inputs.iter().map(|((id, generation, node), input)| {
+            serde_json::json!({"handle": {"id":id,"generation":generation}, "node":node, "text": input.read(cx).painted_text})
+        }).collect::<Vec<_>>())
+    }
     #[cfg(debug_assertions)]
     pub fn test_input(
         &mut self,
@@ -121,6 +153,7 @@ impl Renderer {
         })
     }
     pub fn element(&mut self, scene: &Scene, click: EventSink, cx: &mut App) -> SceneElement {
+        self.stats.borrow_mut().render_started = Some(Instant::now());
         let mut live_text = BTreeSet::new();
         let mut live_controls = BTreeSet::new();
         let mut live_inputs = BTreeSet::new();
@@ -225,18 +258,16 @@ impl Element for SceneElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        let mut attached = BTreeMap::<Identity, Vec<AnyElement>>::new();
+        let mut attached = BTreeMap::<Identity, Vec<Vec<AnyElement>>>::new();
         for instance in self.instances.iter().rev() {
             let plan = &instance.template.presentation;
             let mut elements: Vec<Option<Vec<AnyElement>>> =
                 (0..plan.items.len()).map(|_| None).collect();
             for (index, item) in plan.items.iter().enumerate().rev() {
                 if matches!(item.kind, ItemKind::Region) {
-                    elements[index] = attached.remove(&(
-                        instance.handle.id,
-                        instance.handle.generation,
-                        item.source,
-                    ));
+                    elements[index] = attached
+                        .remove(&(instance.handle.id, instance.handle.generation, item.source))
+                        .map(|rows| rows.into_iter().rev().flatten().collect());
                     continue;
                 }
                 let identity = SharedString::from(format!(
@@ -383,10 +414,10 @@ impl Element for SceneElement {
                 }
             }
             if let Some(parent) = instance.attach_to {
-                attached.insert(
-                    (parent.handle.id, parent.handle.generation, parent.node),
-                    roots,
-                );
+                // Accumulate row chunks once, then flatten at the region. This
+                // avoids repeatedly copying the already assembled sibling list.
+                let key = (parent.handle.id, parent.handle.generation, parent.node);
+                attached.entry(key).or_default().push(roots);
             } else {
                 self.roots.extend(roots.into_iter().rev());
             }
@@ -401,6 +432,8 @@ impl Element for SceneElement {
             window.request_layout(
                 Style {
                     display: Display::Block,
+                    min_size: size(relative(1.).into(), window.viewport_size().height.into()),
+                    flex_shrink: 0.,
                     ..Default::default()
                 },
                 layouts,
@@ -423,6 +456,9 @@ impl Element for SceneElement {
             stats.width = bounds.size.width.as_f32();
             stats.height = bounds.size.height.as_f32();
             stats.boxes.clear();
+            stats.layout_ms = stats
+                .render_started
+                .map_or(0., |start| start.elapsed().as_secs_f64() * 1000.);
         }
         for root in &mut self.roots {
             root.prepaint(window, cx);
@@ -444,6 +480,17 @@ impl Element for SceneElement {
         let mut stats = self.stats.borrow_mut();
         stats.frames += 1;
         stats.sequence = self.sequence;
+        let now = Instant::now();
+        stats.frame_ms = stats
+            .render_started
+            .map_or(0., |start| now.duration_since(start).as_secs_f64() * 1000.);
+        if let Some(start) = stats.commit_started.take() {
+            stats.commit_to_paint_ms = Some(now.duration_since(start).as_secs_f64() * 1000.);
+            stats.event_to_paint_ms = stats
+                .event_started
+                .take()
+                .map(|start| now.duration_since(start).as_secs_f64() * 1000.);
+        }
     }
 }
 

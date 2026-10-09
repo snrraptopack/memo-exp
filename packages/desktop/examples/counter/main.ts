@@ -1,4 +1,4 @@
 import { mount } from '@memoized-dom/runtime';
-import { App } from './App';
+import { Page } from './Page';
 
-mount('root', App);
+mount('root', Page);

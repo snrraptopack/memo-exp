@@ -10,11 +10,12 @@ const executable = resolve(import.meta.dirname, '../rust/target/debug',
 const host = createProcessHost({ executable });
 const app = createDesktopApplication(host);
 try {
-  const roots = await runDesktopEntry(app, () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`));
-  const counter = roots.get('root')!;
-  console.log('Mounted:', JSON.stringify(await host.inspect()));
-  await counter.dispatch(0);
-  await counter.dispatch(0);
+  await runDesktopEntry(app, () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`));
+  const initial = await host.inspect();
+  const counter = initial.instances.find(instance => instance.template.endsWith('#App'))!;
+  console.log('Mounted:', JSON.stringify(initial));
+  await app.dispatch(counter.handle, 0);
+  await app.dispatch(counter.handle, 0);
   console.log('Updated:', JSON.stringify(await host.inspect()));
   await app.dispose();
   console.log('Disposed:', JSON.stringify(await host.inspect()));

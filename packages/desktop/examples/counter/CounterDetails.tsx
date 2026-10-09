@@ -1,5 +1,6 @@
 import type {} from '@memoized-dom/compiler/jsx';
 import './app.css';
+import { ListDemo } from './ListDemo';
 
 function CounterSummary(props: { count: number; value: string }) {
   return <>
@@ -19,6 +20,7 @@ export function CounterDetails({ count, value }: { count: number; value: string 
     <CounterSummary count={count} value={value} />
     <button onClick={() => shown = !shown}>Toggle conditional child</button>
     {shown && <BranchCounter count={count} />}
+    <ListDemo />
   </section>;
 }
 
