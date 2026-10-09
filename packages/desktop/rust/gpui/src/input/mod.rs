@@ -1,9 +1,11 @@
 //! Retained single-line control using GPUI's platform text-input interface.
 //! GPUI owns key dispatch, clipboard, font shaping, focus and IME integration.
+mod binding;
 mod state;
 #[cfg(debug_assertions)]
 pub mod testing;
 use crate::renderer::Stats;
+use binding::BindingState;
 use gpui::{
     App, Bounds, ClipboardItem, Context, Element, ElementId, ElementInputHandler, Entity,
     EntityInputHandler, FocusHandle, GlobalElementId, InspectorElementId, IntoElement, KeyBinding,
@@ -66,12 +68,7 @@ pub struct TextInput {
     state: EditState,
     placeholder: String,
     label: String,
-    controlled: bool,
-    expect_ack: bool,
-    accepted: String,
-    published: String,
-    edit: u64,
-    acknowledged: u64,
+    binding: BindingState,
     sink: ChangeSink,
     selecting: bool,
     scroll: Pixels,
@@ -89,16 +86,11 @@ impl TextInput {
     ) -> Self {
         let state = EditState::new(value);
         Self {
-            published: state.text.clone(),
+            binding: BindingState::new(value, &state, options.controlled, options.expect_ack),
             state,
             focus,
             placeholder: options.placeholder,
             label: options.label,
-            controlled: options.controlled,
-            expect_ack: options.expect_ack,
-            accepted: value.into(),
-            edit: 0,
-            acknowledged: 0,
             sink,
             selecting: false,
             scroll: px(0.),
@@ -111,13 +103,8 @@ impl TextInput {
         self.focus = focus;
     }
     pub fn sync(&mut self, value: &str, cx: &mut Context<Self>) {
-        if value != self.accepted {
-            self.accepted = value.into();
-            if self.controlled && self.edit == self.acknowledged && self.state.marked.is_none() {
-                self.state.set_value(value);
-                self.published = self.state.text.clone();
-                cx.notify();
-            }
+        if self.binding.sync(value, &mut self.state) {
+            cx.notify();
         }
     }
     pub fn acknowledge(
@@ -126,26 +113,14 @@ impl TextInput {
         value: &str,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        if edit == 0 || edit > self.edit {
-            return Err("Unknown native input edit".into());
-        }
-        self.acknowledged = self.acknowledged.max(edit);
-        self.accepted = value.into();
-        if self.controlled && self.acknowledged == self.edit && self.state.marked.is_none() {
-            self.state.set_value(value);
-            self.published = self.state.text.clone();
+        if self.binding.acknowledge(edit, value, &mut self.state)? {
             cx.notify();
         }
         Ok(())
     }
     fn publish(&mut self, cx: &mut Context<Self>) {
-        if self.state.text != self.published {
-            self.published = self.state.text.clone();
-            self.edit += 1;
-            (self.sink)(self.published.clone(), self.edit, cx);
-            if !self.expect_ack {
-                self.acknowledged = self.edit;
-            }
+        if let Some((value, edit)) = self.binding.publish(&mut self.state) {
+            (self.sink)(value, edit, cx);
         }
         cx.notify();
     }
