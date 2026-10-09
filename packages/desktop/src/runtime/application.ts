@@ -1,6 +1,7 @@
 import type { DesktopHost, SceneHandle, SceneTemplate } from '../bridge/protocol';
 import { createOwnerForest } from './ownership';
 import { createPublicationQueue } from './publication';
+import type { SceneComponent } from './definitions';
 
 export interface TextBinding { readonly slot: number; readonly sources: readonly string[] | null; readonly read: () => unknown }
 export interface SceneHandler { readonly callback: (event: unknown) => unknown; readonly sources: readonly string[] | null }
@@ -13,6 +14,14 @@ export interface SceneChildBinding {
 export interface SceneMountOptions {
   readonly children?: readonly SceneChildBinding[];
   readonly receiveProps?: (props: Readonly<Record<string, unknown>>) => void;
+  readonly components?: readonly SceneComponent[];
+  readonly regions?: readonly SceneRegionBinding[];
+}
+export interface SceneRegionBinding {
+  readonly node: number;
+  readonly sources: readonly string[] | null;
+  readonly branches: readonly (SceneComponent | null)[];
+  readonly read: () => { readonly branch: number; readonly props: Readonly<Record<string, unknown>> };
 }
 export interface SceneInstance {
   readonly handle: SceneHandle;
@@ -42,7 +51,10 @@ export function mountScene(template: SceneTemplate, bindings: readonly TextBindi
 /** Ownership, expression preparation and publication stay separate from entry evaluation. */
 export function createDesktopApplication(host: DesktopHost): DesktopApplication {
   let closed = false;
-  const forest = createOwnerForest(createPublicationQueue(host), () => closed);
+  const forest = createOwnerForest(createPublicationQueue(host), () => closed, factory => {
+    const previous = active; active = context;
+    try { return factory(); } finally { active = previous; }
+  });
   const context: ApplicationContext = forest;
   return {
     mount(factory) {

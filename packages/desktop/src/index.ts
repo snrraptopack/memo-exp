@@ -1,5 +1,6 @@
 export { createDesktopApplication, mountScene, sceneEvent, type DesktopApplication, type SceneInstance,
-  type TextBinding, type SceneHandler, type SceneChildBinding, type SceneMountOptions } from './runtime/application';
+  type TextBinding, type SceneHandler, type SceneChildBinding, type SceneMountOptions, type SceneRegionBinding } from './runtime/application';
+export { defineSceneComponent, type SceneComponent } from './runtime/definitions';
 export type { DesktopHost, SceneTemplate, SceneHandle, SceneOperation, SceneTransaction,
   SceneAcknowledgment, SceneSnapshot, SceneAttachment, TextWrite, NativeSceneEvent, DesktopInputEvent } from './bridge/protocol';
 export type { SceneNode, FlowItem, TextGroupValue } from './scene/schema';

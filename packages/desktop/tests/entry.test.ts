@@ -15,7 +15,7 @@ describe('authored desktop entries', () => {
     const roots = await runDesktopEntry(app, () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`));
     const root = roots.get('root')!;
     expect(root.mounted).toBe(true);
-    expect(templates).toHaveLength(3);
+    expect(templates).toHaveLength(4);
     expect(templates[0]!.nodes[0]).toMatchObject({ tag: 'main', attributes: { id: 'app', class: 'card' } });
     expect(templates[0]!.stylesheets!.some(rule => rule.declarations.some(d => d.property === 'flex-direction' && d.value === 'row'))).toBe(true);
     await root.dispatch(0);

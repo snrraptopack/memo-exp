@@ -76,8 +76,10 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   };
   const mount = fresh('__desktopMount');
   const instrument = fresh('__desktopEvent');
+  const define = fresh('__desktopDefine');
   let eventsUsed = false;
   const templates: t.Statement[] = [];
+  const definitions: t.Statement[] = [];
 
   for (const [name, component] of ctx.compPaths) {
     const fn = component.node;
@@ -86,7 +88,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const last = statements.at(-1);
     if (!last || !b.isReturnStatement(last) || !last.argument) fail('components need a final fixed JSX return', fn);
     const root = unwrapTypeExpression(last.argument);
-    if (!b.isJSXElement(root) && !b.isJSXFragment(root)) fail('branches and dynamic component roots are not implemented yet', root);
+    if (!b.isJSXElement(root) && !b.isJSXFragment(root) && !b.isConditionalExpression(root) && !b.isLogicalExpression(root)) fail('dynamic component roots are not implemented yet', root);
     for (const statement of statements.slice(0, -1)) {
       if (b.isReturnStatement(statement)) fail('early component returns are not implemented yet', statement);
       walkAst<t.Node>(statement, { enter(node) {
@@ -98,9 +100,9 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     if (ctx.instanceDerivations.get(name)?.length) {
       fail('reactive setup derivations are not implemented yet; use the expression directly in JSX', fn);
     }
-    const { nodes, slots, events, bindings, handlers, children } = lowerDesktopScene(root, {
+    const { nodes, slots, events, bindings, handlers, children, regions, componentNames } = lowerDesktopScene(root, {
       callbacks: planComponentCallbacks(ctx, name, component),
-      sources: expressionFacts.get(name)!, instrument, fail, components: ctx.componentProps, imports: ctx.importedComponents,
+      sources: expressionFacts.get(name)!, instrument, fail, fresh, components: ctx.componentProps, imports: ctx.importedComponents,
     });
     const props = desktopProps(ctx.componentProps.get(name)!, fresh, fail);
     fn.params = props.params;
@@ -108,8 +110,12 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const template = { id: `${moduleId}#${name}`, nodes, slots, events, stylesheets };
     const templateId = fresh(`__desktopTemplate${name}`);
     templates.push(b.variableDeclaration('const', [b.variableDeclarator(templateId, valueExpression(template))]));
+    const dependencies = b.arrayExpression(componentNames.map(b.identifier));
+    definitions.push(b.expressionStatement(b.callExpression(define, [b.identifier(name), templateId, b.arrowFunctionExpression([], dependencies)])));
     const mountOptions = b.objectExpression([
       ...(children.length ? [b.objectProperty(b.identifier('children'), b.arrayExpression(children))] : []),
+      ...(regions.length ? [b.objectProperty(b.identifier('regions'), b.arrayExpression(regions))] : []),
+      ...(componentNames.length ? [b.objectProperty(b.identifier('components'), dependencies)] : []),
       ...(props.receive ? [b.objectProperty(b.identifier('receiveProps'), props.receive)] : []),
     ]);
     fn.body.body = [...props.setup, ...statements.slice(0, -1),
@@ -121,8 +127,10 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   if (!ctx.compPaths.size) fail('no desktop components were found');
   program.body.unshift(b.importDeclaration([
     b.importSpecifier(mount, b.identifier('mountScene')),
+    b.importSpecifier(define, b.identifier('defineSceneComponent')),
     ...(eventsUsed ? [b.importSpecifier(instrument, b.identifier('sceneEvent'))] : []),
   ], b.stringLiteral(options.runtimePath ?? '@memoized-dom/desktop')), ...templates);
+  program.body.push(...definitions);
   return { code: printEstree(stripTypeScript(program), { comments: parsed.comments }).code,
     components: [...ctx.compPaths.keys()] };
 }

@@ -9,6 +9,9 @@ import { desktopInlineDeclarations, type DesktopDeclaration } from './css';
 import { normalizeCssPropertyName } from '@tsrx/core';
 import type { ComponentPropsPlan } from '../components/props';
 import type { LinkedComponentImport } from '../context/model';
+import { desktopComponentCall } from './component-call';
+import { desktopRegionPlan } from './regions';
+import { nodeHasJsx } from '../context/ast';
 
 type SceneNode =
   | { kind: 'element'; tag: string; parent: number | null; text: ''; attributes: Record<string, string>; style: DesktopDeclaration[] }
@@ -22,6 +25,7 @@ export function lowerDesktopScene(root: t.Node, options: {
   instrument: t.Identifier;
   components: ReadonlyMap<string, ComponentPropsPlan>;
   imports: ReadonlyMap<string, LinkedComponentImport>;
+  fresh: (name: string) => t.Identifier;
   fail: (message: string, at: t.Node) => never;
 }) {
   const { callbacks, sources, instrument } = options;
@@ -32,10 +36,24 @@ export function lowerDesktopScene(root: t.Node, options: {
   const events: { node: number; type: 'click' | 'change' }[] = [];
   const handlers: t.Expression[] = [];
   const children: t.Expression[] = [];
+  const regions: t.Expression[] = [];
+  const componentNames = new Set<string>();
   const dependenciesFor = (expression: t.Expression): readonly string[] | null => {
     let dependencies = sources.sourcesFor(expression);
     walkAst<t.Node>(expression, { enter(node) { if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') dependencies = null; } });
     return dependencies;
+  };
+  const componentCall = (element: t.JSXElement) => desktopComponentCall(element, { ...options, sourcesFor: dependenciesFor });
+  const addRegion = (expression: t.ConditionalExpression | t.LogicalExpression, parent: number | null): void => {
+    const plan = desktopRegionPlan(expression, { call: componentCall, sourcesFor: dependenciesFor, fresh: options.fresh, fail });
+    const node = nodes.length; nodes.push({ kind: 'region', parent });
+    for (const choice of plan.choices) if (b.isIdentifier(choice)) componentNames.add(choice.name);
+    regions.push(b.objectExpression([
+      b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
+      b.objectProperty(b.identifier('sources'), valueExpression(plan.sources)),
+      b.objectProperty(b.identifier('branches'), b.arrayExpression(plan.choices)),
+      b.objectProperty(b.identifier('read'), plan.read),
+    ]));
   };
 
   const addText = (text: string, parent: number | null): number => {
@@ -57,6 +75,7 @@ export function lowerDesktopScene(root: t.Node, options: {
     ]));
   };
   const emit = (element: t.Node, parent: number | null): void => {
+    if (b.isConditionalExpression(element) || b.isLogicalExpression(element)) { addRegion(element, parent); return; }
     if (b.isJSXFragment(element)) {
       for (const child of element.children) emit(child, parent);
       return;
@@ -68,6 +87,7 @@ export function lowerDesktopScene(root: t.Node, options: {
     if (b.isJSXExpressionContainer(element)) {
       const expression = unwrapTypeExpression(element.expression);
       if (b.isJSXEmptyExpression(expression)) return;
+      if ((b.isConditionalExpression(expression) || b.isLogicalExpression(expression)) && nodeHasJsx(expression)) { addRegion(expression, parent); return; }
       addBinding(expression as t.Expression, addText('', parent), 'text');
       return;
     }
@@ -76,39 +96,14 @@ export function lowerDesktopScene(root: t.Node, options: {
     if (!b.isJSXIdentifier(opening.name)) fail('dynamic tags are not implemented yet', opening);
     const tag = opening.name.name;
     if (!/^[a-z][a-z0-9-]*$/.test(tag)) {
-      const plan = options.components.get(tag);
-      const imported = options.imports.get(tag);
-      if (!/^[A-Z]/.test(tag) || (!plan && !options.imports.has(tag))) fail(`unresolved desktop component <${tag}>`, opening);
-      if (element.children.some(child => !(b.isJSXText(child) && !child.value.trim()) && !(b.isJSXExpressionContainer(child) && b.isJSXEmptyExpression(child.expression)))) fail('component children require render-prop regions, which are not implemented yet', element);
+      const call = componentCall(element);
+      componentNames.add(call.component.name);
       const node = nodes.length; nodes.push({ kind: 'region', parent });
-      const props: t.ObjectProperty[] = [];
-      const seen = new Set<string>();
-      let dependencies: Set<string> | null = new Set();
-      for (const attribute of opening.attributes) {
-        if (!b.isJSXAttribute(attribute) || !b.isJSXIdentifier(attribute.name)) fail('component props require named attributes', attribute);
-        const name = attribute.name.name;
-        if (seen.has(name)) fail(`duplicate ${name} prop`, attribute);
-        seen.add(name);
-        const names = plan?.names ?? imported?.props;
-        const acceptsUnknown = plan?.acceptsUnknown ?? imported?.acceptsUnknownProps;
-        if (names && !acceptsUnknown && !names.includes(name)) fail(`component <${tag}> does not declare prop ${name}`, attribute);
-        let value: t.Expression = b.booleanLiteral(true);
-        if (attribute.value) {
-          value = (b.isJSXExpressionContainer(attribute.value) ? unwrapTypeExpression(attribute.value.expression) : attribute.value) as t.Expression;
-          walkAst<t.Node>(value, { enter(current) {
-            if (b.isJSXElement(current) || b.isJSXFragment(current) || b.isJSXEmptyExpression(current) || ['ObjectExpression', 'ArrayExpression', 'ArrowFunctionExpression', 'FunctionExpression'].includes(current.type)) fail('desktop child props currently require primitive expressions', current);
-          } });
-        }
-        const reads = dependenciesFor(value);
-        if (reads === null) dependencies = null;
-        else if (dependencies) for (const source of reads) dependencies.add(source);
-        props.push(b.objectProperty(b.stringLiteral(name), value, true));
-      }
       children.push(b.objectExpression([
         b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
-        b.objectProperty(b.identifier('sources'), valueExpression(dependencies === null ? null : [...dependencies].sort())),
-        b.objectProperty(b.identifier('component'), b.identifier(tag)),
-        b.objectProperty(b.identifier('read'), b.arrowFunctionExpression([], b.objectExpression(props))),
+        b.objectProperty(b.identifier('sources'), valueExpression(call.sources)),
+        b.objectProperty(b.identifier('component'), call.component),
+        b.objectProperty(b.identifier('read'), b.arrowFunctionExpression([], call.props)),
       ]));
       return;
     }
@@ -178,7 +173,7 @@ export function lowerDesktopScene(root: t.Node, options: {
   emit(root, null);
   // A component handle owns all fragment roots; regions flatten them at placement.
   if (!nodes.length) fail('empty desktop fragments are not implemented yet', root);
-  return { nodes, slots, events, bindings, handlers, children };
+  return { nodes, slots, events, bindings, handlers, children, regions, componentNames: [...componentNames] };
 }
 
 export function valueExpression(value: unknown): t.Expression {

@@ -12,6 +12,27 @@ const template: SceneTemplate = { id: 'host-counter', nodes: [
 ], slots: [{ node: 1, type: 'text' }], events: [{ node: 0, type: 'click' }] };
 
 describe('Rust retained scene bridge', () => {
+  it('preserves native branch records on rejection and replaces the whole subtree on retry', async () => {
+    const {code}=compileDesktop(`function Leaf({value}){return <p>{value}</p>;}function A(){return <section><Leaf value="A"/></section>;}function B(){return <section><Leaf value="B"/></section>;}export function App(){let shown=true;return <main><button onClick={()=>shown=!shown}>Toggle</button>{shown?<A/>:<B/>}</main>;}`,
+      {moduleId:'native-region.tsx',runtimePath:pathToFileURL(resolve(import.meta.dirname,'../src/index.ts')).href});
+    const compiled=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`) as {App():SceneInstance};
+    const host=createProcessHost({executable});let reject=true;
+    const app=createDesktopApplication({install:template=>host.install(template),async commit(transaction){
+      if(transaction.sequence===2&&reject){reject=false;const operations=transaction.operations.map(operation=>operation.kind==='mount'?{...operation,values:[{slot:999,value:'invalid'}]}:operation);return host.commit({...transaction,operations});}
+      return host.commit(transaction);
+    }});
+    try {
+      const root=app.mount(compiled.App);await root.ready;const before=await host.inspect();
+      const error=await root.dispatch(0).then(()=>undefined,error=>error as Error);
+      expect(error).toBeInstanceOf(Error);expect(await host.inspect()).toEqual(before);
+      await root.flush();const after=await host.inspect();expect(after.sequence).toBe(2);expect(after.instances).toHaveLength(3);
+      expect(after.instances[0]!.handle).toEqual(root.handle);
+      expect(after.instances.slice(1).every(instance=>before.instances.slice(1).every(old=>old.handle.id!==instance.handle.id))).toBe(true);
+      expect(after.instances[2]!.text_groups[0]!.text).toBe('B');
+      expect(after.instances[2]!.attach_to!.handle).toEqual(after.instances[1]!.handle);
+      await app.dispose();expect(await host.inspect()).toEqual({sequence:3,instances:[]});
+    } finally {await app.dispose();await host.close();}
+  });
   it('publishes compiled fragment children and grandchild props atomically and cascades retirement', async () => {
     const { code }=compileDesktop(`
       function Leaf({value}){return <><p>{value}</p><button>Last</button></>;}

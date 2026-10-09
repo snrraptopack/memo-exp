@@ -1,42 +1,16 @@
-import type { SceneAttachment, SceneHandle, SceneOperation, SceneTemplate, TextWrite } from '../bridge/protocol';
-import type { SceneChildBinding, SceneHandler, SceneInstance, SceneMountOptions, TextBinding } from './application';
-import type { PreparedPublication, createPublicationQueue } from './publication';
-
-type Props = Readonly<Record<string, unknown>>;
-interface Child { binding: SceneChildBinding; owner: Owner; props: Props }
-interface Family {
-  members: Owner[];
-  installs: Promise<void>[];
-  ready: Promise<void>;
-  root?: Owner;
-  error?: unknown;
-  failed: boolean;
-  work: Promise<void>;
-}
-interface Owner {
-  instance: SceneInstance;
-  family: Family;
-  parent?: Owner;
-  attachment?: SceneAttachment;
-  template: SceneTemplate;
-  bindings: readonly TextBinding[];
-  handlers: readonly SceneHandler[];
-  receive?: (props: Props) => void;
-  children: Child[];
-  initial: TextWrite[];
-  acknowledged: Map<number, string>;
-  pending: Set<string> | null;
-  dirty: boolean;
-  disposed: boolean;
-  mounted: boolean;
-  disposal?: Promise<void>;
-}
-interface PreparedOwner { owner: Owner; sources: Set<string> | null; writes: TextWrite[]; props: [Child, Props][] }
+import { createTreePreparer } from './tree-publication';
+import type { SceneHandle, SceneOperation, SceneTemplate } from '../bridge/protocol';
+import type { SceneHandler, SceneInstance, SceneMountOptions, TextBinding } from './application';
+import type { createPublicationQueue } from './publication';
+import type { Child, Family, Owner } from './ownership-model';
+import { propValues, textValue, type SceneProps as Props } from './values';
+import { componentTemplates, type SceneComponent } from './definitions';
+import { readRegion, stagedReadiness } from './regions';
 
 /** Independent lexical owners form a tree; one family queue protects its caches. */
-export function createOwnerForest(publication: ReturnType<typeof createPublicationQueue>, isClosed: () => boolean) {
+export function createOwnerForest(publication: ReturnType<typeof createPublicationQueue>, isClosed: () => boolean, runFactory: <T>(factory: () => T) => T) {
   let nextId = 1;
-  let placement: { family: Family; parent: Owner; node: number } | undefined;
+  let placement: { family: Family; parent: Owner; node: number; staging: boolean } | undefined;
   const owners = new Map<SceneInstance, Owner>();
   const handles = new Map<number, Owner>();
   const installations = new WeakMap<SceneTemplate, Promise<void>>();
@@ -55,56 +29,70 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     if (sources === null) owner.pending = null;
     else if (owner.pending) for (const source of sources) owner.pending.add(source);
   };
-  const descendants = (owner: Owner): Owner[] => {
-    const result: Owner[] = [];
-    const pending = [owner];
+  const retire = (members: readonly Owner[]): void => {
+    const retired = new Set(members);
+    for (const member of members) {
+      member.stagedReady?.reject(new Error('Desktop branch retired before publication'));
+      member.mounted = false; member.disposed = true;
+      owners.delete(member.instance); handles.delete(member.instance.handle.id);
+      if (member.parent) {
+        member.parent.children = member.parent.children.filter(child => child.owner !== member);
+        for (const region of member.parent.regions) {
+          if (region.child?.owner === member) region.child = undefined;
+          if (region.candidate?.child.owner === member) region.candidate = undefined;
+        }
+      }
+    }
+    const families = new Set(members.map(member => member.family));
+    for (const group of families) {
+      group.members = group.members.filter(member => !retired.has(member));
+      if (!group.members.length) group.root = undefined;
+    }
+    for (const member of members) {
+      member.children = []; member.regions = []; member.parent = undefined;
+      member.bindings = []; member.handlers = []; member.receive = undefined;
+      member.initial = []; member.acknowledged.clear(); member.pending = new Set(); member.dirty = false;
+    }
+  };
+  const owned = (owner: Owner): Owner[] => {
+    const children = new Map<Owner, Owner[]>();
+    for (const member of owner.family.members) if (member.parent) {
+      let siblings = children.get(member.parent);
+      if (!siblings) children.set(member.parent, siblings = []);
+      siblings.push(member);
+    }
+    const result: Owner[] = []; const pending = [owner];
     while (pending.length) {
-      const current = pending.pop()!;
-      result.push(current);
-      for (let i = current.children.length - 1; i >= 0; i--) pending.push(current.children[i]!.owner);
+      const member = pending.pop()!; result.push(member);
+      pending.push(...children.get(member) ?? []);
     }
     return result;
   };
-  const restore = (prepared: readonly PreparedOwner[]): void => {
-    for (const item of prepared) invalidate(item.owner, item.sources === null ? null : [...item.sources]);
-  };
-  const prepare = (family: Family): PreparedPublication => {
-    const prepared: PreparedOwner[] = [];
+  const construct = (parent: Owner, node: number, component: SceneComponent, props: Props, staging: boolean): Child => {
+    const previous = placement;
+    const before = new Set(parent.family.members);
+    placement = { family: parent.family, parent, node, staging };
     try {
-      for (const owner of descendants(family.root!)) {
-        if (owner.disposed || !owner.dirty) continue;
-        const sources = owner.pending;
-        const writes: TextWrite[] = [];
-        for (const binding of owner.bindings) {
-          if (!affected(binding.sources, sources)) continue;
-          const value = textValue(binding.read());
-          if (owner.acknowledged.get(binding.slot) !== value) writes.push({ slot: binding.slot, value });
-        }
-        const props: [Child, Props][] = [];
-        for (const child of owner.children) {
-          if (child.owner.disposed || !affected(child.binding.sources, sources)) continue;
-          const next = propValues(child.binding.read());
-          if (sameProps(child.props, next)) continue;
-          invalidate(child.owner, null);
-          child.owner.receive?.(next);
-          props.push([child, next]);
-        }
-        owner.dirty = false;
-        owner.pending = new Set();
-        prepared.push({ owner, sources, writes, props });
-      }
-    } catch (error) { restore(prepared); throw error; }
-    return {
-      operations: prepared.flatMap(item => item.writes.length ? [{ kind: 'update' as const, handle: item.owner.instance.handle, values: item.writes }] : []),
-      accept() {
-        for (const item of prepared) {
-          for (const write of item.writes) item.owner.acknowledged.set(write.slot, write.value);
-          for (const [child, props] of item.props) child.props = props;
-        }
-      },
-      reject() { restore(prepared); },
-    };
+      const instance = runFactory(() => component(props));
+      const owner = owners.get(instance);
+      const roots = parent.family.members.filter(member => !before.has(member) && member.parent === parent);
+      if (!owner || owner.parent !== parent || owner.attachment?.node !== node || roots.length !== 1 || roots[0] !== owner) throw new Error('Desktop child factory must return one compiled component owner');
+      return { node, owner, props };
+    } catch (error) {
+      if (staging) retire(parent.family.members.filter(member => !before.has(member)));
+      throw error;
+    } finally { placement = previous; }
   };
+  const acceptMount = (owner: Owner): void => {
+    owner.mounted = true;
+    for (const write of owner.initial) owner.acknowledged.set(write.slot, write.value);
+    owner.stagedReady?.resolve();
+    owner.stagedReady = undefined;
+    owner.initial = [];
+  };
+  const mountOperation = (owner: Owner): SceneOperation => ({ kind: 'mount', handle: owner.instance.handle,
+    template: owner.template.id, values: owner.initial, ...(owner.attachment ? { attach_to: owner.attachment } : {}) });
+  const prepare = createTreePreparer({ invalidate, retire, owned, construct, acceptMount, mountOperation });
   const flush = (owner: Owner): Promise<void> => {
     const family = owner.family;
     const task = family.work.then(async () => {
@@ -119,26 +107,15 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     if (owner.parent?.disposed) return dispose(owner.parent);
     if (owner.disposal) return owner.disposal;
     if (owner.disposed && !owner.mounted) return owner.family.work;
-    const members = owner === owner.family.root && owner.family.failed ? owner.family.members : descendants(owner);
+    const members = owned(owner);
     for (const member of members) member.disposed = true;
-    const retire = (): void => {
-      for (const member of members) { member.mounted = false; owners.delete(member.instance); handles.delete(member.instance.handle.id); }
-      const retired = new Set(members);
-      owner.family.members = owner.family.members.filter(member => !retired.has(member));
-      if (owner.parent) owner.parent.children = owner.parent.children.filter(child => child.owner !== owner);
-      for (const member of members) {
-        member.children = []; member.parent = undefined;
-        member.bindings = []; member.handlers = []; member.receive = undefined;
-        member.initial = []; member.acknowledged.clear(); member.pending = new Set(); member.dirty = false;
-      }
-      if (!owner.family.members.length) owner.family.root = undefined;
-    };
+    const release = (): void => retire(members);
     const task = owner.family.work.then(async () => {
-      try { await owner.family.ready; } catch { retire(); return; }
+      try { await owner.family.ready; } catch { release(); return; }
       if (owner.mounted) await publication.publish(() => ({
-        operation: { kind: 'dispose', handle: owner.instance.handle }, accept: retire, reject() {},
+        operation: { kind: 'dispose', handle: owner.instance.handle }, accept: release, reject() {},
       }));
-      else retire();
+      else release();
     });
     owner.family.work = task.catch(() => {});
     owner.disposal = task.finally(() => { owner.disposal = undefined; });
@@ -147,14 +124,13 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
   const family = (): Family => {
     const group: Family = { members: [], installs: [], ready: Promise.resolve(), work: Promise.resolve(), failed: false };
     group.ready = Promise.resolve().then(async () => {
-      await Promise.all(group.installs);
+      try { await Promise.all(group.installs); } finally { group.installs = []; }
       if (group.failed) throw group.error;
       await publication.publish(() => {
         const live = group.members.filter(owner => !owner.disposed);
-        const operations: SceneOperation[] = live.map(owner => ({ kind: 'mount', handle: owner.instance.handle,
-          template: owner.template.id, values: owner.initial, ...(owner.attachment ? { attach_to: owner.attachment } : {}) }));
+        const operations = live.map(mountOperation);
         return { operations, accept() {
-          for (const owner of live) { owner.mounted = true; for (const write of owner.initial) owner.acknowledged.set(write.slot, write.value); }
+          for (const owner of live) acceptMount(owner);
         }, reject() {} };
       });
     });
@@ -178,6 +154,8 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
         slots.add(binding.slot);
       }
       const parent = placement?.parent;
+      const staging = placement?.staging ?? false;
+      if (staging && !installations.has(template)) throw new Error('Desktop branch template was not installed before staging');
       for (let ancestor = parent; ancestor; ancestor = ancestor.parent) {
         if (ancestor.template.id === template.id) throw new Error('Recursive desktop component attachment is not implemented');
       }
@@ -186,13 +164,14 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       const attachment = placement ? { handle: placement.parent.instance.handle, node: placement.node } : undefined;
       const handle = Object.freeze({ id: nextId++, generation: 1 });
       const owner: Owner = { instance: undefined!, family: group, parent, attachment, template, bindings, handlers,
-        receive: options.receiveProps, initial, children: [], acknowledged: new Map(), pending: new Set(), dirty: false, disposed: false, mounted: false };
+        receive: options.receiveProps, initial, children: [], regions: [], acknowledged: new Map(), pending: new Set(), dirty: false, disposed: false, mounted: false,
+        stagedReady: staging ? stagedReadiness() : undefined };
       const instance: SceneInstance = {
-        handle, ready: group.ready,
+        handle, ready: owner.stagedReady?.promise ?? group.ready,
         get mounted() { return owner.mounted; },
         flush() { return flush(owner); },
         async dispatch(event, payload) {
-          await group.ready;
+          await instance.ready;
           if (owner.disposed || isClosed()) throw new Error('Desktop event targets a disposed owner');
           if (!Number.isInteger(event) || !owner.handlers[event]) throw new Error('Unknown desktop event');
           const handler = owner.handlers[event]!;
@@ -213,46 +192,31 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       };
       owner.instance = instance;
       group.members.push(owner); owners.set(instance, owner); handles.set(handle.id, owner); group.root ??= owner;
-      group.installs.push(install(template));
+      if (!staging) group.installs.push(install(template));
       const regions = new Set<number>();
       try {
+        for (const definition of componentTemplates(options.components ?? [])) {
+          if (staging && !installations.has(definition)) throw new Error('Desktop branch dependency was not installed before staging');
+          if (!staging) group.installs.push(install(definition));
+        }
         for (const binding of options.children ?? []) {
           if (template.nodes[binding.node]?.kind !== 'region' || regions.has(binding.node)) throw new Error('Invalid or duplicate desktop component region');
           regions.add(binding.node);
           const props = propValues(binding.read());
-          const previous = placement;
-          placement = { family: group, parent: owner, node: binding.node };
-          let child: SceneInstance;
-          try { child = binding.component(props); } finally { placement = previous; }
-          const record = owners.get(child!);
-          if (!record || record.parent !== owner || record.attachment?.node !== binding.node || group.members.filter(member => member.parent === owner && member.attachment?.node === binding.node).length !== 1) {
-            throw new Error('Desktop child factory must return one compiled component owner');
-          }
-          owner.children.push({ binding, owner: record, props });
+          const child = construct(owner, binding.node, binding.component, props, staging);
+          owner.children.push({ ...child, binding });
         }
-      } catch (error) { group.failed = true; group.error = error; throw error; }
+        for (const binding of options.regions ?? []) {
+          if (template.nodes[binding.node]?.kind !== 'region' || regions.has(binding.node)) throw new Error('Invalid or duplicate desktop component region');
+          regions.add(binding.node);
+          const next = readRegion(binding);
+          const child = next.component ? construct(owner, binding.node, next.component, next.props, staging) : undefined;
+          owner.regions.push({ binding, branch: next.branch, child });
+          if (child) owner.children.push(child);
+        }
+        owner.children.sort((a,b) => a.node-b.node);
+      } catch (error) { if (!staging) { group.failed = true; group.error = error; } throw error; }
       return instance;
     },
   };
-}
-
-function affected(dependencies: readonly string[] | null, sources: Set<string> | null): boolean {
-  return sources === null || dependencies === null || dependencies.some(source => sources.has(source));
-}
-function sameProps(a: Props, b: Props): boolean {
-  const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && Object.is(a[key], b[key]));
-}
-function propValues(value: Props): Props {
-  const props = Object.create(null) as Record<string, unknown>;
-  for (const [key, item] of Object.entries(value)) {
-    if (item !== null && !['undefined', 'string', 'number', 'boolean', 'bigint'].includes(typeof item)) throw new TypeError('Desktop child props currently require primitive values');
-    props[key] = item;
-  }
-  return props;
-}
-function textValue(value: unknown): string {
-  if (value == null || typeof value === 'boolean') return '';
-  if (!['string', 'number', 'bigint'].includes(typeof value)) throw new TypeError('Desktop text expressions currently require a primitive value');
-  return String(value);
 }
