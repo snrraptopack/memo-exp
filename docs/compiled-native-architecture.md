@@ -303,3 +303,25 @@ Compile fixtures for a counter, child prop update, branch replacement, keyed row
 Instrument update functions, bridge calls, touched scene records, layout visits, text shaping, and paint regeneration. The resulting traces must show that unrelated instances remain untouched where dependency proofs permit it. Measure input-to-presentation latency, frame work, idle CPU activity, and repeated mount/disposal behavior.
 
 Use GPUI/Taffy for the current layout, text and presentation path. Evaluate native geometry reuse, bridge encoding, and thread arrangement with those fixtures. Comparisons with GPUIX must match visible behavior and lifecycle guarantees. Performance claims follow those measurements; the core commitment is compiled structure, direct native slot updates, persistent host records, and coherent publication.
+
+## Stability priorities after native text input
+
+The process bridge now shares one shutdown among concurrent callers, rejects new work during shutdown, validates response envelopes, and retires a failed connection and its outstanding requests. Explicit native transaction rejection remains recoverable. Crash diagnostics retain only their final 16,384 UTF-16 code units. Fault-injection tests cover concurrent shutdown, native crashes, invalid envelopes, and recovery after rejection. Startup/request deadlines, backpressure, and ambiguous publication after connection loss remain unresolved; a lost acknowledgment must not be treated as proof that a transaction was rejected.
+
+Review findings checked against the implementation on 2026-10-09:
+
+| Finding | Current evidence | Decision |
+| --- | --- | --- |
+| Application publication sends one operation per transaction | `application.ts` wraps each operation in its own `host.commit`; the Rust transaction already accepts multiple operations | Add an application scheduler with atomic multi-owner publication after lifecycle guarantees are covered |
+| Shared state does not invalidate other owners | Event metadata currently tracks component-local lexical writes; `app.flush()` alone does not invalidate other instances | Establish source ownership and dependency subscriptions before claiming shared-state support; do not blindly flush every owner |
+| Child components cannot attach inside their parents | Component tags, props, branches, and lists receive compiler diagnostics; current instances render as independent roots | Add typed region destinations and child attachment, then props, conditional replacement, and keyed lists with explicit ownership |
+| Styles cannot reach the native renderer | Obsolete: templates carry attributes, declarations, and stylesheet rules; Rust prepares GPUI/Taffy styles | Extend validated CSS semantics and dynamic destinations without introducing a second authoring style language |
+| Editing depends on round trips for caret and IME | Obsolete for implemented text inputs: native entities retain editing state and use numbered reconciliation | Test transformed/rejected bound values, focus retirement, physical IME, clipboard, resizing, and DPI; additional controls are still pending |
+| Headless and window hosts duplicate the whole engine | Both use the same Rust scene library and `bridge.rs`; only their platform loops differ | Keep independent headless builds. Share protocol semantics and parity tests; shipping the diagnostic executable is unnecessary |
+| JSON pipes have a proven frame-rate ceiling | No matched workload or timing evidence exists yet | Instrument publication latency, payloads, allocations, layout, and shaping before changing transport |
+
+Batching must evaluate all affected destinations before publication, preserve event and structural ordering, and advance every participating value cache only after one successful acknowledgment. A rejected batch leaves all participating updates pending. Unrelated owners must retain identity and avoid unnecessary reads. Mount/disposal batching needs explicit cleanup and cancellation rules; merely collecting operations in a microtask does not establish those contracts.
+
+Nested components need more than a portal field. A parent region defines the attachment destination, child order, live ownership, and allowed content. Rust must reject cycles and retired destinations atomically. Removing a parent retires its descendants and focus/input state. Reordering keyed children preserves instance identity; replacing a branch retires the previous owner. These rules should be exercised in compiler, headless scene, and native window fixtures before expanding the tag catalogue.
+
+In-process integration remains a later experiment. GPUI constructs its app on the platform main thread; replacing pipes with a DLL also requires an event-loop, thread, callback, and memory-lifetime design. Bun currently describes `bun:ffi` and thread-safe callbacks as experimental. Its documented conversion and marshaling work does not support a claim of zero overhead. [Bun FFI documentation](https://bun.com/docs/runtime/ffi).

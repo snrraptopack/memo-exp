@@ -17,7 +17,7 @@ export function createProcessHost(options: { executable: string; args?: readonly
   const child = Bun.spawn([options.executable, ...(options.args ?? [])], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', windowsHide: !options.window });
   let nextId = 1;
   let closed = false;
-  let closing = false;
+  let closing: Promise<void> | undefined;
   let failure: Error | undefined;
   const listeners = new Set<(event: NativeSceneEvent) => void>();
   let resolveReady!: () => void;
@@ -29,11 +29,17 @@ export function createProcessHost(options: { executable: string; args?: readonly
   const windowClosed = new Promise<void>(resolve => { resolveClosed = resolve; });
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
   const fail = (error: Error): void => {
+    if (failure) return;
     failure = error;
     rejectReady(error);
     resolveClosed();
     for (const request of pending.values()) request.reject(error);
     pending.clear();
+    // A broken stream cannot safely publish again. Retire the process as well
+    // as its promises, including hosts that no longer respond to shutdown.
+    if (child.exitCode === null) {
+      try { child.kill('SIGKILL'); } catch {}
+    }
   };
   const output = (async () => {
     const decoder = new TextDecoder();
@@ -44,7 +50,7 @@ export function createProcessHost(options: { executable: string; args?: readonly
       while ((newline = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
-        const response = JSON.parse(line) as { id: number; result?: unknown; error?: string; type?: string };
+        const response = decodeResponse(line);
         if (response.type === 'ready') { resolveReady(); continue; }
         if (response.type === 'closed') { resolveClosed(); continue; }
         if (response.type === 'event') {
@@ -65,26 +71,40 @@ export function createProcessHost(options: { executable: string; args?: readonly
     }
     if (buffer.trim()) throw new Error('Incomplete desktop host response');
   })().catch(error => { fail(error instanceof Error ? error : new Error(String(error))); });
-  const stderr = new Response(child.stderr).text();
+  // Drain stderr continuously without retaining every line for the lifetime of
+  // the application. The tail preserves useful crash diagnostics.
+  let diagnostics = '';
+  const stderr = (async () => {
+    const decoder = new TextDecoder();
+    for await (const chunk of child.stderr) {
+      diagnostics = (diagnostics + decoder.decode(chunk, { stream: true })).slice(-16_384);
+    }
+    diagnostics = (diagnostics + decoder.decode()).slice(-16_384);
+  })().catch(error => { fail(error instanceof Error ? error : new Error(String(error))); });
   void child.exited.then(async code => {
     await output;
+    await stderr;
     resolveClosed();
     if ((!closed && !closing) || code !== 0 || pending.size) {
-      fail(new Error(`Desktop host exited (${code}): ${(await stderr).trim()}`));
+      fail(new Error(`Desktop host exited (${code}): ${diagnostics.trim()}`));
     }
   });
-  const request = (command: object): Promise<unknown> => {
+  const request = (command: object, shutdown = false): Promise<unknown> => {
     if (failure) return Promise.reject(failure);
     if (closed) return Promise.reject(new Error('Desktop host is closed'));
+    if (closing && !shutdown) return Promise.reject(new Error('Desktop host is closing'));
     const id = nextId++;
+    let line: string;
+    try { line = `${JSON.stringify({ id, version: 1, ...command })}\n`; }
+    catch (error) { return Promise.reject(error); }
     return new Promise((resolveRequest, reject) => {
       pending.set(id, { resolve: resolveRequest, reject });
       try {
-        child.stdin.write(`${JSON.stringify({ id, version: 1, ...command })}\n`);
-        child.stdin.flush();
+        child.stdin.write(line);
+        const flushed = child.stdin.flush();
+        if (flushed instanceof Promise) void flushed.catch(error => { fail(error instanceof Error ? error : new Error(String(error))); });
       } catch (error) {
-        pending.delete(id);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        fail(error instanceof Error ? error : new Error(String(error)));
       }
     });
   };
@@ -99,26 +119,44 @@ export function createProcessHost(options: { executable: string; args?: readonly
     async commit(transaction: SceneTransaction) { return await request({ kind: 'apply', transaction }) as SceneAcknowledgment; },
     async inspect() { return await request({ kind: 'inspect' }) as SceneSnapshot; },
     async redraw() { await request({ kind: 'redraw' }); },
-    async close() {
-      if (closed) return;
-      closing = true;
-      if (child.exitCode !== null) {
-        closed = true;
-        await output;
-        if (child.exitCode !== 0) throw failure ?? new Error(`Desktop host exited (${child.exitCode})`);
-        return;
+    close() {
+      if (!closing) {
+        closing = (async () => {
+          let shutdownError: unknown;
+          if (child.exitCode === null) {
+            try { await request({ kind: 'shutdown' }, true); }
+            catch (error) { shutdownError = error; }
+            finally { try { child.stdin.end(); } catch {} }
+          }
+          const code = await child.exited;
+          await output;
+          await stderr;
+          if (failure) throw failure;
+          if (shutdownError !== undefined) throw shutdownError;
+          if (code !== 0) throw new Error(`Desktop host exited (${code}): ${diagnostics.trim()}`);
+        })().finally(() => { closed = true; });
+        void closing.catch(() => {});
       }
-      let shutdownError: unknown;
-      try { await request({ kind: 'shutdown' }); }
-      catch (error) { shutdownError = error; }
-      finally {
-        closed = true;
-        child.stdin.end();
-      }
-      const code = await child.exited;
-      await output;
-      if (shutdownError !== undefined) throw shutdownError;
-      if (code !== 0) throw failure ?? new Error(`Desktop host exited (${code})`);
+      return closing;
     },
   };
+}
+
+type HostResponse =
+  | { type: 'ready' }
+  | { type: 'closed' }
+  | NativeSceneEvent
+  | { type?: never; id: number; result?: unknown; error?: string };
+
+/** Check framing before resolving requests; missing results are not success. */
+function decodeResponse(line: string): HostResponse {
+  const value: unknown = JSON.parse(line);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid desktop host response');
+  const response = value as Record<string, unknown>;
+  if (response.type === 'ready' || response.type === 'closed' || response.type === 'event') return value as HostResponse;
+  const result = Object.hasOwn(response, 'result');
+  const error = Object.hasOwn(response, 'error');
+  if (response.type !== undefined || !Number.isSafeInteger(response.id) || (response.id as number) <= 0 ||
+      result === error || (error && typeof response.error !== 'string')) throw new Error('Invalid desktop host response');
+  return value as HostResponse;
 }
