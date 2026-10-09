@@ -26,8 +26,14 @@ export interface DesktopInputEvent {
 }
 
 export interface DesktopHost {
+  /** Reject only for explicit refusal; ambiguous failures must use DesktopConnectionError. */
   install(template: SceneTemplate): Promise<void>;
   commit(transaction: SceneTransaction): Promise<SceneAcknowledgment>;
+}
+
+/** Acceptance is unknown: publication must stop instead of reusing its sequence. */
+export class DesktopConnectionError extends Error {
+  readonly acceptance = 'unknown';
 }
 
 export interface SceneSnapshot {

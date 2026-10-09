@@ -1,4 +1,6 @@
 import type { DesktopHost, NativeSceneEvent, SceneAcknowledgment, SceneSnapshot, SceneTemplate, SceneTransaction } from './protocol';
+import { createRequestQueue, requestLimits, type RequestLimits } from './request-queue';
+import { DesktopConnectionError } from './protocol';
 
 export interface DesktopProcessHost extends DesktopHost {
   readonly ready: Promise<void>;
@@ -12,7 +14,7 @@ export interface DesktopProcessHost extends DesktopHost {
   close(): Promise<void>;
 }
 
-export interface DesktopProcessOptions {
+export interface DesktopProcessOptions extends Partial<RequestLimits> {
   executable: string;
   args?: readonly string[];
   window?: boolean;
@@ -29,6 +31,7 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
   const startupTimeout = timeoutValue(options.startupTimeoutMs, 30_000);
   const requestTimeout = timeoutValue(options.requestTimeoutMs, 30_000);
   const shutdownTimeout = timeoutValue(options.shutdownTimeoutMs, 5_000);
+  const limits = requestLimits(options);
   const child = Bun.spawn([options.executable, ...(options.args ?? [])], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', windowsHide: !options.window });
   let nextId = 1;
   let closed = false;
@@ -44,15 +47,17 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
   if (!options.window) resolveReady();
   let resolveClosed!: () => void;
   const windowClosed = new Promise<void>(resolve => { resolveClosed = resolve; });
-  const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
+  const pending = createRequestQueue(limits, async line => {
+    child.stdin.write(line);
+    await child.stdin.flush();
+  }, error => fail(error));
   const fail = (error: Error): void => {
     if (failure) return;
-    failure = error;
+    failure = new DesktopConnectionError(error.message, { cause: error });
     clearTimeout(startupDeadline);
-    rejectReady(error);
+    rejectReady(failure);
     resolveClosed();
-    for (const request of pending.values()) request.reject(error);
-    pending.clear();
+    pending.fail(failure);
     // A broken stream cannot safely publish again. Retire the process as well
     // as its promises, including hosts that no longer respond to shutdown.
     if (child.exitCode === null) {
@@ -83,11 +88,7 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
           for (const listener of listeners) listener(event);
           continue;
         }
-        const request = pending.get(response.id);
-        if (!request) throw new Error('Unknown desktop host response');
-        pending.delete(response.id);
-        if (response.error !== undefined) request.reject(new Error(response.error));
-        else request.resolve(response.result);
+        pending.settle(response.id, response.result, response.error);
       }
     }
     if (buffer.trim()) throw new Error('Incomplete desktop host response');
@@ -120,22 +121,7 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     let line: string;
     try { line = `${JSON.stringify({ id, version: 1, ...command })}\n`; }
     catch (error) { return Promise.reject(error); }
-    return new Promise((resolveRequest, reject) => {
-      const deadline = requestTimeout ? setTimeout(() => {
-        fail(new Error(`Desktop host timed out during ${(command as { kind: string }).kind}`));
-      }, requestTimeout) : undefined;
-      pending.set(id, {
-        resolve(value) { clearTimeout(deadline); resolveRequest(value); },
-        reject(error) { clearTimeout(deadline); reject(error); },
-      });
-      try {
-        child.stdin.write(line);
-        const flushed = child.stdin.flush();
-        if (flushed instanceof Promise) void flushed.catch(error => { fail(error instanceof Error ? error : new Error(String(error))); });
-      } catch (error) {
-        fail(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
+    return pending.enqueue(id, line, (command as { kind: string }).kind, requestTimeout);
   };
   return {
     ready, windowClosed,

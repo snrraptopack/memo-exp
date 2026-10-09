@@ -20,6 +20,9 @@ export function createPublicationQueue(host: DesktopHost) {
   let pending: Request[] = [];
   let scheduled = false;
   let failure: Error | undefined;
+  const noteFailure = (error: unknown): void => {
+    if (error instanceof Error && 'acceptance' in error && error.acceptance === 'unknown') failure = error;
+  };
 
   const serialize = (task: () => Promise<void>): Promise<void> => {
     const result = tail.then(task);
@@ -52,6 +55,7 @@ export function createPublicationQueue(host: DesktopHost) {
         for (const item of prepared) item.accept();
         for (const request of batch) request.resolve();
       } catch (error) {
+        noteFailure(error);
         for (const item of prepared) item.reject();
         for (const request of batch) request.reject(error);
       }
@@ -64,7 +68,7 @@ export function createPublicationQueue(host: DesktopHost) {
       seal();
       return serialize(async () => {
         if (failure) throw failure;
-        await host.install(template);
+        try { await host.install(template); } catch (error) { noteFailure(error); throw error; }
       });
     },
     publish(prepare: Request['prepare']): Promise<void> {
