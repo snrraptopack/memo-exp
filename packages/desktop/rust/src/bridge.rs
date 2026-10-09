@@ -1,5 +1,5 @@
 //! Shared process protocol for headless and window hosts.
-use crate::{Scene, Template, Transaction};
+use crate::{Handle, Scene, Template, Transaction};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -13,10 +13,19 @@ struct Request {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Command {
-    Install { template: Template },
-    Apply { transaction: Transaction },
+    Install {
+        template: Template,
+    },
+    Apply {
+        transaction: Transaction,
+    },
     Inspect,
     Redraw,
+    Acknowledge {
+        handle: Handle,
+        site: usize,
+        edit: u64,
+    },
     Shutdown,
 }
 
@@ -25,6 +34,7 @@ pub struct Outcome {
     pub changed: bool,
     pub inspect: bool,
     pub shutdown: bool,
+    pub input_ack: Option<(Handle, usize, u64)>,
 }
 
 pub fn process_line(scene: &mut Scene, line: &str) -> Outcome {
@@ -39,6 +49,7 @@ pub fn process_line_with_prepare(
     let mut changed = false;
     let mut inspect = false;
     let mut shutdown = false;
+    let mut input_ack = None;
     let response = match serde_json::from_str::<Request>(line) {
         Ok(request) => {
             let result = if request.version != 1 {
@@ -59,6 +70,18 @@ pub fn process_line_with_prepare(
                     Command::Redraw => {
                         changed = true;
                         Ok(Value::Null)
+                    }
+                    Command::Acknowledge { handle, site, edit } => {
+                        if edit == 0
+                            || edit > 9_007_199_254_740_991
+                            || !scene.has_change_event(handle, site)
+                        {
+                            Err("Invalid native input acknowledgment".into())
+                        } else {
+                            input_ack = Some((handle, site, edit));
+                            changed = true;
+                            Ok(Value::Null)
+                        }
                     }
                     Command::Shutdown => {
                         shutdown = true;
@@ -83,6 +106,7 @@ pub fn process_line_with_prepare(
         changed,
         inspect,
         shutdown,
+        input_ack,
     }
 }
 

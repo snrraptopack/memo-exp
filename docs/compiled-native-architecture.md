@@ -1,6 +1,6 @@
 # Compiled native desktop architecture
 
-Date: 2026-10-08. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, GPUI window adapter, static CSS, native button events, and persistent paragraph shaping are implemented. Structural publication, editable controls, and native incremental geometry remain future work.
+Date: 2026-10-09. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Structural publication, additional controls, and native incremental geometry remain future work.
 
 ## The technique we aim to use
 
@@ -92,6 +92,7 @@ packages/desktop/
     rust/gpui/src/styles.rs   CSS values to GPUI style refinements
     rust/gpui/src/renderer.rs GPUI element phases, focus, input, bounds
     rust/gpui/src/text.rs     persistent GPUI paragraph shaping cache
+    rust/gpui/src/input/      retained editing state and platform input handler
 ```
 
 Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` entry. The compiler root continues to expose DOM compilation. Both backends use the existing core modules; desktop compilation does not invoke the DOM emitter. A separately exported shared pipeline can follow once desktop fixtures establish its required inputs and outputs.
@@ -110,6 +111,7 @@ Reuse the same semantic analysis and ownership contracts across targets. Separat
 | `p` | Paragraph | Text and inline spans | One paragraph item and combined text group |
 | `span` | Inline range | Text and nested spans | Remains within its containing text group; no independent flex box |
 | `button` | Button control | Text and inline spans | Control item, combined label group, permitted click site |
+| `input` (text type) | Editable single-line control | Empty | Retained editor entity, value slot, native change event |
 | Semantic blocks (`main`, `section`, `article`, etc.) | Explicit block flow contracts | Supported flow content | Ordered native containers |
 | `h1`–`h6`, `pre`, `dt` | Text blocks | Supported phrasing content | Paragraph groups with native default styles |
 | `strong`, `em`, `code`, `mark`, etc. | Styled inline ranges | Supported phrasing content | UTF-8 text runs within one paragraph |
@@ -118,7 +120,7 @@ Reuse the same semantic analysis and ownership contracts across targets. Separat
 | `container` | Prototype alias for `div` | Same as `div` | Same as `div` |
 | `text` | Prototype alias for `span` | Same as `span` | Same inline behavior |
 
-The registry defines supported tags, CSS defaults, and recognized HTML names with pending native behavior. Links, images, forms, editable inputs, tables, media, and other unfinished controls fail explicitly. Adding their names to the pending catalogue does not enable them. The implemented content model is a desktop subset: buttons are separate controls, paragraphs contain phrasing content, and `li` requires a list parent. Buttons use GPUI focus, click activation, and accessibility roles; headings and paragraph labels use GPUI accessibility nodes. Full HTML semantics, landmark roles, selection, and editing are not implemented.
+The registry defines supported tags, CSS defaults, and recognized HTML names with pending native behavior. Links, images, forms, non-text input types, tables, media, and other unfinished controls fail explicitly. Adding their names to the pending catalogue does not enable them. The implemented content model is a desktop subset: buttons and inputs are separate controls, paragraphs contain phrasing content, and `li` requires a list parent. Controls use GPUI focus and accessibility roles; headings and paragraph labels use GPUI accessibility nodes. Full HTML semantics, landmark roles, paragraph selection, and rich editing remain unimplemented.
 
 Adjacent text expressions and spans inside a paragraph form one text group. Rust retains their source records, text-slot addresses, and UTF-8 run boundaries. A text change rebuilds the affected group once per accepted transaction; its revision advances when content or run boundaries change. Other groups retain their revisions and identities. In a block container, consecutive phrasing children form an anonymous paragraph before the next block or control. A root span receives its own paragraph presentation item. These rules preserve authored order without treating every string as a separate layout child.
 
@@ -147,6 +149,10 @@ GPUI text provides `Text` for uniform content and `StyledText::with_runs` for st
 GPUI's `canvas` supplies prepaint and paint callbacks for short custom drawing, but does not implement our scene's control, text, layout, or ownership contracts. Custom `Element` implementations coordinate our scene and cached paragraphs. The GPUI crate remains separate from tag translation and transaction staging, so headless fixtures validate native semantics without requiring a window. [Pinned canvas implementation](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/src/elements/canvas.rs).
 
 Application developers author supported JSX, ordinary CSS imports, and local JavaScript callbacks, then call the normal `mount('root', App)` from `@memoized-dom/runtime`. The desktop build redirects that import to the target runtime; `runDesktopEntry` owns entry evaluation and root publication. Developers do not construct GPUI elements or maintain renderer caches. The window runner routes native events to live instance generations, waits for window closure, and disposes the application and host. Tests can still dispatch the same event sites directly.
+
+Text input uses GPUI's `EntityInputHandler` and `ElementInputHandler`, following the pinned platform integration rather than a webview. The retained editor owns selection, grapheme movement/deletion, horizontal scrolling, clipboard actions, IME marked text, and shaped-line reuse. Platform ranges are UTF-16; scene text and glyph run ranges remain UTF-8. Composition selection is relative to the inserted composition string. [Pinned GPUI text-input example](https://github.com/zed-industries/zed/blob/9ab0715969e9854f2efe61a9d782e7698e5fe6d2/crates/gpui/examples/input.rs).
+
+Authored `<input type="text" value={value} onChange={...} />` emits a typed value destination and change event. `onInput` is an alias; one change handler is permitted. The exported `DesktopInputEvent` describes the serializable `target.value` and `currentTarget.value` payload. Changes are emitted for committed native edits, while IME preedit remains native. An edit carries a monotonically increasing number; after callback evaluation and scene publication, the runner acknowledges it. Older acknowledgments cannot reset newer edits. The latest acknowledgment reconciles a bound value with accepted authored state, including callback transformations or rejected publication. Unbound inputs retain their native value. Retiring an owner also retires its editor and focus identity.
 
 ## Styling through GPUI and Taffy
 
@@ -271,11 +277,11 @@ Define supported primitive and style semantics explicitly. Desktop refs and inpu
 
 ## First implementation and validation
 
-The implementation compiles fixed authored-tag scenes, static CSS, primitive text expressions, and synchronous component-local click handlers. Rust translates the explicit flow/text tag registry above. The compiler reuses core parsing, CSS processing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, dynamic styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
+The implementation compiles fixed authored-tag scenes, static CSS, primitive text/value expressions, and synchronous component-local control handlers. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, lexical state discovery, callback write analysis, and expression-source planning. Unsupported structural expressions, props, dynamic styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
-The example lives in `packages/desktop/examples/counter/main.ts`, `App.tsx`, and `app.css`. Both the window and headless runners build this same normal mount entry. The window demonstrates native counter buttons, headings, paragraphs, styled inline runs, Unicode text, line breaks, flex spacing, constrained width, and equal grid columns. The smoke test observes actual Taffy bounds, dispatches a counter update, and checks that an unchanged redraw adds no shaping work. Native pointer/keyboard behavior still needs interactive testing; the smoke test's event dispatch does not simulate a physical click. Branch/list publication and editable controls remain future work.
+The example lives in `packages/desktop/examples/counter/main.ts`, `App.tsx`, and `app.css`. Both the window and headless runners build this same normal mount entry. The window demonstrates native counter buttons, an editable text input with echoed state, headings, paragraphs, styled inline runs, Unicode text, line breaks, flex spacing, constrained width, and equal grid columns. The smoke test observes actual Taffy bounds, dispatches a counter update, and checks that unchanged redraws add no shaping work. Its debug-only input commands invoke the same native handler used by platform input, exercising rapid Unicode edits, backspace, selection, IME preedit/commit, and callback publication. Physical pointer/keyboard and installed IME behavior still need interactive platform testing. Branch/list publication and additional control types remain future work.
 
 Run the current prototype from the repository root:
 

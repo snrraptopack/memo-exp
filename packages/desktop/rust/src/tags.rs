@@ -11,6 +11,7 @@ pub enum Layout {
     Paragraph,
     Inline,
     Control,
+    Input,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,6 +124,7 @@ pub static TAGS: &[Tag] = &[
     tag!("dl", Block, Flow, None),
     tag!("dt", Paragraph, Phrasing, Some(Role::Paragraph)),
     tag!("dd", Block, Flow, None),
+    tag!("input", Input, Empty, None),
 ];
 
 /// Recognized HTML names whose native behaviors need their own implementations.
@@ -156,7 +158,6 @@ pub const PENDING: &[&str] = &[
     "object",
     "param",
     "form",
-    "input",
     "textarea",
     "select",
     "option",
@@ -234,6 +235,15 @@ pub fn defaults(name: &str) -> &'static [(&'static str, &'static str)] {
             ("background-color", "#cbd5e1"),
             ("margin-top", "8px"),
             ("margin-bottom", "8px"),
+        ],
+        "input" => &[
+            ("padding", "8px"),
+            ("width", "240px"),
+            ("min-width", "0"),
+            ("border", "1px solid #94a3b8"),
+            ("border-radius", "4px"),
+            ("background-color", "white"),
+            ("cursor", "text"),
         ],
         "button" => &[
             ("padding", "8px 12px"),

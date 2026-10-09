@@ -17,6 +17,7 @@ pub enum ItemKind {
     Container,
     Paragraph,
     Button,
+    Input,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct FlowItem {
@@ -96,6 +97,12 @@ impl PresentationPlan {
                         }
                         jobs.extend(sequence.into_iter().rev());
                     }
+                    Some(Layout::Input) => plan.items.push(FlowItem {
+                        kind: ItemKind::Input,
+                        source: node,
+                        parent,
+                        group: None,
+                    }),
                     Some(Layout::Control) => jobs.push(Job::Text(
                         children[node].clone(),
                         node,

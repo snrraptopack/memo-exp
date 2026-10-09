@@ -1,5 +1,6 @@
 //! GPUI adapter for prepared native flow; GPUI owns styling and Taffy layout.
 use crate::{
+    input::{InputOptions, TextInput},
     styles::{self, NativeStyles, StyleCache},
     text::{Paragraph, TextCache},
 };
@@ -40,11 +41,12 @@ pub struct LayoutBox {
     height: f32,
 }
 type Identity = (u64, u64, usize);
-pub type ClickSink = Rc<dyn Fn(Handle, usize, &mut App)>;
+pub type EventSink = Rc<dyn Fn(Handle, usize, Option<serde_json::Value>, Option<u64>, &mut App)>;
 #[derive(Default)]
 pub struct Renderer {
     text: BTreeMap<Identity, Rc<RefCell<TextCache>>>,
     controls: BTreeMap<Identity, FocusHandle>,
+    inputs: BTreeMap<Identity, Entity<TextInput>>,
     styles: StyleCache,
     pub stats: Rc<RefCell<Stats>>,
 }
@@ -54,17 +56,35 @@ struct FrameInstance {
     values: Vec<TextValue>,
     cache: Vec<Rc<RefCell<TextCache>>>,
     focus: BTreeMap<usize, FocusHandle>,
+    inputs: BTreeMap<usize, Entity<TextInput>>,
     styles: Arc<NativeStyles>,
 }
 pub struct SceneElement {
     sequence: u64,
     instances: Vec<FrameInstance>,
     roots: Vec<AnyElement>,
-    click: ClickSink,
+    click: EventSink,
     stats: Rc<RefCell<Stats>>,
 }
 
 impl Renderer {
+    #[cfg(debug_assertions)]
+    pub fn test_input(
+        &mut self,
+        scene: &Scene,
+        request: &crate::input::testing::Request,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), String> {
+        if !scene.instances().any(|instance| instance.handle == request.handle && matches!(instance.template.source.nodes.get(request.node), Some(Node::Element { tag, .. }) if tag == "input")) {
+            return Err("Native input test targets a retired or invalid control".into());
+        }
+        let input = self
+            .inputs
+            .get(&(request.handle.id, request.handle.generation, request.node))
+            .ok_or("Native input is not mounted")?;
+        input.update(cx, |input, cx| request.apply(input, window, cx))
+    }
     /// Validate and prepare actual GPUI styles before the host accepts installation.
     pub fn prepare(&mut self, template: &PreparedTemplate) -> Result<(), String> {
         let styles = styles::prepare(template)?;
@@ -72,9 +92,37 @@ impl Renderer {
             .insert(template.source.id.clone(), Arc::new(styles));
         Ok(())
     }
-    pub fn element(&mut self, scene: &Scene, click: ClickSink, cx: &mut App) -> SceneElement {
+    pub fn acknowledge(
+        &mut self,
+        scene: &Scene,
+        handle: Handle,
+        site: usize,
+        edit: u64,
+        cx: &mut App,
+    ) -> Result<(), String> {
+        let instance = scene
+            .instances()
+            .find(|instance| instance.handle == handle)
+            .ok_or("Retired native input owner")?;
+        let source = instance
+            .template
+            .source
+            .events
+            .get(site)
+            .ok_or("Unknown input event")?
+            .node;
+        let input = self
+            .inputs
+            .get(&(handle.id, handle.generation, source))
+            .ok_or("Native input is not mounted")?;
+        input.update(cx, |input, cx| {
+            input.acknowledge(edit, &instance.texts[source], cx)
+        })
+    }
+    pub fn element(&mut self, scene: &Scene, click: EventSink, cx: &mut App) -> SceneElement {
         let mut live_text = BTreeSet::new();
         let mut live_controls = BTreeSet::new();
+        let mut live_inputs = BTreeSet::new();
         let mut tab_index = 0;
         let instances = scene
             .instances()
@@ -91,8 +139,9 @@ impl Renderer {
                     })
                     .collect();
                 let mut focus = BTreeMap::new();
+                let mut inputs = BTreeMap::new();
                 for item in &instance.template.presentation.items {
-                    if matches!(item.kind, ItemKind::Button) {
+                    if matches!(item.kind, ItemKind::Button | ItemKind::Input) {
                         let key = (handle.id, handle.generation, item.source);
                         tab_index += 1;
                         live_controls.insert(key);
@@ -102,6 +151,21 @@ impl Renderer {
                             .or_insert_with(|| cx.focus_handle());
                         *tracked = tracked.clone().tab_index(tab_index).tab_stop(true);
                         focus.insert(item.source, tracked.clone());
+                        if matches!(item.kind, ItemKind::Input) {
+                            live_inputs.insert(key);
+                            let Node::Element { attributes, .. } = &instance.template.source.nodes[item.source] else { unreachable!() };
+                            let site = instance.template.source.events.iter().position(|event| event.node == item.source && matches!(event.r#type, memoized_dom_desktop_host::template::EventKind::Change));
+                            let sink = click.clone();
+                            let on_change: crate::input::ChangeSink = Rc::new(move |value, edit, cx| {
+                                if let Some(site) = site { sink(handle, site, Some(serde_json::json!({"target":{"value":value}, "currentTarget":{"value":value}})), Some(edit), cx); }
+                            });
+                            let controlled = instance.template.source.slots.iter().any(|slot| slot.node == item.source && matches!(slot.r#type, memoized_dom_desktop_host::template::SlotKind::Value));
+                            let input = self.inputs.entry(key).or_insert_with(|| cx.new(|_| TextInput::new(
+                                tracked.clone(), &instance.texts[item.source], InputOptions { placeholder: attributes.get("placeholder").cloned().unwrap_or_default(), label: attributes.get("aria-label").cloned().unwrap_or_default(), controlled, expect_ack: site.is_some() }, on_change, self.stats.clone(),
+                            )));
+                            input.update(cx, |input, cx| { input.set_focus(tracked.clone()); input.sync(&instance.texts[item.source], cx); });
+                            inputs.insert(item.source, input.clone());
+                        }
                     }
                 }
                 FrameInstance {
@@ -110,12 +174,14 @@ impl Renderer {
                     values: instance.text_groups.clone(),
                     cache,
                     focus,
+                    inputs,
                     styles: self.styles[&instance.template.source.id].clone(),
                 }
             })
             .collect();
         self.text.retain(|key, _| live_text.contains(key));
         self.controls.retain(|key, _| live_controls.contains(key));
+        self.inputs.retain(|key, _| live_inputs.contains(key));
         SceneElement {
             sequence: scene.sequence(),
             instances,
@@ -239,7 +305,7 @@ impl Element for SceneElement {
                             .focus(|style| style)
                             .on_click(move |_, _, cx| {
                                 if let Some(site) = site {
-                                    sink(handle, site, cx);
+                                    sink(handle, site, None, None, cx);
                                 }
                             });
                     } else if let Node::Element { tag, .. } =
@@ -248,6 +314,12 @@ impl Element for SceneElement {
                     {
                         element = element.role(Role::Heading);
                     }
+                }
+                if matches!(item.kind, ItemKind::Input) {
+                    element = element
+                        .track_focus(&instance.focus[&item.source])
+                        .focus(|style| style)
+                        .child(instance.inputs[&item.source].clone());
                 }
                 for &child in &plan.children[index] {
                     element = element.child(elements[child].take().unwrap());

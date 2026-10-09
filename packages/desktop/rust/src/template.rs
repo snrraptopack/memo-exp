@@ -40,6 +40,9 @@ impl Node {
     }
     pub fn text(&self) -> &str {
         match self {
+            Self::Element {
+                tag, attributes, ..
+            } if tag == "input" => attributes.get("value").map_or("", String::as_str),
             Self::Element { tag, .. } if tag == "br" => "\n",
             Self::Element { text, .. } | Self::Text { text, .. } => text,
         }
@@ -56,6 +59,7 @@ pub struct TextSlot {
 #[serde(rename_all = "lowercase")]
 pub enum SlotKind {
     Text,
+    Value,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -67,6 +71,7 @@ pub struct Event {
 #[serde(rename_all = "lowercase")]
 pub enum EventKind {
     Click,
+    Change,
 }
 
 pub struct PreparedTemplate {
@@ -87,7 +92,18 @@ impl Template {
         let mut roots = 0;
         for (index, node) in self.nodes.iter().enumerate() {
             let tag = match node {
-                Node::Element { tag, text, .. } => {
+                Node::Element {
+                    tag,
+                    text,
+                    attributes,
+                    ..
+                } => {
+                    if tag == "input" && attributes.get("type").is_some_and(|value| value != "text")
+                    {
+                        return Err(invalid(format!(
+                            "node {index}: only input type=text is implemented"
+                        )));
+                    }
                     if !text.is_empty() {
                         return Err(invalid(format!(
                             "Element node {index} must store content in text children"
@@ -136,21 +152,30 @@ impl Template {
         }
         let mut slots = BTreeSet::new();
         for slot in &self.slots {
-            if !matches!(self.nodes.get(slot.node), Some(Node::Text { .. }))
-                || !slots.insert(slot.node)
-            {
+            let valid = match slot.r#type {
+                SlotKind::Text => matches!(self.nodes.get(slot.node), Some(Node::Text { .. })),
+                SlotKind::Value => {
+                    matches!(self.nodes.get(slot.node), Some(Node::Element { tag, .. }) if tag == "input")
+                }
+            };
+            if !valid || !slots.insert(slot.node) {
                 return Err(invalid("Invalid or duplicate text slot".into()));
             }
         }
         let mut events = BTreeSet::new();
         for event in &self.events {
-            if !resolved
-                .get(event.node)
-                .is_some_and(|tag| tag.is_some_and(|tag| tag.click))
-                || !events.insert(event.node)
-            {
+            let valid = resolved.get(event.node).is_some_and(|tag| {
+                tag.is_some_and(|tag| match event.r#type {
+                    EventKind::Click => tag.click,
+                    EventKind::Change => tag.layout == tags::Layout::Input,
+                })
+            });
+            if !valid || !events.insert(event.node) {
                 return Err(invalid(
-                    "Invalid or duplicate click event; onClick requires a supported control".into(),
+                    match event.r#type {
+                        EventKind::Click => "Invalid or duplicate control event; onClick requires a supported control",
+                        EventKind::Change => "Invalid or duplicate control event; onChange requires an input control",
+                    }.into(),
                 ));
             }
         }

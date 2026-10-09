@@ -16,6 +16,12 @@ export interface NativeSceneEvent {
   readonly handle: SceneHandle;
   readonly site: number;
   readonly payload?: unknown;
+  readonly edit?: number;
+}
+/** Serializable value event delivered by native text controls. */
+export interface DesktopInputEvent {
+  readonly target: { readonly value: string };
+  readonly currentTarget: { readonly value: string };
 }
 
 export interface DesktopHost {

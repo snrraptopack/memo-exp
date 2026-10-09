@@ -88,6 +88,17 @@ impl Scene {
             instance.handle == handle && site < instance.template.source.events.len()
         })
     }
+    pub fn has_change_event(&self, handle: Handle, site: usize) -> bool {
+        self.instances.get(&handle.id).is_some_and(|instance| {
+            instance.handle == handle
+                && instance
+                    .template
+                    .source
+                    .events
+                    .get(site)
+                    .is_some_and(|event| matches!(event.r#type, template::EventKind::Change))
+        })
+    }
 
     pub fn install(&mut self, template: Template) -> Result<(), String> {
         self.install_with(template, |_| Ok(()))

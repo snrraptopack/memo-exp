@@ -7,8 +7,8 @@ export type SceneNode =
 export interface SceneTemplate {
   readonly id: string;
   readonly nodes: readonly SceneNode[];
-  readonly slots: readonly { readonly node: number; readonly type: 'text' }[];
-  readonly events: readonly { readonly node: number; readonly type: 'click' }[];
+  readonly slots: readonly { readonly node: number; readonly type: 'text' | 'value' }[];
+  readonly events: readonly { readonly node: number; readonly type: 'click' | 'change' }[];
   readonly stylesheets?: readonly CssRule[];
 }
 
@@ -18,7 +18,7 @@ export interface CssRule { readonly selectors: readonly (readonly CssSelector[])
 
 /** Renderer preparation, before geometry or GPU presentation exists. */
 export interface FlowItem {
-  readonly kind: 'container' | 'paragraph' | 'button';
+  readonly kind: 'container' | 'paragraph' | 'button' | 'input';
   readonly source: number;
   readonly parent: number | null;
   readonly group: number | null;

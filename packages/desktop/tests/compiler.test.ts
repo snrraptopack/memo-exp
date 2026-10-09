@@ -27,6 +27,16 @@ function recordingHost() {
 }
 
 describe('desktop compilation and publication', () => {
+  it('publishes native input values and dependent text from the authored change callback', async () => {
+    const { Counter } = await load(`export function Counter(){ let value = ''; return <div><input type="text" value={value} onChange={e => value = e.target.value}/><p>{value}</p></div>; }`);
+    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(Counter); await root.ready;
+    const template = recording.templates[0]!;
+    expect(template.slots.map(slot => slot.type)).toEqual(['value', 'text']);
+    expect(template.events).toEqual([{ node: 1, type: 'change' }]);
+    await root.dispatch(0, { target: { value: '静🙂café' }, currentTarget: { value: '静🙂café' } });
+    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({ kind: 'update', values: [{ slot: 0, value: '静🙂café' }, { slot: 1, value: '静🙂café' }] });
+    await app.dispose();
+  });
   it('keeps ordinary CSS imports and static style objects in native template definitions', async () => {
     const source = `import './app.css'; export function Counter(){ return <p id="title" className="label" aria-label="A title" style={{paddingTop: 12, lineHeight: 1.5, color: 'red'}}>Hi</p>; }`;
     const output = compileDesktop(source, { moduleId: 'styles.tsx', runtimePath, readStylesheet: () => '.label { color: blue; }' });

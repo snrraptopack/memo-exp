@@ -1,8 +1,10 @@
 import type {} from '@memoized-dom/compiler/jsx';
+import type { DesktopInputEvent } from '@memoized-dom/desktop';
 import './app.css';
 
 export function App() {
   let count = 0;
+  let input = "";
   return <main id="app" class="card">
     <header><h1>Memoized DOM desktop</h1><p class="intro">Real TSX, normal mount, native rendering.</p></header>
     <section class="counter">
@@ -11,6 +13,9 @@ export function App() {
         <button onClick={() => count++}>Increment</button>
         <button onClick={() => count--}>Decrement</button>
       </div>
+
+      <input type="text" value={input} onChange={(e: DesktopInputEvent) => input = e.target.value} />
+      <p id="input-echo">Typed: {input}</p>
     </section>
     <section class="samples">
       <h2>Native tag and CSS playground</h2>

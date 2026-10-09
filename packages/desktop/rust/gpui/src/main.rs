@@ -1,3 +1,4 @@
+mod input;
 mod output;
 mod renderer;
 mod styles;
@@ -9,7 +10,7 @@ use gpui::{
 };
 use memoized_dom_desktop_host::{Scene, bridge::process_line_with_prepare};
 use output::Output;
-use renderer::{ClickSink, Renderer};
+use renderer::{EventSink, Renderer};
 actions!(desktop, [FocusNext, FocusPrevious]);
 use serde_json::json;
 use std::{
@@ -34,16 +35,24 @@ impl DesktopView {
 impl Render for DesktopView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let weak = cx.weak_entity();
-        let sink: ClickSink = Rc::new(move |handle, site, cx| {
-            let _ = weak.update(cx, |view, cx| {
-                if view.scene.has_event(handle, site)
-                    && let Err(error) = view
-                        .output
-                        .send(&json!({"type":"event", "handle":handle, "site":site}))
-                {
-                    eprintln!("Desktop event bridge failed: {error}");
-                    cx.quit();
-                }
+        let sink: EventSink = Rc::new(move |handle, site, payload, edit, cx| {
+            let weak = weak.clone();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |view, cx| {
+                    if view.scene.has_event(handle, site) {
+                        let mut event = json!({"type":"event", "handle":handle, "site":site});
+                        if let Some(payload) = payload {
+                            event["payload"] = payload;
+                        }
+                        if let Some(edit) = edit {
+                            event["edit"] = json!(edit);
+                        }
+                        if let Err(error) = view.output.send(&event) {
+                            eprintln!("Desktop event bridge failed: {error}");
+                            cx.quit();
+                        }
+                    }
+                });
             });
         });
         div()
@@ -66,6 +75,8 @@ impl Render for DesktopView {
 }
 
 fn main() {
+    #[cfg(debug_assertions)]
+    let smoke = std::env::args().any(|arg| arg == "--smoke");
     let (sender, receiver) = async_channel::bounded::<String>(256);
     std::thread::spawn(move || {
         for line in io::stdin().lock().lines() {
@@ -80,6 +91,7 @@ fn main() {
         }
     });
     gpui_platform::application().run(move |cx: &mut App| {
+        input::bind_keys(cx);
         cx.bind_keys([
             KeyBinding::new("tab", FocusNext, Some("desktop")),
             KeyBinding::new("shift-tab", FocusPrevious, Some("desktop")),
@@ -93,7 +105,7 @@ fn main() {
         });
         let root = view.clone();
         let bounds = Bounds::centered(None, size(px(800.), px(760.)), cx);
-        if let Err(error) = cx.open_window(
+        let _window = match cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
@@ -109,10 +121,13 @@ fn main() {
                 root
             },
         ) {
-            eprintln!("Unable to open desktop window: {error}");
-            cx.quit();
-            return;
-        }
+            Ok(window) => window,
+            Err(error) => {
+                eprintln!("Unable to open desktop window: {error}");
+                cx.quit();
+                return;
+            }
+        };
         let closed_output = output.clone();
         cx.on_window_closed(move |cx, _| {
             if let Err(error) = closed_output.send(&json!({"type":"closed"})) {
@@ -127,14 +142,48 @@ fn main() {
             return;
         }
         cx.activate(true);
+        #[cfg(debug_assertions)]
+        let test_output = output.clone();
         cx.spawn(async move |cx| {
             while let Ok(line) = receiver.recv().await {
+                #[cfg(debug_assertions)]
+                if smoke && let Some(request) = input::testing::decode(&line) {
+                    cx.update(|cx| {
+                        let response = match request {
+                            Err(error) => error,
+                            Ok(request) => {
+                                let result = _window
+                                    .update(cx, |view, window, cx| {
+                                        view.renderer.test_input(&view.scene, &request, window, cx)
+                                    })
+                                    .map_err(|error| error.to_string())
+                                    .and_then(|result| result);
+                                match result {
+                                    Ok(()) => json!({"id":request.id,"result":null}),
+                                    Err(error) => json!({"id":request.id,"error":error}),
+                                }
+                            }
+                        };
+                        if let Err(error) = test_output.send(&response) {
+                            eprintln!("Native input test failed: {error}");
+                            cx.quit();
+                        }
+                    });
+                    continue;
+                }
                 let shutdown = cx.update(|cx| {
                     view.update(cx, |view, cx| {
                         let mut outcome =
                             process_line_with_prepare(&mut view.scene, &line, |template| {
                                 view.renderer.prepare(template)
                             });
+                        if let Some((handle, site, edit)) = outcome.input_ack
+                            && let Err(error) =
+                                view.renderer
+                                    .acknowledge(&view.scene, handle, site, edit, cx)
+                        {
+                            outcome.response["error"] = json!(error);
+                        }
                         if outcome.inspect {
                             outcome.response["result"]["renderer"] =
                                 json!(&*view.renderer.stats.borrow());

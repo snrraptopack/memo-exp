@@ -4,6 +4,9 @@ export interface DesktopProcessHost extends DesktopHost {
   readonly ready: Promise<void>;
   readonly windowClosed: Promise<void>;
   onEvent(listener: (event: NativeSceneEvent) => void): () => void;
+  acknowledgeEvent(event: NativeSceneEvent): Promise<void>;
+  /** Debug builds only; invokes the native platform input handler in window tests. */
+  testInput(handle: NativeSceneEvent['handle'], node: number, action: 'insert' | 'compose' | 'commit' | 'backspace' | 'select-all', text?: string): Promise<void>;
   inspect(): Promise<SceneSnapshot>;
   redraw(): Promise<void>;
   close(): Promise<void>;
@@ -49,6 +52,7 @@ export function createProcessHost(options: { executable: string; args?: readonly
           if (!Number.isSafeInteger(event.handle?.id) || event.handle.id <= 0 ||
               !Number.isSafeInteger(event.handle?.generation) || event.handle.generation <= 0 ||
               !Number.isSafeInteger(event.site) || event.site < 0) throw new Error('Invalid native desktop event');
+          if (event.edit !== undefined && (!Number.isSafeInteger(event.edit) || event.edit <= 0)) throw new Error('Invalid native input edit');
           for (const listener of listeners) listener(event);
           continue;
         }
@@ -87,6 +91,10 @@ export function createProcessHost(options: { executable: string; args?: readonly
   return {
     ready, windowClosed,
     onEvent(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    async acknowledgeEvent(event) {
+      if (event.edit !== undefined) await request({ kind: 'acknowledge', handle: event.handle, site: event.site, edit: event.edit });
+    },
+    async testInput(handle, node, action, text) { await request({ kind: 'test_input', handle, node, action, text }); },
     async install(template: SceneTemplate) { await request({ kind: 'install', template }); },
     async commit(transaction: SceneTransaction) { return await request({ kind: 'apply', transaction }) as SceneAcknowledgment; },
     async inspect() { return await request({ kind: 'inspect' }) as SceneSnapshot; },

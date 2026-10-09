@@ -8,11 +8,14 @@ const entry = process.argv.find(arg => arg.startsWith('--entry='))?.slice(8) ?? 
 const code = await buildDesktopEntry(entry);
 const executable = resolve(import.meta.dirname, '../rust/gpui/target/debug',
   process.platform === 'win32' ? 'memoized-dom-desktop-window.exe' : 'memoized-dom-desktop-window');
-const host = createProcessHost({ executable, window: true });
+const host = createProcessHost({ executable, window: true, args: process.argv.includes('--smoke') ? ['--smoke'] : [] });
 const app = createDesktopApplication(host);
 let events = Promise.resolve();
 const unsubscribe = host.onEvent(event => {
-  events = events.then(async () => { await app.dispatch(event.handle, event.site, event.payload); })
+  events = events.then(async () => {
+    try { await app.dispatch(event.handle, event.site, event.payload); }
+    finally { await host.acknowledgeEvent(event); }
+  })
     .catch(error => { console.error('Desktop event failed:', error); });
 });
 async function waitForFrame(sequence: number, afterFrame = -1): Promise<SceneSnapshot> {
@@ -24,6 +27,18 @@ async function waitForFrame(sequence: number, afterFrame = -1): Promise<SceneSna
     await Bun.sleep(25);
   }
   throw new Error('Desktop window did not paint the accepted scene');
+}
+async function waitForInput(source: number, value: string): Promise<SceneSnapshot> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const snapshot = await host.inspect();
+    if (snapshot.instances[0]?.texts[source] === value && snapshot.instances[0].text_groups.some(group => group.text === `Typed: ${value}`)) {
+      await events;
+      return snapshot;
+    }
+    await Bun.sleep(25);
+  }
+  throw new Error(`Native input did not publish its callback and dependent text: ${value}`);
 }
 try {
   await host.ready;
@@ -48,9 +63,24 @@ try {
     await host.redraw();
     const redrawn = await waitForFrame(2, updated.renderer!.frames);
     if (redrawn.renderer!.shaping !== updated.renderer!.shaping) throw new Error('Unchanged native text was reshaped');
-    console.log('GPUI TSX/CSS window smoke test passed:', JSON.stringify({ frames: redrawn.renderer!.frames, shaping: redrawn.renderer!.shaping, boxes: redrawn.renderer!.boxes.length }));
+    const input = redrawn.renderer!.boxes.find(box => box.tag === 'input');
+    if (!input || input.width <= 0 || input.height <= 0) throw new Error('Native input has empty layout bounds');
+    await Promise.all([host.testInput(counter.handle, input.source, 'insert', '静🙂'), host.testInput(counter.handle, input.source, 'insert', 'café')]);
+    await waitForInput(input.source, '静🙂café');
+    await host.testInput(counter.handle, input.source, 'backspace');
+    await waitForInput(input.source, '静🙂caf');
+    await host.testInput(counter.handle, input.source, 'select-all');
+    await host.testInput(counter.handle, input.source, 'compose', 'に');
+    await events;
+    if ((await host.inspect()).instances[0]!.texts[input.source] !== '静🙂caf') throw new Error('IME preedit leaked into authored state');
+    await host.testInput(counter.handle, input.source, 'commit', '日本');
+    const typed = await waitForInput(input.source, '日本');
+    const settled = await waitForFrame(typed.sequence);
+    await host.redraw(); const stable = await waitForFrame(typed.sequence, settled.renderer!.frames);
+    if (stable.renderer!.shaping !== settled.renderer!.shaping) throw new Error('Unchanged native input text was reshaped');
+    console.log('GPUI TSX/CSS/input window smoke test passed:', JSON.stringify({ frames: stable.renderer!.frames, shaping: stable.renderer!.shaping, boxes: stable.renderer!.boxes.length, input: '日本' }));
   } else {
-    console.log(`Desktop window is ready. Edit ${entry} and its TSX/CSS imports. Buttons support clicks and Tab/Enter/Space.`);
+    console.log(`Desktop window is ready. Edit ${entry} and its TSX/CSS imports. Use Tab to focus buttons and the text input; typing updates the echoed value.`);
     await host.windowClosed;
   }
 } finally {

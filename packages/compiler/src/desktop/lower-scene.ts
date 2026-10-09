@@ -11,7 +11,7 @@ import { normalizeCssPropertyName } from '@tsrx/core';
 type SceneNode =
   | { kind: 'element'; tag: string; parent: number | null; text: ''; attributes: Record<string, string>; style: DesktopDeclaration[] }
   | { kind: 'text'; parent: number | null; text: string };
-interface TextSlot { node: number; type: 'text' }
+interface TextSlot { node: number; type: 'text' | 'value' }
 
 export function lowerDesktopScene(root: t.Node, options: {
   callbacks: ComponentCallbacks;
@@ -24,13 +24,29 @@ export function lowerDesktopScene(root: t.Node, options: {
   const nodes: SceneNode[] = [];
   const slots: TextSlot[] = [];
   const bindings: t.Expression[] = [];
-  const events: { node: number; type: 'click' }[] = [];
+  const events: { node: number; type: 'click' | 'change' }[] = [];
   const handlers: t.Expression[] = [];
 
   const addText = (text: string, parent: number | null): number => {
     const node = nodes.length;
     nodes.push({ kind: 'text', parent, text });
     return node;
+  };
+  const addBinding = (expression: t.Expression, node: number, type: TextSlot['type']): void => {
+    walkAst<t.Node>(expression, { enter(current) {
+      if (b.isJSXElement(current) || b.isJSXFragment(current) || ['ConditionalExpression', 'LogicalExpression', 'ArrayExpression', 'ArrowFunctionExpression', 'FunctionExpression'].includes(current.type)) fail('structural expressions are not implemented yet', current);
+    } });
+    const slot = slots.length;
+    slots.push({ node, type });
+    let dependencies = sources.sourcesFor(expression);
+    walkAst<t.Node>(expression, { enter(current) {
+      if (current.type === 'MemberExpression' || current.type === 'OptionalMemberExpression') dependencies = null;
+    } });
+    bindings.push(b.objectExpression([
+      b.objectProperty(b.identifier('slot'), b.numericLiteral(slot)),
+      b.objectProperty(b.identifier('sources'), valueExpression(dependencies)),
+      b.objectProperty(b.identifier('read'), b.arrowFunctionExpression([], expression)),
+    ]));
   };
   const emit = (element: t.Node, parent: number | null): void => {
     if (b.isJSXFragment(element)) {
@@ -44,24 +60,7 @@ export function lowerDesktopScene(root: t.Node, options: {
     if (b.isJSXExpressionContainer(element)) {
       const expression = unwrapTypeExpression(element.expression);
       if (b.isJSXEmptyExpression(expression)) return;
-      walkAst<t.Node>(expression, { enter(node) {
-        if (b.isJSXElement(node) || b.isJSXFragment(node) || node.type === 'ConditionalExpression' ||
-            node.type === 'LogicalExpression' || node.type === 'ArrayExpression' || node.type === 'ArrowFunctionExpression' ||
-            node.type === 'FunctionExpression') fail('structural expressions are not implemented yet', node);
-      } });
-      const slot = slots.length;
-      slots.push({ node: addText('', parent), type: 'text' });
-      let dependencies = sources.sourcesFor(expression as t.Expression);
-      walkAst<t.Node>(expression, { enter(node) {
-        // Desktop's first slice has no getter/property provenance analysis.
-        // Hidden reads must refresh even when the receiver's binding is stable.
-        if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') dependencies = null;
-      } });
-      bindings.push(b.objectExpression([
-        b.objectProperty(b.identifier('slot'), b.numericLiteral(slot)),
-        b.objectProperty(b.identifier('sources'), valueExpression(dependencies)),
-        b.objectProperty(b.identifier('read'), b.arrowFunctionExpression([], expression as t.Expression)),
-      ]));
+      addBinding(expression as t.Expression, addText('', parent), 'text');
       return;
     }
     if (!b.isJSXElement(element)) fail('unsupported JSX child', element);
@@ -74,16 +73,21 @@ export function lowerDesktopScene(root: t.Node, options: {
     const style: DesktopDeclaration[] = [];
     nodes.push({ kind: 'element', tag, parent, text: '', attributes, style });
     let hasClick = false;
+    let hasChange = false;
     const seen = new Set<string>();
     for (const attribute of opening.attributes) {
       if (!b.isJSXAttribute(attribute) || !b.isJSXIdentifier(attribute.name)) fail('spread and namespaced attributes are not implemented', attribute);
       const name = attribute.name.name === 'className' ? 'class' : attribute.name.name;
       if (seen.has(name)) fail(`duplicate ${name} attribute`, attribute);
       seen.add(name);
-      if (name !== 'onClick') {
-        if (!['class', 'id', 'style', 'title', 'aria-label'].includes(name)) fail(`desktop attribute ${name} is not implemented`, attribute);
+      if (!['onClick', 'onChange', 'onInput'].includes(name)) {
+        if (!['class', 'id', 'style', 'title', 'aria-label'].includes(name) && !(tag === 'input' && ['type', 'value', 'placeholder'].includes(name))) fail(`desktop attribute ${name} is not implemented`, attribute);
         let literal: t.Node | null | undefined = attribute.value;
         if (literal && b.isJSXExpressionContainer(literal)) literal = unwrapTypeExpression(literal.expression);
+        if (tag === 'input' && name === 'value' && literal && attribute.value && b.isJSXExpressionContainer(attribute.value)) {
+          addBinding(literal as t.Expression, node, 'value');
+          continue;
+        }
         if (name === 'style' && literal && b.isObjectExpression(literal)) {
           for (const property of literal.properties) {
             if (!b.isObjectProperty(property) || property.computed || (!b.isIdentifier(property.key) && !b.isStringLiteral(property.key))) fail('style objects require static named properties', property);
@@ -100,13 +104,15 @@ export function lowerDesktopScene(root: t.Node, options: {
         else attributes[name] = literal.value;
         continue;
       }
-      if (hasClick) fail('duplicate onClick attribute', attribute);
-      hasClick = true;
+      const change = name !== 'onClick';
+      if (change && tag !== 'input') fail(`${name} requires an input control`, attribute);
+      if (change ? hasChange : hasClick) fail(`duplicate ${change ? 'input change' : 'onClick'} handler`, attribute);
+      if (change) hasChange = true; else hasClick = true;
       const value = attribute.value;
-      if (!value || !b.isJSXExpressionContainer(value)) fail('onClick requires a callback expression', attribute);
+      if (!value || !b.isJSXExpressionContainer(value)) fail(`${name} requires a callback expression`, attribute);
       const expression = unwrapTypeExpression(value.expression) as t.Expression;
       const callback = callbacks.forEvent(expression);
-      if (!callback) fail('onClick requires an inline callback or component-local helper', attribute);
+      if (!callback) fail(`${name} requires an inline callback or component-local helper`, attribute);
       assertSynchronousCallback(callback.target, fail);
       for (const helper of callback.helpers) assertSynchronousCallback(helper.target, fail);
       const plan = callback.writesFor(undefined, true);
@@ -119,7 +125,7 @@ export function lowerDesktopScene(root: t.Node, options: {
       // Helpers are kept intact. Their effects are conservatively replayed until
       // desktop lowering instruments their individual mutation sites.
       conservative ||= callback.helpers.length > 0;
-      events.push({ node, type: 'click' });
+      events.push({ node, type: change ? 'change' : 'click' });
       handlers.push(b.callExpression(instrument, [expression,
         valueExpression(conservative ? null : [...changed].sort())]));
     }
