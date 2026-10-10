@@ -222,6 +222,85 @@ enum Job {
     Instance(u64),
     Item(u64, usize),
 }
+
+pub(crate) struct PlacedElement {
+    pub owner: u64,
+    pub source: usize,
+    pub parent: Option<usize>,
+    pub previous: Option<usize>,
+}
+
+/// Flatten only authored elements, expanding regions in accepted row order.
+/// CSS siblings skip text, empty regions, and region-only component roots.
+/// An explicit stack also avoids recursion through deeply nested components.
+pub(crate) fn elements(records: &BTreeMap<u64, &Instance>) -> Vec<PlacedElement> {
+    let mut attachments = BTreeMap::<(u64, usize), Vec<u64>>::new();
+    for instance in records.values() {
+        if let Some(parent) = instance.attach_to {
+            attachments
+                .entry((parent.handle.id, parent.node))
+                .or_default()
+                .push(instance.handle.id);
+        }
+    }
+    // Ordered regions override membership regardless of owner allocation order.
+    for instance in records.values() {
+        for (&node, order) in &instance.orders {
+            attachments.insert(
+                (instance.handle.id, node),
+                order.iter().map(|handle| handle.id).collect(),
+            );
+        }
+    }
+    let roots = |id: u64, parent: Option<usize>| {
+        records[&id]
+            .template
+            .source
+            .nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, node)| node.parent().is_none())
+            .map(move |(source, _)| (id, source, parent))
+    };
+    let mut pending: Vec<_> = records
+        .values()
+        .rev()
+        .filter(|instance| instance.attach_to.is_none())
+        .flat_map(|instance| roots(instance.handle.id, None))
+        .collect();
+    let mut result = Vec::new();
+    let mut siblings = BTreeMap::new();
+    while let Some((id, source, parent)) = pending.pop() {
+        let instance = records[&id];
+        match &instance.template.source.nodes[source] {
+            Node::Region { .. } => {
+                if let Some(children) = attachments.get(&(id, source)) {
+                    for &child in children.iter().rev() {
+                        pending.extend(roots(child, parent));
+                    }
+                }
+            }
+            Node::Element { .. } => {
+                let index = result.len();
+                result.push(PlacedElement {
+                    owner: id,
+                    source,
+                    parent,
+                    previous: siblings.insert(parent, index),
+                });
+                pending.extend(
+                    instance.template.children[source]
+                        .iter()
+                        .rev()
+                        .map(|&child| (id, child, Some(index))),
+                );
+            }
+            Node::Text { .. } => {}
+        }
+    }
+    result
+}
 pub(crate) fn order(records: &BTreeMap<u64, Instance>) -> SceneOrder {
     let mut attachments: BTreeMap<_, _> = records
         .values()

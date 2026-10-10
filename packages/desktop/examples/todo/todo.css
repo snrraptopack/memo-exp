@@ -150,7 +150,7 @@ button:focus {
   flex-direction: column;
   gap: 12px;
 }
-.task-row {
+.task-list > .task-row {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
@@ -161,7 +161,7 @@ button:focus {
   border: 1px solid #e0e6f0;
   border-radius: 8px;
 }
-.task-content {
+.task-row > .task-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -169,7 +169,7 @@ button:focus {
   flex-grow: 1;
   min-width: 0;
 }
-.task-title {
+.task-content .task-title {
   font-size: 16px;
   font-weight: 600;
 }
@@ -190,6 +190,14 @@ button:focus {
 }
 .row-actions {
   flex-shrink: 0;
+}
+/* Regions add no CSS box: adjacency follows the visible keyed row order. */
+.task-row + .task-row {
+  padding-left: 22px;
+  border-color: #bbcbee;
+}
+.task-row > .task-content > .row-note:focus {
+  border-color: #2c6b54;
 }
 .toggle {
   color: #2c6b54;

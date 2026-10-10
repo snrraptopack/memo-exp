@@ -6,6 +6,7 @@ import { valueExpression, type DesktopScene } from './lower-scene';
 interface EmitOptions {
   id: string;
   stylesheets: unknown;
+  stylesheet?: string;
   mount: t.Identifier;
   define: t.Identifier;
   fresh(name: string): t.Identifier;
@@ -33,6 +34,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
       slots: scene.slots,
       events: scene.events,
       stylesheets: options.stylesheets,
+      ...(options.stylesheet ? { stylesheet: options.stylesheet } : {}),
     }),
   )]));
 

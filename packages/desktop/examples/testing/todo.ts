@@ -23,6 +23,25 @@ export async function runTodoSmoke({
   };
   const rows = () =>
     snapshot.instances.filter((instance) => instance.template.endsWith('#TodoRow'));
+  const assertRowSelectors = () => {
+    const cards = snapshot.renderer!.boxes.filter(item => item.tag === 'article');
+    assert(cards.length === rows().length, 'Inline row wrappers did not paint');
+    const sorted = [...cards].sort((a, b) => a.y - b.y);
+    for (const [index, card] of sorted.entries()) {
+      const owner = snapshot.instances.find(instance => instance.handle.id === card.handle.id)!;
+      const style = owner.styles?.[card.source]?.states[0];
+      assert(style?.['display'] === 'flex', 'Child selector did not cross the keyed row region');
+      assert(style?.['padding-left'] === (index === 0 ? '18px' : '22px'),
+        'Adjacent sibling selector did not follow accepted row order');
+      assert(card.width > 100, 'Matched row CSS did not reach native layout');
+    }
+    for (const title of snapshot.renderer!.boxes.filter(item =>
+      item.id === 'active-title' || item.id === 'completed-title')) {
+      const owner = snapshot.instances.find(instance => instance.handle.id === title.handle.id)!;
+      assert(owner.styles?.[title.source]?.states[0]?.['font-size'] === '16px',
+        'Descendant selector did not cross the named row and title branch');
+    }
+  };
   const texts = () =>
     snapshot.instances.flatMap((instance) => instance.text_groups.map((group) => group.text));
   const assert = (condition: boolean, message: string) => {
@@ -89,6 +108,7 @@ export async function runTodoSmoke({
   };
 
   assert(rows().length === 3, 'Todo seed tasks did not mount');
+  assertRowSelectors();
   await resize(1200, 800);
   const page = box('todo-page');
   const workspace = box('todo-workspace');
@@ -132,6 +152,7 @@ export async function runTodoSmoke({
     'Shift+Tab did not return to the input',
   );
   await click('add-task');
+  assertRowSelectors();
   assert(
     rows().length === 4 && texts().includes('静🙂 café'),
     'Add did not insert the authored task',
@@ -207,6 +228,8 @@ export async function runTodoSmoke({
   const focusedNote = snapshot.renderer!.focused;
   assert(focusedNote?.handle.id === added.handle.id, 'Row note did not receive focus');
   await key('ctrl-r');
+  assertRowSelectors();
+  captureLayout?.(snapshot);
   assert(
     snapshot.renderer!.focused?.handle.id === focusedNote!.handle.id &&
       snapshot.renderer!.focused?.node === focusedNote!.node,
@@ -219,6 +242,7 @@ export async function runTodoSmoke({
     'Reordering lost the keyed row note',
   );
   await click('delete-task', added.handle.id);
+  assertRowSelectors();
   assert(
     rows().length === 3 && !rows().some((row) => row.handle.id === added.handle.id),
     'Delete did not retire the requested row',

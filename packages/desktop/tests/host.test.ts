@@ -12,6 +12,75 @@ const template: SceneTemplate = { id: 'host-counter', nodes: [
 ], slots: [{ node: 1, type: 'text' }], events: [{ node: 0, type: 'click' }] };
 
 describe('Rust retained scene bridge', () => {
+  it('matches imported CSS through inline branches, named children, and retained row order', async () => {
+    const { code } = compileDesktop(`
+      import './selectors.css';
+      function Title({ text }) { return <p class="title">{text}</p>; }
+      export function App() {
+        let shown = true;
+        let items = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }];
+        return <main>
+          <button onClick={() => items = items.toReversed()}>Reverse</button>
+          <button onClick={() => shown = !shown}>Toggle</button>
+          <button onClick={() => items[0].title = 'Changed'}>Edit</button>
+          <section class="list">
+            {shown ? <p class="intro">Introduction</p> : null}
+            {items.map(item => <article key={item.id} class="row"><Title text={item.title} /></article>)}
+          </section>
+        </main>;
+      }
+    `, {
+      moduleId: 'native-selectors.tsx',
+      runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href,
+      readStylesheet: () => `
+        .list > .row { width: 80px; }
+        .intro + .row { width: 140px; }
+        .row + .row { width: 120px; }
+        .list .title { font-weight: 700; }
+        .row > .title { color: red; }
+        .intro ~ .row .title { color: blue; }
+      `,
+    });
+    const compiled = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`) as {
+      App(): SceneInstance;
+    };
+    const host = createProcessHost({ executable });
+    const app = createDesktopApplication(host);
+    try {
+      const root = app.mount(compiled.App);
+      await root.ready;
+      const initial = await host.inspect();
+      const titles = initial.instances.filter(instance => instance.template.endsWith('#Title'));
+      const first = titles[0]!.attach_to!.handle;
+      const second = titles[1]!.attach_to!.handle;
+      const rowStyle = (snapshot: typeof initial, id: number) =>
+        snapshot.instances.find(instance => instance.handle.id === id)!.styles![0]!.states[0]!;
+      expect(rowStyle(initial, first.id)['width']).toBe('140px');
+      expect(rowStyle(initial, second.id)['width']).toBe('120px');
+      for (const title of titles) {
+        expect(title.styles![0]!.states[0]!['color']).toBe('blue');
+        expect(title.styles![0]!.states[0]!['font-weight']).toBe('700');
+      }
+      await root.dispatch(0);
+      const reversed = await host.inspect();
+      expect(rowStyle(reversed, first.id)['width']).toBe('120px');
+      expect(rowStyle(reversed, second.id)['width']).toBe('140px');
+      expect(reversed.instances.filter(instance => instance.template.endsWith('#Title')).map(instance => instance.handle))
+        .toEqual(titles.map(instance => instance.handle));
+      await root.dispatch(1);
+      const hidden = await host.inspect();
+      expect(rowStyle(hidden, second.id)['width']).toBe('80px');
+      for (const title of hidden.instances.filter(instance => instance.template.endsWith('#Title')))
+        expect(title.styles![0]!.states[0]!['color']).toBe('red');
+      await root.dispatch(2);
+      const edited = await host.inspect();
+      expect(edited.instances.find(instance => instance.handle.id === titles[1]!.handle.id)!.texts).toContain('Changed');
+      expect(rowStyle(edited, second.id)).toEqual(rowStyle(hidden, second.id));
+    } finally {
+      await app.dispose();
+      await host.close();
+    }
+  });
   it('publishes inline branches and list rows through the existing native forest contract', async () => {
     const { code } = compileDesktop(`
       export function App() {

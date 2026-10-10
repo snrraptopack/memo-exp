@@ -52,6 +52,23 @@ pub fn process_line_with_prepare(
     line: &str,
     mut prepare: impl FnMut(&crate::template::PreparedTemplate) -> Result<(), String>,
 ) -> Outcome {
+    process_line_with_validation(scene, line, |candidate| match candidate {
+        Preparation::Template(template) => prepare(template),
+        Preparation::Instances(_) => Ok(()),
+    })
+}
+
+pub enum Preparation<'a> {
+    Template(&'a crate::template::PreparedTemplate),
+    Instances(&'a [&'a crate::Instance]),
+}
+
+/// Use one callback so install and commit validation can share adapter caches.
+pub fn process_line_with_validation(
+    scene: &mut Scene,
+    line: &str,
+    mut prepare: impl FnMut(Preparation<'_>) -> Result<(), String>,
+) -> Outcome {
     let mut changed = false;
     let mut inspect = false;
     let mut shutdown = false;
@@ -64,12 +81,18 @@ pub fn process_line_with_prepare(
             } else {
                 match request.command {
                     Command::Install { template } => scene
-                        .install_with(template, &mut prepare)
+                        .install_with(template, |template| {
+                            prepare(Preparation::Template(template))
+                        })
                         .map(|()| Value::Null),
-                    Command::Apply { transaction } => scene.commit(transaction).map(|sequence| {
-                        changed = true;
-                        json!({"sequence": sequence})
-                    }),
+                    Command::Apply { transaction } => scene
+                        .commit_with(transaction, |instances| {
+                            prepare(Preparation::Instances(instances))
+                        })
+                        .map(|sequence| {
+                            changed = true;
+                            json!({"sequence": sequence})
+                        }),
                     Command::Inspect => {
                         inspect = true;
                         serde_json::to_value(scene.snapshot()).map_err(|error| error.to_string())

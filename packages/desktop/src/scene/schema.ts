@@ -17,6 +17,8 @@ export interface SceneTemplate {
   readonly slots: readonly { readonly node: number; readonly type: 'text' | 'value' }[];
   readonly events: readonly { readonly node: number; readonly type: SceneEventType }[];
   readonly stylesheets?: readonly CssRule[];
+  /** Shared source identity keeps fragments from registering a module twice. */
+  readonly stylesheet?: string;
 }
 
 export type SceneEventType =

@@ -11,7 +11,11 @@ use gpui::{
     AnyWindowHandle, App, Bounds, Context, FocusHandle, Render, ScrollHandle, TitlebarOptions,
     Window, WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
-use memoized_dom_desktop_host::{Scene, bridge::process_line_with_prepare, template::EventKind};
+use memoized_dom_desktop_host::{
+    Scene,
+    bridge::{Preparation, process_line_with_validation},
+    template::EventKind,
+};
 use output::Output;
 use renderer::{EventSink, Renderer};
 use serde_json::json;
@@ -73,10 +77,7 @@ impl Render for DesktopView {
             if live.borrow().get(&emission.handle.id) != Some(&emission.handle.generation) {
                 return;
             }
-            if matches!(
-                emission.kind,
-                EventKind::Focus | EventKind::Blur
-            ) {
+            if matches!(emission.kind, EventKind::Focus | EventKind::Blur) {
                 // Focus-dependent CSS needs a root render, but notifying does
                 // not borrow the root entity during GPUI's focus callbacks.
                 cx.notify(root_id);
@@ -245,8 +246,15 @@ fn main() {
                     _window
                         .update(cx, |view, window, cx| {
                             let mut outcome =
-                                process_line_with_prepare(&mut view.scene, &line, |template| {
-                                    view.renderer.prepare(template)
+                                process_line_with_validation(&mut view.scene, &line, |candidate| {
+                                    match candidate {
+                                        Preparation::Template(template) => {
+                                            view.renderer.prepare(template)
+                                        }
+                                        Preparation::Instances(instances) => {
+                                            view.renderer.prepare_instances(instances)
+                                        }
+                                    }
                                 });
                             if let Some((handle, site, edit)) = outcome.input_ack
                                 && let Err(error) =

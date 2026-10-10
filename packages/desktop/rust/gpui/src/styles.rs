@@ -7,7 +7,7 @@ use gpui::{
     TextStyleRefinement, UnderlineStyle, WhiteSpace, px, relative, rems,
 };
 use memoized_dom_desktop_host::{
-    css::{self, Declaration, Properties},
+    css::{self, CascadedStyle, Declaration, Properties},
     tags,
     template::{Node, PreparedTemplate},
 };
@@ -17,9 +17,20 @@ pub struct NativeStyles {
     pub nodes: Vec<[StyleRefinement; 4]>,
     pub current_color: Vec<[bool; 4]>,
 }
-pub type StyleCache = BTreeMap<String, Arc<NativeStyles>>;
+pub struct CachedStyles {
+    pub cascade: Arc<Vec<CascadedStyle>>,
+    pub native: Arc<NativeStyles>,
+}
+pub type StyleCache = BTreeMap<(u64, u64), CachedStyles>;
 
 pub fn prepare(template: &PreparedTemplate) -> Result<NativeStyles, String> {
+    prepare_cascade(template, &template.styles)
+}
+
+pub fn prepare_cascade(
+    template: &PreparedTemplate,
+    cascade: &[CascadedStyle],
+) -> Result<NativeStyles, String> {
     let mut nodes = Vec::new();
     let mut current_color = Vec::new();
     for (index, node) in template.source.nodes.iter().enumerate() {
@@ -42,7 +53,7 @@ pub fn prepare(template: &PreparedTemplate) -> Result<NativeStyles, String> {
         let mut inherited_border = [false; 4];
         for (state, style) in states.iter_mut().enumerate() {
             let mut properties = defaults.clone();
-            properties.extend(template.styles[index].states[state].clone());
+            properties.extend(cascade[index].states[state].clone());
             inherited_border[state] = properties
                 .get("border-color")
                 .is_some_and(|value| value.eq_ignore_ascii_case("currentcolor"));
@@ -63,9 +74,7 @@ pub fn prepare(template: &PreparedTemplate) -> Result<NativeStyles, String> {
                         ));
                     }
                 }
-                if state > 0
-                    && template.styles[index].states[state] != template.styles[index].states[0]
-                {
+                if state > 0 && cascade[index].states[state] != cascade[index].states[0] {
                     return Err(format!(
                         "CSS interaction styles on inline <{tag}> require inline hitboxes"
                     ));

@@ -126,7 +126,8 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const props = desktopProps(ctx.componentProps.get(name)!, fresh, fail);
     fn.params = props.params;
     const emitted = emitDesktopScene(scene, {
-      id: `${moduleId}#${name}`, stylesheets, mount, define, fresh, templates, receive: props.receive,
+      id: `${moduleId}#${name}`, stylesheets, stylesheet: stylesheets.length ? moduleId : undefined,
+      mount, define, fresh, templates, receive: props.receive,
     });
     eventsUsed ||= emitted.eventsUsed;
     scopesUsed ||= emitted.scopesUsed;

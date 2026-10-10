@@ -32,7 +32,7 @@ pub enum SimpleSelector {
     Scope { name: String },
 }
 pub type Properties = BTreeMap<String, String>;
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct CascadedStyle {
     pub states: [Properties; 4],
 }
@@ -214,18 +214,21 @@ fn expand(declaration: &Declaration) -> Result<(Expanded, bool), String> {
     Ok((result, important))
 }
 
-fn previous_element(nodes: &[Node], index: usize) -> Option<usize> {
-    (0..index).rev().find(|&i| {
-        nodes[i].parent() == nodes[index].parent() && matches!(nodes[i], Node::Element { .. })
-    })
+/// Selector topology is independent of template ownership. Regions and text
+/// nodes never become CSS parents or element siblings.
+pub(crate) struct SelectorTree<'a> {
+    pub nodes: Vec<&'a Node>,
+    pub parents: Vec<Option<usize>>,
+    pub previous: Vec<Option<usize>>,
 }
-fn matches(nodes: &[Node], index: usize, chain: &[Selector], state: usize) -> bool {
+
+fn matches(tree: &SelectorTree<'_>, index: usize, chain: &[Selector], state: usize) -> bool {
     let Some((last, rest)) = chain.split_last() else {
         return false;
     };
     let Node::Element {
         tag, attributes, ..
-    } = &nodes[index]
+    } = tree.nodes[index]
     else {
         return false;
     };
@@ -247,27 +250,25 @@ fn matches(nodes: &[Node], index: usize, chain: &[Selector], state: usize) -> bo
         return true;
     }
     match last.combinator.as_deref() {
-        Some(">") => nodes[index]
-            .parent()
-            .is_some_and(|parent| matches(nodes, parent, rest, 0)),
+        Some(">") => tree.parents[index].is_some_and(|parent| matches(tree, parent, rest, 0)),
         Some(" ") => {
-            let mut parent = nodes[index].parent();
+            let mut parent = tree.parents[index];
             while let Some(p) = parent {
-                if matches(nodes, p, rest, 0) {
+                if matches(tree, p, rest, 0) {
                     return true;
                 }
-                parent = nodes[p].parent();
+                parent = tree.parents[p];
             }
             false
         }
-        Some("+") => previous_element(nodes, index).is_some_and(|s| matches(nodes, s, rest, 0)),
+        Some("+") => tree.previous[index].is_some_and(|s| matches(tree, s, rest, 0)),
         Some("~") => {
-            let mut previous = previous_element(nodes, index);
+            let mut previous = tree.previous[index];
             while let Some(p) = previous {
-                if matches(nodes, p, rest, 0) {
+                if matches(tree, p, rest, 0) {
                     return true;
                 }
-                previous = previous_element(nodes, p);
+                previous = tree.previous[p];
             }
             false
         }
@@ -275,96 +276,185 @@ fn matches(nodes: &[Node], index: usize, chain: &[Selector], state: usize) -> bo
     }
 }
 
-pub fn prepare(nodes: &[Node], rules: &[Rule]) -> Result<Vec<CascadedStyle>, String> {
-    let mut expanded = Vec::new();
-    for rule in rules {
-        for chain in &rule.selectors {
-            if chain.is_empty() {
-                return Err("Empty CSS selector".into());
-            }
-            for (index, part) in chain.iter().enumerate() {
-                if part.selectors.is_empty()
-                    || (index == 0 && part.combinator.is_some())
-                    || (index > 0
-                        && !matches!(part.combinator.as_deref(), Some(" " | ">" | "+" | "~")))
-                {
-                    return Err("Invalid CSS selector chain".into());
+#[derive(Clone, Default)]
+pub struct PreparedRules {
+    rules: Vec<Rule>,
+    expanded: Vec<Vec<(Expanded, bool)>>,
+}
+
+impl PreparedRules {
+    /// Parse and validate declarations once at installation, not during frames.
+    pub fn new(rules: &[Rule]) -> Result<Self, String> {
+        let mut expanded = Vec::new();
+        for rule in rules {
+            for chain in &rule.selectors {
+                if chain.is_empty() {
+                    return Err("Empty CSS selector".into());
                 }
-                for selector in &part.selectors {
-                    if let SimpleSelector::State { name } = selector
-                        && (!matches!(name.as_str(), "hover" | "focus") || index != chain.len() - 1)
+                for (index, part) in chain.iter().enumerate() {
+                    if part.selectors.is_empty()
+                        || (index == 0 && part.combinator.is_some())
+                        || (index > 0
+                            && !matches!(part.combinator.as_deref(), Some(" " | ">" | "+" | "~")))
                     {
-                        return Err("Only target :hover/:focus selectors are implemented".into());
+                        return Err("Invalid CSS selector chain".into());
                     }
-                }
-            }
-        }
-        expanded.push(
-            rule.declarations
-                .iter()
-                .map(expand)
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-    }
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(index, node)| {
-            let inline = if let Node::Element { style, .. } = node {
-                style.iter().map(expand).collect::<Result<Vec<_>, _>>()?
-            } else {
-                Vec::new()
-            };
-            let mut states = std::array::from_fn(|_| Properties::new());
-            for (state, properties) in states.iter_mut().enumerate() {
-                let mut winners = BTreeMap::<String, (Priority, String)>::new();
-                let mut apply = |items: &[(Expanded, bool)], specificity, order| {
-                    for (declarations, important) in items {
-                        for (property, value) in declarations {
-                            let priority = (*important, specificity, order);
-                            if winners
-                                .get(property)
-                                .is_none_or(|(old, _)| priority >= *old)
-                            {
-                                winners.insert(property.clone(), (priority, value.clone()));
-                            }
+                    for selector in &part.selectors {
+                        if let SimpleSelector::State { name } = selector
+                            && (!matches!(name.as_str(), "hover" | "focus")
+                                || index != chain.len() - 1)
+                        {
+                            return Err(
+                                "Only target :hover/:focus selectors are implemented".into()
+                            );
                         }
                     }
-                };
-                for (order, rule) in rules.iter().enumerate() {
-                    let specificity = rule
-                        .selectors
-                        .iter()
-                        .filter(|chain| matches(nodes, index, chain, state))
-                        .map(|chain| {
-                            let mut result = [0; 4];
-                            for part in chain {
-                                for selector in &part.selectors {
-                                    match selector {
-                                        SimpleSelector::Id { .. } => result[1] += 1,
-                                        SimpleSelector::Class { .. }
-                                        | SimpleSelector::State { .. } => result[2] += 1,
-                                        SimpleSelector::Tag { name } if name != "*" => {
-                                            result[3] += 1
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            result
-                        })
-                        .max();
-                    if let Some(specificity) = specificity {
-                        apply(&expanded[order], specificity, order);
+                }
+            }
+            expanded.push(
+                rule.declarations
+                    .iter()
+                    .map(expand)
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
+        Ok(Self {
+            rules: rules.to_vec(),
+            expanded,
+        })
+    }
+
+    pub(crate) fn append(&mut self, sheet: &Self) {
+        self.rules.extend(sheet.rules.iter().cloned());
+        self.expanded.extend(sheet.expanded.iter().cloned());
+    }
+
+    fn cascade(&self, tree: &SelectorTree<'_>, index: usize) -> Result<CascadedStyle, String> {
+        let node = tree.nodes[index];
+        let rules = &self.rules;
+        let expanded = &self.expanded;
+        let inline = if let Node::Element { style, .. } = node {
+            style.iter().map(expand).collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        let mut states = std::array::from_fn(|_| Properties::new());
+        for (state, properties) in states.iter_mut().enumerate() {
+            let mut winners = BTreeMap::<String, (Priority, String)>::new();
+            let mut apply = |items: &[(Expanded, bool)], specificity, order| {
+                for (declarations, important) in items {
+                    for (property, value) in declarations {
+                        let priority = (*important, specificity, order);
+                        if winners
+                            .get(property)
+                            .is_none_or(|(old, _)| priority >= *old)
+                        {
+                            winners.insert(property.clone(), (priority, value.clone()));
+                        }
                     }
                 }
-                apply(&inline, [1, 0, 0, 0], rules.len());
-                *properties = winners
-                    .into_iter()
-                    .map(|(property, (_, value))| (property, value))
-                    .collect();
+            };
+            for (order, rule) in rules.iter().enumerate() {
+                let specificity = rule
+                    .selectors
+                    .iter()
+                    .filter(|chain| matches(tree, index, chain, state))
+                    .map(|chain| {
+                        let mut result = [0; 4];
+                        for part in chain {
+                            for selector in &part.selectors {
+                                match selector {
+                                    SimpleSelector::Id { .. } => result[1] += 1,
+                                    SimpleSelector::Class { .. } | SimpleSelector::State { .. } => {
+                                        result[2] += 1
+                                    }
+                                    SimpleSelector::Tag { name } if name != "*" => result[3] += 1,
+                                    _ => {}
+                                }
+                            }
+                        }
+                        result
+                    })
+                    .max();
+                if let Some(specificity) = specificity {
+                    apply(&expanded[order], specificity, order);
+                }
             }
-            Ok(CascadedStyle { states })
-        })
-        .collect()
+            apply(&inline, [1, 0, 0, 0], rules.len());
+            *properties = winners
+                .into_iter()
+                .map(|(property, (_, value))| (property, value))
+                .collect();
+        }
+        Ok(CascadedStyle { states })
+    }
 }
+
+/// Installation validates a template in isolation. Accepted scene styles are
+/// resolved separately against placement, using the same cascade implementation.
+pub fn prepare(nodes: &[Node], rules: &[Rule]) -> Result<Vec<CascadedStyle>, String> {
+    let rules = PreparedRules::new(rules)?;
+    rules.prepare_nodes(nodes)
+}
+
+impl PreparedRules {
+    pub fn prepare_nodes(&self, nodes: &[Node]) -> Result<Vec<CascadedStyle>, String> {
+        let mut siblings = BTreeMap::new();
+        let mut previous = Vec::with_capacity(nodes.len());
+        for (index, node) in nodes.iter().enumerate() {
+            previous.push(if matches!(node, Node::Element { .. }) {
+                siblings.insert(node.parent(), index)
+            } else {
+                None
+            });
+        }
+        let tree = SelectorTree {
+            nodes: nodes.iter().collect(),
+            parents: nodes.iter().map(Node::parent).collect(),
+            previous,
+        };
+        nodes
+            .iter()
+            .enumerate()
+            .map(|(index, _)| self.cascade(&tree, index))
+            .collect()
+    }
+}
+
+/// Match global rules against the candidate authored forest. This is called
+/// only for topology/stylesheet changes; text edits retain their style arrays.
+pub(crate) fn prepare_scene(
+    records: &BTreeMap<u64, &crate::Instance>,
+    rules: &PreparedRules,
+) -> Result<BTreeMap<u64, Vec<CascadedStyle>>, String> {
+    let placement = crate::forest::elements(records);
+    let tree = SelectorTree {
+        nodes: placement
+            .iter()
+            .map(|element| &records[&element.owner].template.source.nodes[element.source])
+            .collect(),
+        parents: placement.iter().map(|element| element.parent).collect(),
+        previous: placement.iter().map(|element| element.previous).collect(),
+    };
+    let mut styles: BTreeMap<_, _> = records
+        .iter()
+        .map(|(&id, instance)| {
+            (
+                id,
+                vec![
+                    CascadedStyle {
+                        states: std::array::from_fn(|_| Properties::new())
+                    };
+                    instance.template.source.nodes.len()
+                ],
+            )
+        })
+        .collect();
+    for (index, element) in placement.iter().enumerate() {
+        styles.get_mut(&element.owner).unwrap()[element.source] = rules.cascade(&tree, index)?;
+    }
+    Ok(styles)
+}
+
+#[cfg(test)]
+mod tests;

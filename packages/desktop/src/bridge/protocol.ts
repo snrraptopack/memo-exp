@@ -99,5 +99,9 @@ export interface SceneSnapshot {
     readonly dirty: readonly number[];
     readonly presentation: readonly FlowItem[];
     readonly text_groups: readonly TextGroupValue[];
+    /** Accepted CSS properties per source node: normal, hover, focus, both. */
+    readonly styles?: readonly {
+      readonly states: readonly Readonly<Record<string, string>>[];
+    }[];
   }[];
 }

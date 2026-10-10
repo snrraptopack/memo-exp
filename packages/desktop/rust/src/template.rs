@@ -12,6 +12,8 @@ pub struct Template {
     pub events: Vec<Event>,
     #[serde(default)]
     pub stylesheets: Vec<css::Rule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stylesheet: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -93,6 +95,7 @@ pub struct PreparedTemplate {
     pub source: Template,
     pub presentation: PresentationPlan,
     pub styles: Vec<css::CascadedStyle>,
+    pub rules: css::PreparedRules,
     pub children: Vec<Vec<usize>>,
 }
 
@@ -102,6 +105,9 @@ impl Template {
         let invalid = |message: String| format!("Desktop template {}: {message}", self.id);
         if self.id.is_empty() || self.nodes.is_empty() {
             return Err(invalid("Empty scene template".into()));
+        }
+        if self.stylesheet.as_ref().is_some_and(String::is_empty) {
+            return Err(invalid("Empty stylesheet identity".into()));
         }
         let mut resolved = Vec::with_capacity(self.nodes.len());
         let mut children = vec![Vec::new(); self.nodes.len()];
@@ -218,13 +224,15 @@ impl Template {
                 ));
             }
         }
-        let styles = css::prepare(&self.nodes, &self.stylesheets).map_err(invalid)?;
+        let rules = css::PreparedRules::new(&self.stylesheets).map_err(invalid)?;
+        let styles = rules.prepare_nodes(&self.nodes).map_err(invalid)?;
         let presentation = PresentationPlan::prepare(&self, &resolved, &children);
         Ok(PreparedTemplate {
             children,
             source: self,
             presentation,
             styles,
+            rules,
         })
     }
 }

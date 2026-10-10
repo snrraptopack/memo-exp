@@ -2,12 +2,12 @@
 use crate::{
     events::{self, Emission},
     input::{InputOptions, TextInput},
-    styles::{self, NativeStyles, StyleCache},
+    styles::{self, CachedStyles, NativeStyles, StyleCache},
     text::{Paragraph, TextCache},
 };
 use gpui::{prelude::*, *};
 use memoized_dom_desktop_host::{
-    Attachment, Handle, Scene,
+    Attachment, Handle, Instance, Scene,
     presentation::{ItemKind, TextValue},
     tags::{self, Layout},
     template::{EventKind, Node, PreparedTemplate, SlotKind},
@@ -156,9 +156,33 @@ impl Renderer {
     }
     /// Validate and prepare actual GPUI styles before the host accepts installation.
     pub fn prepare(&mut self, template: &PreparedTemplate) -> Result<(), String> {
-        let styles = styles::prepare(template)?;
-        self.styles
-            .insert(template.source.id.clone(), Arc::new(styles));
+        styles::prepare(template)?;
+        Ok(())
+    }
+
+    /// Validate all changed placements before replacing any accepted cache.
+    /// Shared cascade identity skips conversion for ordinary text/input edits.
+    pub fn prepare_instances(&mut self, instances: &[&Instance]) -> Result<(), String> {
+        let mut prepared = Vec::new();
+        for instance in instances {
+            let key = (instance.handle.id, instance.handle.generation);
+            if self
+                .styles
+                .get(&key)
+                .is_some_and(|cached| Arc::ptr_eq(&cached.cascade, &instance.styles))
+            {
+                continue;
+            }
+            let native = styles::prepare_cascade(&instance.template, &instance.styles)?;
+            prepared.push((
+                key,
+                CachedStyles {
+                    cascade: instance.styles.clone(),
+                    native: Arc::new(native),
+                },
+            ));
+        }
+        self.styles.extend(prepared);
         Ok(())
     }
     pub fn acknowledge(
@@ -212,7 +236,8 @@ impl Renderer {
             .instances()
             .map(|instance| (instance.handle.id, instance))
             .collect();
-        let instances = order.instances
+        let instances = order
+            .instances
             .iter()
             .map(|handle| records[&handle.id])
             .map(|instance| {
@@ -267,47 +292,59 @@ impl Renderer {
                         });
                         if matches!(item.kind, ItemKind::Input) {
                             live_inputs.insert(key);
-                            let Node::Element { attributes, .. } = &instance.template.source.nodes[item.source] else {
+                            let Node::Element { attributes, .. } =
+                                &instance.template.source.nodes[item.source]
+                            else {
                                 unreachable!()
                             };
                             let site = instance.template.source.events.iter().position(|event| {
-                                event.node == item.source && matches!(event.r#type, EventKind::Change)
+                                event.node == item.source
+                                    && matches!(event.r#type, EventKind::Change)
                             });
                             let sink = click.clone();
-                            let on_change: crate::input::ChangeSink = Rc::new(move |value, edit, cx| {
-                                if site.is_some() {
-                                    let mut event = Emission::new(
-                                        handle,
-                                        key.2,
-                                        EventKind::Change,
-                                        serde_json::json!({
-                                            "target": {"value": value},
-                                            "currentTarget": {"value": value},
-                                        }),
-                                    );
-                                    // The edit number lets reconciliation acknowledge
-                                    // this write without replacing a newer native draft.
-                                    event.edit = Some(edit);
-                                    sink(event, cx);
-                                }
-                            });
+                            let on_change: crate::input::ChangeSink =
+                                Rc::new(move |value, edit, cx| {
+                                    if site.is_some() {
+                                        let mut event = Emission::new(
+                                            handle,
+                                            key.2,
+                                            EventKind::Change,
+                                            serde_json::json!({
+                                                "target": {"value": value},
+                                                "currentTarget": {"value": value},
+                                            }),
+                                        );
+                                        // The edit number lets reconciliation acknowledge
+                                        // this write without replacing a newer native draft.
+                                        event.edit = Some(edit);
+                                        sink(event, cx);
+                                    }
+                                });
                             let controlled = instance.template.source.slots.iter().any(|slot| {
                                 slot.node == item.source && matches!(slot.r#type, SlotKind::Value)
                             });
                             let input = self.inputs.entry(key).or_insert_with(|| {
                                 let options = InputOptions {
-                                    placeholder: attributes.get("placeholder").cloned().unwrap_or_default(),
-                                    label: attributes.get("aria-label").cloned().unwrap_or_default(),
+                                    placeholder: attributes
+                                        .get("placeholder")
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                    label: attributes
+                                        .get("aria-label")
+                                        .cloned()
+                                        .unwrap_or_default(),
                                     controlled,
                                     expect_ack: site.is_some(),
                                 };
-                                cx.new(|_| TextInput::new(
-                                    tracked.clone(),
-                                    &instance.texts[item.source],
-                                    options,
-                                    on_change,
-                                    self.stats.clone(),
-                                ))
+                                cx.new(|_| {
+                                    TextInput::new(
+                                        tracked.clone(),
+                                        &instance.texts[item.source],
+                                        options,
+                                        on_change,
+                                        self.stats.clone(),
+                                    )
+                                })
                             });
                             input.update(cx, |input, cx| {
                                 input.set_focus(tracked.clone());
@@ -325,7 +362,7 @@ impl Renderer {
                     cache,
                     focus,
                     inputs,
-                    styles: self.styles[&instance.template.source.id].clone(),
+                    styles: self.styles[&(handle.id, handle.generation)].native.clone(),
                 }
             })
             .collect();
@@ -334,6 +371,11 @@ impl Renderer {
         self.focus_events
             .retain(|key, _| live_controls.contains(key));
         self.inputs.retain(|key, _| live_inputs.contains(key));
+        self.styles.retain(|(id, generation), _| {
+            records
+                .get(id)
+                .is_some_and(|instance| instance.handle.generation == *generation)
+        });
         SceneElement {
             sequence: scene.sequence(),
             instances,
@@ -820,5 +862,68 @@ impl Element for Observed {
         cx: &mut App,
     ) {
         self.element.as_mut().unwrap().paint(window, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Renderer;
+    use memoized_dom_desktop_host::{Scene, Template, Transaction};
+    use serde_json::json;
+
+    #[test]
+    fn newly_matched_invalid_inline_styles_reject_before_scene_or_cache_publication() {
+        let mut scene = Scene::default();
+        let mut renderer = Renderer::default();
+        let parent: Template = serde_json::from_value(json!({
+            "id": "parent", "nodes": [
+                {"kind":"element","tag":"main","parent":null,"text":"","attributes":{"class":"page"}},
+                {"kind":"region","parent":0}
+            ], "slots": [], "events": [], "stylesheets": [{
+                "selectors": [[
+                    {"combinator":null,"selectors":[{"type":"class","name":"page"}]},
+                    {"combinator":" ","selectors":[{"type":"class","name":"leaf"}]}
+                ]], "declarations": [{"property":"padding-left","value":"9px"}]
+            }]
+        })).unwrap();
+        let leaf: Template = serde_json::from_value(json!({
+            "id": "leaf", "nodes": [
+                {"kind":"element","tag":"strong","parent":null,"text":"","attributes":{"class":"leaf"}},
+                {"kind":"text","parent":0,"text":"Inline"}
+            ], "slots": [], "events": []
+        })).unwrap();
+        scene
+            .install_with(parent, |template| renderer.prepare(template))
+            .unwrap();
+        scene
+            .install_with(leaf, |template| renderer.prepare(template))
+            .unwrap();
+        let transaction = |attach: bool| -> Transaction {
+            let mut child = json!({"kind":"mount","handle":{"id":2,"generation":1},"template":"leaf","values":[]});
+            if attach {
+                child["attach_to"] = json!({"handle":{"id":1,"generation":1},"node":1});
+            }
+            serde_json::from_value(json!({"sequence":1,"operations":[
+                {"kind":"mount","handle":{"id":1,"generation":1},"template":"parent","values":[]}, child
+            ]})).unwrap()
+        };
+        let error = scene
+            .commit_with(transaction(true), |instances| {
+                renderer.prepare_instances(instances)
+            })
+            .unwrap_err();
+        assert!(error.contains("inline <strong>"));
+        assert_eq!(scene.sequence(), 0);
+        assert_eq!(scene.instances().count(), 0);
+        assert!(renderer.styles.is_empty());
+        // The failed attempt consumes neither handles nor sequence. The same
+        // leaf without that ancestor has no padding rule and can be accepted.
+        scene
+            .commit_with(transaction(false), |instances| {
+                renderer.prepare_instances(instances)
+            })
+            .unwrap();
+        assert_eq!(scene.instances().count(), 2);
+        assert_eq!(renderer.styles.len(), 2);
     }
 }

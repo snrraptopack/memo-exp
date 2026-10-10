@@ -68,6 +68,8 @@ pub struct Instance {
     pub dirty: BTreeSet<usize>,
     pub text_groups: Vec<TextValue>,
     pub orders: BTreeMap<usize, Vec<Handle>>,
+    /// Accepted cascade for this placement, shared through text-only updates.
+    pub styles: Arc<Vec<css::CascadedStyle>>,
     markers: BTreeMap<usize, String>,
     pending_groups: BTreeSet<usize>,
 }
@@ -77,6 +79,9 @@ pub struct Scene {
     instances: BTreeMap<u64, Instance>,
     generations: BTreeMap<u64, u64>,
     sequence: u64,
+    stylesheets: Vec<Arc<PreparedTemplate>>,
+    rules: css::PreparedRules,
+    styles_dirty: bool,
 }
 #[derive(Serialize)]
 pub struct Snapshot {
@@ -95,6 +100,7 @@ pub struct InstanceSnapshot {
     pub text_groups: Vec<TextValue>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub orders: BTreeMap<usize, Vec<Handle>>,
+    pub styles: Arc<Vec<css::CascadedStyle>>,
 }
 
 impl Scene {
@@ -140,15 +146,44 @@ impl Scene {
                 Err("Template identity has conflicting definitions".into())
             };
         }
+        let existing_sheet = self.stylesheets.iter().find(|sheet| {
+            match (&sheet.source.stylesheet, &template.stylesheet) {
+                (Some(existing), Some(next)) => existing == next,
+                (None, None) => sheet.source.stylesheets == template.stylesheets,
+                _ => false,
+            }
+        });
+        if existing_sheet.is_some_and(|sheet| sheet.source.stylesheets != template.stylesheets) {
+            return Err("Stylesheet identity has conflicting definitions".into());
+        }
+        let register_sheet = existing_sheet.is_none() && !template.stylesheets.is_empty();
         let template = template.prepare()?;
         prepare(&template)?;
-        self.templates
-            .insert(template.source.id.clone(), Arc::new(template));
+        let template = Arc::new(template);
+        // Every generated fragment carries its module's sheet. Register each
+        // module sheet once, preserving first installation order, so row
+        // allocation and branch selection cannot change global source order.
+        if register_sheet {
+            self.rules.append(&template.rules);
+            self.stylesheets.push(template.clone());
+            self.styles_dirty = true;
+        }
+        self.templates.insert(template.source.id.clone(), template);
         Ok(())
     }
 
     /// Stage only touched instances. No visible record or generation changes on failure.
     pub fn commit(&mut self, transaction: Transaction) -> Result<u64, String> {
+        self.commit_with(transaction, |_| Ok(()))
+    }
+
+    /// The window adapter validates changed cascades before publication. A
+    /// rejected placement must retain both native state and rendered styles.
+    pub fn commit_with(
+        &mut self,
+        transaction: Transaction,
+        prepare: impl FnOnce(&[&Instance]) -> Result<(), String>,
+    ) -> Result<u64, String> {
         if transaction.sequence != self.sequence + 1 {
             return Err("Out-of-order scene transaction".into());
         }
@@ -203,6 +238,7 @@ impl Scene {
                         pending_groups: BTreeSet::new(),
                         orders: BTreeMap::new(),
                         markers: BTreeMap::new(),
+                        styles: Arc::new(template.styles.clone()),
                         template,
                     };
                     apply_writes(&mut instance, values)?;
@@ -253,7 +289,7 @@ impl Scene {
                 }
             }
         }
-        if topology_changed {
+        if topology_changed || self.styles_dirty {
             let candidate: BTreeMap<_, _> = self
                 .instances
                 .iter()
@@ -274,6 +310,15 @@ impl Scene {
                 .collect();
             forest::validate(&candidate)?;
             let markers = forest::markers(&candidate);
+            let styles: Vec<_> = css::prepare_scene(&candidate, &self.rules)?
+                .into_iter()
+                .filter(|(id, styles)| candidate[id].styles.as_ref() != styles)
+                .map(|(id, styles)| (candidate[&id].handle, styles))
+                .collect();
+            drop(candidate);
+            for (handle, styles) in styles {
+                stage_instance(&self.instances, &mut staged, handle)?.styles = Arc::new(styles);
+            }
             for (handle, group, prefix) in markers {
                 let instance = stage_instance(&self.instances, &mut staged, handle)?;
                 instance.markers.insert(group, prefix);
@@ -294,6 +339,12 @@ impl Scene {
             );
             instance.pending_groups.clear();
         }
+        prepare(
+            &staged
+                .values()
+                .filter_map(Option::as_ref)
+                .collect::<Vec<_>>(),
+        )?;
         for (id, instance) in staged {
             if let Some(instance) = instance {
                 self.instances.insert(id, instance);
@@ -303,6 +354,7 @@ impl Scene {
         }
         self.generations.extend(generations);
         self.sequence = transaction.sequence;
+        self.styles_dirty = false;
         Ok(self.sequence)
     }
 
@@ -321,6 +373,7 @@ impl Scene {
                     presentation: instance.template.presentation.items.clone(),
                     text_groups: instance.text_groups.clone(),
                     orders: instance.orders.clone(),
+                    styles: instance.styles.clone(),
                 })
                 .collect(),
         }
