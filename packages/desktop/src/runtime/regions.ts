@@ -2,12 +2,12 @@
 import type { SceneRegionBinding } from './application';
 import { propValues } from './values';
 
-export function readRegion(binding: SceneRegionBinding) {
+export function readRegion(binding: SceneRegionBinding, readProps = propValues) {
   const selected = binding.read();
   if (!selected || !Number.isInteger(selected.branch) || selected.branch < 0 || selected.branch >= binding.branches.length) throw new Error('Invalid desktop region branch');
   const component = binding.branches[selected.branch];
   if (component !== null && typeof component !== 'function') throw new Error('Invalid desktop region component');
-  return { branch: selected.branch, component, props: component ? propValues(selected.props) : {} };
+  return { branch: selected.branch, component, props: component ? readProps(selected.props) : {} };
 }
 export function stagedReadiness() {
   let resolve!: () => void; let reject!: (error: Error) => void;

@@ -25,6 +25,8 @@
     "test:desktop": "bun run --cwd packages/desktop test",
     "desktop:counter": "bun run --cwd packages/compiler build && bun run --cwd packages/desktop build && bun run --cwd packages/desktop build:host && bun run --cwd packages/desktop counter",
     "desktop:dev": "bun run --cwd packages/compiler build && bun run --cwd packages/desktop build && bun run --cwd packages/desktop build:window && bun run --cwd packages/desktop window",
+    "desktop:todo": "bun run --cwd packages/compiler build && bun run --cwd packages/desktop build && bun run --cwd packages/desktop build:window && bun run --cwd packages/desktop todo",
+    "desktop:test:todo": "bun run --cwd packages/compiler build && bun run --cwd packages/desktop build && bun run --cwd packages/desktop build:window && bun run --cwd packages/desktop test:todo",
     "desktop:test:window": "bun run --cwd packages/compiler build && bun run --cwd packages/desktop build && bun run --cwd packages/desktop build:window && bun run --cwd packages/desktop test:window",
     "lint": "oxlint .",
     "typecheck": "bun check && bun run typecheck:jsx",

@@ -20,6 +20,7 @@ import { desktopCssRules } from './css';
 import { desktopProps } from './components';
 import { desktopComponentImports, type DesktopModuleReader } from './imports';
 import { analyzeMapSite, matchMapCall } from '../lists';
+import { prepareDesktopListSources } from './lists';
 
 export interface DesktopCompileOptions {
   /** Build adapters may load component-free TSX utilities without a runtime import. */
@@ -113,6 +114,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       fail('reactive setup derivations are not implemented yet; use the expression directly in JSX', fn);
     }
     const listPrefixes = new Map<string, number>();
+    prepareDesktopListSources(root, ctx);
     const { nodes, slots, events, bindings, handlers, children, regions, lists, componentNames } = lowerDesktopScene(root, {
       callbacks: planComponentCallbacks(ctx, name, component),
       sources: expressionFacts.get(name)!, instrument, fail, fresh, components: ctx.componentProps, imports: ctx.importedComponents,

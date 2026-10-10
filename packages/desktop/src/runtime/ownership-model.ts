@@ -33,6 +33,7 @@ export interface Owner {
   bindings: readonly TextBinding[];
   handlers: readonly SceneHandler[];
   receive?: (props: SceneProps) => void;
+  readProps(props: SceneProps): SceneProps;
   children: Child[];
   regions: Region[];
   lists: ListRegion[];

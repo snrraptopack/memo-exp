@@ -3,12 +3,14 @@ import { resolve } from 'node:path';
 import { createDesktopApplication, runDesktopEntry, type SceneSnapshot } from '@memoized-dom/desktop';
 import { createProcessHost } from '@memoized-dom/desktop/host';
 import { buildDesktopEntry } from '@memoized-dom/desktop/dev';
+import { runTodoSmoke } from './testing/todo';
 
 const entry = process.argv.find(arg => arg.startsWith('--entry='))?.slice(8) ?? resolve(import.meta.dirname, 'counter/main.ts');
 const code = await buildDesktopEntry(entry);
 const executable = process.argv.find(arg => arg.startsWith('--executable='))?.slice(13) ?? resolve(import.meta.dirname, '../rust/gpui/target/debug',
   process.platform === 'win32' ? 'memoized-dom-desktop-window.exe' : 'memoized-dom-desktop-window');
-const host = createProcessHost({ executable, window: true, args: process.argv.includes('--smoke') ? ['--smoke'] : [] });
+const todoSmoke = process.argv.includes('--todo-smoke');
+const host = createProcessHost({ executable, window: true, args: process.argv.includes('--smoke') || todoSmoke ? ['--smoke'] : [] });
 const app = createDesktopApplication(host);
 let smokeReport: Record<string, unknown> | undefined;
 let shutdownMs = 0;
@@ -49,9 +51,11 @@ try {
   await host.ready;
   const roots = await runDesktopEntry(app, () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`));
   const root = roots.get('root')!;
-  const counter = (await host.inspect()).instances.find(instance => instance.template.endsWith('#App'))!;
-  if (!counter) throw new Error('Authored counter was not mounted');
-  if (process.argv.includes('--smoke')) {
+  if (todoSmoke) {
+    smokeReport = await runTodoSmoke({ host, waitForFrame, settleEvents: () => events });
+  } else if (process.argv.includes('--smoke')) {
+    const counter = (await host.inspect()).instances.find(instance => instance.template.endsWith('#App'))!;
+    if (!counter) throw new Error('Authored counter was not mounted');
     const initial = await waitForFrame(1);
     if (!initial.renderer || initial.renderer.width <= 0 || initial.renderer.height <= 0) throw new Error('Desktop layout has empty bounds');
     const buttons = initial.renderer.boxes.filter(box => box.tag === 'button' && box.handle.id === counter.handle.id);
@@ -212,4 +216,4 @@ try {
     shutdownMs = performance.now() - start;
   }
 }
-if (smokeReport) console.log('GPUI TSX/CSS/components/input window smoke test passed:', JSON.stringify({ ...smokeReport, shutdownMs: Math.round(shutdownMs) }));
+if (smokeReport) console.log(todoSmoke ? 'GPUI todo layout/interactions smoke test passed:' : 'GPUI TSX/CSS/components/input window smoke test passed:', JSON.stringify({ ...smokeReport, shutdownMs: Math.round(shutdownMs) }));

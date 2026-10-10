@@ -2,7 +2,7 @@
 use crate::DesktopView;
 use gpui::{
     App, Context, MouseButton, MouseDownEvent, MouseUpEvent, PlatformInput, ScrollDelta,
-    ScrollWheelEvent, Window, point, px,
+    ScrollWheelEvent, Window, point, px, size,
 };
 use memoized_dom_desktop_host::Handle;
 use serde::Deserialize;
@@ -18,6 +18,8 @@ pub struct WindowRequest {
     handle: Option<Handle>,
     node: Option<usize>,
     delta: Option<f32>,
+    width: Option<f32>,
+    height: Option<f32>,
 }
 pub enum Request {
     Input(crate::input::testing::Request),
@@ -67,6 +69,17 @@ impl WindowRequest {
             return Err("Invalid native window test version".into());
         }
         match self.action.as_str() {
+            "resize" => {
+                let dimension = |value: Option<f32>| {
+                    value
+                        .filter(|value| value.is_finite() && *value >= 320. && *value <= 4096.)
+                        .ok_or("Missing valid resize dimension")
+                };
+                window.resize(size(
+                    px(dimension(self.width)?),
+                    px(dimension(self.height)?),
+                ));
+            }
             "click" => {
                 let handle = self.handle.ok_or("Missing click owner")?;
                 let node = self.node.ok_or("Missing click node")?;

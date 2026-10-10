@@ -17,6 +17,8 @@
     "counter": "bun run ./examples/counter.ts",
     "build:window": "cd rust && cargo build --manifest-path gpui/Cargo.toml --locked --jobs 2",
     "window": "bun run ./examples/window.ts",
+    "todo": "bun run ./examples/window.ts --entry=./examples/todo/main.ts",
+    "test:todo": "bun run ./examples/window.ts --entry=./examples/todo/main.ts --todo-smoke",
     "test:styles": "cd rust && cargo test --manifest-path gpui/Cargo.toml --locked --jobs 2",
     "test:window": "bun run test:styles && bun run ./examples/window.ts --smoke"
   },

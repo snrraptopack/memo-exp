@@ -27,6 +27,14 @@ function recordingHost() {
 }
 
 describe('desktop compilation and publication', () => {
+  it('updates primitive results of predicates and scalar conditionals without lowering them as structural regions', async () => {
+    const { Counter } = await load(`export function Counter(){let items=[1,2,3];return <main><button onClick={()=>items=[2,4,6]}>Replace</button><p>{items.filter(item=>item%2===0).length}</p><p>{items.length>2?'Several':'Few'}</p></main>;}`);
+    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(Counter); await root.ready;
+    expect(recording.transactions[0]!.operations[0]).toMatchObject({values:[{slot:0,value:'1'},{slot:1,value:'Several'}]});
+    await root.dispatch(0);
+    expect(recording.transactions.at(-1)!.operations).toEqual([{kind:'update',handle:root.handle,values:[{slot:0,value:'3'}]}]);
+    await app.dispose();
+  });
   it('publishes native input values and dependent text from the authored change callback', async () => {
     const { Counter } = await load(`export function Counter(){ let value = ''; return <div><input type="text" value={value} onChange={e => value = e.target.value}/><p>{value}</p></div>; }`);
     const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(Counter); await root.ready;

@@ -10,7 +10,7 @@ export interface DesktopProcessHost extends DesktopHost {
   /** Debug builds only; invokes the native platform input handler in window tests. */
   testInput(handle: NativeSceneEvent['handle'], node: number, action: 'insert' | 'compose' | 'commit' | 'backspace' | 'select-all', text?: string): Promise<void>;
   /** Debug builds only; routes clicks and wheel movement through GPUI hit testing. */
-  testWindow(event: { action: 'click'; handle: NativeSceneEvent['handle']; node: number } | { action: 'scroll'; delta: number }): Promise<void>;
+  testWindow(event: { action: 'click'; handle: NativeSceneEvent['handle']; node: number } | { action: 'scroll'; delta: number } | { action: 'resize'; width: number; height: number }): Promise<void>;
   inspect(): Promise<SceneSnapshot>;
   redraw(): Promise<void>;
   close(): Promise<void>;

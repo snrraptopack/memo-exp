@@ -3,7 +3,7 @@ import type { SceneOperation, TextWrite } from '../bridge/protocol';
 import type { PreparedPublication } from './publication';
 import type { Child, Family, Owner, PreparedOwner } from './ownership-model';
 import type { SceneComponent } from './definitions';
-import { affected, propValues, sameProps, textValue, type SceneProps as Props } from './values';
+import { affected, sameProps, textValue, type SceneProps as Props } from './values';
 import { readRegion } from './regions';
 import { readList } from './lists';
 
@@ -64,7 +64,7 @@ export function createTreePreparer(hooks: {
         const props: [Child, Props][] = [];
         for (const child of owner.children) {
           if (!child.binding || child.owner.disposed || !affected(child.binding.sources, sources)) continue;
-          const next = propValues(child.binding.read());
+          const next = owner.readProps(child.binding.read());
           if (sameProps(child.props, next)) continue;
           receive(child, next);
           props.push([child, next]);
@@ -72,7 +72,7 @@ export function createTreePreparer(hooks: {
         const changes: PreparedOwner['regions'] = [];
         for (const region of owner.regions) {
           if (owner.mounted && !affected(region.binding.sources, sources)) continue;
-          const next = readRegion(region.binding);
+          const next = readRegion(region.binding, owner.readProps);
           let child: Child | undefined;
           if (next.branch === region.branch && !region.child?.owner.disposed) {
             if (region.candidate) retire(owned(region.candidate.child.owner));
@@ -95,7 +95,7 @@ export function createTreePreparer(hooks: {
         const lists: PreparedOwner['lists'] = [];
         for (const list of owner.lists) {
           if (owner.mounted && !affected(list.binding.sources, sources)) continue;
-          const values = readList(list.binding);
+          const values = readList(list.binding, owner.readProps);
           const wanted = new Set(values.map(value => value.key));
           const canceled = [...list.candidates].filter(([key]) => !wanted.has(key)).map(([, row]) => row.owner);
           if (canceled.length) retire(owned(canceled));

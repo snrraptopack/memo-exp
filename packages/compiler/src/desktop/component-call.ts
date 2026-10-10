@@ -5,6 +5,7 @@ import { walkAst } from '../ast/walk';
 import { unwrapTypeExpression } from '../ast/normalize';
 import type { ComponentPropsPlan } from '../components/props';
 import type { LinkedComponentImport } from '../context/model';
+import { nodeHasJsx } from '../context/ast';
 
 export function desktopComponentCall(element: t.JSXElement, options: {
   components: ReadonlyMap<string, ComponentPropsPlan>;
@@ -35,7 +36,12 @@ export function desktopComponentCall(element: t.JSXElement, options: {
     if (attribute.value) {
       value = (b.isJSXExpressionContainer(attribute.value) ? unwrapTypeExpression(attribute.value.expression) : attribute.value) as t.Expression;
       walkAst<t.Node>(value, { enter(current) {
-        if (b.isJSXElement(current) || b.isJSXFragment(current) || b.isJSXEmptyExpression(current) || ['ObjectExpression', 'ArrayExpression', 'ArrowFunctionExpression', 'FunctionExpression'].includes(current.type)) fail('desktop child props currently require primitive expressions', current);
+        if (b.isArrowFunctionExpression(current) || b.isFunctionExpression(current)) {
+          if (current.async || current.generator) fail('desktop callback props must be synchronous', current);
+          if (nodeHasJsx(current)) fail('desktop render-prop callbacks are not implemented yet', current);
+          return false;
+        }
+        if (b.isJSXElement(current) || b.isJSXFragment(current) || b.isJSXEmptyExpression(current) || ['ObjectExpression', 'ArrayExpression'].includes(current.type)) fail('desktop child props currently require primitive expressions or synchronous callbacks', current);
       } });
     }
     const reads = options.sourcesFor(value);

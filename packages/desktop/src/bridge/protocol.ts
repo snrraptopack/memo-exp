@@ -20,12 +20,6 @@ export interface NativeSceneEvent {
   readonly payload?: unknown;
   readonly edit?: number;
 }
-/** Serializable value event delivered by native text controls. */
-export interface DesktopInputEvent {
-  readonly target: { readonly value: string };
-  readonly currentTarget: { readonly value: string };
-}
-
 export interface DesktopHost {
   /** Reject only for explicit refusal; ambiguous failures must use DesktopConnectionError. */
   install(template: SceneTemplate): Promise<void>;

@@ -3,7 +3,7 @@ import type { SceneHandle, SceneOperation, SceneTemplate } from '../bridge/proto
 import type { SceneHandler, SceneInstance, SceneMountOptions, TextBinding } from './application';
 import type { createPublicationQueue } from './publication';
 import type { Child, Family, Owner } from './ownership-model';
-import { propValues, textValue, type SceneProps as Props } from './values';
+import { propValues, textValue, type SceneProps as Props, type SceneCallback } from './values';
 import { componentTemplates, type SceneComponent } from './definitions';
 import { readRegion, stagedReadiness } from './regions';
 import { readList } from './lists';
@@ -15,6 +15,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
   const owners = new Map<SceneInstance, Owner>();
   const handles = new Map<number, Owner>();
   const installations = new WeakMap<SceneTemplate, Promise<void>>();
+  const ownedCallbacks = new WeakSet<SceneCallback>();
 
   const install = (template: SceneTemplate): Promise<void> => {
     let task = installations.get(template);
@@ -184,7 +185,25 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       const group = placement?.family ?? family();
       const attachment = placement ? { handle: placement.parent.instance.handle, node: placement.node } : undefined;
       const handle = Object.freeze({ id: nextId++, generation: 1 });
+      let callbacks: WeakMap<SceneCallback, SceneCallback> | undefined;
       const owner: Owner = { instance: undefined!, family: group, parent, attachment, template, bindings, handlers,
+        readProps: props => propValues(props, callback => {
+          // Forwarding preserves the declaring owner and stable callback identity.
+          if (ownedCallbacks.has(callback)) return callback;
+          let bound = callbacks?.get(callback);
+          if (!bound) {
+            bound = function(this: unknown, ...args: unknown[]) {
+              if (owner.disposed || isClosed()) throw new Error('Desktop callback targets a disposed owner');
+              try {
+                const result = Reflect.apply(callback, this, args);
+                if (result instanceof Promise) throw new Error('Asynchronous desktop callbacks are not supported yet');
+                return result;
+              } finally { invalidate(owner, null); }
+            };
+            (callbacks ??= new WeakMap()).set(callback, bound); ownedCallbacks.add(bound);
+          }
+          return bound;
+        }),
         receive: options.receiveProps, initial, children: [], regions: [], lists: [], acknowledged: new Map(), pending: new Set(), dirty: false, disposed: false, mounted: false,
         stagedReady: staging ? stagedReadiness() : undefined };
       const instance: SceneInstance = {
@@ -223,14 +242,14 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
         for (const binding of options.children ?? []) {
           if (template.nodes[binding.node]?.kind !== 'region' || regions.has(binding.node)) throw new Error('Invalid or duplicate desktop component region');
           regions.add(binding.node);
-          const props = propValues(binding.read());
+          const props = owner.readProps(binding.read());
           const child = construct(owner, binding.node, binding.component, props, staging);
           owner.children.push({ ...child, binding });
         }
         for (const binding of options.regions ?? []) {
           if (template.nodes[binding.node]?.kind !== 'region' || regions.has(binding.node)) throw new Error('Invalid or duplicate desktop component region');
           regions.add(binding.node);
-          const next = readRegion(binding);
+          const next = readRegion(binding, owner.readProps);
           const child = next.component ? construct(owner, binding.node, next.component, next.props, staging) : undefined;
           owner.regions.push({ binding, branch: next.branch, child });
           if (child) owner.children.push(child);
@@ -239,7 +258,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
           const node = template.nodes[binding.node];
           if (node?.kind !== 'region' || !node.multiple || regions.has(binding.node)) throw new Error('Invalid or duplicate desktop list region');
           regions.add(binding.node);
-          const values = readList(binding);
+          const values = readList(binding, owner.readProps);
           const list = { binding, rows: values.map(value => ({ ...construct(owner, binding.node, binding.component, value.props, staging), key: value.key })), candidates: new Map() };
           owner.lists.push(list); owner.children.push(...list.rows);
         }

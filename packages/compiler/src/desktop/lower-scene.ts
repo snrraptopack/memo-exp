@@ -50,7 +50,7 @@ export function lowerDesktopScene(root: t.Node, options: {
   };
   const componentCall = (element: t.JSXElement) => desktopComponentCall(element, { ...options, sourcesFor: dependenciesFor });
   const addList = (call: MapCallExpression, parent: number | null): void => {
-    if (call.arguments[0]) assertSynchronousCallback(call.arguments[0], fail);
+    assertSynchronousCallback(call, fail);
     const plan = desktopListPlan(options.listSite(call), { call: componentCall, fresh: options.fresh, fail, sourcesFor: dependenciesFor });
     const node = nodes.length; nodes.push({ kind: 'region', parent, multiple: true });
     componentNames.add(plan.component.name);
@@ -79,9 +79,11 @@ export function lowerDesktopScene(root: t.Node, options: {
     return node;
   };
   const addBinding = (expression: t.Expression, node: number, type: TextSlot['type']): void => {
-    walkAst<t.Node>(expression, { enter(current) {
-      if (b.isJSXElement(current) || b.isJSXFragment(current) || ['ConditionalExpression', 'LogicalExpression', 'ArrayExpression', 'ArrowFunctionExpression', 'FunctionExpression'].includes(current.type)) fail('structural expressions are not implemented yet', current);
-    } });
+    if (nodeHasJsx(expression)) fail('structural expressions are not implemented yet', expression);
+    if (['ObjectExpression', 'ArrayExpression', 'ArrowFunctionExpression', 'FunctionExpression'].includes(expression.type)) fail('text/value expressions require primitive results', expression);
+    // Call arguments may contain predicates and conditional scalar expressions.
+    // The resulting value is still checked by the runtime's primitive slot contract.
+    assertSynchronousCallback(expression, fail);
     const slot = slots.length;
     slots.push({ node, type });
     const dependencies = dependenciesFor(expression);

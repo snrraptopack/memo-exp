@@ -4,6 +4,23 @@ import * as b from '../ast/factory';
 import type { MapSite } from '../lists';
 import type { desktopComponentCall } from './component-call';
 import { extractPatternIdentifiers, type BaseNode } from '../ast';
+import { walkAst } from '../ast/walk';
+import { matchMapCall } from '../lists';
+import type { Ctx } from '../context';
+
+/** Desktop reconciles evaluated arrays; computed sources need no DOM access-table identity. */
+export function prepareDesktopListSources(root: t.Node, ctx: Ctx): void {
+  let occurrence = 0;
+  walkAst<t.Node>(root, { enter(node) {
+    const call = matchMapCall(node);
+    if (!call) return;
+    const source = (call.callee as t.MemberExpression | t.OptionalMemberExpression).object;
+    if (b.isCallExpression(source) || b.isOptionalCallExpression(source)) {
+      const key = `$desktopExpression${occurrence++}`;
+      ctx.analyzedListSources.set(call, { key, local: true, suffixBase: key });
+    }
+  } });
+}
 
 export function desktopListPlan(site: MapSite, options: {
   call(element: t.JSXElement): ReturnType<typeof desktopComponentCall>;

@@ -3,6 +3,6 @@ export { createDesktopApplication, mountScene, sceneEvent, type DesktopApplicati
 export { defineSceneComponent, type SceneComponent } from './runtime/definitions';
 export { DesktopConnectionError } from './bridge/protocol';
 export type { DesktopHost, SceneTemplate, SceneHandle, SceneOperation, SceneTransaction,
-  SceneAcknowledgment, SceneSnapshot, SceneAttachment, TextWrite, NativeSceneEvent, DesktopInputEvent } from './bridge/protocol';
+  SceneAcknowledgment, SceneSnapshot, SceneAttachment, TextWrite, NativeSceneEvent } from './bridge/protocol';
 export type { SceneNode, FlowItem, TextGroupValue } from './scene/schema';
 export { mount, runDesktopEntry, type DesktopRoot } from './runtime/mount';

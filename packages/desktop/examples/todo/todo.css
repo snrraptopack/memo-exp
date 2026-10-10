@@ -1,0 +1,42 @@
+/* Ordinary CSS declarations are translated to GPUI styles and laid out by Taffy. */
+.todo-page { width: 100%; min-height: 100%; padding: 32px; background-color: #f2f5fa; color: #17243c; font-family: "Segoe UI"; font-size: 15px; line-height: 1.5; }
+.workspace { width: 100%; max-width: 960px; margin: 0 auto; }
+h1 { margin: 0 0 12px; font-size: 34px; font-weight: 700; }
+h2 { margin: 0; font-size: 19px; font-weight: 700; }
+p { margin: 0; }
+.hero { padding: 12px 0 28px; }
+.eyebrow { margin-bottom: 12px; color: #4869b1; font-size: 12px; font-weight: 700; }
+.subtitle { max-width: 580px; color: #65738c; }
+.muted { color: #65738c; font-size: 13px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat { padding: 18px; background-color: white; border: 1px solid #dce3ef; border-radius: 10px; }
+.stat-label { color: #65738c; font-size: 13px; }
+.stat-value { margin-top: 4px; font-size: 28px; font-weight: 700; }
+.panel { padding: 24px; margin-bottom: 20px; background-color: white; border: 1px solid #dce3ef; border-radius: 12px; }
+.composer { display: flex; flex-direction: column; gap: 12px; }
+.editor { display: flex; flex-direction: row; flex-wrap: wrap; gap: 12px; align-items: center; }
+input { padding: 11px 12px; background-color: #f8fafc; border: 1px solid #c8d3e4; border-radius: 7px; color: #17243c; }
+input:focus { border-color: #416ce0; }
+#new-task { width: 100%; flex-basis: 300px; flex-grow: 1; min-width: 0; }
+button { padding: 10px 14px; border: 1px solid #d7dfec; border-radius: 7px; background-color: #f5f7fb; color: #314563; font-size: 13px; font-weight: 600; }
+button:hover { background-color: #e7edf8; }
+button:focus { border-color: #416ce0; }
+.primary { background-color: #416ce0; color: white; border-color: #416ce0; }
+.primary:hover { background-color: #3156b6; }
+.message { color: #416ce0; font-size: 13px; }
+.toolbar { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.button-group { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+.utilities { margin: 16px 0 20px; }
+.task-list { display: flex; flex-direction: column; gap: 12px; }
+.task-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; align-items: flex-start; padding: 18px; background-color: #f8fafc; border: 1px solid #e0e6f0; border-radius: 8px; }
+.task-content { display: flex; flex-direction: column; gap: 8px; flex-basis: 320px; flex-grow: 1; min-width: 0; }
+.task-title { font-size: 16px; font-weight: 600; }
+.completed-title { color: #8190a7; }
+.task-status { color: #65738c; font-size: 12px; }
+.row-note { width: 100%; max-width: 420px; }
+.note-preview { color: #65738c; font-size: 12px; }
+.row-actions { flex-shrink: 0; }
+.toggle { color: #2c6b54; background-color: #eaf5ef; border-color: #c7e3d3; }
+.danger { color: #a84b5b; background-color: #fff1f3; border-color: #f0d2da; }
+.empty { padding: 24px; margin-bottom: 12px; background-color: #f2f6fd; border-radius: 8px; }
+#todo-footer { padding: 4px 0 24px; }

@@ -20,6 +20,40 @@ function recording() {
   return { app, templates, transactions, reject() { reject = true; } };
 }
 
+it('publishes declaring-owner changes through forwarded synchronous callback props', async () => {
+  const { App } = await load(`
+    function Leaf({onAdd}) {let clicks=0;return <button onClick={()=>{clicks++;onAdd(2);}}>Clicks: {clicks}</button>;}
+    function Middle({onAdd}) {return <section><Leaf onAdd={onAdd}/></section>;}
+    export function App(){let count=0;const add=(amount)=>count+=amount;return <main><p>{count}</p><Middle onAdd={add}/></main>;}
+  `);
+  const f = recording(); const root = f.app.mount(App); await root.ready;
+  const leaf = f.transactions[0]!.operations.at(-1)!.handle;
+  await f.app.dispatch(leaf, 0);
+  expect(f.transactions.at(-1)!.operations).toEqual([
+    {kind:'update',handle:root.handle,values:[{slot:0,value:'2'}]},
+    {kind:'update',handle:leaf,values:[{slot:0,value:'1'}]},
+  ]);
+  await f.app.dispose();
+});
+
+it('keeps callback writes dirty after an authored throw and a rejected parent publication', async () => {
+  const { App } = await load(`function Child({onAdd}){return <button onClick={()=>onAdd()}>Add</button>;}export function App(){let count=0;return <main><p>{count}</p><Child onAdd={()=>{count++;throw new Error('callback failed');}}/></main>;}`);
+  const f = recording(); const root = f.app.mount(App); await root.ready;
+  const child = f.transactions[0]!.operations[1]!.handle;
+  f.reject(); const error = await rejection(f.app.dispatch(child, 0));
+  expect(error).toBeInstanceOf(AggregateError);
+  await root.flush();
+  expect(f.transactions.at(-1)!.operations).toEqual([{kind:'update',handle:root.handle,values:[{slot:0,value:'1'}]}]);
+  await f.app.dispose();
+});
+
+it('rejects async and generator callback prop literals during compilation', () => {
+  for (const callback of ['async ()=>{}', 'function*(){}']) {
+    expect(()=>compileDesktop(`function Child({action}){return <button onClick={()=>action()}>Run</button>;}export function App(){return <Child action={${callback}}/>;}`)).toThrow('callback props must be synchronous');
+  }
+  expect(()=>compileDesktop(`function Child({action}){return <button onClick={()=>action()}>Run</button>;}export function App(){return <Child action={()=><p>render prop</p>}/>;}`)).toThrow('render-prop callbacks');
+});
+
 it('attaches compiled children, refreshes destructured props, and keeps local state and owner handles', async () => {
   const { App } = await load(`
     function Child({count, label='Child'}) {
