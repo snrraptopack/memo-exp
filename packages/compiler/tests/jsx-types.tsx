@@ -1,5 +1,8 @@
 /** General JSX compile-only assertions run by bun check -p packages/compiler/tsconfig.test.json. */
 import type {} from '@memoized-dom/compiler/jsx';
+// An imported React namespace used to steal intrinsic props in editor checks.
+import type * as React from 'react';
+export type ReactCanCoexist = React.ReactNode;
 
 type Assert<T extends true> = T;
 type IsAny<T> = 0 extends (1 & T) ? true : false;
@@ -10,6 +13,7 @@ export type EverySVGTag = Assert<keyof SVGElementTagNameMap extends keyof JSX.In
 export type EveryMathMLTag = Assert<keyof MathMLElementTagNameMap extends keyof JSX.IntrinsicElements ? true : false>;
 
 export function nativeJSXTypes() {
+  const nestedClass = <div class="workspace"><p>First</p><p>Second</p></div>;
   const input = <input type="text" onInput={event => {
     const value: string = event.currentTarget.value;
     const native: Event = event;
@@ -51,7 +55,7 @@ export function nativeJSXTypes() {
   const badButton = <button onClick={event => event.currentTarget.selectionStart} />;
   // @ts-expect-error Known tags no longer accept arbitrary misspelled attributes.
   const typo = <input placehoder="typo" />;
-  return [input, button, form, svg, math, attributes, badDiv, badKey, badButton, typo, typedReturn, element, invalidElement, invalidChild, invalidComponent];
+  return [nestedClass, input, button, form, svg, math, attributes, badDiv, badKey, badButton, typo, typedReturn, element, invalidElement, invalidChild, invalidComponent];
 }
 
 function TypedComponent({ count }: { count: number }) { return <span>{count}</span>; }

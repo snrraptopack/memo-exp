@@ -27,7 +27,7 @@ Optional capability packages:
 
 **`tsconfig.json`**
 
-Set `"jsx": "preserve"` so the Memoized DOM compiler owns JSX transforms, and include the ambient compiler types:
+Set `"jsx": "preserve"` so the Memoized DOM compiler owns JSX transforms. Select its JSX type source explicitly so React types from other dependencies cannot replace the framework's intrinsic attributes:
 
 ```json
 {
@@ -37,6 +37,7 @@ Set `"jsx": "preserve"` so the Memoized DOM compiler owns JSX transforms, and in
     "moduleResolution": "Bundler",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
+    "jsxImportSource": "@memoized-dom/compiler",
     "strict": true,
     "noEmit": true,
     "types": ["@memoized-dom/compiler/jsx"]

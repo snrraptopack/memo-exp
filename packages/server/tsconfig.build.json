@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "jsxImportSource": null,
     "incremental": false,
     "noEmit": false,
     "declaration": true,

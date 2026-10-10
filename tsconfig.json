@@ -6,6 +6,7 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "preserve",
+    "jsxImportSource": "@memoized-dom/compiler",
     "allowJs": true,
     "types": ["bun","node"],
 
@@ -21,6 +22,7 @@
     // dev server / build into each example's .memoized/ directory).
     "paths": {
       "@memoized-dom/compiler/jsx": ["./packages/compiler/src/jsx-types.ts"],
+      "@memoized-dom/compiler/jsx-runtime": ["./packages/compiler/src/jsx-runtime.ts"],
       "#server/*": ["./examples/fullstack/server/*"],
       "#server-functions": ["./examples/fullstack/.memoized/server-functions.d.ts"]
     },

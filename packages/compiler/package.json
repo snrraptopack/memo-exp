@@ -11,6 +11,9 @@
     "dist"
   ],
   "exports": {
+    "./jsx-runtime": {
+      "types": "./dist/jsx-runtime.d.ts"
+    },
     "./desktop": {
       "types": "./dist/desktop/index.d.ts",
       "import": "./dist/desktop.js",

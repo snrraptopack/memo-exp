@@ -14,6 +14,8 @@ Add the plugin to the application `tsconfig.json`:
 ```json
 {
   "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "@memoized-dom/compiler",
     "plugins": [
       {
         "name": "@memoized-dom/language-service"
