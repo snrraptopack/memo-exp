@@ -15,6 +15,7 @@ import {
 } from '../ast';
 import { createCtx, type DomContext as Ctx, type InternalMemoDomOptions } from './context';
 import { freshWriteConst } from './constants';
+import { emitModuleComputeds } from '../emission/computeds';
 import { type MemoDomOptions } from '../context';
 import { generatedIdentifier, md, requireIdentifiers } from './identifiers';
 import { planAccessReaders } from '../analysis/access-table';
@@ -49,77 +50,6 @@ import { rewriteTransparentDataReads } from './read-rewriting';
 import {
   externalReactiveImportStatements,
 } from './external-reactivity';
-
-/**
- * R13: rewrite each computed declaration (`const` or `let` initialized from state)
- * into a `let` plus a depth-(-1) entity whose render recomputes and commits
- * 'x' downstream ONLY when the value actually changed (computedChanged).
- * Depth -1 guarantees the recompute renders BEFORE any reader in a commit.
- */
-function rewriteComputeds(ctx: Ctx, program: t.Program): void {
-  const computedPrefix = `${ctx.rootId}/$computed/${encodeURIComponent(ctx.moduleId)}#`;
-  for (let statementIndex = 0; statementIndex < program.body.length; statementIndex++) {
-    const statement = program.body[statementIndex]!;
-    let declNode: t.Node | null | undefined = statement;
-    if (astFactory.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
-    if (!astFactory.isVariableDeclaration(declNode) ||
-      (declNode.kind !== 'const' && declNode.kind !== 'let')) continue;
-    const registrations: t.Statement[] = [];
-    for (const d of declNode.declarations) {
-      if (!astFactory.isIdentifier(d.id) || d.init == null) continue;
-      const name = d.id.name;
-      if (!ctx.computeds.has(name)) continue;
-      declNode.kind = 'let';
-      const init = cloneEstreeNode(d.init);
-      const next = generatedIdentifier(ctx, `${name}Next`);
-      const registerStmt = astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'registerEntity'), [
-          astFactory.objectExpression([
-            astFactory.objectProperty(
-              astFactory.identifier('id'),
-              astFactory.stringLiteral(`${computedPrefix}${name}`),
-            ),
-            astFactory.objectProperty(astFactory.identifier('parent'), astFactory.nullLiteral()),
-            astFactory.objectProperty(
-              astFactory.identifier('depth'),
-              astFactory.unaryExpression('-', astFactory.numericLiteral(1)),
-            ),
-            astFactory.objectProperty(
-              astFactory.identifier('render'),
-              astFactory.arrowFunctionExpression(
-                [],
-                astFactory.blockStatement([
-                  astFactory.variableDeclaration('const', [
-                    astFactory.variableDeclarator(next, init),
-                  ]),
-                  astFactory.ifStatement(
-                    astFactory.callExpression(md(ctx, 'computedChanged'), [
-                      astFactory.identifier(name),
-                      cloneEstreeNode(next),
-                    ]),
-                    astFactory.blockStatement([
-                      astFactory.expressionStatement(
-                        astFactory.assignmentExpression('=', astFactory.identifier(name), cloneEstreeNode(next)),
-                      ),
-                      astFactory.expressionStatement(
-                        astFactory.callExpression(md(ctx, 'commitWrites'), [freshWriteConst(ctx, [name])]),
-                      ),
-                    ]),
-                  ),
-                ]),
-              ),
-            ),
-          ]),
-        ]),
-      );
-      registrations.push(registerStmt);
-    }
-    if (registrations.length > 0) {
-      program.body.splice(statementIndex + 1, 0, ...registrations);
-      statementIndex += registrations.length;
-    }
-  }
-}
 
 function rewriteModuleControlFlow(
   ctx: Ctx,
@@ -277,7 +207,11 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   rejectLeftoverJsx(ctx, programPath);
 
   const table = emitAccessTable(ctx, planAccessReaders(ctx));
-  if (ctx.computeds.size > 0) rewriteComputeds(ctx, programPath.node);
+  if (ctx.computeds.size > 0) emitModuleComputeds(ctx, programPath.node, {
+    fresh: name => generatedIdentifier(ctx, name),
+    runtime: name => md(ctx, name),
+    writes: keys => freshWriteConst(ctx, keys),
+  });
   if (ctx.moduleControlFlow.length > 0) {
     rewriteModuleControlFlow(ctx, programPath.node);
   }

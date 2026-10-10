@@ -22,5 +22,6 @@
     "test:styles": "cd rust && cargo test --manifest-path gpui/Cargo.toml --locked --jobs 2",
     "test:window": "bun run test:styles && bun run ./examples/window.ts --smoke"
   },
+  "dependencies": { "@memoized-dom/runtime": "workspace:*" },
   "devDependencies": { "@memoized-dom/compiler": "workspace:*" }
 }

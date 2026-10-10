@@ -115,7 +115,12 @@ export function resolveEnvironment(
   if (overrides === undefined) return base;
   return {
     mode: overrides.mode ?? base.mode,
-    document: overrides.document ?? base.document,
+    // A semantic-only host never uses document operations. Resolve this
+    // capability when a rendering feature actually asks for it, as the
+    // unmodified client environment already does.
+    get document() {
+      return overrides.document ?? base.document;
+    },
     schedule:
       overrides.schedule === undefined ? base.schedule : overrides.schedule,
     effects: overrides.effects ?? base.effects,

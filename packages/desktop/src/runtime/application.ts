@@ -2,6 +2,8 @@ import type { DesktopHost, NativeSceneEvent, SceneHandle, SceneTemplate } from '
 import { createOwnerForest } from './ownership';
 import { createPublicationQueue } from './publication';
 import type { SceneComponent } from './definitions';
+import { createSceneSemanticRuntime } from './semantic';
+import { componentModules } from './definitions';
 
 export interface TextBinding {
   readonly slot: number;
@@ -20,6 +22,7 @@ export interface SceneChildBinding {
 }
 
 export interface SceneMountOptions {
+  readonly modules?: readonly string[];
   /** Compiler fragments retain structure but share their enclosing state scope. */
   readonly lexical?: boolean;
   readonly children?: readonly SceneChildBinding[];
@@ -61,6 +64,8 @@ export interface SceneInstance {
 }
 
 export interface DesktopApplication {
+  /** Scope entry evaluation and programmatic callbacks to this core application. */
+  run<T>(callback: () => T): T;
   mount<T>(factory: () => T): T;
   dispatch(handle: SceneHandle, event: number, payload?: unknown): Promise<unknown>;
   /** Dispatch one platform event through its authored ancestors and defaults. */
@@ -99,6 +104,7 @@ export function mountScene(
 /** Ownership, expression preparation and publication stay separate from entry evaluation. */
 export function createDesktopApplication(host: DesktopHost): DesktopApplication {
   let closed = false;
+  const semantic = createSceneSemanticRuntime();
 
   const forest = createOwnerForest(
     createPublicationQueue(host),
@@ -107,22 +113,28 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
       const previous = active;
       active = context;
       try {
-        return factory();
+        return semantic.run(factory);
       } finally {
         active = previous;
       }
     },
+    semantic,
   );
 
   const context: ApplicationContext = forest;
   return {
+    run(callback) {
+      if (closed) throw new Error('Desktop application is disposed');
+      return semantic.run(callback);
+    },
     mount(factory) {
       if (closed) throw new Error('Desktop application is disposed');
       const previous = active;
       const before = new Set(forest.owners.keys());
       active = context;
       try {
-        const result = factory();
+        semantic.initialize(componentModules(factory));
+        const result = semantic.run(factory);
         if (result instanceof Promise)
           throw new Error('Desktop mount factories must be synchronous');
         return result;
@@ -137,13 +149,14 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
     async dispatch(handle, event, payload) {
       if (closed) throw new Error('Desktop application is disposed');
       const instance = forest.find(handle);
-      if (instance) return instance.dispatch(event, payload);
+      if (instance) return semantic.run(() => instance.dispatch(event, payload));
       throw new Error('Native desktop event targets an unknown or retired owner');
     },
     dispatchEvent(event) {
-      return forest.dispatchEvent(event);
+      return semantic.run(() => forest.dispatchEvent(event));
     },
     async flush() {
+      await semantic.flush();
       const results = await Promise.allSettled(forest.roots().map((instance) => instance.flush()));
       const errors = results.flatMap((result) =>
         result.status === 'rejected' ? [result.reason] : [],
@@ -159,6 +172,7 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
         result.status === 'rejected' ? [result.reason] : [],
       );
       if (errors.length) throw new AggregateError(errors, 'Desktop scene disposal failed');
+      semantic.dispose();
     },
   };
 }

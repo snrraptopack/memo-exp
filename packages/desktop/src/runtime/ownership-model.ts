@@ -25,6 +25,8 @@ export interface Family {
   work: Promise<void>;
 }
 export interface Owner {
+  /** Hierarchical core identity; numeric native handles remain a separate ABI. */
+  entityId: string;
   instance: SceneInstance;
   family: Family;
   parent?: Owner;

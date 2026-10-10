@@ -71,6 +71,9 @@
     "packages/desktop": {
       "name": "@memoized-dom/desktop",
       "version": "0.0.1",
+      "dependencies": {
+        "@memoized-dom/runtime": "workspace:*",
+      },
       "devDependencies": {
         "@memoized-dom/compiler": "workspace:*",
       },

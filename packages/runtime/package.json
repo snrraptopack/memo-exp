@@ -21,6 +21,16 @@
       "import": "./dist/server.js",
       "default": "./dist/server.js"
     },
+    "./node-context": {
+      "types": "./dist/node-context.d.ts",
+      "import": "./dist/node-context.js",
+      "default": "./dist/node-context.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "default": "./dist/core.js"
+    },
     "./client": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",

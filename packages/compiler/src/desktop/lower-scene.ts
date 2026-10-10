@@ -16,6 +16,8 @@ import { matchMapCall, type MapSite } from '../lists';
 import type { MapCallExpression } from '../context';
 import { desktopListPlan } from './lists';
 import type { ParentRow } from '../lists/map-site';
+import type { HandlerWritePlan } from '../handlers/plan';
+import type { CallbackSourcePlan } from '../planning/component-callbacks';
 
 const desktopEventNames = {
   onClick: 'click',
@@ -81,6 +83,8 @@ export function lowerDesktopScene(
     imports: ReadonlyMap<string, LinkedComponentImport>;
     fresh: (name: string) => t.Identifier;
     listSite: (call: MapCallExpression, parentRow?: ParentRow) => MapSite;
+    routeWrites(plan: HandlerWritePlan): void;
+    moduleCallback(expression: t.Expression): CallbackSourcePlan | null;
     fail: (message: string, at: t.Node) => never;
   },
 ): DesktopScene {
@@ -334,17 +338,21 @@ export function lowerDesktopScene(
       if (!value || !b.isJSXExpressionContainer(value))
         fail(`${name} requires a callback expression`, attribute);
       const expression = unwrapTypeExpression(value.expression) as t.Expression;
-      const callback = callbacks.forEvent(expression);
+      const localCallback = callbacks.forEvent(expression);
+      const moduleCallback = localCallback ? null : options.moduleCallback(expression);
+      const callback = localCallback ?? moduleCallback;
       if (!callback)
-        fail(`${name} requires an inline callback or component-local helper`, attribute);
+        fail(`${name} requires an inline callback or a linked helper`, attribute);
       assertSynchronousCallback(callback.target, fail);
       for (const helper of callback.helpers) assertSynchronousCallback(helper.target, fail);
       const plan = callback.writesFor(undefined, true);
+      options.routeWrites(plan);
+      for (const helper of callback.helpers) options.routeWrites(helper.writesFor());
       const changed = new Set<string>();
       let conservative = plan.executionAwareRoot;
       for (const writes of plan.scopes.values()) {
         for (const key of writes.instanceWrites) changed.add(key.split('.')[0]!);
-        conservative ||= writes.rootFallback || writes.eventFallback || writes.writes.size > 0;
+        conservative ||= writes.rootFallback || writes.eventFallback;
       }
       // Helpers are kept intact. Their effects are conservatively replayed until
       // desktop lowering instruments their individual mutation sites.
@@ -355,7 +363,7 @@ export function lowerDesktopScene(
       events.push({ node, type: eventType });
       handlers.push(
         b.callExpression(instrument, [
-          expression,
+          moduleCallback && b.isExpression(moduleCallback.target) ? moduleCallback.target : expression,
           valueExpression(conservative ? null : [...changed].sort()),
         ]),
       );

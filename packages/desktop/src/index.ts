@@ -2,6 +2,7 @@ export { createDesktopApplication, mountScene, sceneEvent, type DesktopApplicati
   type TextBinding, type SceneHandler, type SceneChildBinding, type SceneMountOptions, type SceneRegionBinding, type SceneListBinding, type SceneRowKey } from './runtime/application';
 export { defineSceneComponent, type SceneComponent } from './runtime/definitions';
 export { sceneScope } from './runtime/scope';
+export { defineSceneModule } from './runtime/modules';
 export { DesktopConnectionError } from './bridge/protocol';
 export type { DesktopHost, SceneTemplate, SceneHandle, SceneOperation, SceneTransaction,
   SceneAcknowledgment, SceneSnapshot, SceneAttachment, TextWrite, NativeSceneEvent } from './bridge/protocol';

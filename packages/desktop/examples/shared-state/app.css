@@ -1,0 +1,77 @@
+.page {
+  padding: 32px;
+  background: #f4f7fb;
+  color: #16243a;
+  font-size: 16px;
+}
+
+.workspace {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+h1, h2, p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 32px;
+}
+
+h2 {
+  font-size: 20px;
+}
+
+.controls, .readout {
+  padding: 24px;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.readouts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.count {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+}
+
+button {
+  padding: 12px 18px;
+  border-radius: 6px;
+  background: #245de8;
+  color: white;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #1746bd;
+}
+
+input:focus {
+  border-color: #245de8;
+}

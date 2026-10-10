@@ -11,6 +11,7 @@ interface EmitOptions {
   define: t.Identifier;
   fresh(name: string): t.Identifier;
   templates: t.Statement[];
+  modules: readonly string[];
   lexical?: boolean;
   receive?: t.Expression;
 }
@@ -81,6 +82,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
       emitted.template,
       b.arrowFunctionExpression([], b.arrayExpression(emitted.dependencies.map(b.identifier))),
       b.arrayExpression(emitted.fragmentTemplates),
+      valueExpression(options.modules),
     ])));
     dependencies.delete(fragment.component.name);
     for (const dependency of emitted.dependencies) dependencies.add(dependency);
@@ -90,6 +92,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
   }
 
   const properties: t.ObjectProperty[] = [];
+  properties.push(b.objectProperty(b.identifier('modules'), valueExpression(options.modules)));
   if (options.lexical) properties.push(b.objectProperty(b.identifier('lexical'), b.booleanLiteral(true)));
   for (const [name, entries] of [
     ['children', scene.children], ['regions', scene.regions], ['lists', scene.lists],

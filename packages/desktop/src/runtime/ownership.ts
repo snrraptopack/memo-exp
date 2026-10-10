@@ -8,9 +8,10 @@ import { propValues, textValue, type SceneProps as Props, type SceneCallback } f
 import { componentTemplates, type SceneComponent } from './definitions';
 import { readRegion, stagedReadiness } from './regions';
 import { readList } from './lists';
+import type { SceneSemanticRuntime } from './semantic';
 
 /** Independent lexical owners form a tree; one family queue protects its caches. */
-export function createOwnerForest(publication: ReturnType<typeof createPublicationQueue>, isClosed: () => boolean, runFactory: <T>(factory: () => T) => T) {
+export function createOwnerForest(publication: ReturnType<typeof createPublicationQueue>, isClosed: () => boolean, runFactory: <T>(factory: () => T) => T, semantic: SceneSemanticRuntime) {
   let nextId = 1;
   let placement: { family: Family; parent: Owner; node: number; staging: boolean } | undefined;
   const owners = new Map<SceneInstance, Owner>();
@@ -45,12 +46,16 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     return owner;
   };
   const invalidateState = (owner: Owner, sources: readonly string[] | null): void => {
-    invalidate(stateOwner(owner), sources);
+    if (sources?.length === 0) return;
+    const target = stateOwner(owner);
+    invalidate(target, sources);
+    semantic.invalidateLocal(target.entityId);
   };
   const retire = (members: readonly Owner[]): void => {
     const retired = new Set(members);
     const parents = new Set<Owner>();
     for (const member of members) {
+      semantic.unregister(member.entityId);
       member.stagedReady?.reject(new Error('Desktop branch retired before publication'));
       member.mounted = false; member.disposed = true;
       owners.delete(member.instance); handles.delete(member.instance.handle.id);
@@ -140,7 +145,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
   // Resolve the lexical owner before queuing: an accepted inline subtree can
   // retire while the queue waits, but its earlier state write still belongs to
   // the live enclosing owner and must reach the replacement subtree.
-  const flushState = (owner: Owner): Promise<void> => flush(stateOwner(owner));
+  const flushState = (owner: Owner): Promise<void> => semantic.flush(() => flush(stateOwner(owner)), owner.family);
   const dispose = (owner: Owner): Promise<void> => {
     if (owner.parent?.disposed) return dispose(owner.parent);
     if (owner.disposal) return owner.disposal;
@@ -200,6 +205,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     roots() { return [...owners.values()].filter(owner => !owner.parent).map(owner => owner.instance); },
     mount(template: SceneTemplate, bindings: readonly TextBinding[], handlers: readonly SceneHandler[], options: SceneMountOptions = {}): SceneInstance {
       if (isClosed()) throw new Error('Desktop application is disposed');
+      semantic.initialize(options.modules);
       if (bindings.length !== template.slots.length || handlers.length !== template.events.length) throw new Error('Desktop template bindings do not match its schema');
       const slots = new Set<number>();
       for (const binding of bindings) {
@@ -217,7 +223,8 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       const attachment = placement ? { handle: placement.parent.instance.handle, node: placement.node } : undefined;
       const handle = Object.freeze({ id: nextId++, generation: 1 });
       let callbacks: WeakMap<SceneCallback, SceneCallback> | undefined;
-      const owner: Owner = { instance: undefined!, family: group, parent, attachment, template, bindings, handlers,
+      const entityId = `${parent?.entityId ?? 'Desktop'}/${encodeURIComponent(template.id)}[${handle.id}]`;
+      const owner: Owner = { entityId, instance: undefined!, family: group, parent, attachment, template, bindings, handlers,
         readProps: props => propValues(props, callback => {
           // Forwarding preserves the declaring owner and stable callback identity.
           if (ownedCallbacks.has(callback)) return callback;
@@ -241,30 +248,37 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       const instance: SceneInstance = {
         handle, ready: owner.stagedReady?.promise ?? group.ready,
         get mounted() { return owner.mounted; },
-        flush() { return flush(owner); },
+        flush() { return semantic.flush(() => flush(owner), group); },
         async dispatch(event, payload) {
-          await instance.ready;
-          if (owner.disposed || isClosed()) throw new Error('Desktop event targets a disposed owner');
-          if (!Number.isInteger(event) || !owner.handlers[event]) throw new Error('Unknown desktop event');
-          const handler = owner.handlers[event]!;
-          let result: unknown; let callbackError: unknown; let failed = false;
-          try {
-            result = Reflect.apply(handler.callback, undefined, [payload]);
-            if (result instanceof Promise) throw new Error('Asynchronous desktop callbacks are not supported yet');
-          } catch (error) { failed = true; callbackError = error; }
-          invalidateState(owner, handler.sources);
-          try { await flushState(owner); } catch (error) {
-            if (failed) throw new AggregateError([callbackError, error], 'Desktop callback and publication failed');
-            throw error;
-          }
-          if (failed) throw callbackError;
-          return result;
+          return semantic.run(async () => {
+            await instance.ready;
+            if (owner.disposed || isClosed()) throw new Error('Desktop event targets a disposed owner');
+            if (!Number.isInteger(event) || !owner.handlers[event]) throw new Error('Unknown desktop event');
+            const handler = owner.handlers[event]!;
+            let result: unknown; let callbackError: unknown; let failed = false;
+            try {
+              result = Reflect.apply(handler.callback, undefined, [payload]);
+              if (result instanceof Promise) throw new Error('Asynchronous desktop callbacks are not supported yet');
+            } catch (error) { failed = true; callbackError = error; }
+            invalidateState(owner, handler.sources);
+            try { await flushState(owner); } catch (error) {
+              if (failed) throw new AggregateError([callbackError, error], 'Desktop callback and publication failed');
+              throw error;
+            }
+            if (failed) throw callbackError;
+            return result;
+          });
         },
         dispose() { return dispose(owner); },
       };
       owner.instance = instance;
       owner.lexicalParent?.lexicalChildren.add(owner);
       group.members.push(owner); owners.set(instance, owner); handles.set(handle.id, owner); group.root ??= owner;
+      semantic.register(entityId, parent?.entityId ?? 'Desktop', full => {
+        if (owner.disposed) return;
+        if (full) invalidate(owner, null);
+        semantic.request(group, () => flush(stateOwner(owner)));
+      });
       if (!staging) group.installs.push(install(template));
       const regions = new Set<number>();
       try {

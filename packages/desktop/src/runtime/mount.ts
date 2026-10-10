@@ -36,7 +36,7 @@ export async function runDesktopEntry(app: DesktopApplication, entry: () => Prom
   const current = { app, roots: new Map<string, DesktopRoot>() };
   scope = current;
   try {
-    await entry();
+    await app.run(entry);
     if (!current.roots.size) throw new Error('Desktop entry did not call mount(target, component)');
     await Promise.all([...current.roots.values()].map(root => root.ready));
     return current.roots;

@@ -7,6 +7,7 @@ interface Definition {
   template: SceneTemplate;
   dependencies: () => readonly SceneComponent[];
   fragments: readonly SceneTemplate[];
+  modules: readonly string[];
 }
 const definitions = new WeakMap<SceneComponent, Definition>();
 export function defineSceneComponent(
@@ -14,9 +15,13 @@ export function defineSceneComponent(
   template: SceneTemplate,
   dependencies: () => readonly SceneComponent[],
   fragments: readonly SceneTemplate[] = [],
+  modules: readonly string[] = [],
 ): void {
   if (definitions.has(component)) throw new Error('Desktop component definition is immutable');
-  definitions.set(component, { template, dependencies, fragments });
+  definitions.set(component, { template, dependencies, fragments, modules });
+}
+export function componentModules(component: () => unknown): readonly string[] {
+  return definitions.get(component as SceneComponent)?.modules ?? [];
 }
 export function componentTemplates(components: readonly SceneComponent[]): SceneTemplate[] {
   const templates: SceneTemplate[] = [];
