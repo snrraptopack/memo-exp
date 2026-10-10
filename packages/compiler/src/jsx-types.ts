@@ -1,4 +1,6 @@
 import type { RouteTable } from '@memoized-dom/router';
+import type { DOMIntrinsicElements } from './jsx/dom-types';
+export type { ClassValue, CSSProperties, ElementRef, HTMLAttributes, SVGAttributes } from './jsx/dom-types';
 
 declare global {
   /** Compiler-owned calls; the compiler supplies runtime imports when needed. */
@@ -10,8 +12,14 @@ declare global {
   function $cleanup(disposer: () => void): () => void;
   function $effect(callback: () => void | (() => void)): void;
 
-  /** Minimal global JSX declarations for compiler-authored source. */
+  /** Platform DOM elements plus compiler-authored directives. */
   namespace JSX {
+    /** Compiled browser JSX produces DOM nodes, including fragment nodes. */
+    interface Element extends globalThis.Node {}
+
+    type Child = Element | string | number | bigint | boolean | null | undefined | readonly Child[];
+    type ElementType = keyof IntrinsicElements | ((props: never) => Child);
+
     /** Application route patterns from the generated `.memoized/routes.d.ts`. */
     type RoutePaths = Extract<keyof RouteTable, string>;
 
@@ -62,7 +70,7 @@ declare global {
     }[RoutePaths];
 
     interface ElementChildrenAttribute {
-      children: unknown;
+      children: Child;
     }
 
     interface IntrinsicAttributes {
@@ -75,10 +83,8 @@ declare global {
       'route-to'?: RouteToPath | KnownRouteToDestination | RouteToDestination;
     }
 
-    interface IntrinsicElements {
-      [name: string]: {
-        [attribute: string]: unknown;
-      };
+    interface IntrinsicElements extends DOMIntrinsicElements {
+      [name: `${string}-${string}`]: unknown;
     }
   }
 }

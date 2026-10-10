@@ -1,7 +1,7 @@
 export interface MetricCardProps {
   title: string;
   subtitle?: string;
-  children?: any;
+  children?: JSX.Child;
 }
 
 export function MetricCard({ title, subtitle, children }: MetricCardProps) {

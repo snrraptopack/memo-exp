@@ -62,7 +62,7 @@ export function CmsApp() {
           <textarea
             class="cms-textarea"
             value={rawMarkup}
-            onInput={(e: any) => setRawMarkup(e.target.value)}
+            onInput={e => setRawMarkup(e.currentTarget.value)}
           />
 
           <div class="controls-row">

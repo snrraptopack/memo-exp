@@ -17,7 +17,7 @@ export function ClassTodoApp() {
   const completedCount = todoStore.todos.filter((t) => t.completed).length;
   const activeCount = todoStore.todos.length - completedCount;
 
-  const handleAdd = (e: any) => {
+  const handleAdd = (e: SubmitEvent) => {
     e.preventDefault();
     if (newText.trim()) {
       todoStore.addTodo(newText);
@@ -40,7 +40,7 @@ export function ClassTodoApp() {
             type="text"
             placeholder="What needs to be done?"
             value={newText}
-            onInput={(e: any) => { newText = e.target.value; }}
+            onInput={e => { newText = e.currentTarget.value; }}
           />
           <button type="submit" class="btn primary">Add Todo</button>
         </form>

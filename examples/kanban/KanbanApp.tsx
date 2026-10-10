@@ -16,14 +16,14 @@ import { KanbanColumn } from './KanbanColumn';
 
 const BoardList = ({ items, renderItem }: {
   items: typeof columns;
-  renderItem: (item: (typeof columns)[number]) => unknown;
+  renderItem: (item: (typeof columns)[number]) => JSX.Child;
 }) => (
   <div class="kanban-grid">
     {items.map((item) => renderItem(item))}
   </div>
 );
 
-const RepeatedFeature = ({ content }: { content: unknown }) => (
+const RepeatedFeature = ({ content }: { content: JSX.Child }) => (
   <div class="composition-feature">
     <span>Compiled twice:</span>
     <b>{content}</b>
@@ -40,7 +40,7 @@ export const KanbanApp = () => {
 
   const totalTasks = columns.reduce((acc, col) => acc + col.tasks.length, 0);
 
-  const handleCreateTask = (e: any) => {
+  const handleCreateTask = (e: SubmitEvent) => {
     e.preventDefault();
     if (newTitle.trim()) {
       addTask(newTitle, newTag, newPoints);
@@ -62,11 +62,11 @@ export const KanbanApp = () => {
             type="text"
             placeholder="Enter new task title..."
             value={newTitle}
-            onInput={(e: any) => { newTitle = e.target.value; }}
+            onInput={e => { newTitle = e.currentTarget.value; }}
           />
           <select
             value={newTag}
-            onChange={(e: any) => { newTag = e.target.value; }}
+            onChange={e => { newTag = e.currentTarget.value as typeof newTag; }}
           >
             <option value="feature">Feature</option>
             <option value="bug">Bug</option>
@@ -77,7 +77,7 @@ export const KanbanApp = () => {
             min="1"
             max="13"
             value={newPoints}
-            onInput={(e: any) => { newPoints = Number(e.target.value); }}
+            onInput={e => { newPoints = Number(e.currentTarget.value); }}
           />
           <button type="submit" class="btn primary">Add Task</button>
         </form>

@@ -6,8 +6,8 @@ import { setDraggedTask, type Task } from './kanban-state';
 
 export interface KanbanCardProps {
   task: Task;
-  headerSlot: any;
-  footerSlot: any;
+  headerSlot: JSX.Child;
+  footerSlot: JSX.Child;
 }
 
 export function KanbanCard({ task, headerSlot, footerSlot }: KanbanCardProps) {
@@ -19,7 +19,7 @@ export function KanbanCard({ task, headerSlot, footerSlot }: KanbanCardProps) {
     <article
       class={`kanban-card-shell ${isDragging ? 'is-dragging' : ''}`}
       draggable={true}
-      onDragStart={(e: any) => {
+      onDragStart={e => {
         isDragging = true;
         setDraggedTask(task.id);
         if (e.dataTransfer) {

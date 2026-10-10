@@ -7,6 +7,8 @@
  * 3. Dynamic styling based on status and value metrics
  */
 
+import type { ElementRef } from '@memoized-dom/compiler/jsx';
+
 export interface StatCardProps {
   title: string;
   value: string | number;
@@ -15,8 +17,8 @@ export interface StatCardProps {
   trend?: 'up' | 'down' | 'neutral';
   icon?: string;
   accent?: 'emerald' | 'amber' | 'stone';
-  ref?: unknown;
-  cardRef?: unknown;
+  ref?: ElementRef<HTMLDivElement>;
+  cardRef?: ElementRef<HTMLDivElement>;
 }
 
 export function StatCard({

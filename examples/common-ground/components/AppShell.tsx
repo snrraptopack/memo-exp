@@ -1,6 +1,6 @@
 import { Icon } from "./ui";
 import { view, crewIds, savedIds, selectView, openDialog } from "../state";
-export function AppShell({ children }: { children: unknown }) {
+export function AppShell({ children }: { children: JSX.Child }) {
   return (
     <div class="app-shell">
       <div class="announcement">

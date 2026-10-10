@@ -1,5 +1,4 @@
 import type {} from '@memoized-dom/compiler/jsx';
-import type { DesktopInputEvent } from '@memoized-dom/desktop';
 import './app.css';
 
 export function ListDemo() {
@@ -25,7 +24,7 @@ function ListRow({ label, position }: { label: string; position: number }) {
   return <li class="list-row">
     <p>{label}: {position}</p>
     <button onClick={() => clicks++}>Row clicks: {clicks}</button>
-    <input type="text" value={draft} onChange={(event: DesktopInputEvent) => draft = event.target.value} placeholder="State follows this row" />
+    <input type="text" value={draft} onChange={event => draft = event.currentTarget.value} placeholder="State follows this row" />
     <p>Draft: {draft}</p>
   </li>;
 }

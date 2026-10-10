@@ -12,7 +12,7 @@ export function TalentCollection({
   renderItem,
 }: {
   items: Person[];
-  renderItem: (person: Person) => unknown;
+  renderItem: (person: Person) => JSX.Child;
 }) {
   return (
     <div class="talent-grid">{items.map((person) => renderItem(person))}</div>
@@ -23,7 +23,7 @@ export function TalentCard({
   footer,
 }: {
   person: Person;
-  footer: unknown;
+  footer: JSX.Child;
 }) {
   let expanded = false;
   return (

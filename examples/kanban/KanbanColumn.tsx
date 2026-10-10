@@ -30,7 +30,7 @@ export function KanbanColumn({ column }: KanbanColumnProps) {
 
   let isDragOver = false;
 
-  const handleDragOver = (e: any) => {
+  const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'move';
@@ -42,7 +42,7 @@ export function KanbanColumn({ column }: KanbanColumnProps) {
     isDragOver = false;
   };
 
-  const handleDrop = (e: any) => {
+  const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     isDragOver = false;
     const targetTaskId = draggedTaskId || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : null);

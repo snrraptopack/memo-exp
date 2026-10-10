@@ -18,7 +18,7 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
         <input
           type="text"
           value={data.fullName}
-          onInput={(e: any) => onUpdate('fullName', e.target.value)}
+          onInput={e => onUpdate('fullName', e.currentTarget.value)}
         />
       </div>
 
@@ -27,7 +27,7 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
         <input
           type="email"
           value={data.email}
-          onInput={(e: any) => onUpdate('email', e.target.value)}
+          onInput={e => onUpdate('email', e.currentTarget.value)}
         />
       </div>
 

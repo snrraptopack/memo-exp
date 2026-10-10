@@ -20,6 +20,7 @@
     // Generated client facade declarations (written by the Vite adapter's
     // dev server / build into each example's .memoized/ directory).
     "paths": {
+      "@memoized-dom/compiler/jsx": ["./packages/compiler/src/jsx-types.ts"],
       "#server/*": ["./examples/fullstack/server/*"],
       "#server-functions": ["./examples/fullstack/.memoized/server-functions.d.ts"]
     },

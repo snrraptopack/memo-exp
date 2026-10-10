@@ -1,7 +1,9 @@
+import type { ElementRef } from '@memoized-dom/compiler/jsx';
+
 export interface ForwardedInputProps {
   label: string;
-  ref?: unknown;
-  inputRef?: unknown;
+  ref?: ElementRef<HTMLInputElement>;
+  inputRef?: ElementRef<HTMLInputElement>;
   id?: string;
   placeholder?: string;
 }

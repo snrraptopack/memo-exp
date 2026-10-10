@@ -19,7 +19,7 @@ export function StepShipping({ data, onUpdate, onBack, onNext }: StepShippingPro
         <input
           type="text"
           value={data.address}
-          onInput={(e: any) => onUpdate('address', e.target.value)}
+          onInput={e => onUpdate('address', e.currentTarget.value)}
         />
       </div>
 
@@ -29,7 +29,7 @@ export function StepShipping({ data, onUpdate, onBack, onNext }: StepShippingPro
           <input
             type="text"
             value={data.city}
-            onInput={(e: any) => onUpdate('city', e.target.value)}
+            onInput={e => onUpdate('city', e.currentTarget.value)}
           />
         </div>
 
@@ -38,7 +38,7 @@ export function StepShipping({ data, onUpdate, onBack, onNext }: StepShippingPro
           <input
             type="text"
             value={data.zipCode}
-            onInput={(e: any) => onUpdate('zipCode', e.target.value)}
+            onInput={e => onUpdate('zipCode', e.currentTarget.value)}
           />
         </div>
       </div>

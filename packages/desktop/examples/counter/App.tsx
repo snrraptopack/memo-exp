@@ -1,5 +1,4 @@
 import type {} from '@memoized-dom/compiler/jsx';
-import type { DesktopInputEvent } from '@memoized-dom/desktop';
 import { CounterDetails } from './CounterDetails';
 import './app.css';
 
@@ -15,7 +14,7 @@ export function App() {
         <button onClick={() => count--}>Decrement</button>
       </div>
 
-      <input type="text" value={input} onChange={(e: DesktopInputEvent) => input = e.target.value} />
+      <input type="text" value={input} onChange={event => input = event.currentTarget.value} />
       <p id="input-echo">Typed: {input}</p>
     </section>
     <CounterDetails count={count} value={input} />

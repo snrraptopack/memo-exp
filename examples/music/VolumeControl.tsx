@@ -21,7 +21,7 @@ export function VolumeControl() {
         max="100"
         value={volume}
         aria-label="Volume"
-        onInput={(e: any) => setVolume(Number(e.target.value))}
+        onInput={e => setVolume(Number(e.currentTarget.value))}
       />
 
       <span class="volume-value">{volume}%</span>

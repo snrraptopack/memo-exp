@@ -26,7 +26,7 @@ function CrewMember({ person }: { person: (typeof people)[number] }) {
     </div>
   );
 }
-export function CrewPanel({ footer }: { footer?: unknown }) {
+export function CrewPanel({ footer }: { footer?: JSX.Child }) {
   const crew = people.filter((person) => crewIds.includes(person.id));
   const requiredSkills = brief.skills;
   const skills = requiredSkills.filter((skill) =>

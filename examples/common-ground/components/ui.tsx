@@ -30,7 +30,7 @@ export function Icon({ name }: { name: string }) {
     </svg>
   );
 }
-export function Badge({ children }: { children: unknown }) {
+export function Badge({ children }: { children: JSX.Child }) {
   return <span class="badge">{children}</span>;
 }
 export function Section({
@@ -41,8 +41,8 @@ export function Section({
 }: {
   eyebrow: string;
   title: string;
-  action?: unknown;
-  children: unknown;
+  action?: JSX.Child;
+  children: JSX.Child;
 }) {
   return (
     <section class="section">
@@ -64,7 +64,7 @@ export function Dialog({
 }: {
   id: string;
   title: string;
-  children: unknown;
+  children: JSX.Child;
 }) {
   return (
     <dialog id={id} aria-label={title} class="dialog">
