@@ -80,6 +80,7 @@ macro_rules! tag {
 }
 /// Tags with an implemented native flow/text contract. Names are never inferred.
 pub static TAGS: &[Tag] = &[
+    tag!("form", Block, Flow, None),
     tag!("article", Block, Flow, None),
     tag!("aside", Block, Flow, None),
     tag!("main", Block, Flow, None),
@@ -157,7 +158,6 @@ pub const PENDING: &[&str] = &[
     "embed",
     "object",
     "param",
-    "form",
     "textarea",
     "select",
     "option",

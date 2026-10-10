@@ -173,7 +173,7 @@ fn invalid_tag_and_content_contracts_never_install_a_partial_template() {
         install(
             &mut scene,
             json!([
-                {"kind":"element","tag":"p","parent":null,"text":""}
+                {"kind":"element","tag":"span","parent":null,"text":""}
             ]),
             json!([]),
             json!([{"node":0,"type":"click"}])

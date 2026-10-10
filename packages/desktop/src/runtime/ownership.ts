@@ -1,5 +1,6 @@
 import { createTreePreparer } from './tree-publication';
 import type { SceneHandle, SceneOperation, SceneTemplate } from '../bridge/protocol';
+import { createEventDispatcher } from './event-dispatch';
 import type { SceneHandler, SceneInstance, SceneMountOptions, TextBinding } from './application';
 import type { createPublicationQueue } from './publication';
 import type { Child, Family, Owner } from './ownership-model';
@@ -160,8 +161,16 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     return group;
   };
 
+  const dispatchEvent = createEventDispatcher({
+    find: handle => handles.get(handle.id),
+    invalidate,
+    flush,
+    isClosed,
+  });
+
   return {
     owners,
+    dispatchEvent,
     find(handle: SceneHandle): SceneInstance | undefined {
       const owner = handles.get(handle.id);
       return owner?.instance.handle.generation === handle.generation ? owner.instance : undefined;

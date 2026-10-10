@@ -287,6 +287,22 @@ The separate `packages/desktop/examples/todo/main.ts` entry uses the same normal
 
 `compiler/src/jsx/dom-types.ts` derives known HTML, deprecated HTML, SVG, and MathML tag declarations from the platform DOM maps, with element-specific attributes, refs, CSS properties, and native event interfaces. It replaces the permissive catch-all for known tags. Compile-only checks cover tag-map completeness, event inference, and rejected attribute/event type errors. These declarations describe the shared authoring API; a declaration does not establish that the desktop renderer implements every corresponding tag, property, event method, or control.
 
+Applications select those declarations with `jsx: "preserve"` and `jsxImportSource: "@memoized-dom/compiler"`. The type-only `jsx-runtime` entry provides a scoped JSX namespace so installed React declarations cannot replace native attributes such as `class`. Library build configurations clear this application setting. Both Bun's checker and the TypeScript version used by the language service check the React coexistence fixture.
+
+### Authored event routing and default actions
+
+The GPUI adapter translates native click, input, keyboard, pointer, and focus fields into scene messages. `runtime/event-dispatch.ts` resolves the exact live owner generation and follows authored parent nodes across component attachment regions. One event object travels that path: `target` stays fixed, `currentTarget` changes at each handler, and propagation methods control the remaining handlers. Focus and blur stay on the target. All affected owners and synchronous default actions publish together through the existing family scheduler.
+
+The native adapter suppresses Enter/Space activation before sending the keyboard event; Bun performs button activation and form submission only after uncanceled handlers finish. Enter in an input submits its nearest form with a null submitter; this is the prototype's explicit implicit-submission contract, rather than the complete browser algorithm. Tab navigation carries a one-use dispatch token. Rust waits for the cancellation result and moves focus only if the original control remains focused. Native input edits, caret changes, and IME feedback remain immediate; their notifications are noncancelable. Pointer notifications likewise cannot cancel already-applied native focus or editing behavior.
+
+Event targets expose supported attribute, value, and selection snapshots. They are not browser element instances and do not implement arbitrary DOM methods. Capture handlers, physical keyboard codes, browser form navigation/reset, and complete pointer capture semantics are still pending. General JSX declarations retain native DOM types across targets; unsupported desktop behavior must have a deliberate implementation or diagnostic.
+
+Retained focus subscriptions and input entities use the same owner generation and source-node identity as scene records. Focus changes notify the root for focus-dependent CSS without borrowing that entity reentrantly. The diagnostic event injector similarly dispatches through the window without holding the root entity during a platform event that may trigger a redraw.
+
+The Todo smoke exercises canceled Enter/Tab, forward and reverse focus traversal, form submission, Unicode editing, queued click/edit bursts, keyed row notes, deletion, wrapping, and scrolling. Its optional `--compare-browser` mode saves accepted wide/narrow scene snapshots and, after native shutdown, reconstructs them with the same CSS in Chromium to compare workspace alignment, grid widths, and flex wrapping. This keeps browser startup separate from native keyboard/focus measurements. Browser UA sizing/control defaults are normalized to the adapter's explicit defaults; font rasterization is not treated as identical across renderers. Resize/scroll assertions wait for the requested painted geometry and use the actual scroll viewport because the OS can clamp window height to the monitor's work area.
+
+After building, run the optional comparison with `bun run --cwd packages/desktop test:todo --compare-browser`. It requires Chromium; `PUPPETEER_EXECUTABLE_PATH` selects its executable. The standard Todo smoke does not launch a browser.
+
 Run the current prototype from the repository root:
 
 ```sh

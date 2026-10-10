@@ -26,6 +26,11 @@ enum Command {
         site: usize,
         edit: u64,
     },
+    #[serde(rename = "event_result")]
+    EventResult {
+        dispatch: u64,
+        prevented: bool,
+    },
     Shutdown,
 }
 
@@ -35,6 +40,7 @@ pub struct Outcome {
     pub inspect: bool,
     pub shutdown: bool,
     pub input_ack: Option<(Handle, usize, u64)>,
+    pub event_result: Option<(u64, bool)>,
 }
 
 pub fn process_line(scene: &mut Scene, line: &str) -> Outcome {
@@ -50,6 +56,7 @@ pub fn process_line_with_prepare(
     let mut inspect = false;
     let mut shutdown = false;
     let mut input_ack = None;
+    let mut event_result = None;
     let response = match serde_json::from_str::<Request>(line) {
         Ok(request) => {
             let result = if request.version != 1 {
@@ -84,6 +91,17 @@ pub fn process_line_with_prepare(
                             Ok(Value::Null)
                         }
                     }
+                    Command::EventResult {
+                        dispatch,
+                        prevented,
+                    } => {
+                        if dispatch == 0 || dispatch > 9_007_199_254_740_991 {
+                            Err("Invalid event result token".into())
+                        } else {
+                            event_result = Some((dispatch, prevented));
+                            Ok(Value::Null)
+                        }
+                    }
                     Command::Shutdown => {
                         shutdown = true;
                         Ok(Value::Null)
@@ -108,6 +126,7 @@ pub fn process_line_with_prepare(
         inspect,
         shutdown,
         input_ack,
+        event_result,
     }
 }
 

@@ -106,6 +106,17 @@ impl TextInput {
     pub fn set_focus(&mut self, focus: FocusHandle) {
         self.focus = focus;
     }
+    pub fn event_target(&self) -> serde_json::Value {
+        let range = self.state.selection();
+        // JavaScript's selection offsets count UTF-16 code units, whereas the
+        // native editor stores byte offsets into its UTF-8 text buffer.
+        serde_json::json!({
+            "value": self.state.text,
+            "selectionStart": self.state.utf16_offset(range.start),
+            "selectionEnd": self.state.utf16_offset(range.end),
+            "isComposing": self.state.marked.is_some(),
+        })
+    }
     pub fn sync(&mut self, value: &str, cx: &mut Context<Self>) {
         if self.binding.sync(value, &mut self.state) {
             cx.notify();

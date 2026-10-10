@@ -50,7 +50,7 @@ fn invalid_types_slots_events_and_children_never_enable_fake_inputs() {
     t.slots[0].node = 0;
     assert!(t.prepare().is_err());
     let mut t = template();
-    t.events[0].r#type = memoized_dom_desktop_host::template::EventKind::Click;
+    t.events[0].r#type = memoized_dom_desktop_host::template::EventKind::Submit;
     assert!(t.prepare().is_err());
     let mut t = template();
     t.nodes[3] =

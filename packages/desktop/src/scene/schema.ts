@@ -1,7 +1,13 @@
 /** Authored scene definitions. Native tag semantics are owned by Rust tags.rs. */
 export type SceneNode =
-  | { readonly kind: 'element'; readonly tag: string; readonly parent: number | null; readonly text: '';
-      readonly attributes?: Readonly<Record<string, string>>; readonly style?: readonly CssDeclaration[] }
+  | {
+      readonly kind: 'element';
+      readonly tag: string;
+      readonly parent: number | null;
+      readonly text: '';
+      readonly attributes?: Readonly<Record<string, string>>;
+      readonly style?: readonly CssDeclaration[];
+    }
   | { readonly kind: 'text'; readonly parent: number | null; readonly text: string }
   | { readonly kind: 'region'; readonly parent: number | null; readonly multiple?: boolean };
 
@@ -9,13 +15,36 @@ export interface SceneTemplate {
   readonly id: string;
   readonly nodes: readonly SceneNode[];
   readonly slots: readonly { readonly node: number; readonly type: 'text' | 'value' }[];
-  readonly events: readonly { readonly node: number; readonly type: 'click' | 'change' }[];
+  readonly events: readonly { readonly node: number; readonly type: SceneEventType }[];
   readonly stylesheets?: readonly CssRule[];
 }
 
-export interface CssDeclaration { readonly property: string; readonly value: string }
-export interface CssSelector { readonly combinator: string | null; readonly selectors: readonly { readonly type: 'tag' | 'class' | 'id' | 'state' | 'scope'; readonly name: string }[] }
-export interface CssRule { readonly selectors: readonly (readonly CssSelector[])[]; readonly declarations: readonly CssDeclaration[] }
+export type SceneEventType =
+  | 'click'
+  | 'change'
+  | 'keydown'
+  | 'keyup'
+  | 'pointerdown'
+  | 'pointerup'
+  | 'focus'
+  | 'blur'
+  | 'submit';
+
+export interface CssDeclaration {
+  readonly property: string;
+  readonly value: string;
+}
+export interface CssSelector {
+  readonly combinator: string | null;
+  readonly selectors: readonly {
+    readonly type: 'tag' | 'class' | 'id' | 'state' | 'scope';
+    readonly name: string;
+  }[];
+}
+export interface CssRule {
+  readonly selectors: readonly (readonly CssSelector[])[];
+  readonly declarations: readonly CssDeclaration[];
+}
 
 /** Renderer preparation, before geometry or GPU presentation exists. */
 export interface FlowItem {

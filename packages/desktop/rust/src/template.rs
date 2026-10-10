@@ -75,11 +75,18 @@ pub struct Event {
     pub node: usize,
     pub r#type: EventKind,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum EventKind {
     Click,
     Change,
+    KeyDown,
+    KeyUp,
+    PointerDown,
+    PointerUp,
+    Focus,
+    Blur,
+    Submit,
 }
 
 pub struct PreparedTemplate {
@@ -191,15 +198,22 @@ impl Template {
         for event in &self.events {
             let valid = resolved.get(event.node).is_some_and(|tag| {
                 tag.is_some_and(|tag| match event.r#type {
-                    EventKind::Click => tag.click,
+                    EventKind::Click | EventKind::PointerDown | EventKind::PointerUp => {
+                        tag.layout != tags::Layout::Inline
+                    }
                     EventKind::Change => tag.layout == tags::Layout::Input,
+                    EventKind::Submit => tag.name == "form",
+                    EventKind::KeyDown | EventKind::KeyUp | EventKind::Focus | EventKind::Blur => {
+                        tag.layout != tags::Layout::Inline
+                    }
                 })
             });
-            if !valid || !events.insert(event.node) {
+            if !valid || !events.insert((event.node, event.r#type)) {
                 return Err(invalid(
                     match event.r#type {
                         EventKind::Click => "Invalid or duplicate control event; onClick requires a supported control",
                         EventKind::Change => "Invalid or duplicate control event; onChange requires an input control",
+                        _ => "Invalid or duplicate desktop event",
                     }.into(),
                 ));
             }

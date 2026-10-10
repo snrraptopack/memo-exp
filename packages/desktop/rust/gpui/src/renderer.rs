@@ -1,5 +1,6 @@
 //! GPUI adapter for prepared native flow; GPUI owns styling and Taffy layout.
 use crate::{
+    events::{self, Emission},
     input::{InputOptions, TextInput},
     styles::{self, NativeStyles, StyleCache},
     text::{Paragraph, TextCache},
@@ -9,7 +10,7 @@ use memoized_dom_desktop_host::{
     Attachment, Handle, Scene,
     presentation::{ItemKind, TextValue},
     tags::{self, Layout},
-    template::{Node, PreparedTemplate},
+    template::{EventKind, Node, PreparedTemplate, SlotKind},
 };
 use serde::Serialize;
 use std::{
@@ -67,12 +68,13 @@ pub struct LayoutBox {
     pub height: f32,
 }
 type Identity = (u64, u64, usize);
-pub type EventSink = Rc<dyn Fn(Handle, usize, Option<serde_json::Value>, Option<u64>, &mut App)>;
+pub use crate::events::EventSink;
 #[derive(Default)]
 pub struct Renderer {
     text: BTreeMap<Identity, Rc<RefCell<TextCache>>>,
     controls: BTreeMap<Identity, FocusHandle>,
     inputs: BTreeMap<Identity, Entity<TextInput>>,
+    focus_events: BTreeMap<Identity, Vec<Subscription>>,
     styles: StyleCache,
     pub stats: Rc<RefCell<Stats>>,
 }
@@ -91,10 +93,46 @@ pub struct SceneElement {
     instances: Vec<FrameInstance>,
     roots: Vec<AnyElement>,
     click: EventSink,
+    interests: BTreeSet<EventKind>,
     stats: Rc<RefCell<Stats>>,
 }
 
 impl Renderer {
+    pub fn navigate(
+        &self,
+        handle: Handle,
+        node: usize,
+        reverse: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if self
+            .controls
+            .get(&(handle.id, handle.generation, node))
+            .is_some_and(|focus| focus.is_focused(window))
+        {
+            if reverse {
+                window.focus_prev(cx);
+            } else {
+                window.focus_next(cx);
+            }
+        }
+    }
+    #[cfg(debug_assertions)]
+    pub fn focused(&self, window: &Window) -> Option<(Handle, usize)> {
+        self.controls
+            .iter()
+            .find(|(_, focus)| focus.is_focused(window))
+            .map(|((id, generation, node), _)| {
+                (
+                    Handle {
+                        id: *id,
+                        generation: *generation,
+                    },
+                    *node,
+                )
+            })
+    }
     #[cfg(debug_assertions)]
     pub fn painted_inputs(&self, cx: &App) -> serde_json::Value {
         serde_json::json!(self.inputs.iter().map(|((id, generation, node), input)| {
@@ -103,12 +141,10 @@ impl Renderer {
     }
     #[cfg(debug_assertions)]
     pub fn test_input(
-        &mut self,
+        &self,
         scene: &Scene,
         request: &crate::input::testing::Request,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Result<(), String> {
+    ) -> Result<Entity<TextInput>, String> {
         if !scene.instances().any(|instance| instance.handle == request.handle && matches!(instance.template.source.nodes.get(request.node), Some(Node::Element { tag, .. }) if tag == "input")) {
             return Err("Native input test targets a retired or invalid control".into());
         }
@@ -116,7 +152,7 @@ impl Renderer {
             .inputs
             .get(&(request.handle.id, request.handle.generation, request.node))
             .ok_or("Native input is not mounted")?;
-        input.update(cx, |input, cx| request.apply(input, window, cx))
+        Ok(input.clone())
     }
     /// Validate and prepare actual GPUI styles before the host accepts installation.
     pub fn prepare(&mut self, template: &PreparedTemplate) -> Result<(), String> {
@@ -152,7 +188,13 @@ impl Renderer {
             input.acknowledge(edit, &instance.texts[source], cx)
         })
     }
-    pub fn element(&mut self, scene: &Scene, click: EventSink, cx: &mut App) -> SceneElement {
+    pub fn element(
+        &mut self,
+        scene: &Scene,
+        click: EventSink,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> SceneElement {
         self.stats.borrow_mut().render_started = Some(Instant::now());
         let mut live_text = BTreeSet::new();
         let mut live_controls = BTreeSet::new();
@@ -170,7 +212,10 @@ impl Renderer {
             .instances()
             .map(|instance| (instance.handle.id, instance))
             .collect();
-        let instances = order.instances.iter().map(|handle| records[&handle.id]).map(|instance| {
+        let instances = order.instances
+            .iter()
+            .map(|handle| records[&handle.id])
+            .map(|instance| {
                 let handle = instance.handle;
                 let cache = instance
                     .text_groups
@@ -194,19 +239,80 @@ impl Renderer {
                             .or_insert_with(|| cx.focus_handle());
                         *tracked = tracked.clone().tab_index(ranks[&key]).tab_stop(true);
                         focus.insert(item.source, tracked.clone());
+                        // Subscriptions belong to the retained control identity,
+                        // not the temporary GPUI elements constructed for a frame.
+                        self.focus_events.entry(key).or_insert_with(|| {
+                            let node = item.source;
+                            let sink = click.clone();
+                            let focused = window.on_focus_in(tracked, cx, move |_, cx| {
+                                let event = Emission::new(
+                                    handle,
+                                    node,
+                                    EventKind::Focus,
+                                    serde_json::json!({}),
+                                );
+                                sink(event, cx);
+                            });
+                            let sink = click.clone();
+                            let blurred = window.on_focus_out(tracked, cx, move |_, _, cx| {
+                                let event = Emission::new(
+                                    handle,
+                                    node,
+                                    EventKind::Blur,
+                                    serde_json::json!({}),
+                                );
+                                sink(event, cx);
+                            });
+                            vec![focused, blurred]
+                        });
                         if matches!(item.kind, ItemKind::Input) {
                             live_inputs.insert(key);
-                            let Node::Element { attributes, .. } = &instance.template.source.nodes[item.source] else { unreachable!() };
-                            let site = instance.template.source.events.iter().position(|event| event.node == item.source && matches!(event.r#type, memoized_dom_desktop_host::template::EventKind::Change));
+                            let Node::Element { attributes, .. } = &instance.template.source.nodes[item.source] else {
+                                unreachable!()
+                            };
+                            let site = instance.template.source.events.iter().position(|event| {
+                                event.node == item.source && matches!(event.r#type, EventKind::Change)
+                            });
                             let sink = click.clone();
                             let on_change: crate::input::ChangeSink = Rc::new(move |value, edit, cx| {
-                                if let Some(site) = site { sink(handle, site, Some(serde_json::json!({"target":{"value":value}, "currentTarget":{"value":value}})), Some(edit), cx); }
+                                if site.is_some() {
+                                    let mut event = Emission::new(
+                                        handle,
+                                        key.2,
+                                        EventKind::Change,
+                                        serde_json::json!({
+                                            "target": {"value": value},
+                                            "currentTarget": {"value": value},
+                                        }),
+                                    );
+                                    // The edit number lets reconciliation acknowledge
+                                    // this write without replacing a newer native draft.
+                                    event.edit = Some(edit);
+                                    sink(event, cx);
+                                }
                             });
-                            let controlled = instance.template.source.slots.iter().any(|slot| slot.node == item.source && matches!(slot.r#type, memoized_dom_desktop_host::template::SlotKind::Value));
-                            let input = self.inputs.entry(key).or_insert_with(|| cx.new(|_| TextInput::new(
-                                tracked.clone(), &instance.texts[item.source], InputOptions { placeholder: attributes.get("placeholder").cloned().unwrap_or_default(), label: attributes.get("aria-label").cloned().unwrap_or_default(), controlled, expect_ack: site.is_some() }, on_change, self.stats.clone(),
-                            )));
-                            input.update(cx, |input, cx| { input.set_focus(tracked.clone()); input.sync(&instance.texts[item.source], cx); });
+                            let controlled = instance.template.source.slots.iter().any(|slot| {
+                                slot.node == item.source && matches!(slot.r#type, SlotKind::Value)
+                            });
+                            let input = self.inputs.entry(key).or_insert_with(|| {
+                                let options = InputOptions {
+                                    placeholder: attributes.get("placeholder").cloned().unwrap_or_default(),
+                                    label: attributes.get("aria-label").cloned().unwrap_or_default(),
+                                    controlled,
+                                    expect_ack: site.is_some(),
+                                };
+                                cx.new(|_| TextInput::new(
+                                    tracked.clone(),
+                                    &instance.texts[item.source],
+                                    options,
+                                    on_change,
+                                    self.stats.clone(),
+                                ))
+                            });
+                            input.update(cx, |input, cx| {
+                                input.set_focus(tracked.clone());
+                                input.sync(&instance.texts[item.source], cx);
+                            });
                             inputs.insert(item.source, input.clone());
                         }
                     }
@@ -225,12 +331,25 @@ impl Renderer {
             .collect();
         self.text.retain(|key, _| live_text.contains(key));
         self.controls.retain(|key, _| live_controls.contains(key));
+        self.focus_events
+            .retain(|key, _| live_controls.contains(key));
         self.inputs.retain(|key, _| live_inputs.contains(key));
         SceneElement {
             sequence: scene.sequence(),
             instances,
             roots: Vec::new(),
             click,
+            interests: scene
+                .instances()
+                .flat_map(|instance| {
+                    instance
+                        .template
+                        .source
+                        .events
+                        .iter()
+                        .map(|event| event.r#type)
+                })
+                .collect(),
             stats: self.stats.clone(),
         }
     }
@@ -329,15 +448,8 @@ impl Element for SceneElement {
                     }
                     element = element.child(paragraph);
                     if matches!(item.kind, ItemKind::Button) {
-                        let handle = instance.handle;
                         let source = item.source;
-                        let site = instance
-                            .template
-                            .source
-                            .events
-                            .iter()
-                            .position(|event| event.node == source);
-                        let sink = self.click.clone();
+                        let focus = instance.focus[&source].clone();
                         let label = if let Node::Element { attributes, .. } =
                             &instance.template.source.nodes[source]
                         {
@@ -354,10 +466,8 @@ impl Element for SceneElement {
                             .track_focus(&instance.focus[&source])
                             .tab_stop(true)
                             .focus(|style| style)
-                            .on_click(move |_, _, cx| {
-                                if let Some(site) = site {
-                                    sink(handle, site, None, None, cx);
-                                }
+                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                window.focus(&focus, cx)
                             });
                     } else if let Node::Element { tag, .. } =
                         &instance.template.source.nodes[item.source]
@@ -371,6 +481,139 @@ impl Element for SceneElement {
                         .track_focus(&instance.focus[&item.source])
                         .focus(|style| style)
                         .child(instance.inputs[&item.source].clone());
+                }
+                if !anonymous {
+                    use EventKind;
+                    let handle = instance.handle;
+                    let source = item.source;
+                    let sink = self.click.clone();
+                    element = element.on_click(move |event, _, cx| {
+                        cx.stop_propagation();
+                        sink(
+                            Emission::new(handle, source, EventKind::Click, events::click(event)),
+                            cx,
+                        );
+                    });
+                    for (kind, pressed) in [
+                        (EventKind::PointerDown, true),
+                        (EventKind::PointerUp, false),
+                    ] {
+                        if !self.interests.contains(&kind) {
+                            continue;
+                        }
+                        let sink = self.click.clone();
+                        let focus = instance.focus.get(&source).cloned();
+                        if pressed {
+                            element = element.on_mouse_down(
+                                MouseButton::Left,
+                                move |event, window, cx| {
+                                    if let Some(focus) = &focus {
+                                        window.focus(focus, cx);
+                                    }
+                                    cx.stop_propagation();
+                                    sink(
+                                        Emission::new(
+                                            handle,
+                                            source,
+                                            kind,
+                                            events::pointer(
+                                                event.position,
+                                                event.button,
+                                                true,
+                                                event.modifiers,
+                                            ),
+                                        ),
+                                        cx,
+                                    );
+                                },
+                            );
+                        } else {
+                            element =
+                                element.on_mouse_up(MouseButton::Left, move |event, _, cx| {
+                                    cx.stop_propagation();
+                                    sink(
+                                        Emission::new(
+                                            handle,
+                                            source,
+                                            kind,
+                                            events::pointer(
+                                                event.position,
+                                                event.button,
+                                                false,
+                                                event.modifiers,
+                                            ),
+                                        ),
+                                        cx,
+                                    );
+                                });
+                        }
+                    }
+                    if let Some(focus) = instance.focus.get(&source) {
+                        let sink = self.click.clone();
+                        let focus = focus.clone();
+                        let input = instance.inputs.get(&source).cloned();
+                        let button = matches!(item.kind, ItemKind::Button);
+                        let interested = self.interests.contains(&EventKind::KeyDown);
+                        element = element.capture_key_down(move |event, window, cx| {
+                            if !focus.is_focused(window) {
+                                return;
+                            }
+                            let target = input.as_ref().map(|input| input.read(cx).event_target());
+                            let composing = target
+                                .as_ref()
+                                .is_some_and(|target| target["isComposing"] == true);
+                            let navigation = event.keystroke.key == "tab";
+                            let activation = !composing
+                                && (event.keystroke.key == "enter"
+                                    || button && event.keystroke.key == "space");
+                            // Defer only the defaults that Bun can cancel. Native
+                            // text editing and IME stay immediate on the UI thread.
+                            if navigation || activation {
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            }
+                            if interested || navigation || activation {
+                                let mut payload = events::keyboard(
+                                    &event.keystroke,
+                                    event.is_held,
+                                    navigation || activation,
+                                );
+                                payload["isComposing"] = serde_json::json!(composing);
+                                if let Some(target) = target {
+                                    payload["target"] = target;
+                                }
+                                let mut emission =
+                                    Emission::new(handle, source, EventKind::KeyDown, payload);
+                                emission.navigation =
+                                    navigation.then_some(event.keystroke.modifiers.shift);
+                                sink(emission, cx);
+                            }
+                        });
+                        let sink = self.click.clone();
+                        let focus = instance.focus[&source].clone();
+                        let interested = self.interests.contains(&EventKind::KeyUp);
+                        element = element.capture_key_up(move |event, window, cx| {
+                            if !focus.is_focused(window) {
+                                return;
+                            }
+                            let activation = button && event.keystroke.key == "space";
+                            if activation {
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            }
+                            if interested || activation {
+                                sink(
+                                    Emission::new(
+                                        handle,
+                                        source,
+                                        EventKind::KeyUp,
+                                        events::keyboard(&event.keystroke, false, activation),
+                                    ),
+                                    cx,
+                                );
+                            }
+                        });
+                    }
                 }
                 for &child in &plan.children[index] {
                     if let Some(children) = elements[child].take() {

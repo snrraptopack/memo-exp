@@ -1,8 +1,8 @@
 //! Debug-only platform event injection; uses the real hit tests and scroll handler.
 use crate::DesktopView;
 use gpui::{
-    App, Context, MouseButton, MouseDownEvent, MouseUpEvent, PlatformInput, ScrollDelta,
-    ScrollWheelEvent, Window, point, px, size,
+    App, Entity, KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, MouseDownEvent, MouseUpEvent,
+    PlatformInput, ScrollDelta, ScrollWheelEvent, Window, point, px, size,
 };
 use memoized_dom_desktop_host::Handle;
 use serde::Deserialize;
@@ -20,6 +20,8 @@ pub struct WindowRequest {
     delta: Option<f32>,
     width: Option<f32>,
     height: Option<f32>,
+    key: Option<String>,
+    phase: Option<String>,
 }
 pub enum Request {
     Input(crate::input::testing::Request),
@@ -48,12 +50,16 @@ impl Request {
     }
     pub fn apply(
         &self,
-        view: &mut DesktopView,
+        view: &Entity<DesktopView>,
         window: &mut Window,
-        cx: &mut Context<DesktopView>,
+        cx: &mut App,
     ) -> Result<(), String> {
         match self {
-            Self::Input(request) => view.renderer.test_input(&view.scene, request, window, cx),
+            Self::Input(request) => {
+                let root = view.read(cx);
+                let input = root.renderer.test_input(&root.scene, request)?;
+                input.update(cx, |input, cx| request.apply(input, window, cx))
+            }
             Self::Window(request) => request.apply(view, window, cx),
         }
     }
@@ -61,7 +67,7 @@ impl Request {
 impl WindowRequest {
     pub fn apply(
         &self,
-        view: &mut DesktopView,
+        view: &Entity<DesktopView>,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<(), String> {
@@ -69,6 +75,25 @@ impl WindowRequest {
             return Err("Invalid native window test version".into());
         }
         match self.action.as_str() {
+            "key" => {
+                let keystroke =
+                    Keystroke::parse(self.key.as_deref().ok_or("Missing test keystroke")?)
+                        .map_err(|error| error.to_string())?;
+                match self.phase.as_deref().unwrap_or("down") {
+                    "down" => window.dispatch_event(
+                        PlatformInput::KeyDown(KeyDownEvent {
+                            keystroke,
+                            is_held: false,
+                            prefer_character_input: false,
+                        }),
+                        cx,
+                    ),
+                    "up" => {
+                        window.dispatch_event(PlatformInput::KeyUp(KeyUpEvent { keystroke }), cx)
+                    }
+                    _ => return Err("Invalid key phase".into()),
+                };
+            }
             "resize" => {
                 let dimension = |value: Option<f32>| {
                     value
@@ -84,22 +109,19 @@ impl WindowRequest {
                 let handle = self.handle.ok_or("Missing click owner")?;
                 let node = self.node.ok_or("Missing click node")?;
                 let position = {
+                    let view = view.read(cx);
                     let stats = view.renderer.stats.borrow();
                     let bounds = stats
                         .boxes
                         .iter()
-                        .find(|bounds| {
-                            bounds.handle == handle
-                                && bounds.source == node
-                                && bounds.tag == "button"
-                        })
-                        .ok_or("Button was not painted")?;
+                        .find(|bounds| bounds.handle == handle && bounds.source == node)
+                        .ok_or("Target was not painted")?;
                     point(
                         px(bounds.x + bounds.width / 2.),
                         px(bounds.y + bounds.height / 2.),
                     )
                 };
-                if !view.scroll.bounds().contains(&position) {
+                if !view.read(cx).scroll.bounds().contains(&position) {
                     return Err("Test button is outside the viewport".into());
                 }
                 window.dispatch_event(
@@ -128,7 +150,7 @@ impl WindowRequest {
                     .ok_or("Missing finite scroll delta")?;
                 window.dispatch_event(
                     PlatformInput::ScrollWheel(ScrollWheelEvent {
-                        position: view.scroll.bounds().center(),
+                        position: view.read(cx).scroll.bounds().center(),
                         delta: ScrollDelta::Pixels(point(px(0.), px(delta))),
                         ..Default::default()
                     }),

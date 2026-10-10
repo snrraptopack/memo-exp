@@ -1,4 +1,11 @@
-import type { DesktopHost, NativeSceneEvent, SceneAcknowledgment, SceneSnapshot, SceneTemplate, SceneTransaction } from './protocol';
+import type {
+  DesktopHost,
+  NativeSceneEvent,
+  SceneAcknowledgment,
+  SceneSnapshot,
+  SceneTemplate,
+  SceneTransaction,
+} from './protocol';
 import { createRequestQueue, requestLimits, type RequestLimits } from './request-queue';
 import { DesktopConnectionError } from './protocol';
 
@@ -6,11 +13,22 @@ export interface DesktopProcessHost extends DesktopHost {
   readonly ready: Promise<void>;
   readonly windowClosed: Promise<void>;
   onEvent(listener: (event: NativeSceneEvent) => void): () => void;
-  acknowledgeEvent(event: NativeSceneEvent): Promise<void>;
+  acknowledgeEvent(event: NativeSceneEvent, defaultPrevented?: boolean): Promise<void>;
   /** Debug builds only; invokes the native platform input handler in window tests. */
-  testInput(handle: NativeSceneEvent['handle'], node: number, action: 'insert' | 'compose' | 'commit' | 'backspace' | 'select-all', text?: string): Promise<void>;
+  testInput(
+    handle: NativeSceneEvent['handle'],
+    node: number,
+    action: 'insert' | 'compose' | 'commit' | 'backspace' | 'select-all',
+    text?: string,
+  ): Promise<void>;
   /** Debug builds only; routes clicks and wheel movement through GPUI hit testing. */
-  testWindow(event: { action: 'click'; handle: NativeSceneEvent['handle']; node: number } | { action: 'scroll'; delta: number } | { action: 'resize'; width: number; height: number }): Promise<void>;
+  testWindow(
+    event:
+      | { action: 'click'; handle: NativeSceneEvent['handle']; node: number }
+      | { action: 'scroll'; delta: number }
+      | { action: 'resize'; width: number; height: number }
+      | { action: 'key'; key: string; phase?: 'down' | 'up' },
+  ): Promise<void>;
   inspect(): Promise<SceneSnapshot>;
   redraw(): Promise<void>;
   close(): Promise<void>;
@@ -34,7 +52,12 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
   const requestTimeout = timeoutValue(options.requestTimeoutMs, 30_000);
   const shutdownTimeout = timeoutValue(options.shutdownTimeoutMs, 5_000);
   const limits = requestLimits(options);
-  const child = Bun.spawn([options.executable, ...(options.args ?? [])], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', windowsHide: !options.window });
+  const child = Bun.spawn([options.executable, ...(options.args ?? [])], {
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    windowsHide: !options.window,
+  });
   let nextId = 1;
   let closed = false;
   let closing: Promise<void> | undefined;
@@ -44,15 +67,24 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
   const listeners = new Set<(event: NativeSceneEvent) => void>();
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
-  const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
   void ready.catch(() => {});
   if (!options.window) resolveReady();
   let resolveClosed!: () => void;
-  const windowClosed = new Promise<void>(resolve => { resolveClosed = resolve; });
-  const pending = createRequestQueue(limits, async line => {
-    child.stdin.write(line);
-    await child.stdin.flush();
-  }, error => fail(error));
+  const windowClosed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
+  const pending = createRequestQueue(
+    limits,
+    async (line) => {
+      child.stdin.write(line);
+      await child.stdin.flush();
+    },
+    (error) => fail(error),
+  );
   const fail = (error: Error): void => {
     if (failure) return;
     failure = new DesktopConnectionError(error.message, { cause: error });
@@ -63,12 +95,15 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     // A broken stream cannot safely publish again. Retire the process as well
     // as its promises, including hosts that no longer respond to shutdown.
     if (child.exitCode === null) {
-      try { child.kill('SIGKILL'); } catch {}
+      try {
+        child.kill('SIGKILL');
+      } catch {}
     }
   };
-  if (options.window && startupTimeout) startupDeadline = setTimeout(() => {
-    fail(new Error('Desktop host timed out during startup'));
-  }, startupTimeout);
+  if (options.window && startupTimeout)
+    startupDeadline = setTimeout(() => {
+      fail(new Error('Desktop host timed out during startup'));
+    }, startupTimeout);
   const output = (async () => {
     const decoder = new TextDecoder();
     let buffer = '';
@@ -79,14 +114,35 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
         const response = decodeResponse(line);
-        if (response.type === 'ready') { started = true; clearTimeout(startupDeadline); resolveReady(); continue; }
-        if (response.type === 'closed') { resolveClosed(); continue; }
+        if (response.type === 'ready') {
+          started = true;
+          clearTimeout(startupDeadline);
+          resolveReady();
+          continue;
+        }
+        if (response.type === 'closed') {
+          resolveClosed();
+          continue;
+        }
         if (response.type === 'event') {
           const event = response as unknown as NativeSceneEvent;
-          if (!Number.isSafeInteger(event.handle?.id) || event.handle.id <= 0 ||
-              !Number.isSafeInteger(event.handle?.generation) || event.handle.generation <= 0 ||
-              !Number.isSafeInteger(event.site) || event.site < 0) throw new Error('Invalid native desktop event');
-          if (event.edit !== undefined && (!Number.isSafeInteger(event.edit) || event.edit <= 0)) throw new Error('Invalid native input edit');
+          if (
+            !Number.isSafeInteger(event.handle?.id) ||
+            event.handle.id <= 0 ||
+            !Number.isSafeInteger(event.handle?.generation) ||
+            event.handle.generation <= 0 ||
+            (event.site === undefined && event.node === undefined) ||
+            (event.site !== undefined && (!Number.isSafeInteger(event.site) || event.site < 0)) ||
+            (event.node !== undefined && (!Number.isSafeInteger(event.node) || event.node < 0))
+          )
+            throw new Error('Invalid native desktop event');
+          if (
+            event.dispatch !== undefined &&
+            (!Number.isSafeInteger(event.dispatch) || event.dispatch <= 0)
+          )
+            throw new Error('Invalid native event token');
+          if (event.edit !== undefined && (!Number.isSafeInteger(event.edit) || event.edit <= 0))
+            throw new Error('Invalid native input edit');
           for (const listener of listeners) listener(event);
           continue;
         }
@@ -94,7 +150,9 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
       }
     }
     if (buffer.trim()) throw new Error('Incomplete desktop host response');
-  })().catch(error => { fail(error instanceof Error ? error : new Error(String(error))); });
+  })().catch((error) => {
+    fail(error instanceof Error ? error : new Error(String(error)));
+  });
   // Drain stderr continuously without retaining every line for the lifetime of
   // the application. The tail preserves useful crash diagnostics.
   let diagnostics = '';
@@ -104,8 +162,10 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
       diagnostics = (diagnostics + decoder.decode(chunk, { stream: true })).slice(-16_384);
     }
     diagnostics = (diagnostics + decoder.decode()).slice(-16_384);
-  })().catch(error => { fail(error instanceof Error ? error : new Error(String(error))); });
-  void child.exited.then(async code => {
+  })().catch((error) => {
+    fail(error instanceof Error ? error : new Error(String(error)));
+  });
+  void child.exited.then(async (code) => {
     await output;
     await stderr;
     clearTimeout(startupDeadline);
@@ -121,34 +181,75 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     if (closing && !shutdown) return Promise.reject(new Error('Desktop host is closing'));
     const id = nextId++;
     let line: string;
-    try { line = `${JSON.stringify({ id, version: 1, ...command })}\n`; }
-    catch (error) { return Promise.reject(error); }
+    try {
+      line = `${JSON.stringify({ id, version: 1, ...command })}\n`;
+    } catch (error) {
+      return Promise.reject(error);
+    }
     return pending.enqueue(id, line, (command as { kind: string }).kind, requestTimeout);
   };
   return {
-    ready, windowClosed,
-    onEvent(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    async acknowledgeEvent(event) {
-      if (event.edit !== undefined) await request({ kind: 'acknowledge', handle: event.handle, site: event.site, edit: event.edit });
+    ready,
+    windowClosed,
+    onEvent(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
-    async testInput(handle, node, action, text) { await request({ kind: 'test_input', handle, node, action, text }); },
-    async testWindow(event) { await request({ kind: 'test_window', ...event }); },
-    async install(template: SceneTemplate) { await request({ kind: 'install', template }); },
-    async commit(transaction: SceneTransaction) { return await request({ kind: 'apply', transaction }) as SceneAcknowledgment; },
-    async inspect() { return await request({ kind: 'inspect' }) as SceneSnapshot; },
-    async redraw() { await request({ kind: 'redraw' }); },
+    async acknowledgeEvent(event, defaultPrevented = false) {
+      if (event.edit !== undefined)
+        await request({
+          kind: 'acknowledge',
+          handle: event.handle,
+          site: event.site,
+          edit: event.edit,
+        });
+      if (event.dispatch !== undefined)
+        await request({
+          kind: 'event_result',
+          dispatch: event.dispatch,
+          prevented: defaultPrevented,
+        });
+    },
+    async testInput(handle, node, action, text) {
+      await request({ kind: 'test_input', handle, node, action, text });
+    },
+    async testWindow(event) {
+      await request({ kind: 'test_window', ...event });
+    },
+    async install(template: SceneTemplate) {
+      await request({ kind: 'install', template });
+    },
+    async commit(transaction: SceneTransaction) {
+      return (await request({ kind: 'apply', transaction })) as SceneAcknowledgment;
+    },
+    async inspect() {
+      return (await request({ kind: 'inspect' })) as SceneSnapshot;
+    },
+    async redraw() {
+      await request({ kind: 'redraw' });
+    },
     close() {
       if (!closing) {
         clearTimeout(startupDeadline);
-        const deadline = shutdownTimeout ? setTimeout(() => {
-          fail(new Error('Desktop host timed out during shutdown'));
-        }, shutdownTimeout) : undefined;
+        const deadline = shutdownTimeout
+          ? setTimeout(() => {
+              fail(new Error('Desktop host timed out during shutdown'));
+            }, shutdownTimeout)
+          : undefined;
         closing = (async () => {
           let shutdownError: unknown;
           if (child.exitCode === null) {
-            try { await request({ kind: 'shutdown' }, true); }
-            catch (error) { shutdownError = error; }
-            finally { try { child.stdin.end(); } catch {} }
+            try {
+              await request({ kind: 'shutdown' }, true);
+            } catch (error) {
+              shutdownError = error;
+            } finally {
+              try {
+                child.stdin.end();
+              } catch {}
+            }
           }
           const code = await child.exited;
           await output;
@@ -156,7 +257,10 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
           if (failure) throw failure;
           if (shutdownError !== undefined) throw shutdownError;
           if (code !== 0) throw new Error(`Desktop host exited (${code}): ${diagnostics.trim()}`);
-        })().finally(() => { clearTimeout(deadline); closed = true; });
+        })().finally(() => {
+          clearTimeout(deadline);
+          closed = true;
+        });
         void closing.catch(() => {});
       }
       return closing;
@@ -166,7 +270,8 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
 
 function timeoutValue(value: number | undefined, fallback: number): number {
   const timeout = value ?? fallback;
-  if (!Number.isSafeInteger(timeout) || timeout < 0 || timeout > 2_147_483_647) throw new RangeError('Desktop host deadlines require a nonnegative timer duration');
+  if (!Number.isSafeInteger(timeout) || timeout < 0 || timeout > 2_147_483_647)
+    throw new RangeError('Desktop host deadlines require a nonnegative timer duration');
   return timeout;
 }
 
@@ -179,12 +284,20 @@ type HostResponse =
 /** Check framing before resolving requests; missing results are not success. */
 function decodeResponse(line: string): HostResponse {
   const value: unknown = JSON.parse(line);
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid desktop host response');
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Invalid desktop host response');
   const response = value as Record<string, unknown>;
-  if (response.type === 'ready' || response.type === 'closed' || response.type === 'event') return value as HostResponse;
+  if (response.type === 'ready' || response.type === 'closed' || response.type === 'event')
+    return value as HostResponse;
   const result = Object.hasOwn(response, 'result');
   const error = Object.hasOwn(response, 'error');
-  if (response.type !== undefined || !Number.isSafeInteger(response.id) || (response.id as number) <= 0 ||
-      result === error || (error && typeof response.error !== 'string')) throw new Error('Invalid desktop host response');
+  if (
+    response.type !== undefined ||
+    !Number.isSafeInteger(response.id) ||
+    (response.id as number) <= 0 ||
+    result === error ||
+    (error && typeof response.error !== 'string')
+  )
+    throw new Error('Invalid desktop host response');
   return value as HostResponse;
 }
