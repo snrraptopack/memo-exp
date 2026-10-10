@@ -153,7 +153,7 @@ it('cleans accepted and staged rows when a parent is disposed during publication
   }
 });
 
-for (const jsx of ['<Row name={name}/>', '<p key={name}>{name}</p>']) it('diagnoses incomplete desktop row contracts: '+jsx, () => {
+for (const jsx of ['<Row name={name}/>', '<p>{name}</p>']) it('diagnoses incomplete desktop row contracts: '+jsx, () => {
   expect(() => compileDesktop(`function Row({name}){return <p>{name}</p>;}export function App(){let items=['a'];return <main>{items.map(name=>${jsx})}</main>;}`)).toThrow('desktop list rows');
 });
 

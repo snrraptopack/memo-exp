@@ -142,7 +142,7 @@ export async function runTodoSmoke({
   assert(
     snapshot.instances.some(
       (instance) =>
-        instance.template.endsWith('#CompletedTitle') &&
+        snapshot.renderer!.boxes.some(box => box.handle.id === instance.handle.id && box.id === 'completed-title') &&
         instance.attach_to?.handle.id === added.handle.id,
     ),
     'Row callback did not complete its parent-owned task',
@@ -170,7 +170,7 @@ export async function runTodoSmoke({
   assert(
     snapshot.instances.some(
       (instance) =>
-        instance.template.endsWith('#ActiveTitle') &&
+        snapshot.renderer!.boxes.some(box => box.handle.id === instance.handle.id && box.id === 'active-title') &&
         instance.attach_to?.handle.id === added.handle.id,
     ),
     'Rapid clicks lost a task toggle or reset its owner',
@@ -203,7 +203,15 @@ export async function runTodoSmoke({
   );
   const burstTypingMs = performance.now() - typingStart;
 
-  await click('reverse-tasks');
+  // Reorder from the focused input so a click cannot hide a lost focus handle.
+  const focusedNote = snapshot.renderer!.focused;
+  assert(focusedNote?.handle.id === added.handle.id, 'Row note did not receive focus');
+  await key('ctrl-r');
+  assert(
+    snapshot.renderer!.focused?.handle.id === focusedNote!.handle.id &&
+      snapshot.renderer!.focused?.node === focusedNote!.node,
+    'Reordering inline keyed rows replaced the focused native input',
+  );
   assert(
     rows()
       .find((row) => row.handle.id === added.handle.id)

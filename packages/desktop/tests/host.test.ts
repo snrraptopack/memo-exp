@@ -12,6 +12,64 @@ const template: SceneTemplate = { id: 'host-counter', nodes: [
 ], slots: [{ node: 1, type: 'text' }], events: [{ node: 0, type: 'click' }] };
 
 describe('Rust retained scene bridge', () => {
+  it('publishes inline branches and list rows through the existing native forest contract', async () => {
+    const { code } = compileDesktop(`
+      export function App() {
+        let shown = true;
+        let selected = '';
+        let items = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }];
+        return <main>
+          <button onClick={() => items = items.toReversed()}>Reverse</button>
+          <button onClick={() => shown = !shown}>Toggle</button>
+          <p>{selected}</p>
+          {shown ? <section><ul>{items.map((item, index) => <li key={item.id}>
+            <p>{index}: {item.title}</p>
+            <button onClick={() => selected = item.title}>Select</button>
+          </li>)}</ul></section> : <p>Hidden</p>}
+        </main>;
+      }
+    `, {
+      moduleId: 'native-inline.tsx',
+      runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href,
+    });
+    const compiled = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`) as {
+      App(): SceneInstance;
+    };
+    const host = createProcessHost({ executable });
+    const app = createDesktopApplication(host);
+    try {
+      const root = app.mount(compiled.App);
+      await root.ready;
+      const initial = await host.inspect();
+      const [, branch, rowA, rowB] = initial.instances;
+      expect(initial.instances).toHaveLength(4);
+      await app.dispatch(rowA!.handle, 0);
+      const selected = await host.inspect();
+      expect(selected.instances[0]!.text_groups.some(group => group.text === 'A')).toBe(true);
+      await root.dispatch(0);
+      const reversed = await host.inspect();
+      expect(reversed.instances.map(instance => instance.handle)).toEqual(initial.instances.map(instance => instance.handle));
+      const region = reversed.instances.find(instance => instance.handle.id === branch!.handle.id)!;
+      expect(Object.values(region.orders!)[0]).toEqual([rowB!.handle, rowA!.handle]);
+      const retainedA = reversed.instances.find(instance => instance.handle.id === rowA!.handle.id)!;
+      expect(retainedA.text_groups.some(group => group.text === '1: A')).toBe(true);
+      await root.dispatch(1);
+      const hidden = await host.inspect();
+      expect(hidden.instances).toHaveLength(2);
+      expect(hidden.instances[1]!.text_groups.some(group => group.text === 'Hidden')).toBe(true);
+      await root.dispatch(1);
+      const restored = await host.inspect();
+      expect(restored.instances).toHaveLength(4);
+      expect(restored.instances.slice(1).every(instance =>
+        initial.instances.slice(1).every(previous => previous.handle.id !== instance.handle.id),
+      )).toBe(true);
+      await app.dispose();
+      expect((await host.inspect()).instances).toEqual([]);
+    } finally {
+      await app.dispose();
+      await host.close();
+    }
+  });
   it('retains keyed native row records and rejects malformed row order atomically', async () => {
     const { code } = compileDesktop(`function Row({name,index}){let clicks=0;return <li><p>{name}: {index}</p><button onClick={()=>clicks++}>Clicks: {clicks}</button></li>;}export function App(){let items=['a','b','c'];return <main><button onClick={()=>items=items.toReversed()}>Reverse</button><button onClick={()=>items=['d',...items.slice(1)]}>Replace</button><ul>{items.map((name,index)=><Row key={name} name={name} index={index}/>)}</ul></main>;}`,
       { moduleId: 'native-list.tsx', runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href });

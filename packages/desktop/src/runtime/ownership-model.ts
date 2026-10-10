@@ -28,6 +28,8 @@ export interface Owner {
   instance: SceneInstance;
   family: Family;
   parent?: Owner;
+  lexicalParent?: Owner;
+  lexicalChildren: Set<Owner>;
   attachment?: SceneAttachment;
   template: SceneTemplate;
   bindings: readonly TextBinding[];

@@ -28,9 +28,24 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     return task;
   };
   const invalidate = (owner: Owner, sources: readonly string[] | null): void => {
-    owner.dirty = true;
-    if (sources === null) owner.pending = null;
-    else if (owner.pending) for (const source of sources) owner.pending.add(source);
+    const pending = [owner];
+    while (pending.length) {
+      const member = pending.pop()!;
+      if (member.disposed) continue;
+      member.dirty = true;
+      if (sources === null) member.pending = null;
+      else if (member.pending) for (const source of sources) member.pending.add(source);
+      pending.push(...member.lexicalChildren);
+    }
+  };
+  const stateOwner = (owner: Owner): Owner => {
+    // An inline handler writes the enclosing closure. Named components remain
+    // independent owners, even when mounted inside an inline fragment.
+    while (owner.lexicalParent) owner = owner.lexicalParent;
+    return owner;
+  };
+  const invalidateState = (owner: Owner, sources: readonly string[] | null): void => {
+    invalidate(stateOwner(owner), sources);
   };
   const retire = (members: readonly Owner[]): void => {
     const retired = new Set(members);
@@ -59,6 +74,9 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
       if (!group.members.length) group.root = undefined;
     }
     for (const member of members) {
+      member.lexicalParent?.lexicalChildren.delete(member);
+      member.lexicalParent = undefined;
+      member.lexicalChildren.clear();
       member.children = []; member.regions = []; member.lists = []; member.parent = undefined;
       member.bindings = []; member.handlers = []; member.receive = undefined;
       member.initial = []; member.acknowledged.clear(); member.pending = new Set(); member.dirty = false;
@@ -119,6 +137,10 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
     family.work = task.catch(() => {});
     return task;
   };
+  // Resolve the lexical owner before queuing: an accepted inline subtree can
+  // retire while the queue waits, but its earlier state write still belongs to
+  // the live enclosing owner and must reach the replacement subtree.
+  const flushState = (owner: Owner): Promise<void> => flush(stateOwner(owner));
   const dispose = (owner: Owner): Promise<void> => {
     if (owner.parent?.disposed) return dispose(owner.parent);
     if (owner.disposal) return owner.disposal;
@@ -163,8 +185,8 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
 
   const dispatchEvent = createEventDispatcher({
     find: handle => handles.get(handle.id),
-    invalidate,
-    flush,
+    invalidate: invalidateState,
+    flush: flushState,
     isClosed,
   });
 
@@ -207,12 +229,13 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
                 const result = Reflect.apply(callback, this, args);
                 if (result instanceof Promise) throw new Error('Asynchronous desktop callbacks are not supported yet');
                 return result;
-              } finally { invalidate(owner, null); }
+              } finally { invalidateState(owner, null); }
             };
             (callbacks ??= new WeakMap()).set(callback, bound); ownedCallbacks.add(bound);
           }
           return bound;
         }),
+        lexicalParent: options.lexical ? parent : undefined, lexicalChildren: new Set(),
         receive: options.receiveProps, initial, children: [], regions: [], lists: [], acknowledged: new Map(), pending: new Set(), dirty: false, disposed: false, mounted: false,
         stagedReady: staging ? stagedReadiness() : undefined };
       const instance: SceneInstance = {
@@ -229,8 +252,8 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
             result = Reflect.apply(handler.callback, undefined, [payload]);
             if (result instanceof Promise) throw new Error('Asynchronous desktop callbacks are not supported yet');
           } catch (error) { failed = true; callbackError = error; }
-          invalidate(owner, handler.sources);
-          try { await flush(owner); } catch (error) {
+          invalidateState(owner, handler.sources);
+          try { await flushState(owner); } catch (error) {
             if (failed) throw new AggregateError([callbackError, error], 'Desktop callback and publication failed');
             throw error;
           }
@@ -240,6 +263,7 @@ export function createOwnerForest(publication: ReturnType<typeof createPublicati
         dispose() { return dispose(owner); },
       };
       owner.instance = instance;
+      owner.lexicalParent?.lexicalChildren.add(owner);
       group.members.push(owner); owners.set(instance, owner); handles.set(handle.id, owner); group.root ??= owner;
       if (!staging) group.installs.push(install(template));
       const regions = new Set<number>();

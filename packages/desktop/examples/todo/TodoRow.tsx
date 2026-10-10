@@ -7,14 +7,24 @@ interface TodoRowProps {
   done: boolean;
   onToggle(id: number): void;
   onDelete(id: number): void;
+  onReverse(): void;
 }
 
-export function TodoRow({ id, title, done, onToggle, onDelete }: TodoRowProps) {
+export function TodoRow({ id, title, done, onToggle, onDelete, onReverse }: TodoRowProps) {
   let note = '';
+  const handleNoteKey = (event: KeyboardEvent) => {
+    if (event.ctrlKey && event.key === 'r') onReverse();
+  };
   return (
-    <article class="task-row">
+    <>
       <div class="task-content">
-        {done ? <CompletedTitle title={title} /> : <ActiveTitle title={title} />}
+        {done ? (
+          <p id="completed-title" class="task-title completed-title">
+            <s>{title}</s>
+          </p>
+        ) : (
+          <p id="active-title" class="task-title">{title}</p>
+        )}
         <p class="task-status">Task #{id}</p>
         <input
           id="row-note"
@@ -23,6 +33,7 @@ export function TodoRow({ id, title, done, onToggle, onDelete }: TodoRowProps) {
           placeholder="A note that stays with this row"
           value={note}
           onInput={(event) => (note = event.currentTarget.value)}
+          onKeyDown={handleNoteKey}
         />
         <p class="note-preview">Note: {note}</p>
       </div>
@@ -34,18 +45,6 @@ export function TodoRow({ id, title, done, onToggle, onDelete }: TodoRowProps) {
           Delete
         </button>
       </div>
-    </article>
-  );
-}
-
-function ActiveTitle({ title }: { title: string }) {
-  return <p class="task-title">{title}</p>;
-}
-
-function CompletedTitle({ title }: { title: string }) {
-  return (
-    <p class="task-title completed-title">
-      <s>{title}</s>
-    </p>
+    </>
   );
 }

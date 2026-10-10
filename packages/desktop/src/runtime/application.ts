@@ -20,6 +20,8 @@ export interface SceneChildBinding {
 }
 
 export interface SceneMountOptions {
+  /** Compiler fragments retain structure but share their enclosing state scope. */
+  readonly lexical?: boolean;
   readonly children?: readonly SceneChildBinding[];
   readonly receiveProps?: (props: Readonly<Record<string, unknown>>) => void;
   readonly components?: readonly SceneComponent[];

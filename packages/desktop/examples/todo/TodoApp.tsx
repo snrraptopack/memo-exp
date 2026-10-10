@@ -143,37 +143,36 @@ export function TodoApp() {
               Add 20 test tasks
             </button>
           </div>
-          {tasks.length === 0 && <EmptyTasks />}
+          {tasks.length === 0 && (
+            <div id="empty-tasks" class="empty">
+              <h2>A clear list.</h2>
+              <p>Add a task above to start again.</p>
+            </div>
+          )}
           <div id="task-list" class="task-list">
             {tasks
               .filter((task) => filter === 'all' || (filter === 'done' ? task.done : !task.done))
               .map((task) => (
-                <TodoRow
-                  key={task.id}
-                  id={task.id}
-                  title={task.title}
-                  done={task.done}
-                  onToggle={toggle}
-                  onDelete={remove}
-                />
+                <article key={task.id} class="task-row">
+                  <TodoRow
+                    id={task.id}
+                    title={task.title}
+                    done={task.done}
+                    onToggle={toggle}
+                    onDelete={remove}
+                    onReverse={reverseTasks}
+                  />
+                </article>
               ))}
           </div>
         </section>
         <footer id="todo-footer">
           <p class="muted">
-            Try typing a note in a row, then reversing the list. Its note should follow the task.
+            Type a row note, then press Ctrl+R to reverse the list. Its note and focus should
+            follow the task.
           </p>
         </footer>
       </main>
-    </div>
-  );
-}
-
-function EmptyTasks() {
-  return (
-    <div id="empty-tasks" class="empty">
-      <h2>A clear list.</h2>
-      <p>Add a task above to start again.</p>
     </div>
   );
 }

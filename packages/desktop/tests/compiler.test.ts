@@ -213,7 +213,6 @@ describe('desktop compilation and publication', () => {
     [`export function Counter(){ let x=0; return <button onClick={async()=>x++}>{x}</button>; }`, 'asynchronous callbacks'],
     [`export function Counter(){ let x=0; const y=x+1; return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
     [`export function Counter(){ let x=0; function label(){return x+1;} const y=label(); return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
-    [`export function Counter(){ let x=true; return <button onClick={()=>x=!x}>{x && <text>yes</text>}</button>; }`, 'inline subtrees'],
     [`export function Counter(){ let color='red'; return <button style={{color}}>Hi</button>; }`, 'style objects currently require static values'],
   ])('rejects unsupported contracts with an authored diagnostic', (source, message) => {
     expect(() => compileDesktop(source, { moduleId: 'unsupported.tsx' })).toThrow(message);

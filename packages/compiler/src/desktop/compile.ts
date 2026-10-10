@@ -15,7 +15,8 @@ import { scanInstanceState, scanInstanceDerivations } from '../analysis/instance
 import { planComponentCallbacks } from '../planning/component-callbacks';
 import { planExpressionSources } from '../planning/expression-sources';
 import { compilerError } from '../errors';
-import { lowerDesktopScene, valueExpression } from './lower-scene';
+import { lowerDesktopScene } from './lower-scene';
+import { emitDesktopScene } from './emit-scene';
 import { desktopCssRules } from './css';
 import { desktopProps } from './components';
 import { desktopComponentImports, type DesktopModuleReader } from './imports';
@@ -91,7 +92,9 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   const mount = fresh('__desktopMount');
   const instrument = fresh('__desktopEvent');
   const define = fresh('__desktopDefine');
+  const scope = fresh('__desktopScope');
   let eventsUsed = false;
+  let scopesUsed = false;
   const templates: t.Statement[] = [];
   const definitions: t.Statement[] = [];
 
@@ -115,36 +118,32 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     }
     const listPrefixes = new Map<string, number>();
     prepareDesktopListSources(root, ctx);
-    const { nodes, slots, events, bindings, handlers, children, regions, lists, componentNames } = lowerDesktopScene(root, {
+    const scene = lowerDesktopScene(root, {
       callbacks: planComponentCallbacks(ctx, name, component),
-      sources: expressionFacts.get(name)!, instrument, fail, fresh, components: ctx.componentProps, imports: ctx.importedComponents,
-      listSite: call => analyzeMapSite(ctx, call, path, name, listPrefixes),
+      sources: expressionFacts.get(name)!, instrument, scope, fail, fresh, components: ctx.componentProps, imports: ctx.importedComponents,
+      listSite: (call, parentRow) => analyzeMapSite(ctx, call, path, name, listPrefixes, parentRow),
     });
     const props = desktopProps(ctx.componentProps.get(name)!, fresh, fail);
     fn.params = props.params;
-    eventsUsed ||= handlers.length > 0;
-    const template = { id: `${moduleId}#${name}`, nodes, slots, events, stylesheets };
-    const templateId = fresh(`__desktopTemplate${name}`);
-    templates.push(b.variableDeclaration('const', [b.variableDeclarator(templateId, valueExpression(template))]));
-    const dependencies = () => b.arrayExpression(componentNames.map(b.identifier));
-    definitions.push(b.expressionStatement(b.callExpression(define, [b.identifier(name), templateId, b.arrowFunctionExpression([], dependencies())])));
-    const mountOptions = b.objectExpression([
-      ...(children.length ? [b.objectProperty(b.identifier('children'), b.arrayExpression(children))] : []),
-      ...(regions.length ? [b.objectProperty(b.identifier('regions'), b.arrayExpression(regions))] : []),
-      ...(lists.length ? [b.objectProperty(b.identifier('lists'), b.arrayExpression(lists))] : []),
-      ...(componentNames.length ? [b.objectProperty(b.identifier('components'), dependencies())] : []),
-      ...(props.receive ? [b.objectProperty(b.identifier('receiveProps'), props.receive)] : []),
-    ]);
+    const emitted = emitDesktopScene(scene, {
+      id: `${moduleId}#${name}`, stylesheets, mount, define, fresh, templates, receive: props.receive,
+    });
+    eventsUsed ||= emitted.eventsUsed;
+    scopesUsed ||= emitted.scopesUsed;
+    definitions.push(b.expressionStatement(b.callExpression(define, [
+      b.identifier(name), emitted.template,
+      b.arrowFunctionExpression([], b.arrayExpression(emitted.dependencies.map(b.identifier))),
+      b.arrayExpression(emitted.fragmentTemplates),
+    ])));
     fn.body.body = [...props.setup, ...statements.slice(0, -1),
-      b.returnStatement(b.callExpression(mount, [
-        templateId, b.arrayExpression(bindings), b.arrayExpression(handlers), mountOptions,
-      ]))];
+      ...emitted.setup, b.returnStatement(emitted.mount)];
   }
   if (!ctx.compPaths.size) fail('no desktop components were found');
   program.body.unshift(b.importDeclaration([
     b.importSpecifier(mount, b.identifier('mountScene')),
     b.importSpecifier(define, b.identifier('defineSceneComponent')),
     ...(eventsUsed ? [b.importSpecifier(instrument, b.identifier('sceneEvent'))] : []),
+    ...(scopesUsed ? [b.importSpecifier(scope, b.identifier('sceneScope'))] : []),
   ], b.stringLiteral(options.runtimePath ?? '@memoized-dom/desktop')), ...templates);
   program.body.push(...definitions);
   return { code: printEstree(stripTypeScript(program), { comments: parsed.comments }).code,

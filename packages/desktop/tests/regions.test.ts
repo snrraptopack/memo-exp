@@ -82,9 +82,6 @@ it('keeps the accepted tree live when replacement setup throws and permits later
   await f.app.dispose();
 });
 
-it('rejects unsupported inline conditional subtrees explicitly',()=>{
-  expect(()=>compileDesktop(`export function App(){let shown=true;return <main>{shown?<div>inline</div>:null}</main>;}`)).toThrow('inline subtrees');
-});
 
 it('rejects nullish component choices rather than interpreting them as truthy fallbacks',()=>{
   expect(()=>compileDesktop(`function Child(){return <p>child</p>;}export function App(){let value=0;return <main>{value??<Child/>}</main>;}`)).toThrow('nullish desktop component choices');

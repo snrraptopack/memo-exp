@@ -15,6 +15,7 @@ import { nodeHasJsx } from '../context/ast';
 import { matchMapCall, type MapSite } from '../lists';
 import type { MapCallExpression } from '../context';
 import { desktopListPlan } from './lists';
+import type { ParentRow } from '../lists/map-site';
 
 const desktopEventNames = {
   onClick: 'click',
@@ -48,19 +49,41 @@ interface TextSlot {
   type: 'text' | 'value';
 }
 
+export interface DesktopFragment {
+  readonly component: t.Identifier;
+  readonly captures: readonly t.Identifier[];
+  readonly scene: DesktopScene;
+}
+
+export interface DesktopScene {
+  nodes: SceneNode[];
+  slots: TextSlot[];
+  events: { node: number; type: DesktopEventType }[];
+  bindings: t.Expression[];
+  handlers: t.Expression[];
+  children: t.Expression[];
+  regions: t.Expression[];
+  lists: t.Expression[];
+  fragments: DesktopFragment[];
+  componentNames: string[];
+}
+
 export function lowerDesktopScene(
   root: t.Node,
   options: {
     callbacks: ComponentCallbacks;
     sources: ComponentExpressionSources;
     instrument: t.Identifier;
+    scope: t.Identifier;
+    lexical?: boolean;
+    parentRow?: ParentRow;
     components: ReadonlyMap<string, ComponentPropsPlan>;
     imports: ReadonlyMap<string, LinkedComponentImport>;
     fresh: (name: string) => t.Identifier;
-    listSite: (call: MapCallExpression) => MapSite;
+    listSite: (call: MapCallExpression, parentRow?: ParentRow) => MapSite;
     fail: (message: string, at: t.Node) => never;
   },
-) {
+): DesktopScene {
   const { callbacks, sources, instrument } = options;
   const fail: (message: string, at: t.Node) => never = options.fail;
   const nodes: SceneNode[] = [];
@@ -72,7 +95,11 @@ export function lowerDesktopScene(
   const regions: t.Expression[] = [];
   const lists: t.Expression[] = [];
   const componentNames = new Set<string>();
+  const fragments: DesktopFragment[] = [];
   const dependenciesFor = (expression: t.Expression): readonly string[] | null => {
+    // The shared facts describe authored component locals. Fragment row locals
+    // are compiler captures, so replay their reads conservatively for now.
+    if (options.lexical) return null;
     let dependencies = sources.sourcesFor(expression);
     walkAst<t.Node>(expression, {
       enter(node) {
@@ -84,10 +111,24 @@ export function lowerDesktopScene(
   };
   const componentCall = (element: t.JSXElement) =>
     desktopComponentCall(element, { ...options, sourcesFor: dependenciesFor });
+  const inlineCall = (
+    branch: t.JSXElement | t.JSXFragment,
+    captures: readonly t.Identifier[] = [],
+    parentRow: ParentRow | undefined = options.parentRow,
+  ) => {
+    const component = options.fresh('__desktopFragment');
+    const scene = lowerDesktopScene(branch, { ...options, lexical: true, parentRow });
+    fragments.push({ component, captures, scene });
+    const props = b.objectExpression(captures.length ? [
+      b.objectProperty(b.identifier('scope'), b.callExpression(options.scope, [...captures])),
+    ] : []);
+    return { component, props, sources: null };
+  };
   const addList = (call: MapCallExpression, parent: number | null): void => {
     assertSynchronousCallback(call, fail);
-    const plan = desktopListPlan(options.listSite(call), {
+    const plan = desktopListPlan(options.listSite(call, options.parentRow), {
       call: componentCall,
+      inline: inlineCall,
       fresh: options.fresh,
       fail,
       sourcesFor: dependenciesFor,
@@ -110,6 +151,7 @@ export function lowerDesktopScene(
   ): void => {
     const plan = desktopRegionPlan(expression, {
       call: componentCall,
+      inline: inlineCall,
       sourcesFor: dependenciesFor,
       fresh: options.fresh,
       fail,
@@ -307,6 +349,9 @@ export function lowerDesktopScene(
       // Helpers are kept intact. Their effects are conservatively replayed until
       // desktop lowering instruments their individual mutation sites.
       conservative ||= callback.helpers.length > 0;
+      // A row callback may mutate its captured object without assigning an
+      // authored component local. Invalidate that shared closure conservatively.
+      conservative ||= options.lexical === true;
       events.push({ node, type: eventType });
       handlers.push(
         b.callExpression(instrument, [
@@ -329,6 +374,7 @@ export function lowerDesktopScene(
     children,
     regions,
     lists,
+    fragments,
     componentNames: [...componentNames],
   };
 }

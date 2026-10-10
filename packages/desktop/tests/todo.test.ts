@@ -38,6 +38,13 @@ it('runs the authored todo through normal mount, keyed rows, parent callbacks, a
     let snapshot = await host.inspect();
     const rows = () =>
       snapshot.instances.filter((instance) => instance.template.endsWith('#TodoRow'));
+    const hasElement = (id: string, parent?: SceneHandle) =>
+      snapshot.instances.some(instance =>
+        (!parent || instance.attach_to?.handle.id === parent.id) &&
+        templates.get(instance.template)!.nodes.some(node =>
+          node.kind === 'element' && node.attributes?.id === id,
+        ),
+      );
     const event = (id: string, handle: SceneHandle = root.handle) => {
       const instance = snapshot.instances.find((instance) => instance.handle.id === handle.id)!;
       const template = templates.get(instance.template)!;
@@ -72,13 +79,7 @@ it('runs the authored todo through normal mount, keyed rows, parent callbacks, a
       ),
     ).toBe(true);
     await click('toggle-task', added.handle);
-    expect(
-      snapshot.instances.some(
-        (instance) =>
-          instance.template.endsWith('#CompletedTitle') &&
-          instance.attach_to?.handle.id === added.handle.id,
-      ),
-    ).toBe(true);
+    expect(hasElement('completed-title', added.handle)).toBe(true);
     await click('toggle-task', added.handle);
     await app.dispatch(added.handle, event('row-note', added.handle), {
       target: { value: 'Keep this note' },
@@ -102,14 +103,10 @@ it('runs the authored todo through normal mount, keyed rows, parent callbacks, a
     expect(rows()).toHaveLength(2);
     for (const row of rows()) await click('delete-task', row.handle);
     expect(rows()).toHaveLength(0);
-    expect(snapshot.instances.some((instance) => instance.template.endsWith('#EmptyTasks'))).toBe(
-      true,
-    );
+    expect(hasElement('empty-tasks')).toBe(true);
     await click('add-samples');
     expect(rows()).toHaveLength(20);
-    expect(snapshot.instances.some((instance) => instance.template.endsWith('#EmptyTasks'))).toBe(
-      false,
-    );
+    expect(hasElement('empty-tasks')).toBe(false);
   } finally {
     await app.dispose();
     await host.close();
