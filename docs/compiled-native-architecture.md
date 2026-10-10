@@ -1,6 +1,6 @@
 # Compiled native desktop architecture
 
-Date: 2026-10-10. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, structural publication, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Additional controls and native incremental geometry remain future work.
+Date: 2026-10-10. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, structural publication, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Desktop currently supports a restricted component-local reactive model. Reusing the framework's semantic runtime and linked module plans is the next architecture priority. Additional controls and native incremental geometry remain future work.
 
 ## The technique we aim to use
 
@@ -68,9 +68,66 @@ The existing ownership, scheduling, preparation, and cleanup contracts establish
 
 Keep authored JavaScript evaluation order, exceptions, alias behavior, and callback semantics consistent across targets. Dependency proofs can target known updates precisely. Hidden reads and unknown mutations still require a conservative update path.
 
+## One semantic runtime, with two rendering targets
+
+The desktop target should execute the existing framework's reactive semantics. Its core is the shared JavaScript application runtime, with a desktop adapter for scene preparation and publication. Rust owns native presentation. It does not need to interpret access tables, execute authored JavaScript, or recreate the compiler's reactive graph.
+
+There is a concrete gap in the current implementation. `desktop/compile.ts` rejects reactive module state and setup derivations. `desktop/imports.ts` links components and primitive constant imports, but not reactive state or helper exports. `desktop/src/runtime/ownership.ts` invalidates an authored local state owner and its lexical fragments. That preserves local updates and structural publication, but cannot establish the framework's general cross-module behavior. Component-free modules can pass through without semantic compilation. Extending that local mechanism into a second module scheduler would duplicate the existing core.
+
+The existing implementations to reuse are:
+
+| Responsibility | Existing implementation | Desktop integration |
+| --- | --- | --- |
+| Application identity, registered entities, dirty work, ordered drains | `runtime/src/kernel.ts` | Each desktop application owns an `ApplicationRuntime`; scene update functions register as entities |
+| Canonical write keys and reader routing | `runtime/src/access.ts`, `events.ts` | Generated module fragments install the same access-table format; writes route through the same resolver |
+| Module identities, exports, helper effects, read/write proofs | Compiler linking, analysis, and planning modules | Desktop builds link the complete participating source graph, including state-only modules |
+| Application-owned state where isolation is required | `runtime/src/state-cells.ts`, compiler `cells.ts` | Preserve the existing state ownership policy; cell lifting currently uses DOM emission utilities and requires a shared boundary before desktop reuse |
+| Native destination caches, candidate branches/rows, accepted handles | `desktop/src/runtime/` | Keep these as rendering adapter responsibilities, driven by core invalidations |
+| Scene validation, CSS, layout, input, text, paint | Desktop Rust host and GPUI adapter | Consume prepared scene transactions and return acceptance and event messages |
+
+Access-table keys already identify the source module and binding. Reader patterns identify mounted entities, including keyed rows. Desktop must register identities matching those generated patterns and map each entity to its scene owner and native handle. A native numeric handle cannot simply replace the compiler's hierarchical entity identity. Writes in one module can then select readers in another through the existing resolver; the native host receives only their prepared presentation changes.
+
+```text
+Authored TS / TSX module graph
+       |
+Shared linking and semantic plans
+  state identities, helper writes, reader tables, derivations
+       |
+Shared JavaScript semantic runtime
+  application state -> access resolver -> dirty entities -> update functions
+       |
+       +-- DOM destination emission -> existing DOM rendering operations
+       |
+       +-- Desktop destination emission -> prepared scene transaction
+                                            |
+                                      Rust retained scene
+                                            |
+                                      GPUI / Taffy / paint
+
+Native event -> Bun handler -> shared write routing -> desktop publication
+```
+
+### What "the same compiled output" means
+
+Reuse the semantic plans and their generated state, write-routing, reader-table, and derivation machinery. Keep target-specific destination emission. Current browser output calls helpers such as `materializeMarkup`, `createListRegion`, and DOM setters; its structural runtime uses nodes, ranges, and anchors. That output cannot run against the present Rust scene protocol unchanged. Making it run unchanged would require a DOM compatibility implementation or a deliberate generalization of those operations. Neither is necessary to share the semantic runtime.
+
+The immediate approach retains the optimized DOM emitter and list implementation. Desktop emission uses the same source proofs while producing native templates, slots, and structural operations. Extract semantic emission that is currently mixed into DOM files only when a desktop fixture needs it, without replacing working DOM algorithms. A universal rendering instruction format is not a prerequisite for sharing reactivity.
+
+### Scheduling and acceptance are separate boundaries
+
+Core `commit()` synchronously drains entity update functions; desktop publication awaits native acceptance. A completed reactive drain therefore does not mean that the native scene has accepted its changes. The desktop adapter must keep preparing changes separately from advancing accepted slot caches, props, topology, and cleanup. Rejected publication preserves the accepted scene and retryable work; updates arriving during a host wait remain pending for a later transaction. Authored state mutations are not rolled back.
+
+Effects, refs, and lifecycle operations that require an accepted presentation must respect this boundary. The existing core drains effect entities after render work, which is insufficient by itself for asynchronous native acceptance. Also, the current `RenderEnvironment` has a DOM-shaped document capability, and volatile pulls inspect `document.hidden`. These host assumptions need explicit capability boundaries before calling the entire runtime interchangeable. Reuse the kernel and resolver implementations; do not claim that importing the browser or server barrel already supplies a complete desktop runtime.
+
+### Next implementation milestone
+
+Establish cross-module reactive parity before expanding CSS or controls. First expose the required core primitives through an entry that does not initialize a DOM host, then connect desktop applications and scene owners to the shared application runtime. Reuse canonical module discovery, access-reader planning, and helper-write plans for desktop emission, including participating `.ts` modules. Preserve the native acceptance queue as the rendering boundary.
+
+Validate this with a state module, an exported mutation helper, and two imported components reading that state. A write must update the affected destinations across both components while leaving unrelated owners untouched. Follow with programmatic writes, derived readers, keyed row identities, independent application isolation under the chosen state policy, and rejected publication followed by retry. These are required parity checks, not features implemented by this document. Existing local interaction, focus, scrolling, and optimized DOM list behavior must continue to pass during migration.
+
 ## Package and compiler boundaries
 
-Start the desktop backend in `packages/compiler/src/desktop/`, beside the DOM backend. It directly reuses the core compiler's source analysis and planning. The desktop package owns its JavaScript runtime, host bridge, examples, and Rust scene implementation.
+Keep the desktop backend in `packages/compiler/src/desktop/`, beside the DOM backend. It directly reuses the core compiler's source analysis and planning. `packages/runtime` owns the shared semantic runtime. The desktop package owns its scene runtime adapter, host bridge, examples, and Rust scene implementation. The current separate desktop scheduling path is transitional, as described above.
 
 ```text
 packages/compiler/
@@ -79,8 +136,14 @@ packages/compiler/
     src/dom/            existing DOM backend
     src/desktop/        compilation and authored scene encoding
 
+packages/runtime/
+    src/kernel.ts       shared application registry and scheduling
+    src/access.ts       shared access-table resolver
+    src/events.ts       shared write routing
+    src/state-cells.ts  application-owned state primitives
+
 packages/desktop/
-    src/runtime/        application scheduling and scene publication
+    src/runtime/        scene ownership, preparation, and native publication
     src/bridge/         host transactions and events
     src/scene/          scene wire types
     src/dev/            TSX entry building and target import resolution
