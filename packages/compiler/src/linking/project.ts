@@ -1,14 +1,12 @@
 /** Shared project discovery: manifests plus import-then-export identity seeding. */
 import type {
   CompileModulesOptions,
-  LinkedExport,
   LinkResolutionOptions,
   ModuleEntry,
   ModuleManifest,
 } from './model';
 import { discoverManifest, exportedLocals } from './discovery';
-import { resolveModule } from './resolution';
-import { canonicalModuleId } from './resolution';
+import { resolveModule, canonicalModuleId } from './resolution';
 import { parseWithEstreeFrontendOrThrow, type EstreeFrontend } from '../ast';
 import type * as t from '../ast/compiler-types';
 import { compilerError } from '../errors';
@@ -63,26 +61,15 @@ export function collectProject(
 }
 
 /**
- * Which re-exported identities may be seeded before the fixed-point worklist.
- * DOM seeds only components, because strict JSX/root discovery needs them.
- * Desktop seeds every identity so helper and state aliases resolve in graphs
- * where importers are analyzed before their barrels.
- */
-export type ReexportSeed = (identity: LinkedExport) => boolean;
-
-export const seedComponentReexports: ReexportSeed = (identity) => identity.type === 'component';
-export const seedAllReexports: ReexportSeed = () => true;
-
-/**
  * Seed import-then-export identities before strict discovery. A re-exported
  * alias must already carry its identity even when its importer is analyzed
- * before the barrel; subsequent worklist passes refine its facts.
+ * before the barrel. Components, helpers and state use the same bootstrap
+ * rule on every target; subsequent worklist passes refine these provisional facts.
  */
 export function seedReexportIdentities(
   entries: ReadonlyMap<string, ModuleEntry>,
   discovered: ReadonlyMap<string, ModuleManifest>,
   options: LinkResolutionOptions,
-  accept: ReexportSeed,
 ): void {
   for (let round = 0; round < entries.size; round++) {
     let changed = false;
@@ -95,7 +82,7 @@ export function seedReexportIdentities(
         const target = resolveModule(entry.id, reference.source, entries, options);
         const identity =
           target === undefined ? undefined : discovered.get(target.id)?.exports[reference.imported];
-        if (identity === undefined || !accept(identity)) continue;
+        if (identity === undefined) continue;
         manifest.exports[exported] = identity;
         changed = true;
       }
@@ -108,11 +95,10 @@ export function seedReexportIdentities(
 export function discoverProject(
   entries: ReadonlyMap<string, ModuleEntry>,
   options: CompileModulesOptions,
-  accept: ReexportSeed,
 ): Map<string, ModuleManifest> {
   const discovered = new Map<string, ModuleManifest>();
   for (const entry of entries.values()) discovered.set(entry.id, discoverManifest(entry, options));
-  seedReexportIdentities(entries, discovered, options, accept);
+  seedReexportIdentities(entries, discovered, options);
   assertResolvableReexports(entries, discovered, options);
   return discovered;
 }

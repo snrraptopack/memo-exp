@@ -1,6 +1,6 @@
 /** Scene linking selects its analysis profile over the shared source graph. */
 import { memoizedEstreeFrontend } from '../ast';
-import { collectProject, discoverProject, seedAllReexports } from '../linking/project';
+import { collectProject, discoverProject } from '../linking/project';
 import { linkManifestWorklist } from '../linking/graph';
 import { desktopManifestAnalysis } from './pipeline';
 import type { DesktopCompileOptions } from './compile';
@@ -19,7 +19,7 @@ export function linkDesktopProject(source: string, options: DesktopCompileOption
     externalReactiveSources: options.externalReactiveSources,
     resolveImport,
   };
-  const discovered = discoverProject(entries, linkOptions, seedAllReexports);
+  const discovered = discoverProject(entries, linkOptions);
   const manifests = linkManifestWorklist(
     entries,
     discovered,

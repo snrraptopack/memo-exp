@@ -45,7 +45,7 @@ import type {
 export type { CompileModulesOptions } from './linking/model';
 import { canonicalModuleId, linkImports, resolveModule } from './linking/resolution';
 import { compilerOptions } from './linking/options';
-import { discoverProject, seedComponentReexports } from './linking/project';
+import { discoverProject } from './linking/project';
 import { linkManifestWorklist } from './linking/graph';
 import { domManifestAnalysis } from './dom/manifest';
 import { installCompilerIntrinsics } from './dom/intrinsics';
@@ -518,8 +518,8 @@ function compileLinkedModules(
     }
   });
 
-  // Component aliases must be known before strict JSX/root discovery.
-  const discovered = discoverProject(entries, options, seedComponentReexports);
+  // Seed barrel aliases before strict JSX/root discovery and state/helper analysis.
+  const discovered = discoverProject(entries, options);
   const enforceSingleApplicationRoot = options.enforceSingleApplicationRoot !== false;
   const discoveredRoot = resolveApplicationRoot(
     entries,
