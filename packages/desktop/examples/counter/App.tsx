@@ -6,7 +6,10 @@ export function App() {
   let count = 0;
   let input = "";
   return <main id="app" class="card">
-    <header><h1>Memoized DOM desktop</h1><p class="intro">Real TSX, normal mount, native rendering.</p></header>
+    <header>
+      <h1>Memoized DOM simple</h1>
+      <p class="intro">Real TSX, normal mount, native rendering.</p>
+    </header>
     <section class="counter">
       <p class="value">Count: <strong>{count}</strong></p>
       <div class="actions">
