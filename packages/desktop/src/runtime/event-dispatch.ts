@@ -208,8 +208,11 @@ export function createEventDispatcher({
         });
       }
 
-      if (clicked && isButton && (target.type ?? 'submit') === 'submit') {
-        submitForm(target);
+      // A pointer can target a styled span inside a button label. Its nearest
+      // button still owns the submit default, even though event.target is the span.
+      const button = snapshots.find((element) => element.tagName === 'BUTTON');
+      if (clicked && button && (button.type ?? 'submit') === 'submit') {
+        submitForm(button);
       }
       if (type === 'keydown' && target.tagName === 'INPUT' && fields.key === 'Enter') {
         submitForm(null);

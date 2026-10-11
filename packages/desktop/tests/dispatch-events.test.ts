@@ -150,6 +150,39 @@ it('cancels keyboard defaults and bubbles a real submit event from input and but
   }
 });
 
+it('keeps a button submit default when a nested inline label is the click target', async () => {
+  const context = await setup(`export function Counter() {
+    let submits = 0;
+    let submitter = '';
+    let cancel = false;
+    return <form onSubmit={event => {
+      event.preventDefault();
+      submits++;
+      submitter = event.submitter.id;
+    }}>
+      <button id="submit" type="submit">
+        <span id="label" onClick={event => { if (cancel) event.preventDefault(); }}>Save</span>
+      </button>
+      <button id="cancel" type="button" onClick={() => cancel = true}>Cancel label default</button>
+      <p>{submits}:{submitter}</p>
+    </form>;
+  }`);
+  try {
+    await context.send('label', 'click');
+    expect(context.transactions.at(-1)!.operations).toEqual([
+      expect.objectContaining({ values: [
+        { slot: 0, value: '1' }, { slot: 1, value: 'submit' },
+      ] }),
+    ]);
+    await context.send('cancel', 'click');
+    const accepted = context.transactions.length;
+    expect(await context.send('label', 'click')).toBe(true);
+    expect(context.transactions).toHaveLength(accepted);
+  } finally {
+    await context.app.dispose();
+  }
+});
+
 it('honors non-bubbling focus, non-cancelable notifications, space cancellation, and retires event targets', async () => {
   const context = await setup(
     `export function Counter() {

@@ -12,7 +12,8 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
     if (!condition) throw new Error(message);
   };
   const box = (id: string) => {
-    const found = snapshot.renderer!.boxes.find((box) => box.id === id);
+    const found = snapshot.renderer!.boxes.find((box) => box.id === id)
+      ?? snapshot.renderer!.inline_ranges?.find((range) => range.id === id);
     if (!found) throw new Error(`Missing inline example box: ${id}`);
     return found;
   };
@@ -31,8 +32,14 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
   };
   const hasText = (snapshot: SceneSnapshot, text: string) =>
     snapshot.flow!.text_groups.some((group) => group.text === text);
-  const pointer = async (id: string, action: 'click' | 'hover') => {
-    const target = box(id);
+  const pointer = async (id: string, action: 'click' | 'hover' | 'pointerdown' | 'pointerup') => {
+    let target = box(id);
+    const viewport = snapshot.renderer!.scroll!.viewport;
+    if (target.y < 0 || target.y + target.height > viewport) {
+      await host.testWindow({ action: 'scroll', delta: viewport / 2 - target.y - target.height / 2 });
+      snapshot = await waitForFrame(snapshot.sequence, snapshot.renderer!.frames);
+      target = box(id);
+    }
     await host.testWindow({ action, handle: target.handle, node: target.source });
     await settleEvents();
   };
@@ -87,11 +94,51 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
   assert(Math.abs(first.width - last.width) < 1, 'Inline grid tracks did not share the width');
   assert(last.x >= first.x + first.width + 11, 'Inline grid children lost their gap');
 
+  const paragraph = box('inline-paragraph');
+  const ranges = snapshot.renderer!.inline_ranges!.filter((range) => range.id === 'caption');
+  const nested = snapshot.renderer!.inline_ranges!.filter((range) => range.id === 'caption-text');
+  assert(ranges.length >= 2, 'A wrapped inline source did not produce separate line regions');
+  assert(nested.length >= 2, 'Nested component sources lost their wrapped glyph regions');
+  for (const range of ranges) {
+    assert(range.width > 0 && range.height > 0, 'An inline source has empty measured bounds');
+    assert(range.x >= paragraph.x - 0.5 && range.x + range.width <= paragraph.x + paragraph.width + 0.5,
+      'Inline geometry did not follow the aligned paragraph bounds');
+    const child = nested.find((child) => Math.abs(child.y - range.y) < 0.5);
+    if (child) {
+      assert(child.x >= range.x - 0.5 && child.x + child.width <= range.x + range.width + 0.5,
+        'Nested inline ancestry did not point to its enclosing rendered glyphs');
+    }
+  }
+  assert(!snapshot.renderer!.boxes.some((box) => box.id === 'caption' || box.id === 'caption-text'),
+    'Measured inline sources acquired unwanted layout boxes');
+  const captionHandle = box('caption').handle;
+  await pointer('caption-text', 'click');
+  await waitFor((snapshot) => snapshot.instances.some((instance) =>
+    instance.handle.id === captionHandle.id && instance.text_groups.some((group) => group.text.endsWith('(1)')),
+  ));
+  await pointer('caption-text', 'pointerdown');
+  await pointer('title', 'pointerup');
+  const frameBeforeRelease = snapshot.renderer!.frames;
+  await pointer('caption-text', 'pointerup');
+  await host.redraw();
+  snapshot = await waitForFrame(snapshot.sequence, frameBeforeRelease);
+  assert(snapshot.instances.some((instance) => instance.handle.id === captionHandle.id
+    && instance.text_groups.some((group) => group.text.endsWith('(1)'))),
+  'Releasing outside the paragraph left stale press history');
+  await pointer('save-label', 'click');
+  await waitFor((snapshot) => hasText(snapshot, 'Submissions: 1'));
+  const submit = box('save');
+  assert(snapshot.renderer!.focused?.handle.id === submit.handle.id
+    && snapshot.renderer!.focused?.node === submit.source,
+  'Clicking an inline button label lost its native focus default');
+
   const painted = snapshot;
   await host.redraw();
   snapshot = await waitForFrame(painted.sequence, painted.renderer!.frames);
   assert(snapshot.renderer!.shaping === painted.renderer!.shaping,
     'An unchanged inline box reshaped its text');
+  assert(snapshot.renderer!.inline_geometry === painted.renderer!.inline_geometry,
+    'An unchanged frame rebuilt inline glyph regions');
   return {
     chipWidth: box('chip').width,
     clicks: 2,
@@ -100,5 +147,8 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
     parentClicks: 2,
     gridCells: 2,
     shaping: snapshot.renderer!.shaping,
+    inlineRegions: ranges.length,
+    inlineClicks: 1,
+    inlineLabelSubmissions: 1,
   };
 }

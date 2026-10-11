@@ -3,13 +3,13 @@ use crate::{
     events::{self, Emission},
     input::{InputOptions, TextInput},
     styles::{self, CachedStyles, NativeStyles, StyleCache},
-    text::{Paragraph, TextCache},
+    text::{InlineInput, InlineRun, Paragraph, TextCache},
 };
 use gpui::{prelude::*, *};
 use memoized_dom_desktop_host::{
     Handle, Instance, Scene,
     flow::{SceneFlow, TextIdentity},
-    presentation::ItemKind,
+    presentation::{ItemKind, TextSource},
     tags::{self, Layout},
     template::{EventKind, Node, PreparedTemplate, SlotKind},
 };
@@ -31,6 +31,8 @@ pub struct Stats {
     pub width: f32,
     pub height: f32,
     pub boxes: Vec<LayoutBox>,
+    pub inline_ranges: Vec<LayoutBox>,
+    pub inline_geometry: u64,
     pub event_to_commit_ms: Option<f64>,
     pub event_to_paint_ms: Option<f64>,
     pub commit_to_paint_ms: Option<f64>,
@@ -67,6 +69,27 @@ pub struct LayoutBox {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+}
+
+impl LayoutBox {
+    pub(crate) fn new(
+        handle: Handle,
+        source: usize,
+        tag: String,
+        id: Option<String>,
+        bounds: Bounds<Pixels>,
+    ) -> Self {
+        Self {
+            handle,
+            source,
+            tag,
+            id,
+            x: bounds.origin.x.as_f32(),
+            y: bounds.origin.y.as_f32(),
+            width: bounds.size.width.as_f32(),
+            height: bounds.size.height.as_f32(),
+        }
+    }
 }
 type Identity = (u64, u64, usize);
 pub use crate::events::EventSink;
@@ -510,7 +533,10 @@ impl Element for SceneElement {
                     self.cache[group].clone(),
                     self.stats.clone(),
                 );
+                let mut byte_start = 0;
                 for range in value.runs.iter() {
+                    let bytes = byte_start..byte_start + range.len;
+                    byte_start = bytes.end;
                     if let Some(path) = &range.path {
                         // Rust has resolved the complete inline ancestry,
                         // including component roots and forwarding regions.
@@ -525,9 +551,16 @@ impl Element for SceneElement {
                             })
                             .collect();
                         paragraph.fragments.push((range.len, chain));
+                        if !path.ancestry.is_empty() {
+                            paragraph.inline_runs.push(InlineRun {
+                                bytes,
+                                sources: path.ancestry.clone(),
+                            });
+                        }
                         continue;
                     }
                     let mut chain = Vec::new();
+                    let mut sources = Vec::new();
                     let mut current = range
                         .node
                         .and_then(|node| instance.template.source.nodes[node].parent());
@@ -539,11 +572,47 @@ impl Element for SceneElement {
                             && tags::resolve(tag).is_ok_and(|tag| tag.layout == Layout::Inline)
                         {
                             chain.push(instance.styles.nodes[node][0].text.clone());
+                            sources.push(TextSource {
+                                handle: instance.handle,
+                                node,
+                            });
                         }
                         current = instance.template.source.nodes[node].parent();
                     }
                     chain.reverse();
+                    sources.reverse();
                     paragraph.fragments.push((range.len, chain));
+                    if !sources.is_empty() {
+                        paragraph.inline_runs.push(InlineRun {
+                            bytes,
+                            sources: sources.into(),
+                        });
+                    }
+                }
+                for run in &paragraph.inline_runs {
+                    for source in run.sources.iter() {
+                        if let Node::Element {
+                            tag, attributes, ..
+                        } = owners[&source.handle.id].node(source.node)
+                        {
+                            paragraph
+                                .inline_sources
+                                .entry((source.handle.id, source.handle.generation, source.node))
+                                .or_insert_with(|| (tag.clone(), attributes.get("id").cloned()));
+                        }
+                    }
+                }
+                if self.interests.contains(&EventKind::Click)
+                    || self.interests.contains(&EventKind::PointerDown)
+                    || self.interests.contains(&EventKind::PointerUp)
+                {
+                    paragraph.input = Some(InlineInput {
+                        root: item.source,
+                        focus: instance.focus.get(&source).cloned(),
+                        sink: self.click.clone(),
+                        pointer_down: self.interests.contains(&EventKind::PointerDown),
+                        pointer_up: self.interests.contains(&EventKind::PointerUp),
+                    });
                 }
                 element = element.child(paragraph);
                 if matches!(item.kind, ItemKind::Button) {
@@ -780,6 +849,7 @@ impl Element for SceneElement {
             stats.width = bounds.size.width.as_f32();
             stats.height = bounds.size.height.as_f32();
             stats.boxes.clear();
+            stats.inline_ranges.clear();
             stats.layout_ms = stats
                 .render_started
                 .map_or(0., |start| start.elapsed().as_secs_f64() * 1000.);

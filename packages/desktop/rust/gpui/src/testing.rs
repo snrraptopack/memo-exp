@@ -105,7 +105,7 @@ impl WindowRequest {
                     px(dimension(self.height)?),
                 ));
             }
-            "click" | "hover" => {
+            "click" | "hover" | "pointerdown" | "pointerup" => {
                 let handle = self.handle.ok_or("Missing pointer target owner")?;
                 let node = self.node.ok_or("Missing pointer target node")?;
                 let position = {
@@ -114,6 +114,7 @@ impl WindowRequest {
                     let bounds = stats
                         .boxes
                         .iter()
+                        .chain(&stats.inline_ranges)
                         .find(|bounds| bounds.handle == handle && bounds.source == node)
                         .ok_or("Target was not painted")?;
                     point(
@@ -134,24 +135,28 @@ impl WindowRequest {
                     );
                     return Ok(());
                 }
-                window.dispatch_event(
-                    PlatformInput::MouseDown(MouseDownEvent {
-                        button: MouseButton::Left,
-                        position,
-                        click_count: 1,
-                        ..Default::default()
-                    }),
-                    cx,
-                );
-                window.dispatch_event(
-                    PlatformInput::MouseUp(MouseUpEvent {
-                        button: MouseButton::Left,
-                        position,
-                        click_count: 1,
-                        ..Default::default()
-                    }),
-                    cx,
-                );
+                if self.action != "pointerup" {
+                    window.dispatch_event(
+                        PlatformInput::MouseDown(MouseDownEvent {
+                            button: MouseButton::Left,
+                            position,
+                            click_count: 1,
+                            ..Default::default()
+                        }),
+                        cx,
+                    );
+                }
+                if self.action != "pointerdown" {
+                    window.dispatch_event(
+                        PlatformInput::MouseUp(MouseUpEvent {
+                            button: MouseButton::Left,
+                            position,
+                            click_count: 1,
+                            ..Default::default()
+                        }),
+                        cx,
+                    );
+                }
             }
             "scroll" => {
                 let delta = self

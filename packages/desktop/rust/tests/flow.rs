@@ -457,7 +457,7 @@ fn interaction_display_regrouping_rejects_without_changing_accepted_flow() {
 }
 
 #[test]
-fn inline_events_require_a_real_box_and_regrouping_rejects_atomically() {
+fn inline_events_survive_regrouping_from_boxes_into_paragraph_sources() {
     let mut scene = Scene::default();
     install(
         &mut scene,
@@ -498,8 +498,7 @@ fn inline_events_require_a_real_box_and_regrouping_rejects_atomically() {
         scene.flow().boxed_inline(2).unwrap().as_ref(),
         &std::collections::BTreeSet::from([0])
     );
-    let before = serde_json::to_value(scene.snapshot()).unwrap();
-    let error = scene
+    scene
         .commit(transaction(
             2,
             json!([{
@@ -507,14 +506,21 @@ fn inline_events_require_a_real_box_and_regrouping_rejects_atomically() {
                 "properties":[{"node":0,"attributes":{},"style":"display: block"}]
             }]),
         ))
-        .unwrap_err();
-    assert!(
-        error.contains("inline events require an independent native box"),
-        "{error}"
+        .unwrap();
+    assert!(scene.flow().boxed_inline(2).is_none());
+    assert_eq!(texts(&scene), ["Click"]);
+    assert_eq!(
+        scene.flow().values()[0].runs[0]
+            .path
+            .as_ref()
+            .unwrap()
+            .ancestry[0]
+            .handle
+            .id,
+        2
     );
-    assert_eq!(serde_json::to_value(scene.snapshot()).unwrap(), before);
     scene
-        .commit(transaction(2, json!([update(2, "Still clickable")])))
+        .commit(transaction(3, json!([update(2, "Still clickable")])))
         .unwrap();
     assert_eq!(texts(&scene), ["Still clickable"]);
 }

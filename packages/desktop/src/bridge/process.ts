@@ -24,7 +24,7 @@ export interface DesktopProcessHost extends DesktopHost {
   /** Debug builds only; routes pointer and wheel movement through GPUI hit testing. */
   testWindow(
     event:
-      | { action: 'click' | 'hover'; handle: NativeSceneEvent['handle']; node: number }
+      | { action: 'click' | 'hover' | 'pointerdown' | 'pointerup'; handle: NativeSceneEvent['handle']; node: number }
       | { action: 'scroll'; delta: number }
       | { action: 'resize'; width: number; height: number }
       | { action: 'key'; key: string; phase?: 'down' | 'up' },

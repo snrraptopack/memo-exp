@@ -283,24 +283,6 @@ impl SceneFlow {
                 Arc::make_mut(nodes).insert(item.source.node);
             }
         }
-        // Tag support alone cannot establish a hit target. A span in a flex
-        // container has a native box; a span flattened into a paragraph does not.
-        for owner in records.values() {
-            for event in &owner.template.source.events {
-                if let Node::Element { tag, .. } = owner.node(event.node)
-                    && tags::resolve(tag)?.layout == Layout::Inline
-                    && !layout
-                        .boxed_inline
-                        .get(&owner.handle.id)
-                        .is_some_and(|nodes| nodes.contains(&event.node))
-                {
-                    return Err(format!(
-                        "Desktop template {}, node {} <{}>: inline events require an independent native box; paragraph-run hit testing is not implemented",
-                        owner.template.source.id, event.node, tag
-                    ));
-                }
-            }
-        }
         let old: BTreeMap<_, _> = previous
             .layout
             .keys

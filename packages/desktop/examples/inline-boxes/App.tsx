@@ -24,10 +24,18 @@ function Chip({ width }: { width: number }) {
   );
 }
 
+function Caption({ children }: { children: JSX.Element }) {
+  let clicks = 0;
+  return <span id="caption" class="caption" onClick={() => clicks++}>
+    {children}<span id="caption-count"> ({clicks})</span>
+  </span>;
+}
+
 export function InlineBoxes() {
   let width = 220;
   let parentClicks = 0;
   let resizeReleases = 0;
+  let submissions = 0;
 
   return (
     <main id="inline-page">
@@ -56,6 +64,13 @@ export function InlineBoxes() {
         </span>
       </div>
       <p>Text inside a normal paragraph still shares one shaped text group.</p>
+      <p id="inline-paragraph" class="paragraph-flow">
+        Before <Caption><strong id="caption-text">wrapped 🙂 glyphs follow component roots across lines</strong></Caption> after.
+      </p>
+      <form onSubmit={event => { event.preventDefault(); submissions++; }}>
+        <button id="save" type="submit"><span id="save-label">A button's inline label</span></button>
+        <p>Submissions: {submissions}</p>
+      </form>
     </main>
   );
 }

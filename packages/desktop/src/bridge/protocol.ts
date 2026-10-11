@@ -114,6 +114,19 @@ export interface SceneSnapshot {
       readonly width: number;
       readonly height: number;
     }[];
+    /** Measured inline source fragments. These are shaped text regions, not
+     * independently sized layout items; a wrapped source can have several. */
+    readonly inline_ranges?: readonly {
+      readonly handle: SceneHandle;
+      readonly source: number;
+      readonly id: string | null;
+      readonly tag: string;
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    }[];
+    readonly inline_geometry?: number;
   };
   readonly instances: readonly {
     readonly handle: SceneHandle;

@@ -285,10 +285,10 @@ produce empty text. Objects, arrays, functions, and promises are not text values
 
 | Authored handler | Scene event | Restrictions or defaults |
 | --- | --- | --- |
-| `onClick` | `click` | Supported native boxes, including independently boxed inline elements; native button activation |
+| `onClick` | `click` | Native boxes and measured inline text sources; native button activation |
 | `onInput`, `onChange` | `change` | Text input only; aliases for the same site, not separate browser input/change timing |
 | `onKeyDown`, `onKeyUp` | `keydown`, `keyup` | Supported non-inline elements; keyboard fields supplied by the host |
-| `onPointerDown`, `onPointerUp` | `pointerdown`, `pointerup` | Supported native boxes, including independently boxed inline elements; pointer fields supplied by the host |
+| `onPointerDown`, `onPointerUp` | `pointerdown`, `pointerup` | Native boxes and measured inline text sources; pointer fields supplied by the host |
 | `onFocus`, `onBlur` | `focus`, `blur` | Supported non-inline elements; non-bubbling and noncancelable |
 | `onSubmit` | `submit` | `form` only; authored submission callback |
 
@@ -315,6 +315,22 @@ click listener before the same element's mouse-up listener, so the event adapter
 delivers both before stopping native propagation. Keyboard activation emits a
 click without inventing a pointer release. Authored bubbling remains in the
 shared JavaScript runtime.
+
+Paragraph pointer routing uses GPUI's shaped glyph clusters, UTF-8 source ranges,
+wrap boundaries, and actual alignment. The innermost inline element under a
+glyph becomes the target; the existing runtime resolves its authored event path
+across component owners. Press/release history retires during native capture,
+including releases outside the paragraph. Clicks within a paragraph select the
+common inline ancestor of the pressed and released source, or its containing
+element. A button keeps native focus and its submit default when its label's
+inline element becomes the pointer target.
+
+`host.inspect().renderer.inline_ranges` contains measured source fragments;
+wrapped elements can have several. They are text regions, not independent layout
+boxes. `inline_geometry` counts region preparation. Geometry is retained with
+shaping and translated during prepaint, so an unchanged redraw reuses it.
+Hit tests treat a shaped glyph cluster as one unit, matching GPUI's byte-index
+model; character-level hit divisions inside a ligature are not exposed.
 
 Bubbling follows authored ancestors across component attachment regions.
 `change` is noncancelable because the native edit has already happened. Button
@@ -493,7 +509,7 @@ native box or flex/grid gap. The plan records independently boxed inline nodes
 for native CSS and event validation. Installation validates CSS syntax; mounting
 validates placement-dependent capabilities. When regrouping changes those
 capabilities, the adapter rechecks untouched children before replacing any style
-cache. Unsupported sizing or events on flattened paragraph runs reject the
+cache. Unsupported sizing or interaction styles on flattened paragraph runs reject the
 transaction; the previous layout, values, and native caches remain accepted.
 Hover/focus CSS that changes between block and flex/grid rejects explicitly;
 regrouping in response to native interaction states is still unimplemented.

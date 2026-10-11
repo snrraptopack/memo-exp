@@ -1,11 +1,17 @@
 //! Paragraph shaping belongs to persistent native state, not transient elements.
-use crate::renderer::Stats;
+mod geometry;
+mod interaction;
+pub use geometry::InlineRun;
+pub use interaction::InlineInput;
+
+use crate::renderer::{LayoutBox, Stats};
 use gpui::{
-    App, AvailableSpace, Bounds, Element, ElementId, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, SharedString, Size, TextRun, TextStyle, TextStyleRefinement,
-    WhiteSpace, Window, WrappedLine, px,
+    App, AvailableSpace, Bounds, Element, ElementId, GlobalElementId, Hitbox, HitboxBehavior,
+    InspectorElementId, IntoElement, LayoutId, Pixels, SharedString, Size, TextRun, TextStyle,
+    TextStyleRefinement, WhiteSpace, Window, WrappedLine, px,
 };
-use std::{cell::RefCell, rc::Rc};
+use memoized_dom_desktop_host::presentation::TextSource;
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
 
 #[derive(PartialEq)]
 struct Key {
@@ -24,11 +30,22 @@ struct Shaped {
     key: Key,
     lines: Vec<WrappedLine>,
     size: Size<Pixels>,
+    /// Relative glyph geometry is prepared only when an inline source needs it.
+    /// Retain it with shaping so unchanged frames do not walk glyphs again.
+    cells: Option<Arc<[geometry::GlyphCell]>>,
+    regions: Option<InlineRegions>,
+}
+
+struct InlineRegions {
+    runs: Vec<InlineRun>,
+    width: Pixels,
+    bounds: Vec<geometry::SourceBounds>,
 }
 #[derive(Default)]
 pub struct TextCache {
     shaped: Vec<Shaped>,
     active: Option<usize>,
+    pressed: Option<Rc<RefCell<Option<interaction::Pressed>>>>,
 }
 
 pub struct Paragraph {
@@ -38,6 +55,9 @@ pub struct Paragraph {
     pub cache: Rc<RefCell<TextCache>>,
     pub stats: Rc<RefCell<Stats>>,
     pub fragments: Vec<(usize, Vec<TextStyleRefinement>)>,
+    pub inline_runs: Vec<InlineRun>,
+    pub inline_sources: BTreeMap<(u64, u64, usize), (String, Option<String>)>,
+    pub input: Option<InlineInput>,
     bounds: Option<Bounds<Pixels>>,
 }
 impl Paragraph {
@@ -55,6 +75,9 @@ impl Paragraph {
             cache,
             stats,
             fragments: Vec::new(),
+            inline_runs: Vec::new(),
+            inline_sources: BTreeMap::new(),
+            input: None,
             bounds: None,
         }
     }
@@ -67,7 +90,7 @@ impl IntoElement for Paragraph {
 }
 impl Element for Paragraph {
     type RequestLayoutState = ();
-    type PrepaintState = ();
+    type PrepaintState = Option<Hitbox>;
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
     }
@@ -172,6 +195,8 @@ impl Element for Paragraph {
                     key,
                     lines,
                     size: measured,
+                    cells: None,
+                    regions: None,
                 });
                 cache.active = Some(cache.shaped.len() - 1);
                 measured
@@ -185,10 +210,66 @@ impl Element for Paragraph {
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _: &mut (),
-        _: &mut Window,
+        window: &mut Window,
         _: &mut App,
-    ) {
+    ) -> Self::PrepaintState {
         self.bounds = Some(bounds);
+        if self.inline_runs.is_empty() {
+            return None;
+        }
+        let mut cache = self.cache.borrow_mut();
+        let Some(index) = cache.active else {
+            return None;
+        };
+        let shaped = &mut cache.shaped[index];
+        let cells = shaped.cells.get_or_insert_with(|| {
+            let mut cells = Vec::new();
+            let mut byte_start = 0;
+            let mut top = px(0.);
+            for line in &shaped.lines {
+                geometry::append_cells(line, byte_start, top, shaped.key.line_height, &mut cells);
+                byte_start += line.len() + 1;
+                top += line.size(shaped.key.line_height).height;
+            }
+            cells.into()
+        });
+        let width = if shaped.key.style.text_align == gpui::TextAlign::Left {
+            px(0.)
+        } else {
+            bounds.size.width
+        };
+        if !shaped
+            .regions
+            .as_ref()
+            .is_some_and(|regions| regions.width == width && regions.runs == self.inline_runs)
+        {
+            shaped.regions = Some(InlineRegions {
+                runs: self.inline_runs.clone(),
+                width,
+                bounds: geometry::source_bounds(
+                    cells,
+                    &self.inline_runs,
+                    Bounds::new(Default::default(), bounds.size),
+                    shaped.key.style.text_align,
+                ),
+            });
+            self.stats.borrow_mut().inline_geometry += 1;
+        }
+        let mut stats = self.stats.borrow_mut();
+        for range in &shaped.regions.as_ref().unwrap().bounds {
+            let TextSource { handle, node } = range.source;
+            let (tag, id) = &self.inline_sources[&(handle.id, handle.generation, node)];
+            stats.inline_ranges.push(LayoutBox::new(
+                handle,
+                node,
+                tag.clone(),
+                id.clone(),
+                Bounds::new(bounds.origin + range.bounds.origin, range.bounds.size),
+            ));
+        }
+        self.input
+            .as_ref()
+            .map(|_| window.insert_hitbox(bounds, HitboxBehavior::Normal))
     }
     fn paint(
         &mut self,
@@ -196,7 +277,7 @@ impl Element for Paragraph {
         _: Option<&InspectorElementId>,
         _: Bounds<Pixels>,
         _: &mut (),
-        _: &mut (),
+        hitbox: &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -220,6 +301,19 @@ impl Element for Paragraph {
                 self.stats.borrow_mut().error = Some(error.to_string());
             }
             origin.y += line.size(shaped.key.line_height).height;
+        }
+        drop(cache);
+        if let Some(hitbox) = hitbox.clone()
+            && let Some(input) = self.input.take()
+        {
+            interaction::install(
+                input,
+                self.cache.clone(),
+                std::mem::take(&mut self.inline_runs),
+                bounds,
+                hitbox,
+                window,
+            );
         }
     }
 }

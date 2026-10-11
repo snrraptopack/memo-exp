@@ -411,7 +411,7 @@ Define supported primitive and style semantics explicitly. Authored JSX uses the
 
 ## First implementation and validation
 
-The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing and interaction hitboxes, and native hover/focus regrouping remain presentation gaps. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
+The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing and interaction styles, and native hover/focus regrouping remain presentation gaps. Measured paragraph glyph regions support inline click and pointer routing. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
@@ -662,8 +662,8 @@ inline tag. Standalone inline roots, direct flex/grid items, and their own
 flex/grid phrasing children support ordinary dimensions, spacing, font size,
 paint, and hover styling. Paragraph runs retain the smaller refinement contract.
 The generated Rust capability projection permits inline click/pointer events;
-mounting rejects a target flattened into paragraph text until measured run hit
-testing exists. Regrouping revalidates affected placement capabilities, including
+paragraph targets now use measured glyph regions rather than independent
+layout boxes. Regrouping revalidates affected placement capabilities, including
 untouched children, before replacing native style caches. Text edits retain
 their existing cascade and native style cache identities.
 
@@ -686,3 +686,22 @@ The previously observed shutdown timeout did not reproduce in three GPUI
 composition runs with counter input, per-letter Unicode editing, keyed movement,
 and a burst of inspections; those runs do not establish behavior under CPU
 saturation. The existing shutdown deadline remains unchanged.
+
+Paragraph source geometry lives in `rust/gpui/src/text/geometry.rs`. It consumes
+GPUI glyph positions, UTF-8 cluster indices, wrap boundaries, and row alignment;
+it does not replace shaping or Taffy. Relative regions stay with bounded shaping
+caches, and ordinary frames translate them to the painted origin. Native hit
+lookup uses visual row/x order and binary source-range lookup, including
+nonmonotonic RTL byte indices. Inspection exposes `renderer.inline_ranges`
+separately from layout boxes. A glyph cluster is atomic for this API; per-character
+hit divisions inside ligatures are not exposed by GPUI's layout model.
+
+`text/interaction.rs` owns native press/release routing for these measured
+regions. It clears stale press history in capture, resolves the common pressed
+and released inline ancestor, and emits one logical event path for the existing
+JavaScript adapter. Clicking an inline button label preserves the enclosing
+control's focus, and the existing desktop event dispatcher selects its nearest
+button for the submit default. Tests cover nested/cross-owner wrapped sources,
+UTF-8 and RTL geometry, alignment, blank-space exclusion, unchanged geometry
+reuse, and inline label focus/submission through the real GPUI window. Paragraph
+inline sizing and interaction styles remain explicit limits.
