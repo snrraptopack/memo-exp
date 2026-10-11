@@ -81,6 +81,7 @@ pub struct Renderer {
 struct FrameInstance {
     handle: Handle,
     attach_to: Option<Attachment>,
+    embedded: bool,
     template: Arc<PreparedTemplate>,
     properties: Arc<BTreeMap<usize, Node>>,
     values: Vec<TextValue>,
@@ -244,16 +245,32 @@ impl Renderer {
             .instances()
             .map(|instance| (instance.handle.id, instance))
             .collect();
+        let mut embedded = BTreeSet::new();
         let instances = order
             .instances
             .iter()
             .map(|handle| records[&handle.id])
             .map(|instance| {
                 let handle = instance.handle;
+                // Authored order visits parents first. Once a region joins a
+                // text group, its whole forwarding subtree contributes runs
+                // rather than independent layout elements or text caches.
+                let is_embedded = instance.attach_to.is_some_and(|parent| {
+                    embedded.contains(&parent.handle.id)
+                        || records[&parent.handle.id]
+                            .template
+                            .presentation
+                            .group_for_node[parent.node]
+                            .is_some()
+                });
+                if is_embedded {
+                    embedded.insert(handle.id);
+                }
                 let cache = instance
                     .text_groups
                     .iter()
                     .enumerate()
+                    .filter(|_| !is_embedded)
                     .map(|(group, _)| {
                         let key = (handle.id, handle.generation, group);
                         live_text.insert(key);
@@ -384,9 +401,14 @@ impl Renderer {
                 FrameInstance {
                     handle,
                     attach_to: instance.attach_to,
+                    embedded: is_embedded,
                     template: instance.template.clone(),
                     properties: instance.properties.clone(),
-                    values: instance.text_groups.clone(),
+                    values: if is_embedded {
+                        Vec::new()
+                    } else {
+                        instance.text_groups.clone()
+                    },
                     cache,
                     focus,
                     inputs,
@@ -447,8 +469,16 @@ impl Element for SceneElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
+        let owners: BTreeMap<_, _> = self
+            .instances
+            .iter()
+            .map(|instance| (instance.handle.id, instance))
+            .collect();
         let mut attached = BTreeMap::<Identity, Vec<Vec<AnyElement>>>::new();
         for instance in self.instances.iter().rev() {
+            if instance.embedded {
+                continue;
+            }
             let plan = &instance.template.presentation;
             let mut elements: Vec<Option<Vec<AnyElement>>> =
                 (0..plan.items.len()).map(|_| None).collect();
@@ -496,6 +526,22 @@ impl Element for SceneElement {
                         self.stats.clone(),
                     );
                     for range in value.runs.iter() {
+                        if let Some(path) = &range.path {
+                            // Rust has resolved the complete inline ancestry,
+                            // including component roots and forwarding regions.
+                            // Use each source owner's accepted CSS conversion.
+                            let chain = path
+                                .ancestry
+                                .iter()
+                                .map(|source| {
+                                    let owner = owners[&source.handle.id];
+                                    debug_assert_eq!(owner.handle, source.handle);
+                                    owner.styles.nodes[source.node][0].text.clone()
+                                })
+                                .collect();
+                            paragraph.fragments.push((range.len, chain));
+                            continue;
+                        }
                         let mut chain = Vec::new();
                         let mut current = range
                             .node

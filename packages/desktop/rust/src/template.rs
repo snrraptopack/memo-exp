@@ -151,11 +151,11 @@ impl Template {
                     if matches!(node, Node::Region { .. })
                         && !matches!(
                             parent_tag.content,
-                            tags::Content::Flow | tags::Content::List
+                            tags::Content::Flow | tags::Content::List | tags::Content::Phrasing
                         )
                     {
                         return Err(invalid(format!(
-                            "Component region at node {index} requires a flow container; <{}> is unsupported",
+                            "Component region at node {index} cannot appear inside empty <{}>",
                             parent_tag.name
                         )));
                     }

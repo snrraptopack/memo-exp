@@ -38,6 +38,10 @@ pub struct PresentationPlan {
     pub groups: Vec<TextGroup>,
     pub group_for_node: Vec<Option<usize>>,
     pub marker_groups: BTreeMap<usize, usize>,
+    /// Authored control/region order, including regions embedded in text groups.
+    /// Prepared once so focus/owner traversal does not walk every text fragment
+    /// or resolve tag names again during each native frame.
+    pub traversal: Vec<usize>,
 }
 
 enum Job {
@@ -57,6 +61,7 @@ impl PresentationPlan {
             groups: Vec::new(),
             group_for_node: vec![None; template.nodes.len()],
             marker_groups: BTreeMap::new(),
+            traversal: Vec::new(),
         };
         let mut jobs = template
             .nodes
@@ -152,6 +157,7 @@ impl PresentationPlan {
                     while let Some(node) = pending.pop() {
                         plan.group_for_node[node] = Some(group);
                         if matches!(&template.nodes[node], Node::Text { .. })
+                            || matches!(&template.nodes[node], Node::Region { .. })
                             || matches!(&template.nodes[node], Node::Element { tag, .. } if tag == "br")
                         {
                             fragments.push(node);
@@ -207,6 +213,23 @@ impl PresentationPlan {
                 plan.children[parent].push(index);
             }
         }
+        let mut pending: Vec<_> = template
+            .nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, node)| node.parent().is_none())
+            .map(|(index, _)| index)
+            .collect();
+        while let Some(node) = pending.pop() {
+            if matches!(template.nodes[node], Node::Region { .. })
+                || tags[node]
+                    .is_some_and(|tag| matches!(tag.layout, Layout::Control | Layout::Input))
+            {
+                plan.traversal.push(node);
+            }
+            pending.extend(children[node].iter().rev().copied());
+        }
         plan
     }
 
@@ -260,6 +283,7 @@ impl PresentationPlan {
             ranges.push(TextRange {
                 node: None,
                 len: prefix.len(),
+                path: None,
             });
         }
         ranges.extend(
@@ -270,6 +294,7 @@ impl PresentationPlan {
                 .map(|&node| TextRange {
                     node: Some(node),
                     len: texts[node].len(),
+                    path: None,
                 }),
         );
         ranges
@@ -280,6 +305,21 @@ impl PresentationPlan {
 pub struct TextRange {
     pub node: Option<usize>,
     pub len: usize,
+    /// Composed runs carry inline style sources across template boundaries.
+    /// Local runs use template parents and allocate no composition metadata.
+    pub path: Option<Arc<TextPath>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TextPath {
+    pub source: TextSource,
+    pub ancestry: Arc<[TextSource]>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextSource {
+    pub handle: crate::Handle,
+    pub node: usize,
 }
 
 #[derive(Clone, Serialize)]

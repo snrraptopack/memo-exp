@@ -1,5 +1,6 @@
 //! Persistent scene state and atomic publication, independent of window presentation.
 pub mod bridge;
+mod composition;
 pub mod css;
 pub mod forest;
 pub mod presentation;
@@ -102,6 +103,7 @@ pub struct Scene {
     stylesheets: Vec<Arc<PreparedTemplate>>,
     rules: css::PreparedRules,
     styles_dirty: bool,
+    composition: composition::CompositionPlan,
 }
 #[derive(Serialize)]
 pub struct Snapshot {
@@ -325,26 +327,13 @@ impl Scene {
                 }
             }
         }
+        let mut next_composition = None;
         if topology_changed || properties_changed || self.styles_dirty {
-            let candidate: BTreeMap<_, _> = self
-                .instances
-                .iter()
-                .filter_map(|(&id, live)| {
-                    staged
-                        .get(&id)
-                        .map_or(Some(live), Option::as_ref)
-                        .map(|instance| (id, instance))
-                })
-                .chain(
-                    staged
-                        .iter()
-                        .filter(|(id, _)| !self.instances.contains_key(id))
-                        .filter_map(|(&id, instance)| {
-                            instance.as_ref().map(|instance| (id, instance))
-                        }),
-                )
-                .collect();
+            let candidate = candidate_records(&self.instances, &staged);
             forest::validate(&candidate)?;
+            if topology_changed {
+                next_composition = Some(composition::CompositionPlan::prepare(&candidate));
+            }
             let markers = forest::markers(&candidate);
             let styles: Vec<_> = css::prepare_scene(&candidate, &self.rules)?
                 .into_iter()
@@ -364,9 +353,17 @@ impl Scene {
                 }
             }
         }
+        let composition = next_composition.as_ref().unwrap_or(&self.composition);
+        let changed: BTreeSet<_> = staged.keys().copied().collect();
+        let mounted: BTreeSet<_> = generations.keys().copied().collect();
         // All operations have validated. Prepare each affected paragraph once,
         // on candidate state, before swapping any instance into the live scene.
         for instance in staged.values_mut().flatten() {
+            // Cross-template groups compare their complete final input below.
+            // Refreshing their local portion first would double the revision.
+            instance
+                .pending_groups
+                .retain(|&group| !composition.contains(instance.handle, group));
             instance.template.presentation.refresh(
                 &instance.texts,
                 &mut instance.text_groups,
@@ -374,6 +371,26 @@ impl Scene {
                 &instance.markers,
             );
             instance.pending_groups.clear();
+        }
+        let composed = if composition.is_empty() {
+            Vec::new()
+        } else {
+            composition.refresh(
+                // Resolve only the fragment owners used by affected groups;
+                // text edits do not rebuild an index of the complete forest.
+                |id| {
+                    staged
+                        .get(&id)
+                        .map_or_else(|| self.instances.get(&id), Option::as_ref)
+                        .expect("Composition references a validated live owner")
+                },
+                &changed,
+                topology_changed,
+                &mounted,
+            )
+        };
+        for (handle, group, value) in composed {
+            stage_instance(&self.instances, &mut staged, handle)?.text_groups[group] = value;
         }
         prepare(
             &staged
@@ -391,6 +408,9 @@ impl Scene {
         self.generations.extend(generations);
         self.sequence = transaction.sequence;
         self.styles_dirty = false;
+        if let Some(composition) = next_composition {
+            self.composition = composition;
+        }
         Ok(self.sequence)
     }
 
@@ -415,6 +435,27 @@ impl Scene {
                 .collect(),
         }
     }
+}
+
+/// Borrow the final staged forest without copying unaffected scene records.
+fn candidate_records<'a>(
+    live: &'a BTreeMap<u64, Instance>,
+    staged: &'a BTreeMap<u64, Option<Instance>>,
+) -> BTreeMap<u64, &'a Instance> {
+    live.iter()
+        .filter_map(|(&id, instance)| {
+            staged
+                .get(&id)
+                .map_or(Some(instance), Option::as_ref)
+                .map(|instance| (id, instance))
+        })
+        .chain(
+            staged
+                .iter()
+                .filter(|(id, _)| !live.contains_key(id))
+                .filter_map(|(&id, instance)| instance.as_ref().map(|instance| (id, instance))),
+        )
+        .collect()
 }
 
 fn validate_handle(handle: Handle) -> Result<(), String> {

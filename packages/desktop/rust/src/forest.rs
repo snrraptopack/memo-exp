@@ -1,5 +1,5 @@
 //! Component attachment, lifetime and authored traversal independent of GPUI.
-use crate::{Handle, Instance, presentation::ItemKind, tags, template::Node};
+use crate::{Handle, Instance, tags, template::Node};
 use std::collections::{BTreeMap, BTreeSet};
 
 /** Walk exact parent generations once, including records staged in this batch. */
@@ -220,7 +220,7 @@ pub struct SceneOrder {
 }
 enum Job {
     Instance(u64),
-    Item(u64, usize),
+    Node(u64, usize),
 }
 
 pub(crate) struct PlacedElement {
@@ -334,34 +334,24 @@ pub(crate) fn order(records: &BTreeMap<u64, Instance>) -> SceneOrder {
                     instance
                         .template
                         .presentation
-                        .items
+                        .traversal
                         .iter()
-                        .enumerate()
                         .rev()
-                        .filter(|(_, item)| item.parent.is_none())
-                        .map(|(index, _)| Job::Item(id, index)),
+                        .map(|&node| Job::Node(id, node)),
                 );
             }
-            Job::Item(id, index) => {
+            Job::Node(id, index) => {
                 let instance = &records[&id];
-                let item = &instance.template.presentation.items[index];
-                match item.kind {
-                    ItemKind::Region => {
-                        if let Some(children) = attachments.get(&(id, item.source)) {
+                let node = &instance.template.source.nodes[index];
+                match node {
+                    Node::Region { .. } => {
+                        if let Some(children) = attachments.get(&(id, index)) {
                             jobs.extend(children.iter().rev().map(|&child| Job::Instance(child)));
                         }
                     }
-                    ItemKind::Button | ItemKind::Input => {
-                        result.controls.push((instance.handle, item.source))
-                    }
+                    Node::Element { .. } => result.controls.push((instance.handle, index)),
                     _ => {}
                 }
-                jobs.extend(
-                    instance.template.presentation.children[index]
-                        .iter()
-                        .rev()
-                        .map(|&index| Job::Item(id, index)),
-                );
             }
         }
     }

@@ -688,3 +688,100 @@ it('publishes forwarded content and callback rows into the actual Rust forest', 
     await host.close();
   }
 });
+
+it('composes compiled children, conditional text and keyed callbacks inside native paragraphs', async () => {
+  const { code } = compileDesktop(
+    `
+    import './text.css';
+    function Caption({children}) { return <span class="caption">{children}</span>; }
+    function Forward({children}) { return <Caption>{children}</Caption>; }
+    function InlineList({items, renderItem}) {
+      return <span>{items.map((item, index) => renderItem(item, index))}</span>;
+    }
+    export function App() {
+      let count = 0;
+      let text = '';
+      let shown = true;
+      let items = [{id: 'a', title: 'One'}, {id: 'b', title: 'Two'}];
+      return <section>
+        <p id="count">Count: <Forward><strong>{count}</strong></Forward>!</p>
+        <button id="increment" onClick={() => count++}>Add <Caption><em>{count}</em></Caption></button>
+        <button id="toggle" onClick={() => shown = !shown}>Toggle</button>
+        <p id="conditional">Shown: {shown ? <Caption><strong>yes</strong></Caption> : null}.</p>
+        <input value={text} onInput={event => text = event.currentTarget.value}/>
+        <p id="typed">Typed: <Caption><strong>{text}</strong></Caption>.</p>
+        <button id="reverse" onClick={() => items = items.toReversed()}>Reverse</button>
+        <p id="rows">Rows: <InlineList items={items} renderItem={({id, title}, index) =>
+          <em key={id}>{title}:{index};</em>
+        }/>.</p>
+        <p id="static">Stable</p>
+      </section>;
+    }
+    `,
+    {
+      moduleId: 'native-text-content.tsx',
+      runtimePath,
+      readStylesheet: () => '.caption { color: red; } p > .caption > strong { font-weight: 700; }',
+    },
+  );
+  const module = (await import(
+    `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
+  )) as { App(): SceneInstance };
+  const host = createProcessHost({
+    executable: resolve(
+      import.meta.dirname,
+      '../rust/target/debug',
+      process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host',
+    ),
+  });
+  const app = createDesktopApplication(host);
+  try {
+    const root = app.mount(module.App);
+    await root.ready;
+    const initial = await host.inspect();
+    const parent = initial.instances.find((instance) =>
+      instance.text_groups.some((group) => group.text === 'Count: 0!'),
+    )!;
+    const readParent = async () => (await host.inspect()).instances.find(
+      (instance) => instance.handle.id === parent.handle.id,
+    )!;
+    const textGroups = (instance: typeof parent) => instance.text_groups.map((group) => group.text);
+    expect(textGroups(parent)).toEqual([
+      'Count: 0!', 'Add 0', 'Toggle', 'Shown: yes.', 'Typed: .', 'Reverse', 'Rows: One:0;Two:1;.', 'Stable',
+    ]);
+    const originalRows = initial.instances.filter((instance) =>
+      instance.text_groups.some((group) => /^(One|Two):\d;$/.test(group.text)),
+    );
+    expect(originalRows).toHaveLength(2);
+    await app.dispatch(parent.handle, 0);
+    let changed = await readParent();
+    expect(changed.text_groups[0]!.text).toBe('Count: 1!');
+    expect(changed.text_groups[1]!.text).toBe('Add 1');
+    expect(changed.text_groups[7]!.revision).toBe(parent.text_groups[7]!.revision);
+
+    // Read each accepted edit, rather than checking only the final word.
+    let expected = '';
+    for (const letter of ['a', 'b', '🙂']) {
+      expected += letter;
+      await app.dispatch(parent.handle, 2, {
+        target: { value: expected },
+        currentTarget: { value: expected },
+      });
+      changed = await readParent();
+      expect(changed.text_groups[4]!.text).toBe(`Typed: ${expected}.`);
+    }
+    await app.dispatch(parent.handle, 1);
+    expect((await readParent()).text_groups[3]!.text).toBe('Shown: .');
+    await app.dispatch(parent.handle, 3);
+    expect((await readParent()).text_groups[6]!.text).toBe('Rows: Two:0;One:1;.');
+    const reordered = await host.inspect();
+    expect(reordered.instances.filter((instance) =>
+      originalRows.some((row) => row.handle.id === instance.handle.id),
+    ).map((instance) => instance.handle)).toEqual(originalRows.map((row) => row.handle));
+    await root.dispose();
+    expect((await host.inspect()).instances).toEqual([]);
+  } finally {
+    await app.dispose();
+    await host.close();
+  }
+});

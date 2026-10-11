@@ -198,8 +198,12 @@ not enable them. For example, `a`, `label`, `img`, `textarea`, `select`, tables,
 canvas, SVG, media, and dialogs remain unsupported.
 
 There is no browser parser repairing invalid nesting. Fragment roots and
-component roots are checked at their actual placement. Inline text from separate
-component roots does not automatically merge into one paragraph shaping group.
+component roots are checked at their actual placement. Components, forwarded
+children, conditionals, and keyed inline rows inside `p`, `span`, headings, or
+button labels contribute to their enclosing paragraph's shaping input. Inline
+styles retain their original element/owner sources. Regions directly in a flow
+container still delimit separate anonymous paragraphs; arbitrary mixtures of
+component-produced blocks and inline content do not yet share one flow planner.
 Native controls and text expose some accessibility behavior; full HTML landmark,
 labeling, selection, and control semantics are not established by a tag name.
 
@@ -444,11 +448,21 @@ Composition discovery, callback normalization, and whole-project scalar/content
 resolution are shared with the DOM compiler. Scalar caller evidence keeps an
 untyped imported prop scalar. Discovery retains provisional export candidates;
 desktop emission requires positive JSX caller evidence before turning an
-unobserved untyped export into a structural slot. Native regions still require flow/list containers:
-structural content in a paragraph, span, or button label needs native text
-composition work. Named JSX-returning helper callbacks, arbitrary callback
+unobserved untyped export into a structural slot. Native regions can occupy
+phrasing containers as well as flow/list containers. Rust validates actual roots
+through forwarding regions: an inline child can join a paragraph or button label,
+while a block or control in that position rejects the whole transaction.
+Named JSX-returning helper callbacks, arbitrary callback
 selection expressions, and JSX stored in setup variables remain outside the
 desktop emission contract.
+
+Rust retains cross-component text plans in [rust/src/composition.rs](rust/src/composition.rs).
+Topology changes rebuild their source paths; ordinary edits revisit only groups
+depending on the changed owner. Complete text and UTF-8 run boundaries prepare
+before native acceptance. Rejection preserves text, revisions, and dependency
+plans; multiple writes restored to their original value in one transaction leave
+the revision unchanged. Embedded content keeps its component identity and
+lifecycle, and contributes no extra text box in GPUI.
 
 ## Third-party libraries
 
