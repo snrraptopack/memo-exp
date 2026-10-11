@@ -31,6 +31,19 @@ pub struct TextWrite {
     pub value: String,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PropertyWrite {
+    pub node: usize,
+    pub attributes: BTreeMap<String, String>,
+    pub style: InlineStyle,
+}
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum InlineStyle {
+    Declarations(Vec<css::Declaration>),
+    Text(String),
+}
+#[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Operation {
     Mount {
@@ -48,6 +61,10 @@ pub enum Operation {
         handle: Handle,
         node: usize,
         children: Vec<Handle>,
+    },
+    Properties {
+        handle: Handle,
+        properties: Vec<PropertyWrite>,
     },
     Dispose {
         handle: Handle,
@@ -70,6 +87,9 @@ pub struct Instance {
     pub orders: BTreeMap<usize, Vec<Handle>>,
     /// Accepted cascade for this placement, shared through text-only updates.
     pub styles: Arc<Vec<css::CascadedStyle>>,
+    /// Only dynamic element definitions are copied. Shared topology, templates
+    /// and paragraph plans remain immutable and reusable across instances.
+    pub properties: Arc<BTreeMap<usize, Node>>,
     markers: BTreeMap<usize, String>,
     pending_groups: BTreeSet<usize>,
 }
@@ -101,6 +121,16 @@ pub struct InstanceSnapshot {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub orders: BTreeMap<usize, Vec<Handle>>,
     pub styles: Arc<Vec<css::CascadedStyle>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<usize, Node>,
+}
+
+impl Instance {
+    pub fn node(&self, index: usize) -> &Node {
+        self.properties
+            .get(&index)
+            .unwrap_or(&self.template.source.nodes[index])
+    }
 }
 
 impl Scene {
@@ -190,6 +220,7 @@ impl Scene {
         let mut staged = BTreeMap::<u64, Option<Instance>>::new();
         let mut generations = BTreeMap::<u64, u64>::new();
         let mut topology_changed = false;
+        let mut properties_changed = false;
         for operation in transaction.operations {
             match operation {
                 Operation::Mount {
@@ -237,6 +268,7 @@ impl Scene {
                         dirty: (0..template.source.nodes.len()).collect(),
                         pending_groups: BTreeSet::new(),
                         orders: BTreeMap::new(),
+                        properties: Arc::new(BTreeMap::new()),
                         markers: BTreeMap::new(),
                         styles: Arc::new(template.styles.clone()),
                         template,
@@ -250,6 +282,10 @@ impl Scene {
                 Operation::Update { handle, values } => {
                     let instance = stage_instance(&self.instances, &mut staged, handle)?;
                     apply_writes(instance, values)?;
+                }
+                Operation::Properties { handle, properties } => {
+                    let instance = stage_instance(&self.instances, &mut staged, handle)?;
+                    properties_changed |= apply_properties(instance, properties)?;
                 }
                 Operation::Order {
                     handle,
@@ -289,7 +325,7 @@ impl Scene {
                 }
             }
         }
-        if topology_changed || self.styles_dirty {
+        if topology_changed || properties_changed || self.styles_dirty {
             let candidate: BTreeMap<_, _> = self
                 .instances
                 .iter()
@@ -374,6 +410,7 @@ impl Scene {
                     text_groups: instance.text_groups.clone(),
                     orders: instance.orders.clone(),
                     styles: instance.styles.clone(),
+                    properties: instance.properties.as_ref().clone(),
                 })
                 .collect(),
         }
@@ -429,6 +466,58 @@ fn apply_writes(instance: &mut Instance, writes: Vec<TextWrite>) -> Result<(), S
         }
     }
     Ok(())
+}
+
+/// Replace one element's properties on candidate state. Validation precedes the
+/// live swap, including CSS matching across component and sibling boundaries.
+fn apply_properties(instance: &mut Instance, writes: Vec<PropertyWrite>) -> Result<bool, String> {
+    let mut cascade_changed = false;
+    let mut seen = BTreeSet::new();
+    for write in writes {
+        if !seen.insert(write.node) {
+            return Err("Duplicate scene property write".into());
+        }
+        let Some(Node::Element {
+            tag, parent, text, ..
+        }) = instance.template.source.nodes.get(write.node)
+        else {
+            return Err("Scene property write requires an element".into());
+        };
+        let definition = tags::resolve(tag)?;
+        tags::validate_attributes(definition, &write.attributes)?;
+        let style = match write.style {
+            InlineStyle::Declarations(declarations) => declarations,
+            InlineStyle::Text(value) => css::parse_inline(&value)?,
+        };
+        let Node::Element {
+            attributes: previous,
+            style: previous_style,
+            ..
+        } = instance.node(write.node)
+        else {
+            unreachable!()
+        };
+        cascade_changed |= previous.get("class") != write.attributes.get("class")
+            || previous.get("id") != write.attributes.get("id")
+            || previous_style != &style;
+        if definition.layout == tags::Layout::Input {
+            if let Some(value) = write.attributes.get("value") {
+                if instance.texts[write.node] != *value {
+                    instance.texts[write.node] = value.clone();
+                    instance.dirty.insert(write.node);
+                }
+            }
+        }
+        let node = Node::Element {
+            tag: tag.clone(),
+            parent: *parent,
+            text: text.clone(),
+            attributes: write.attributes,
+            style,
+        };
+        Arc::make_mut(&mut instance.properties).insert(write.node, node);
+    }
+    Ok(cascade_changed)
 }
 
 #[cfg(test)]

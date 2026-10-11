@@ -8,11 +8,13 @@ export {
   type SceneHandler,
   type SceneChildBinding,
   type SceneMountOptions,
+  type ScenePropertyBinding,
   type SceneRegionBinding,
   type SceneListBinding,
   type SceneRowKey,
 } from './runtime/application';
 export { defineSceneComponent, type SceneComponent } from './runtime/definitions';
+export { sceneAttributes } from './runtime/properties';
 export { sceneScope } from './runtime/scope';
 export { defineSceneModule } from './runtime/modules';
 export { affected as sceneSourcesChanged } from './runtime/values';
@@ -27,6 +29,7 @@ export type {
   SceneSnapshot,
   SceneAttachment,
   TextWrite,
+  PropertyWrite,
   NativeSceneEvent,
 } from './bridge/protocol';
 export type { SceneNode, FlowItem, TextGroupValue } from './scene/schema';

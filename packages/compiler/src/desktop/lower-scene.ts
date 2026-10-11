@@ -6,8 +6,9 @@ import { walkAst } from '../ast/walk';
 import { unwrapTypeExpression } from '../ast/normalize';
 import type { ComponentCallbacks } from '../planning/component-callbacks';
 import type { ComponentExpressionSources } from '../analysis/expression-sources';
-import { desktopInlineDeclarations, type DesktopDeclaration } from './css';
-import { normalizeCssPropertyName } from '@tsrx/core';
+import type { DesktopDeclaration } from './css';
+import { lowerDesktopAttributes } from './attributes';
+import { assertNoGeneratorCallbacks, type DesktopEventType } from './events';
 import type { ComponentPropsPlan } from '../components/props';
 import type { LinkedComponentImport } from '../context/model';
 import { desktopComponentCall } from './component-call';
@@ -20,24 +21,7 @@ import { desktopListPlan } from './lists';
 import type { ParentRow } from '../lists/map-site';
 import type { HandlerWritePlan } from '../handlers/plan';
 import type { CallbackSourcePlan } from '../planning/component-callbacks';
-import { planOrderedAttributes } from '../jsx/attributes';
 import { planDirectChildren } from '../jsx/children';
-
-const desktopEventNames = {
-  onClick: 'click',
-  onChange: 'change',
-  onInput: 'change',
-  onKeyDown: 'keydown',
-  onKeyUp: 'keyup',
-  onPointerDown: 'pointerdown',
-  onPointerUp: 'pointerup',
-  onFocus: 'focus',
-  onBlur: 'blur',
-  onSubmit: 'submit',
-} as const;
-
-// The registry normalizes authoring aliases to the scene protocol event names.
-type DesktopEventType = (typeof desktopEventNames)[keyof typeof desktopEventNames];
 
 type SceneNode =
   | {
@@ -62,6 +46,7 @@ export interface DesktopFragment {
 }
 
 export interface DesktopScene {
+  setup: t.Statement[];
   nodes: SceneNode[];
   slots: TextSlot[];
   events: { node: number; type: DesktopEventType }[];
@@ -73,6 +58,8 @@ export interface DesktopScene {
   refs: t.Expression[];
   fragments: DesktopFragment[];
   componentNames: string[];
+  properties: t.Expression[];
+  attributesUsed: boolean;
 }
 
 export function lowerDesktopScene(
@@ -81,6 +68,7 @@ export function lowerDesktopScene(
     callbacks: ComponentCallbacks;
     sources: ComponentExpressionSources;
     instrument: t.Identifier;
+    attributes: t.Identifier;
     scope: t.Identifier;
     lexical?: boolean;
     returns?: ComponentReturnPlan;
@@ -95,8 +83,9 @@ export function lowerDesktopScene(
     fail: (message: string, at: t.Node) => never;
   },
 ): DesktopScene {
-  const { callbacks, sources, instrument } = options;
+  const { sources } = options;
   const fail: (message: string, at: t.Node) => never = options.fail;
+  const setup: t.Statement[] = [];
   const nodes: SceneNode[] = [];
   const slots: TextSlot[] = [];
   const bindings: t.Expression[] = [];
@@ -106,6 +95,8 @@ export function lowerDesktopScene(
   const regions: t.Expression[] = [];
   const lists: t.Expression[] = [];
   const refs: t.Expression[] = [];
+  const properties: t.Expression[] = [];
+  let attributesUsed = false;
   const componentNames = new Set<string>();
   const fragments: DesktopFragment[] = [];
   const dependenciesFor = (expression: t.Expression): readonly string[] | null => {
@@ -275,7 +266,8 @@ export function lowerDesktopScene(
     }
     if (!b.isJSXElement(element)) fail('unsupported JSX child', element);
     const opening = element.openingElement;
-    if (!b.isJSXIdentifier(opening.name)) fail('dynamic tags are not implemented yet', opening);
+    if (!b.isJSXIdentifier(opening.name))
+      fail('expected a normalized finite JSX tag selection', opening);
     const tag = opening.name.name;
     if (!/^[a-z][a-z0-9-]*$/.test(tag)) {
       const call = componentCall(element);
@@ -293,137 +285,25 @@ export function lowerDesktopScene(
       return;
     }
     const node = nodes.length;
-    const attributes: Record<string, string> = {};
-    const style: DesktopDeclaration[] = [];
-    nodes.push({ kind: 'element', tag, parent, text: '', attributes, style });
-    const eventTypes = new Set<string>();
-    const seen = new Set<string>();
-    const attributePlan = planOrderedAttributes(opening.attributes, {
-      cloneExpressions: false,
-      fail: (message) => fail(message, opening),
+    const emitted = lowerDesktopAttributes(
+      opening,
+      tag,
+      node,
+      { events, handlers, refs, properties, setup },
+      {
+        ...options,
+        addValue: (expression, node) => addBinding(expression, node, 'value'),
+      },
+    );
+    attributesUsed ||= emitted.attributesUsed;
+    nodes.push({
+      kind: 'element',
+      tag,
+      parent,
+      text: '',
+      attributes: emitted.attributes,
+      style: emitted.style,
     });
-    for (const [index, entry] of attributePlan.entries.entries()) {
-      const attribute = opening.attributes[index]!;
-      if (
-        entry.type === 'spread' ||
-        !b.isJSXAttribute(attribute) ||
-        !b.isJSXIdentifier(attribute.name)
-      )
-        fail('spread and namespaced attributes are not implemented', attribute);
-      const name = entry.name === 'className' ? 'class' : entry.name;
-      if (seen.has(name)) fail(`duplicate ${name} attribute`, attribute);
-      seen.add(name);
-      if (name === 'ref') {
-        if (!attribute.value || !b.isJSXExpressionContainer(attribute.value))
-          fail('ref requires a callback or assignable target', attribute);
-        refs.push(
-          b.objectExpression([
-            b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
-            b.objectProperty(
-              b.identifier('value'),
-              options.refValue(unwrapTypeExpression(entry.value) as t.Expression),
-            ),
-          ]),
-        );
-        continue;
-      }
-      if (!Object.hasOwn(desktopEventNames, name)) {
-        if (
-          !['class', 'id', 'style', 'title', 'aria-label'].includes(name) &&
-          !(['input', 'button'].includes(tag) && name === 'type') &&
-          !(tag === 'input' && ['value', 'placeholder'].includes(name))
-        )
-          fail(`desktop attribute ${name} is not implemented`, attribute);
-        const literal = unwrapTypeExpression(entry.value);
-        if (
-          tag === 'input' &&
-          name === 'value' &&
-          literal &&
-          attribute.value &&
-          b.isJSXExpressionContainer(attribute.value)
-        ) {
-          addBinding(literal as t.Expression, node, 'value');
-          continue;
-        }
-        if (name === 'style' && literal && b.isObjectExpression(literal)) {
-          for (const property of literal.properties) {
-            if (
-              !b.isObjectProperty(property) ||
-              property.computed ||
-              (!b.isIdentifier(property.key) && !b.isStringLiteral(property.key))
-            )
-              fail('style objects require static named properties', property);
-            const key = normalizeCssPropertyName(
-              b.isIdentifier(property.key) ? property.key.name : property.key.value,
-            );
-            const value = unwrapTypeExpression(property.value);
-            if (!b.isStringLiteral(value) && !b.isNumericLiteral(value))
-              fail('style objects currently require static values', property);
-            const unitless = [
-              'opacity',
-              'line-height',
-              'font-weight',
-              'flex-grow',
-              'flex-shrink',
-            ].includes(key);
-            style.push({
-              property: key,
-              value:
-                b.isNumericLiteral(value) && !unitless && value.value !== 0
-                  ? `${value.value}px`
-                  : String(value.value),
-            });
-          }
-          continue;
-        }
-        if (!literal || !b.isStringLiteral(literal))
-          fail(`${name} currently requires a static string`, attribute);
-        if (name === 'style') style.push(...desktopInlineDeclarations(literal.value));
-        else attributes[name] = literal.value;
-        continue;
-      }
-      const eventType = desktopEventNames[name as keyof typeof desktopEventNames];
-      if (eventType === 'change' && tag !== 'input')
-        fail(`${name} requires an input control`, attribute);
-      if (eventType === 'submit' && tag !== 'form') fail(`${name} requires a form`, attribute);
-      if (eventTypes.has(eventType))
-        fail(`duplicate ${eventType === 'change' ? 'input change' : name} handler`, attribute);
-      eventTypes.add(eventType);
-      const value = attribute.value;
-      if (!value || !b.isJSXExpressionContainer(value))
-        fail(`${name} requires a callback expression`, attribute);
-      const expression = unwrapTypeExpression(entry.value) as t.Expression;
-      const localCallback = callbacks.forEvent(expression);
-      const moduleCallback = localCallback ? null : options.moduleCallback(expression);
-      const callback = localCallback ?? moduleCallback;
-      if (!callback) fail(`${name} requires an inline callback or a linked helper`, attribute);
-      assertNoGeneratorCallbacks(callback.target, fail);
-      for (const helper of callback.helpers) assertNoGeneratorCallbacks(helper.target, fail);
-      const plan = callback.writesFor(undefined, true);
-      options.routeWrites(plan);
-      for (const helper of callback.helpers) options.routeWrites(helper.writesFor());
-      const changed = new Set<string>();
-      let conservative = plan.executionAwareRoot;
-      for (const writes of plan.scopes.values()) {
-        for (const key of writes.instanceWrites) changed.add(key.split('.')[0]!);
-        conservative ||= writes.rootFallback || writes.eventFallback;
-      }
-      // Helpers are kept intact. Their effects are conservatively replayed until
-      // desktop lowering instruments their individual mutation sites.
-      conservative ||= callback.helpers.length > 0;
-      // A row callback may mutate its captured object without assigning an
-      // authored component local. Invalidate that shared closure conservatively.
-      conservative ||= options.lexical === true;
-      events.push({ node, type: eventType });
-      handlers.push(
-        b.callExpression(instrument, [
-          moduleCallback && b.isExpression(moduleCallback.target)
-            ? moduleCallback.target
-            : expression,
-          valueExpression(conservative ? null : [...changed].sort()),
-        ]),
-      );
-    }
     emitChildren(element.children, node);
   };
   const emitChildren = (children: t.JSXElement['children'], parent: number | null): void => {
@@ -477,6 +357,7 @@ export function lowerDesktopScene(
   // A component handle owns all fragment roots; regions flatten them at placement.
   if (!nodes.length) fail('empty desktop fragments are not implemented yet', root);
   return {
+    setup,
     nodes,
     slots,
     events,
@@ -488,20 +369,7 @@ export function lowerDesktopScene(
     refs,
     fragments,
     componentNames: [...componentNames],
+    properties,
+    attributesUsed,
   };
-}
-
-function assertNoGeneratorCallbacks(
-  node: t.Node,
-  fail: (message: string, at: t.Node) => never,
-): void {
-  walkAst(node, {
-    enter(current) {
-      if (
-        current.type === 'YieldExpression' ||
-        ('generator' in current && current.generator === true)
-      )
-        fail('generator callbacks require iterator lifecycle instrumentation', current);
-    },
-  });
 }

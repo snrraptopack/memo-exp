@@ -309,10 +309,10 @@ describe('desktop compilation and publication', () => {
   });
 
   it.each([
-    [`export function Counter(){ return <Missing />; }`, 'not a linked component factory'],
+    [`export function Counter(){ return <Missing />; }`, 'no finite string or linked-component candidates'],
     [
-      `export function Counter(){ let color='red'; return <button style={{color}}>Hi</button>; }`,
-      'style objects currently require static values',
+      `export function Counter(){ return <button unknown="value">Hi</button>; }`,
+      'desktop attribute unknown is not implemented',
     ],
   ])('rejects unsupported contracts with an authored diagnostic', (source, message) => {
     expect(() => compileDesktop(source, { moduleId: 'unsupported.tsx' })).toThrow(message);

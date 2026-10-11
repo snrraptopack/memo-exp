@@ -396,7 +396,7 @@ it('does not treat arbitrary value imports as compiled components', () => {
     compileDesktop(`import {Value} from './value.ts'; export function App(){return <Value/>;}`, {
       readModule: () => ({ moduleId: 'value.ts', source: 'export const Value=1;' }),
     }),
-  ).toThrow('<Value /> is not a linked component factory');
+  ).toThrow("dynamic JSX tag 'Value' has no finite string or linked-component candidates");
 });
 
 it('reports cyclic component re-exports without recursing indefinitely', () => {

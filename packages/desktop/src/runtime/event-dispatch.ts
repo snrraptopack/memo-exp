@@ -50,7 +50,8 @@ function elementSnapshot({ owner, node }: Position, extra?: unknown): ElementSna
     throw new Error('Native event target is not an element');
   }
 
-  const attributes = definition.attributes ?? {};
+  const attributes =
+    owner.acknowledgedProperties.get(node)?.attributes ?? definition.attributes ?? {};
   const valueBinding = owner.bindings.find((binding) => {
     const slot = owner.template.slots[binding.slot];
     return slot?.node === node && slot.type === 'value';

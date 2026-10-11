@@ -1,5 +1,5 @@
 /** Version-one transport contract; Rust prepares authored tags for presentation. */
-import type { FlowItem, SceneTemplate, TextGroupValue } from '../scene/schema';
+import type { CssDeclaration, FlowItem, SceneNode, SceneTemplate, TextGroupValue } from '../scene/schema';
 export type { SceneTemplate } from '../scene/schema';
 
 export interface SceneHandle {
@@ -13,6 +13,12 @@ export interface SceneAttachment {
 export interface TextWrite {
   readonly slot: number;
   readonly value: string;
+}
+/** Complete attributes/style for one element; omitted keys remove earlier values. */
+export interface PropertyWrite {
+  readonly node: number;
+  readonly attributes: Readonly<Record<string, string>>;
+  readonly style: readonly CssDeclaration[] | string;
 }
 export type SceneOperation =
   | {
@@ -28,6 +34,11 @@ export type SceneOperation =
       readonly handle: SceneHandle;
       readonly node: number;
       readonly children: readonly SceneHandle[];
+    }
+  | {
+      readonly kind: 'properties';
+      readonly handle: SceneHandle;
+      readonly properties: readonly PropertyWrite[];
     }
   | { readonly kind: 'dispose'; readonly handle: SceneHandle };
 
@@ -97,6 +108,7 @@ export interface SceneSnapshot {
     readonly attach_to?: SceneAttachment;
     readonly orders?: Readonly<Record<string, readonly SceneHandle[]>>;
     readonly template: string;
+    readonly properties?: Readonly<Record<string, Extract<SceneNode, { kind: 'element' }>>>;
     readonly texts: readonly string[];
     readonly dirty: readonly number[];
     readonly presentation: readonly FlowItem[];

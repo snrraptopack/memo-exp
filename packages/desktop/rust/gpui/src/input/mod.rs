@@ -103,6 +103,17 @@ impl TextInput {
             stats,
         }
     }
+    pub fn set_options(&mut self, options: InputOptions, cx: &mut Context<Self>) {
+        let changed = self.placeholder != options.placeholder || self.label != options.label;
+        self.placeholder = options.placeholder;
+        self.label = options.label;
+        let reconciled =
+            self.binding
+                .configure(options.controlled, options.expect_ack, &mut self.state);
+        if changed || reconciled {
+            cx.notify();
+        }
+    }
     pub fn set_focus(&mut self, focus: FocusHandle) {
         self.focus = focus;
     }

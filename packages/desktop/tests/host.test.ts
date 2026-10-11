@@ -265,14 +265,18 @@ describe('Rust retained scene bridge', () => {
   });
 
   it('rejects an unsupported authored tag at native template installation', async () => {
-    const { code } = compileDesktop('export function Counter(){ return <div><img /></div>; }', {
-      moduleId: 'unsupported-tag.tsx', runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href,
-    });
-    const compiled = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`) as { Counter(): SceneInstance };
+    // Bypass the compiler deliberately: Rust must still validate an untrusted
+    // template even though supported authoring now fails earlier at compilation.
+    const unsupported: SceneTemplate = {
+      id: 'unsupported-tag',
+      nodes: [{ kind: 'element', tag: 'img', parent: null, text: '' }],
+      slots: [],
+      events: [],
+    };
     const host = createProcessHost({ executable });
     try {
       const app = createDesktopApplication(host);
-      const counter = app.mount(compiled.Counter);
+      const counter = app.mount(() => mountScene(unsupported, [], []));
       const error = await counter.ready.then(() => { throw new Error('Expected native tag rejection'); }, (error: unknown) => error);
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain('Unsupported desktop tag <img>');

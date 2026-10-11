@@ -431,7 +431,7 @@ pub(crate) fn prepare_scene(
     let tree = SelectorTree {
         nodes: placement
             .iter()
-            .map(|element| &records[&element.owner].template.source.nodes[element.source])
+            .map(|element| records[&element.owner].node(element.source))
             .collect(),
         parents: placement.iter().map(|element| element.parent).collect(),
         previous: placement.iter().map(|element| element.previous).collect(),
@@ -458,3 +458,70 @@ pub(crate) fn prepare_scene(
 
 #[cfg(test)]
 mod tests;
+
+/// Parse an ordinary CSS declaration list, including nested function tokens.
+/// This shares cssparser with the cascade; no JavaScript CSS parser is shipped.
+pub fn parse_inline(value: &str) -> Result<Vec<Declaration>, String> {
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    cssparser::RuleBodyParser::new(&mut parser, &mut InlineParser)
+        .map(|item| item.map_err(|(error, _)| format!("Invalid inline CSS: {error:?}")))
+        .collect()
+}
+struct InlineParser;
+impl<'i> cssparser::DeclarationParser<'i> for InlineParser {
+    type Declaration = Declaration;
+    type Error = ();
+    fn parse_value<'t>(
+        &mut self,
+        name: cssparser::CowRcStr<'i>,
+        input: &mut Parser<'i, 't>,
+        _: &cssparser::ParserState,
+    ) -> Result<Declaration, cssparser::ParseError<'i, ()>> {
+        let start = input.position();
+        consume_value(input)?;
+        let value = input.slice_from(start).trim();
+        if value.is_empty() {
+            return Err(input.new_custom_error(()));
+        }
+        Ok(Declaration {
+            property: name.to_ascii_lowercase(),
+            value: value.into(),
+        })
+    }
+}
+fn consume_value<'i>(input: &mut Parser<'i, '_>) -> Result<(), cssparser::ParseError<'i, ()>> {
+    while !input.is_exhausted() {
+        match input.next_including_whitespace_and_comments()? {
+            Token::Function(_)
+            | Token::ParenthesisBlock
+            | Token::SquareBracketBlock
+            | Token::CurlyBracketBlock => input.parse_nested_block(consume_value)?,
+            Token::BadString(_)
+            | Token::BadUrl(_)
+            | Token::CloseParenthesis
+            | Token::CloseSquareBracket
+            | Token::CloseCurlyBracket => return Err(input.new_custom_error(())),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+impl<'i> cssparser::AtRuleParser<'i> for InlineParser {
+    type Prelude = ();
+    type AtRule = Declaration;
+    type Error = ();
+}
+impl<'i> cssparser::QualifiedRuleParser<'i> for InlineParser {
+    type Prelude = ();
+    type QualifiedRule = Declaration;
+    type Error = ();
+}
+impl<'i> cssparser::RuleBodyItemParser<'i, Declaration, ()> for InlineParser {
+    fn parse_declarations(&self) -> bool {
+        true
+    }
+    fn parse_qualified(&self) -> bool {
+        false
+    }
+}

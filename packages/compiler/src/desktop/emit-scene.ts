@@ -26,6 +26,7 @@ interface EmittedScene {
   fragmentTemplates: t.Identifier[];
   dependencies: string[];
   eventsUsed: boolean;
+  attributesUsed: boolean;
   scopesUsed: boolean;
   mount: t.CallExpression;
 }
@@ -48,11 +49,12 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
     ]),
   );
 
-  const setup: t.Statement[] = [];
+  const setup: t.Statement[] = [...scene.setup];
   const fragmentTemplates: t.Identifier[] = [];
   const dependencies = new Set(scene.componentNames);
   let eventsUsed = scene.handlers.length > 0;
   let scopesUsed = false;
+  let attributesUsed = scene.attributesUsed;
 
   for (const fragment of scene.fragments) {
     const envelope = options.fresh('__desktopFragmentProps');
@@ -121,6 +123,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
     for (const dependency of emitted.dependencies) dependencies.add(dependency);
     fragmentTemplates.push(emitted.template, ...emitted.fragmentTemplates);
     eventsUsed ||= emitted.eventsUsed;
+    attributesUsed ||= emitted.attributesUsed;
     scopesUsed ||= fragment.captures.length > 0 || emitted.scopesUsed;
   }
 
@@ -135,6 +138,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
     ['regions', scene.regions],
     ['lists', scene.lists],
     ['refs', scene.refs],
+    ['properties', scene.properties],
   ] as const) {
     if (entries.length)
       properties.push(b.objectProperty(b.identifier(name), b.arrayExpression(entries)));
@@ -157,6 +161,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
     fragmentTemplates,
     dependencies: [...dependencies],
     eventsUsed,
+    attributesUsed,
     scopesUsed,
     mount: b.callExpression(options.mount, [
       template,

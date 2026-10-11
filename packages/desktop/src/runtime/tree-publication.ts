@@ -5,6 +5,7 @@ import type { Child, Family, Owner, PreparedOwner } from './ownership-model';
 import type { SceneComponent } from './definitions';
 import { affected, sameProps, textValue, type SceneProps as Props } from './values';
 import { readRegion } from './regions';
+import { readProperties, sameProperties, type PreparedProperties } from './properties';
 import { readList } from './lists';
 
 export function createTreePreparer(hooks: {
@@ -19,9 +20,11 @@ export function createTreePreparer(hooks: {
     staging: boolean,
   ): Child;
   acceptMount(owner: Owner): void;
+  acceptProperties(owner: Owner, properties: readonly PreparedProperties[]): void;
   mountOperation(owner: Owner): SceneOperation;
 }) {
-  const { invalidate, retire, owned, construct, acceptMount, mountOperation } = hooks;
+  const { invalidate, retire, owned, construct, acceptMount, acceptProperties, mountOperation } =
+    hooks;
   const restore = (prepared: readonly PreparedOwner[]): void => {
     for (const item of prepared)
       invalidate(item.owner, item.sources === null ? null : [...item.sources]);
@@ -77,6 +80,14 @@ export function createTreePreparer(hooks: {
           const value = textValue(binding.read());
           if (owner.acknowledged.get(binding.slot) !== value)
             writes.push({ slot: binding.slot, value });
+        }
+        const properties: PreparedProperties[] = [];
+        for (const binding of owner.propertyBindings) {
+          if (owner.mounted && !affected(binding.sources, sources)) continue;
+          const node = owner.template.nodes[binding.node];
+          if (!node || node.kind !== 'element')
+            throw new Error('Desktop properties require an element');
+          properties.push(readProperties(binding, node.tag));
         }
         const props: [Child, Props][] = [];
         for (const child of owner.children) {
@@ -153,10 +164,11 @@ export function createTreePreparer(hooks: {
         if (!owner.mounted) {
           mounted.add(owner);
           owner.initial = writes;
+          owner.initialProperties = properties;
         }
         owner.dirty = false;
         owner.pending = new Set();
-        prepared.push({ owner, sources, writes, props, regions: changes, lists });
+        prepared.push({ owner, sources, writes, properties, props, regions: changes, lists });
         children = [...children].sort((a, b) => a.node - b.node);
         pending.push(...children.map((child) => child.owner).reverse());
       }
@@ -178,6 +190,33 @@ export function createTreePreparer(hooks: {
           .filter((owner) => owner.mounted)
           .map((owner) => ({ kind: 'dispose' as const, handle: owner.instance.handle })),
         ...[...mounted].map(mountOperation),
+        ...prepared.flatMap((item) => {
+          const values = item.properties
+            .filter(
+              (prepared) =>
+                !sameProperties(
+                  item.owner.acknowledgedProperties.get(prepared.write.node),
+                  prepared.write,
+                ),
+            )
+            .map((prepared) => prepared.write);
+          return values.length
+            ? [
+                {
+                  kind: 'properties' as const,
+                  handle: item.owner.instance.handle,
+                  properties: values,
+                },
+              ]
+            : [];
+        }),
+        ...[...mounted]
+          .filter((owner) => !preparedByOwner.has(owner) && owner.initialProperties.length)
+          .map((owner) => ({
+            kind: 'properties' as const,
+            handle: owner.instance.handle,
+            properties: owner.initialProperties.map((prepared) => prepared.write),
+          })),
         ...[...mounted].flatMap((owner) =>
           owner.lists.map((list) => ({
             kind: 'order' as const,
@@ -206,6 +245,7 @@ export function createTreePreparer(hooks: {
         if (removed.size) retire(owned([...removed]));
         for (const owner of mounted) acceptMount(owner);
         for (const item of prepared) {
+          acceptProperties(item.owner, item.properties);
           for (const write of item.writes) item.owner.acknowledged.set(write.slot, write.value);
           for (const [child, props] of item.props) {
             child.owner.receive?.(props);

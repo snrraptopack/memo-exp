@@ -162,7 +162,7 @@ Setup derivations and eligible if/switch calculations consume the shared source-
 
 `desktop/tests/runtime-parity.test.ts` verifies same-loaded-module isolation, setup replay, local and module control flow, async segments and rejection, retained local timers, native async event acknowledgment, effect gating and feedback, derived-value effect guards, module effect isolation, rejected candidate cancellation, ref accepted values, reverse cleanup, and teardown failures. Shared ref-value compilation, prelude ordering, module control flow, and execution-site instrumentation live outside the DOM emitter. The optimized DOM list implementation remains intact.
 
-Native refs provide retained handle and node identity, tagName, connection state, static attributes, and accepted input value. They do not implement HTMLElement's full browser document, focus, measurement, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
+Native refs provide retained handle and node identity, tagName, connection state, accepted attributes, and accepted input value. They do not implement HTMLElement's full browser document, focus, measurement, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
 
 ## Package and compiler boundaries
 
@@ -268,7 +268,7 @@ The window adapter validates all changed cascades before the scene accepts a tra
 
 CSS generators use this same pipeline: Tailwind, Sass, and similar tools first produce ordinary CSS through their normal build tooling, then the desktop compiler and native cascade consume that output. Utility class names have no renderer-specific meaning. Compatibility depends on the generated CSS features, including escaped identifiers, layers, custom properties, nesting, conditional rules, and modern color/value syntax. Full Tailwind compatibility is not implemented; these features need general CSS contracts and real generated-output fixtures rather than utility-name translation.
 
-`rust/gpui/src/styles.rs` translates prepared CSS into GPUI fields for block/flex/grid layout, dimensions, spacing, alignment, overflow, borders, colors, fonts, decoration, opacity, and cursors. GPUI supplies layout and painting. Grid currently supports equal repeated `1fr` or `minmax(0, 1fr)` tracks, matching GPUI's own representation. Lengths support px, rem, percentages where applicable, zero, and auto. Unsupported properties, values, selectors, at-rules, inline box styles, and inline interaction styles fail explicitly. Dynamic style/class expressions, variables, media queries, and general grid tracks remain unimplemented; their future updates must use the scene transaction contract. This is an adapter for ordinary CSS, not a new styling syntax or layout engine.
+`rust/gpui/src/styles.rs` translates prepared CSS into GPUI fields for block/flex/grid layout, dimensions, spacing, alignment, overflow, borders, colors, fonts, decoration, opacity, and cursors. GPUI supplies layout and painting. Grid currently supports equal repeated `1fr` or `minmax(0, 1fr)` tracks, matching GPUI's own representation. Lengths support px, rem, percentages where applicable, zero, and auto. Unsupported properties, values, selectors, at-rules, inline box styles, and inline interaction styles fail explicitly. Dynamic style/class expressions now publish through typed element-property transactions. Variables, media queries, and general grid tracks remain unimplemented. This is an adapter for ordinary CSS, not a new styling syntax or layout engine.
 
 ## Compiler output
 
@@ -411,7 +411,7 @@ Define supported primitive and style semantics explicitly. Authored JSX uses the
 
 ## First implementation and validation
 
-The implementation compiles fixed and conditional component regions, inline conditional subtrees in flow containers, keyed named-component and inline list rows, authored tags, static CSS, primitive text/value expressions, primitive child props, synchronous callback props, and component-local control handlers. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. General object props, render-prop children, dynamic styles, asynchronous callbacks, and eager reactive derivations receive diagnostics while their desktop contracts are developed. Structural regions inside a paragraph, button label, or other phrasing-only container remain unsupported by the native text-composition contract.
+The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and primitive component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. General object props, forwarded component children and render callbacks still require desktop emission contracts. Delegated row callbacks and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside a paragraph, button label, or other phrasing-only container remain unsupported by the native text-composition contract.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
@@ -548,3 +548,37 @@ On the current Windows development machine, the 60-box, eight-owner example orig
 Component-free modules participate in semantic graph compilation. Utilities without reactive work receive TypeScript removal without scene imports; module helpers and derivations receive the required shared-runtime routing and activation. Relative state, helper, and primitive constant imports use the core linked contracts. JSX outside a recognized component receives a diagnostic. Application factory and handler scopes restore their previous context, and retained callbacks propagate their application scope through Node/Bun asynchronous storage. Overlapping asynchronous `runDesktopEntry` evaluations are explicitly rejected by the mounting context. Application registries and compiled state cells are isolated, including when the same loaded module mounts in multiple applications. Event-site indexes are an immutable positional ABI checked against binding counts, not dynamic event names.
 
 In-process integration remains a later experiment. GPUI constructs its app on the platform main thread; replacing pipes with a DLL also requires an event-loop, thread, callback, and memory-lifetime design. Bun currently describes `bun:ffi` and thread-safe callbacks as experimental. Its documented conversion and marshaling work does not support a claim of zero overhead. [Bun FFI documentation](https://bun.com/docs/runtime/ffi).
+
+
+### Finite tag selection and ordered property publication
+
+Both compiler targets now use `emission/dynamic-tags.ts` to replace the shared
+finite-tag plan with JSX branch selections. DOM retains its selector allocation;
+desktop supplies a private module scratch binding. Shared linked-component import
+allocation supplies known candidates from helper/state barrels. Desktop lowers
+the resulting selections through its existing region owners, candidate staging,
+acknowledgment and retirement. No tag-name interpreter or second reconciler runs
+in Rust.
+
+The ordered-attribute emitter is also shared. Desktop property bindings evaluate
+ordered spreads and named values into one JavaScript bag; each spread normalizes
+authoring aliases before later entries override it. Callback bodies retain core
+write instrumentation. Functions and refs stay in JavaScript; the native
+`properties` operation carries only supported attributes and CSS declarations or
+an ordinary CSS string. Rust parses CSS strings with its existing `cssparser`
+dependency, validates candidate attributes and GPUI styles, and swaps all changes
+with the existing transaction.
+
+Per-instance native property overrides share the immutable template topology and
+paragraph plan. Class/ID/style changes refresh CSS against the composed authored
+forest. Input value changes preserve the accepted cascade rather than matching
+all selectors on every keystroke. JavaScript advances accepted properties,
+handlers and ref identities only after acknowledgment; explicit refusal leaves
+those capabilities attached to the previous accepted state until a retry.
+
+Rust `tags.rs` owns attribute and event constraints alongside tag semantics. A
+checked-in JSON projection supplies the compiler and desktop runtime, and a
+native drift test compares it with the Rust definitions. TypeScript contributors
+do not need Rust installed to consume the projection. Unsupported runtime spread
+keys fail before native publication; unsupported input/CSS semantics still fail
+native validation. The desktop README contains the supported capability forms.

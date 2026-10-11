@@ -1,7 +1,15 @@
 /** Desktop supplies scene normalization to the shared source-analysis pipeline. */
 import { prepareSemanticAnalysis, type SemanticAnalysisProfile } from '../analysis/pipeline';
 import { pathVariants } from '../analysis/component-graph';
-import { createAnalysisCtx, type Ctx, type ProgramPath } from '../context';
+import { createAnalysisCtx, refreshAstAnalysis, type Ctx, type ProgramPath } from '../context';
+import { lowerPlannedDynamicTags } from '../emission/dynamic-tags';
+import { lowerLinkedDynamicComponentImports } from '../emission/dynamic-imports';
+import { recordLinkedDynamicComponentBindings } from '../analysis/dynamic-imports';
+import {
+  planDynamicTags,
+  recordDynamicTagPropModes,
+  scanLocalDynamicComponentCandidates,
+} from '../planning/dynamic-tags';
 import { planCompilerIntrinsics } from '../intrinsics';
 import { scanRefProps } from '../components/ref-props';
 import * as b from '../ast/factory';
@@ -14,7 +22,30 @@ import { planDesktopAccessReaders } from './access';
 
 const desktopAnalysisProfile: SemanticAnalysisProfile<Ctx> = {
   install: planCompilerIntrinsics,
-  normalizeComponents(ctx) {
+  normalizeImports(ctx, path) {
+    const linked = lowerLinkedDynamicComponentImports(ctx, path);
+    recordLinkedDynamicComponentBindings(ctx, linked);
+    path.node.body.unshift(...linked.imports);
+  },
+  normalizeComponents(ctx, path) {
+    scanLocalDynamicComponentCandidates(ctx, path);
+    const tags = planDynamicTags(ctx);
+    const occupied = new Set(ctx.astAnalysis!.rootScope.bindings.keys());
+    let selector: string | undefined;
+    lowerPlannedDynamicTags(ctx, tags, () => {
+      if (selector) return selector;
+      selector = '__desktopTagSelector';
+      for (let index = 1; occupied.has(selector); index++)
+        selector = `__desktopTagSelector${index}`;
+      // A pick evaluates its selector exactly once. The scratch is private to
+      // this module and cannot become an application state source.
+      path.node.body.unshift(
+        b.variableDeclaration('let', [b.variableDeclarator(b.identifier(selector))]),
+      );
+      return selector;
+    });
+    recordDynamicTagPropModes(ctx, tags.propModes);
+    refreshAstAnalysis(ctx, path.node);
     scanRefProps(ctx);
     // The return planner consumes JSX roots. Desktop's existing expression
     // roots become one fragment without changing their evaluation boundary.

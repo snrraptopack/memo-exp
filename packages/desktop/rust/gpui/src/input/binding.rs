@@ -20,6 +20,17 @@ impl BindingState {
             acknowledged: 0,
         }
     }
+    pub fn configure(&mut self, controlled: bool, expect_ack: bool, state: &mut EditState) -> bool {
+        if self.controlled == controlled && self.expect_ack == expect_ack {
+            return false;
+        }
+        self.controlled = controlled;
+        self.expect_ack = expect_ack;
+        if !expect_ack {
+            self.acknowledged = self.edit;
+        }
+        self.reconcile(state)
+    }
     fn reconcile(&mut self, state: &mut EditState) -> bool {
         if !self.controlled || self.edit != self.acknowledged || state.marked.is_some() {
             return false;

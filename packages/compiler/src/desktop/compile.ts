@@ -148,6 +148,7 @@ export function compileDesktop(
   };
   const mount = fresh('__desktopMount');
   const instrument = fresh('__desktopEvent');
+  const attributes = fresh('__desktopAttributes');
   const define = fresh('__desktopDefine');
   const scope = fresh('__desktopScope');
   const core = fresh('__desktopCore');
@@ -167,6 +168,7 @@ export function compileDesktop(
   for (const site of moduleCallbacks.retained)
     routeWrites(moduleCallbacks.writesFor(site.target, true));
   let eventsUsed = false;
+  let attributesUsed = false;
   let scopesUsed = false;
   const templates: t.Statement[] = [];
   const definitions: t.Statement[] = [];
@@ -247,6 +249,7 @@ export function compileDesktop(
       sources: planned.expressionSources,
       returns: 'jsx' in returns ? undefined : returns,
       instrument,
+      attributes,
       scope,
       fail,
       fresh,
@@ -296,6 +299,7 @@ export function compileDesktop(
       volatile: ctx.volatileComponents.has(name),
     });
     eventsUsed ||= emitted.eventsUsed;
+    attributesUsed ||= emitted.attributesUsed;
     scopesUsed ||= emitted.scopesUsed;
     definitions.push(
       b.expressionStatement(
@@ -419,6 +423,9 @@ export function compileDesktop(
                 b.importSpecifier(define, b.identifier('defineSceneComponent')),
                 b.importSpecifier(affected, b.identifier('sceneSourcesChanged')),
                 ...(eventsUsed ? [b.importSpecifier(instrument, b.identifier('sceneEvent'))] : []),
+                ...(attributesUsed
+                  ? [b.importSpecifier(attributes, b.identifier('sceneAttributes'))]
+                  : []),
                 ...(scopesUsed ? [b.importSpecifier(scope, b.identifier('sceneScope'))] : []),
               ]
             : []),

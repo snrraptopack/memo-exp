@@ -82,11 +82,19 @@ struct FrameInstance {
     handle: Handle,
     attach_to: Option<Attachment>,
     template: Arc<PreparedTemplate>,
+    properties: Arc<BTreeMap<usize, Node>>,
     values: Vec<TextValue>,
     cache: Vec<Rc<RefCell<TextCache>>>,
     focus: BTreeMap<usize, FocusHandle>,
     inputs: BTreeMap<usize, Entity<TextInput>>,
     styles: Arc<NativeStyles>,
+}
+impl FrameInstance {
+    fn node(&self, index: usize) -> &Node {
+        self.properties
+            .get(&index)
+            .unwrap_or(&self.template.source.nodes[index])
+    }
 }
 pub struct SceneElement {
     sequence: u64,
@@ -292,8 +300,7 @@ impl Renderer {
                         });
                         if matches!(item.kind, ItemKind::Input) {
                             live_inputs.insert(key);
-                            let Node::Element { attributes, .. } =
-                                &instance.template.source.nodes[item.source]
+                            let Node::Element { attributes, .. } = instance.node(item.source)
                             else {
                                 unreachable!()
                             };
@@ -320,9 +327,14 @@ impl Renderer {
                                         sink(event, cx);
                                     }
                                 });
-                            let controlled = instance.template.source.slots.iter().any(|slot| {
-                                slot.node == item.source && matches!(slot.r#type, SlotKind::Value)
-                            });
+                            let controlled = if instance.properties.contains_key(&item.source) {
+                                attributes.contains_key("value")
+                            } else {
+                                instance.template.source.slots.iter().any(|slot| {
+                                    slot.node == item.source
+                                        && matches!(slot.r#type, SlotKind::Value)
+                                })
+                            };
                             let input = self.inputs.entry(key).or_insert_with(|| {
                                 let options = InputOptions {
                                     placeholder: attributes
@@ -348,6 +360,21 @@ impl Renderer {
                             });
                             input.update(cx, |input, cx| {
                                 input.set_focus(tracked.clone());
+                                input.set_options(
+                                    InputOptions {
+                                        placeholder: attributes
+                                            .get("placeholder")
+                                            .cloned()
+                                            .unwrap_or_default(),
+                                        label: attributes
+                                            .get("aria-label")
+                                            .cloned()
+                                            .unwrap_or_default(),
+                                        controlled,
+                                        expect_ack: site.is_some(),
+                                    },
+                                    cx,
+                                );
                                 input.sync(&instance.texts[item.source], cx);
                             });
                             inputs.insert(item.source, input.clone());
@@ -358,6 +385,7 @@ impl Renderer {
                     handle,
                     attach_to: instance.attach_to,
                     template: instance.template.clone(),
+                    properties: instance.properties.clone(),
                     values: instance.text_groups.clone(),
                     cache,
                     focus,
@@ -445,9 +473,7 @@ impl Element for SceneElement {
                     .is_some_and(|focus| focus.is_focused(window));
                 let state = if focused { 2 } else { 0 };
                 let mut element = div().id(identity.clone());
-                if let Node::Element { attributes, .. } =
-                    &instance.template.source.nodes[item.source]
-                {
+                if let Node::Element { attributes, .. } = instance.node(item.source) {
                     if let Some(label) = attributes.get("aria-label") {
                         element = element.aria_label(SharedString::from(label.clone()));
                     }
@@ -492,8 +518,7 @@ impl Element for SceneElement {
                     if matches!(item.kind, ItemKind::Button) {
                         let source = item.source;
                         let focus = instance.focus[&source].clone();
-                        let label = if let Node::Element { attributes, .. } =
-                            &instance.template.source.nodes[source]
+                        let label = if let Node::Element { attributes, .. } = instance.node(source)
                         {
                             attributes
                                 .get("aria-label")
@@ -511,8 +536,7 @@ impl Element for SceneElement {
                             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                                 window.focus(&focus, cx)
                             });
-                    } else if let Node::Element { tag, .. } =
-                        &instance.template.source.nodes[item.source]
+                    } else if let Node::Element { tag, .. } = instance.node(item.source)
                         && tags::resolve(tag).is_ok_and(|tag| tag.role == Some(tags::Role::Heading))
                     {
                         element = element.role(Role::Heading);
@@ -662,7 +686,7 @@ impl Element for SceneElement {
                         element = element.children(children);
                     }
                 }
-                let (tag, id) = match &instance.template.source.nodes[item.source] {
+                let (tag, id) = match instance.node(item.source) {
                     Node::Element {
                         tag, attributes, ..
                     } => (tag.clone(), attributes.get("id").cloned()),

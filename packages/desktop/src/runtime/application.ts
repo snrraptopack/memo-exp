@@ -1,6 +1,7 @@
 import type { DesktopHost, NativeSceneEvent, SceneHandle, SceneTemplate } from '../bridge/protocol';
 import { createOwnerForest } from './ownership';
 import { createPublicationQueue } from './publication';
+import type { SceneEventType } from '../scene/schema';
 import type { SceneComponent } from './definitions';
 import { createSceneSemanticRuntime } from './semantic';
 import { componentModules } from './definitions';
@@ -21,7 +22,15 @@ export interface SceneChildBinding {
   readonly read: () => Readonly<Record<string, unknown>>;
 }
 
+export interface ScenePropertyBinding {
+  readonly node: number;
+  readonly sources: readonly string[] | null;
+  readonly events: Partial<Record<SceneEventType, number>>;
+  readonly read: () => Readonly<Record<string, unknown>>;
+}
+
 export interface SceneMountOptions {
+  readonly properties?: readonly ScenePropertyBinding[];
   /** Shared semantic analysis found values changing outside instrumented writes. */
   readonly volatile?: boolean;
   /** Compiler lifecycle registrations execute after native acceptance. */

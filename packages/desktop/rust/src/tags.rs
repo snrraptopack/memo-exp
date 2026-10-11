@@ -279,3 +279,85 @@ impl Tag {
         }
     }
 }
+
+/// Attributes supported by the current native renderer. Both static templates
+/// and dynamic property transactions use this same capability contract.
+pub fn attributes(tag: &Tag) -> Vec<&'static str> {
+    let mut names = vec!["class", "id", "style", "title", "aria-label"];
+    if matches!(tag.name, "input" | "button") {
+        names.push("type");
+    }
+    if tag.layout == Layout::Input {
+        names.extend(["value", "placeholder"]);
+    }
+    names
+}
+
+pub fn supports_event(tag: &Tag, event: crate::template::EventKind) -> bool {
+    use crate::template::EventKind;
+    match event {
+        EventKind::Change => tag.layout == Layout::Input,
+        EventKind::Submit => tag.name == "form",
+        _ => tag.layout != Layout::Inline,
+    }
+}
+
+pub fn validate_attributes(
+    tag: &Tag,
+    values: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
+    let allowed = attributes(tag);
+    for name in values.keys() {
+        if name == "style" || !allowed.contains(&name.as_str()) {
+            return Err(format!(
+                "Unsupported desktop attribute {name} on <{}>",
+                tag.name
+            ));
+        }
+    }
+    if tag.layout == Layout::Input && values.get("type").is_some_and(|value| value != "text") {
+        return Err("only input type=text is implemented".into());
+    }
+    Ok(())
+}
+
+/// A small checked-in projection lets TypeScript builds run without Cargo.
+pub fn capability_projection() -> serde_json::Value {
+    use crate::template::EventKind;
+    let events = [
+        EventKind::Click,
+        EventKind::Change,
+        EventKind::KeyDown,
+        EventKind::KeyUp,
+        EventKind::PointerDown,
+        EventKind::PointerUp,
+        EventKind::Focus,
+        EventKind::Blur,
+        EventKind::Submit,
+    ];
+    let mut result = std::collections::BTreeMap::new();
+    for tag in [&DIV, &P, &SPAN, &BUTTON].into_iter().chain(TAGS) {
+        result.insert(tag.name, serde_json::json!({
+            "attributes": attributes(tag),
+            "events": events.into_iter().filter(|event| supports_event(tag, *event)).collect::<Vec<_>>(),
+        }));
+    }
+    for (alias, name) in [("container", "div"), ("text", "span")] {
+        result.insert(alias, result[name].clone());
+    }
+    serde_json::json!({ "version": 1, "tags": result })
+}
+
+#[cfg(test)]
+mod capability_tests {
+    #[test]
+    fn checked_in_capabilities_match_native_contract() {
+        let committed: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/scene/capabilities.json")).unwrap();
+        assert_eq!(
+            committed,
+            super::capability_projection(),
+            "Run desktop capabilities:generate after changing tags.rs"
+        );
+    }
+}

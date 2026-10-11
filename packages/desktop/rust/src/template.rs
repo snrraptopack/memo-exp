@@ -120,12 +120,10 @@ impl Template {
                     attributes,
                     ..
                 } => {
-                    if tag == "input" && attributes.get("type").is_some_and(|value| value != "text")
-                    {
-                        return Err(invalid(format!(
-                            "node {index}: only input type=text is implemented"
-                        )));
-                    }
+                    let resolved_tag = tags::resolve(tag)
+                        .map_err(|error| invalid(format!("node {index}: {error}")))?;
+                    tags::validate_attributes(resolved_tag, attributes)
+                        .map_err(|error| invalid(format!("node {index}: {error}")))?;
                     if !text.is_empty() {
                         return Err(invalid(format!(
                             "Element node {index} must store content in text children"
@@ -202,18 +200,9 @@ impl Template {
         }
         let mut events = BTreeSet::new();
         for event in &self.events {
-            let valid = resolved.get(event.node).is_some_and(|tag| {
-                tag.is_some_and(|tag| match event.r#type {
-                    EventKind::Click | EventKind::PointerDown | EventKind::PointerUp => {
-                        tag.layout != tags::Layout::Inline
-                    }
-                    EventKind::Change => tag.layout == tags::Layout::Input,
-                    EventKind::Submit => tag.name == "form",
-                    EventKind::KeyDown | EventKind::KeyUp | EventKind::Focus | EventKind::Blur => {
-                        tag.layout != tags::Layout::Inline
-                    }
-                })
-            });
+            let valid = resolved
+                .get(event.node)
+                .is_some_and(|tag| tag.is_some_and(|tag| tags::supports_event(tag, event.r#type)));
             if !valid || !events.insert((event.node, event.r#type)) {
                 return Err(invalid(
                     match event.r#type {

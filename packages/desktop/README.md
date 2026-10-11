@@ -100,8 +100,8 @@ A `SceneTemplate` has these properties:
 
 Templates are shared by instances. JavaScript keeps bindings, callbacks,
 dependencies, and ownership; Rust retains the accepted scene and its presentation
-data. Updates carry slot writes and structural operations instead of replacing
-the template.
+data. Updates carry slot writes, complete element-property replacements, and structural
+operations instead of replacing the template.
 
 Live instance identity is `{ id: number, generation: number }`, called a
 `SceneHandle`. Identify an element with **both the instance handle and its template
@@ -122,14 +122,14 @@ The internal `SceneElement` contract is defined in
 | `tagName` | Uppercase authored tag, such as `'INPUT'` or `'P'` |
 | `isConnected` | Live getter; true while its owner is mounted and not disposed |
 | `ownerDocument` | Always `null`; used by shared ref lifecycle checks |
-| `id` | Static authored `id`, or `''` |
+| `id` | Accepted `id`, or `''` |
 | `value` | Latest acknowledged value slot, otherwise static `value`, otherwise `''` |
-| `getAttribute(name)` | Static attribute value, or `null`; use normalized names such as `'class'` |
+| `getAttribute(name)` | Accepted attribute value, or `null`; use normalized names such as `'class'` |
 
 The object is frozen, and its properties are read-only. `value` is a live read of
 the **accepted JavaScript publication**. Native editing may be ahead of that
 publication; read the event's input value for the edit that triggered a handler.
-`getAttribute('value')` reads the static attribute rather than the live slot.
+`getAttribute('value')` reads the accepted property attribute when the input uses a property bag, or its template attribute otherwise. `value` reads the accepted value slot when one exists.
 
 Refs bind after native acceptance and before component effects. Rejected or
 canceled candidate scenes never bind refs. Shared ref cleanup clears assignment
@@ -154,7 +154,7 @@ existence does not imply an equivalent imperative ref API.
 
 Events use [runtime/event-dispatch.ts](src/runtime/event-dispatch.ts) and
 [runtime/events.ts](src/runtime/events.ts). Each target snapshot contains the
-static attributes, `id`, uppercase `tagName`, and `value`. Native input fields can
+accepted attributes, `id`, uppercase `tagName`, and `value`. Native input fields can
 override these with newer editing data, including selection/composition fields
 when supplied by the host. Ancestor snapshots represent their own elements.
 
@@ -205,26 +205,62 @@ labeling, selection, and control semantics are not established by a tag name.
 
 ## JSX attributes and properties
 
-The current compiler contract lives in
-[lower-scene.ts](../compiler/src/desktop/lower-scene.ts).
+Rust owns the supported tag, attribute and event constraints in
+[rust/src/tags.rs](rust/src/tags.rs). The compiler and runtime consume its
+checked-in [capabilities projection](src/scene/capabilities.json). Regenerate it
+with `bun run --cwd packages/desktop capabilities:generate` after changing the
+Rust contract; the Rust suite checks for drift. Ordinary TypeScript builds need
+no Cargo toolchain.
+
+[attributes.ts](../compiler/src/desktop/attributes.ts) translates the shared
+ordered-attribute plan into static template fields or reactive property bindings.
 
 | Attribute | Accepted form | Behavior |
 | --- | --- | --- |
-| `class`, `className` | Static string | Both normalize to the scene's `class` attribute |
-| `id`, `title`, `aria-label` | Static string | Retained attributes; native behavior depends on the implemented tag/control |
-| `style` | Static CSS string or object with static string/number values | Parsed declarations passed to native CSS adaptation |
-| `type` | Static string on `input` or `button` | Text input validation; button activation/submission behavior |
-| `placeholder` | Static string on `input` | Native text input placeholder |
-| `value` | Static string or primitive expression on `input` | Expression becomes a mutable value slot |
+| `class`, `className` | Static or reactive primitive value | Both normalize to the scene's `class` attribute |
+| `id`, `title`, `aria-label` | Static or reactive primitive value | Retained attributes; native behavior depends on the implemented tag/control |
+| `style` | Static or reactive CSS string or object with string/number values | Parsed declarations passed to native CSS adaptation |
+| `type` | Static or reactive string on `input` or `button` | Text input validation; button activation/submission behavior |
+| `placeholder` | Static or reactive primitive value on `input` | Native text input placeholder |
+| `value` | Static string or primitive expression on `input` | Expression becomes a mutable value slot; an ordered property bag publishes the accepted value attribute |
 | `ref` | Supported assignment or callback ref expression | Uses shared ref planning and accepted native handle lifecycle |
 | `key` | Supported key expression on a keyed list row | Structural identity; not a native attribute |
 | Event attributes | Supported callback expression | Registers an event site and owned callback |
 
-Dynamic class names, dynamic IDs, dynamic inline styles, arbitrary `data-*` or
-ARIA attributes, JSX attribute spreads, and other browser properties are not
-implemented by this contract. `title` retention alone does not implement a
-browser tooltip. A string `type` passing compiler checks does not establish all
-HTML button/input modes; native validation remains required.
+Compiler event validation and handler emission live in
+`packages/compiler/src/desktop/events.ts`. Runtime property-bag callback handling
+lives in `src/runtime/property-events.ts`; dispatch and propagation remain in
+`src/runtime/event-dispatch.ts`. Attribute lowering calls these event modules.
+Rust's capability projection determines which event types each tag accepts.
+
+JSX attribute and component-prop spreads preserve source order: later entries
+replace earlier values, including `className`/`class` and `onInput`/`onChange`
+aliases. Each spread is copied once per property read; getters are not re-run
+for each field. Omitted, null or false host attributes remove earlier accepted
+values. Dynamic properties update the existing native element without remounting
+its children. Stylesheet matching is refreshed when class, ID or inline CSS
+changes; input-value edits retain the existing cascade and paragraph caches.
+
+Spread handlers and refs stay in JavaScript. Their accepted identities change
+after native acknowledgment, so a refused transaction preserves the previous
+handlers and ref capabilities. A spread `ref` value uses the core callback or
+callback-array contract; an explicit assignable JSX `ref` still uses the shared
+compiler adapter. Component spread values follow the same current primitive /
+owned-callback restrictions as named component props.
+
+Arbitrary `data-*` and ARIA attributes, class-map objects, and additional browser
+properties remain unsupported. Known named attributes fail at compilation;
+unsupported names originating from runtime spreads fail before publication.
+`title` retention alone does not implement a browser tooltip. Native validation
+still rejects unsupported input types and CSS values.
+
+Finite dynamic JSX tags use the shared tag-selection planner. For example,
+`const Tag = compact ? 'section' : 'article'; return <Tag />` creates a conditional
+scene region. Local or linked component candidates and member-selected tags use
+the same path. Keeping a selected component preserves its state; changing the
+selected branch uses staged replacement and deterministic retirement. Arbitrary
+runtime tag names without a provable finite candidate set are rejected. Component
+children and JSX-producing render callbacks remain pending.
 
 Style object names normalize from camelCase to CSS property names. Nonzero numeric
 values receive `px`, except `opacity`, `lineHeight`, `fontWeight`, `flexGrow`, and

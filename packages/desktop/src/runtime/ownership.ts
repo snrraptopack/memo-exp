@@ -9,6 +9,7 @@ import { componentTemplates, type SceneComponent } from './definitions';
 import { readRegion, stagedReadiness } from './regions';
 import { readList } from './lists';
 import type { SceneSemanticRuntime } from './semantic';
+import { readProperties, type PreparedProperties } from './properties';
 import { configureOwnerLifecycle } from './lifecycle';
 
 /** Independent lexical owners form a tree; one family queue protects its caches. */
@@ -103,6 +104,10 @@ export function createOwnerForest(
       member.parent = undefined;
       member.bindings = [];
       member.handlers = [];
+      member.propertyBindings = [];
+      member.initialProperties = [];
+      member.acknowledgedProperties.clear();
+      member.acceptPropertyRefs = undefined;
       member.receive = undefined;
       member.prepare = undefined;
       member.activate = undefined;
@@ -167,13 +172,33 @@ export function createOwnerForest(
       placement = previous;
     }
   };
+  const acceptProperties = (owner: Owner, properties: readonly PreparedProperties[]): void => {
+    for (const prepared of properties) {
+      owner.acknowledgedProperties.set(prepared.write.node, prepared.write);
+      const binding = owner.propertyBindings.find(
+        (binding) => binding.node === prepared.write.node,
+      )!;
+      for (const site of Object.values(binding.events)) {
+        owner.handlers[site] = prepared.handlers.get(site) ?? { callback: () => {}, sources: [] };
+      }
+    }
+    try {
+      semantic.run(() => owner.acceptPropertyRefs?.(properties));
+    } catch (error) {
+      // Native acceptance is already final. Surface lifecycle failures through
+      // the existing async-error channel instead of claiming publication failed.
+      semantic.reportAsync(error);
+    }
+  };
   const acceptMount = (owner: Owner): void => {
+    acceptProperties(owner, owner.initialProperties);
     owner.mounted = true;
     for (const write of owner.initial) owner.acknowledged.set(write.slot, write.value);
     owner.stagedReady?.resolve();
     owner.stagedReady = undefined;
     owner.initial = [];
     semantic.activate(owner.entityId, () => owner.activate?.());
+    owner.initialProperties = [];
   };
   const mountOperation = (owner: Owner): SceneOperation => ({
     kind: 'mount',
@@ -189,6 +214,7 @@ export function createOwnerForest(
     construct,
     acceptMount,
     mountOperation,
+    acceptProperties,
   });
   const flush = (owner: Owner): Promise<void> => {
     const family = owner.family;
@@ -264,6 +290,13 @@ export function createOwnerForest(
         const live = group.members.filter((owner) => !owner.disposed);
         const operations = [
           ...live.map(mountOperation),
+          ...live
+            .filter((owner) => owner.initialProperties.length)
+            .map((owner) => ({
+              kind: 'properties' as const,
+              handle: owner.instance.handle,
+              properties: owner.initialProperties.map((prepared) => prepared.write),
+            })),
           ...live.flatMap((owner) =>
             owner.lists.map((list) => ({
               kind: 'order' as const,
@@ -337,6 +370,21 @@ export function createOwnerForest(
         slot: binding.slot,
         value: textValue(binding.read()),
       }));
+      const propertyNodes = new Set<number>();
+      const initialProperties = (options.properties ?? []).map((binding) => {
+        const node = template.nodes[binding.node];
+        if (!node || node.kind !== 'element' || propertyNodes.has(binding.node)) {
+          throw new Error('Invalid or duplicate desktop property binding');
+        }
+        propertyNodes.add(binding.node);
+        for (const [type, site] of Object.entries(binding.events)) {
+          const event = template.events[site];
+          if (!event || event.node !== binding.node || event.type !== type) {
+            throw new Error('Desktop property handler does not match its event site');
+          }
+        }
+        return readProperties(binding, node.tag);
+      });
       const group = placement?.family ?? family();
       const attachment = placement
         ? { handle: placement.parent.instance.handle, node: placement.node }
@@ -352,7 +400,10 @@ export function createOwnerForest(
         attachment,
         template,
         bindings,
-        handlers,
+        handlers: [...handlers],
+        propertyBindings: options.properties ?? [],
+        initialProperties,
+        acknowledgedProperties: new Map(),
         readProps: (props) =>
           propValues(props, (callback) => {
             // Forwarding preserves the declaring owner and stable callback identity.

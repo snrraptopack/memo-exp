@@ -5,6 +5,8 @@ import { walkAst } from '../ast/walk';
 import { unwrapTypeExpression } from '../ast/normalize';
 import type { ComponentPropsPlan } from '../components/props';
 import type { LinkedComponentImport } from '../context/model';
+import { planOrderedAttributes } from '../jsx/attributes';
+import { emitOrderedAttributes } from '../emission/ordered-attributes';
 import { nodeHasJsx } from '../context/ast';
 
 export function desktopComponentCall(
@@ -18,7 +20,8 @@ export function desktopComponentCall(
 ) {
   const fail: (message: string, at: t.Node) => never = options.fail;
   const opening = element.openingElement;
-  if (!b.isJSXIdentifier(opening.name)) fail('dynamic tags are not implemented yet', opening);
+  if (!b.isJSXIdentifier(opening.name))
+    fail('expected a normalized finite JSX tag selection', opening);
   const tag = opening.name.name;
   const plan = options.components.get(tag);
   const imported = options.imports.get(tag);
@@ -32,55 +35,53 @@ export function desktopComponentCall(
     )
   )
     fail('component children require render-prop regions, which are not implemented yet', element);
-  const props: t.ObjectProperty[] = [];
+  const attributes = planOrderedAttributes(opening.attributes, {
+    cloneExpressions: false,
+    fail: (message) => fail(message, opening),
+  });
+  const hasSpread = attributes.entries.some((entry) => entry.type === 'spread');
   const seen = new Set<string>();
   let dependencies: Set<string> | null = new Set();
-  for (const attribute of opening.attributes) {
-    if (!b.isJSXAttribute(attribute) || !b.isJSXIdentifier(attribute.name))
-      fail('component props require named attributes', attribute);
-    const name = attribute.name.name;
-    if (seen.has(name)) fail(`duplicate ${name} prop`, attribute);
+  for (const entry of attributes.entries) {
+    if (entry.type === 'spread') {
+      const reads = options.sourcesFor(entry.value);
+      if (reads === null) dependencies = null;
+      else if (dependencies) for (const source of reads) dependencies.add(source);
+      continue;
+    }
+    const name = entry.name;
+    const attribute = opening;
+    if (seen.has(name) && !hasSpread) fail(`duplicate ${name} prop`, attribute);
     seen.add(name);
     const names = plan?.names ?? imported?.props;
     const acceptsUnknown = plan?.acceptsUnknown ?? imported?.acceptsUnknownProps;
     if (names && !acceptsUnknown && !names.includes(name))
       fail(`component <${tag}> does not declare prop ${name}`, attribute);
-    let value: t.Expression = b.booleanLiteral(true);
-    if (attribute.value) {
-      value = (
-        b.isJSXExpressionContainer(attribute.value)
-          ? unwrapTypeExpression(attribute.value.expression)
-          : attribute.value
-      ) as t.Expression;
-      walkAst<t.Node>(value, {
-        enter(current) {
-          if (b.isArrowFunctionExpression(current) || b.isFunctionExpression(current)) {
-            if (current.generator) fail('desktop callback props cannot be generators', current);
-            if (nodeHasJsx(current))
-              fail('desktop render-prop callbacks are not implemented yet', current);
-            return false;
-          }
-          if (
-            b.isJSXElement(current) ||
-            b.isJSXFragment(current) ||
-            b.isJSXEmptyExpression(current) ||
-            ['ObjectExpression', 'ArrayExpression'].includes(current.type)
-          )
-            fail(
-              'desktop child props currently require primitive expressions or callbacks',
-              current,
-            );
-        },
-      });
-    }
+    const value = unwrapTypeExpression(entry.value) as t.Expression;
+    walkAst<t.Node>(value, {
+      enter(current) {
+        if (b.isArrowFunctionExpression(current) || b.isFunctionExpression(current)) {
+          if (current.generator) fail('desktop callback props cannot be generators', current);
+          if (nodeHasJsx(current))
+            fail('desktop render-prop callbacks are not implemented yet', current);
+          return false;
+        }
+        if (
+          b.isJSXElement(current) ||
+          b.isJSXFragment(current) ||
+          b.isJSXEmptyExpression(current) ||
+          ['ObjectExpression', 'ArrayExpression'].includes(current.type)
+        )
+          fail('desktop child props currently require primitive expressions or callbacks', current);
+      },
+    });
     const reads = options.sourcesFor(value);
     if (reads === null) dependencies = null;
     else if (dependencies) for (const source of reads) dependencies.add(source);
-    props.push(b.objectProperty(b.stringLiteral(name), value, true));
   }
   return {
     component: b.identifier(tag),
-    props: b.objectExpression(props),
+    props: emitOrderedAttributes(attributes),
     sources: dependencies === null ? null : [...dependencies].sort(),
   };
 }

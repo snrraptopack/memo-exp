@@ -10,6 +10,7 @@
     "./dev": { "types": "./dist/dev/build.d.ts", "import": "./dist/dev.js" }
   },
   "scripts": {
+    "capabilities:generate": "bun run ./scripts/capabilities.ts",
     "build": "rolldown -c rolldown.config.ts && tsc -p tsconfig.build.json",
     "test": "bun run test:rust && bun run build:host && bun test --isolate ./tests && bun check -p tsconfig.test.json",
     "test:rust": "cd rust && cargo test --locked",

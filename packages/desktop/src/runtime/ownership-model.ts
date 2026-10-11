@@ -1,4 +1,4 @@
-import type { SceneAttachment, SceneTemplate, TextWrite } from '../bridge/protocol';
+import type { SceneAttachment, SceneTemplate, TextWrite, PropertyWrite } from '../bridge/protocol';
 import type {
   SceneChildBinding,
   SceneHandler,
@@ -7,7 +7,9 @@ import type {
   SceneListBinding,
   SceneRowKey,
   TextBinding,
+  ScenePropertyBinding,
 } from './application';
+import type { PreparedProperties } from './properties';
 import type { SceneProps } from './values';
 
 export interface Child {
@@ -50,7 +52,11 @@ export interface Owner {
   attachment?: SceneAttachment;
   template: SceneTemplate;
   bindings: readonly TextBinding[];
-  handlers: readonly SceneHandler[];
+  handlers: SceneHandler[];
+  propertyBindings: readonly ScenePropertyBinding[];
+  initialProperties: PreparedProperties[];
+  acknowledgedProperties: Map<number, PropertyWrite>;
+  acceptPropertyRefs?: (properties: readonly PreparedProperties[]) => void;
   receive?: (props: SceneProps) => void;
   prepare?: (sources: ReadonlySet<string> | null) => void;
   activate?: () => void;
@@ -82,6 +88,7 @@ export interface PreparedOwner {
   owner: Owner;
   sources: Set<string> | null;
   writes: TextWrite[];
+  properties: PreparedProperties[];
   props: [Child, SceneProps][];
   regions: RegionChange[];
   lists: ListChange[];
