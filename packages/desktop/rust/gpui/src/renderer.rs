@@ -7,8 +7,9 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use memoized_dom_desktop_host::{
-    Attachment, Handle, Instance, Scene,
-    presentation::{ItemKind, TextValue},
+    Handle, Instance, Scene,
+    flow::{SceneFlow, TextIdentity},
+    presentation::ItemKind,
     tags::{self, Layout},
     template::{EventKind, Node, PreparedTemplate, SlotKind},
 };
@@ -71,7 +72,7 @@ type Identity = (u64, u64, usize);
 pub use crate::events::EventSink;
 #[derive(Default)]
 pub struct Renderer {
-    text: BTreeMap<Identity, Rc<RefCell<TextCache>>>,
+    text: BTreeMap<TextIdentity, Rc<RefCell<TextCache>>>,
     controls: BTreeMap<Identity, FocusHandle>,
     inputs: BTreeMap<Identity, Entity<TextInput>>,
     focus_events: BTreeMap<Identity, Vec<Subscription>>,
@@ -80,12 +81,8 @@ pub struct Renderer {
 }
 struct FrameInstance {
     handle: Handle,
-    attach_to: Option<Attachment>,
-    embedded: bool,
     template: Arc<PreparedTemplate>,
     properties: Arc<BTreeMap<usize, Node>>,
-    values: Vec<TextValue>,
-    cache: Vec<Rc<RefCell<TextCache>>>,
     focus: BTreeMap<usize, FocusHandle>,
     inputs: BTreeMap<usize, Entity<TextInput>>,
     styles: Arc<NativeStyles>,
@@ -100,6 +97,8 @@ impl FrameInstance {
 pub struct SceneElement {
     sequence: u64,
     instances: Vec<FrameInstance>,
+    flow: SceneFlow,
+    cache: Vec<Rc<RefCell<TextCache>>>,
     roots: Vec<AnyElement>,
     click: EventSink,
     interests: BTreeSet<EventKind>,
@@ -245,38 +244,23 @@ impl Renderer {
             .instances()
             .map(|instance| (instance.handle.id, instance))
             .collect();
-        let mut embedded = BTreeSet::new();
+        let cache = scene
+            .flow()
+            .values()
+            .iter()
+            .enumerate()
+            .map(|(group, _)| {
+                let key = scene.flow().text_identity(group);
+                live_text.insert(key);
+                self.text.entry(key).or_default().clone()
+            })
+            .collect();
         let instances = order
             .instances
             .iter()
             .map(|handle| records[&handle.id])
             .map(|instance| {
                 let handle = instance.handle;
-                // Authored order visits parents first. Once a region joins a
-                // text group, its whole forwarding subtree contributes runs
-                // rather than independent layout elements or text caches.
-                let is_embedded = instance.attach_to.is_some_and(|parent| {
-                    embedded.contains(&parent.handle.id)
-                        || records[&parent.handle.id]
-                            .template
-                            .presentation
-                            .group_for_node[parent.node]
-                            .is_some()
-                });
-                if is_embedded {
-                    embedded.insert(handle.id);
-                }
-                let cache = instance
-                    .text_groups
-                    .iter()
-                    .enumerate()
-                    .filter(|_| !is_embedded)
-                    .map(|(group, _)| {
-                        let key = (handle.id, handle.generation, group);
-                        live_text.insert(key);
-                        self.text.entry(key).or_default().clone()
-                    })
-                    .collect();
                 let mut focus = BTreeMap::new();
                 let mut inputs = BTreeMap::new();
                 for item in &instance.template.presentation.items {
@@ -400,16 +384,8 @@ impl Renderer {
                 }
                 FrameInstance {
                     handle,
-                    attach_to: instance.attach_to,
-                    embedded: is_embedded,
                     template: instance.template.clone(),
                     properties: instance.properties.clone(),
-                    values: if is_embedded {
-                        Vec::new()
-                    } else {
-                        instance.text_groups.clone()
-                    },
-                    cache,
                     focus,
                     inputs,
                     styles: self.styles[&(handle.id, handle.generation)].native.clone(),
@@ -429,6 +405,8 @@ impl Renderer {
         SceneElement {
             sequence: scene.sequence(),
             instances,
+            flow: scene.flow().clone(),
+            cache,
             roots: Vec::new(),
             click,
             interests: scene
@@ -474,310 +452,293 @@ impl Element for SceneElement {
             .iter()
             .map(|instance| (instance.handle.id, instance))
             .collect();
-        let mut attached = BTreeMap::<Identity, Vec<Vec<AnyElement>>>::new();
-        for instance in self.instances.iter().rev() {
-            if instance.embedded {
+        let plan = &self.flow;
+        let mut elements: Vec<Option<AnyElement>> = (0..plan.items().len()).map(|_| None).collect();
+        for (index, item) in plan.items().iter().enumerate().rev() {
+            let instance = owners[&item.source.handle.id];
+            let source = item.source.node;
+            let anonymous = item.anonymous();
+            // Empty anonymous text must not become a flex/grid item or consume
+            // a gap. Its retained group stays available for the next slot edit.
+            if anonymous
+                && item
+                    .group
+                    .is_some_and(|group| plan.values()[group].text.is_empty())
+            {
                 continue;
             }
-            let plan = &instance.template.presentation;
-            let mut elements: Vec<Option<Vec<AnyElement>>> =
-                (0..plan.items.len()).map(|_| None).collect();
-            for (index, item) in plan.items.iter().enumerate().rev() {
-                if matches!(item.kind, ItemKind::Region) {
-                    elements[index] = attached
-                        .remove(&(instance.handle.id, instance.handle.generation, item.source))
-                        .map(|rows| rows.into_iter().rev().flatten().collect());
-                    continue;
+            let anchor = item.anchor.unwrap_or(item.source);
+            let identity = SharedString::from(format!(
+                "{}:{}:{}:{}",
+                anchor.handle.id, anchor.handle.generation, anchor.node, anonymous
+            ));
+            let focused = instance
+                .focus
+                .get(&source)
+                .is_some_and(|focus| focus.is_focused(window));
+            let state = if focused { 2 } else { 0 };
+            let mut element = div().id(identity.clone());
+            if !anonymous && let Node::Element { attributes, .. } = instance.node(source) {
+                if let Some(label) = attributes.get("aria-label") {
+                    element = element.aria_label(SharedString::from(label.clone()));
                 }
-                let identity = SharedString::from(format!(
-                    "{}:{}:{}",
-                    instance.handle.id, instance.handle.generation, index
-                ));
-                let anonymous = matches!(item.kind, ItemKind::Paragraph)
-                    && item
-                        .parent
-                        .is_some_and(|parent| plan.items[parent].source == item.source);
-                let focused = instance
-                    .focus
-                    .get(&item.source)
-                    .is_some_and(|focus| focus.is_focused(window));
-                let state = if focused { 2 } else { 0 };
-                let mut element = div().id(identity.clone());
-                if let Node::Element { attributes, .. } = instance.node(item.source) {
-                    if let Some(label) = attributes.get("aria-label") {
-                        element = element.aria_label(SharedString::from(label.clone()));
-                    }
-                    if let Some(title) = attributes.get("title") {
-                        element = element.aria_description(SharedString::from(title.clone()));
-                    }
+                if let Some(title) = attributes.get("title") {
+                    element = element.aria_description(SharedString::from(title.clone()));
                 }
-                *element.style() = if anonymous {
-                    StyleRefinement::default().block()
-                } else {
-                    instance.styles.nodes[item.source][state].clone()
-                };
-                if let Some(group) = item.group {
-                    let value = &instance.values[group];
-                    let mut paragraph = Paragraph::new(
-                        identity.clone().into(),
-                        value.text.clone().into(),
-                        value.revision,
-                        instance.cache[group].clone(),
-                        self.stats.clone(),
-                    );
-                    for range in value.runs.iter() {
-                        if let Some(path) = &range.path {
-                            // Rust has resolved the complete inline ancestry,
-                            // including component roots and forwarding regions.
-                            // Use each source owner's accepted CSS conversion.
-                            let chain = path
-                                .ancestry
-                                .iter()
-                                .map(|source| {
-                                    let owner = owners[&source.handle.id];
-                                    debug_assert_eq!(owner.handle, source.handle);
-                                    owner.styles.nodes[source.node][0].text.clone()
-                                })
-                                .collect();
-                            paragraph.fragments.push((range.len, chain));
-                            continue;
-                        }
-                        let mut chain = Vec::new();
-                        let mut current = range
-                            .node
-                            .and_then(|node| instance.template.source.nodes[node].parent());
-                        while let Some(node) = current {
-                            if node == item.source {
-                                break;
-                            }
-                            if let Node::Element { tag, .. } = &instance.template.source.nodes[node]
-                                && tags::resolve(tag).is_ok_and(|tag| tag.layout == Layout::Inline)
-                            {
-                                chain.push(instance.styles.nodes[node][0].text.clone());
-                            }
-                            current = instance.template.source.nodes[node].parent();
-                        }
-                        chain.reverse();
+            }
+            *element.style() = if anonymous {
+                StyleRefinement::default().block()
+            } else {
+                instance.styles.nodes[source][state].clone()
+            };
+            if let Some(group) = item.group {
+                let value = &plan.values()[group];
+                let mut paragraph = Paragraph::new(
+                    identity.clone().into(),
+                    value.text.clone().into(),
+                    value.revision,
+                    self.cache[group].clone(),
+                    self.stats.clone(),
+                );
+                for range in value.runs.iter() {
+                    if let Some(path) = &range.path {
+                        // Rust has resolved the complete inline ancestry,
+                        // including component roots and forwarding regions.
+                        // Use each source owner's accepted CSS conversion.
+                        let chain = path
+                            .ancestry
+                            .iter()
+                            .map(|source| {
+                                let owner = owners[&source.handle.id];
+                                debug_assert_eq!(owner.handle, source.handle);
+                                owner.styles.nodes[source.node][0].text.clone()
+                            })
+                            .collect();
                         paragraph.fragments.push((range.len, chain));
+                        continue;
                     }
-                    element = element.child(paragraph);
-                    if matches!(item.kind, ItemKind::Button) {
-                        let source = item.source;
-                        let focus = instance.focus[&source].clone();
-                        let label = if let Node::Element { attributes, .. } = instance.node(source)
+                    let mut chain = Vec::new();
+                    let mut current = range
+                        .node
+                        .and_then(|node| instance.template.source.nodes[node].parent());
+                    while let Some(node) = current {
+                        if node == source {
+                            break;
+                        }
+                        if let Node::Element { tag, .. } = &instance.template.source.nodes[node]
+                            && tags::resolve(tag).is_ok_and(|tag| tag.layout == Layout::Inline)
                         {
-                            attributes
-                                .get("aria-label")
-                                .cloned()
-                                .unwrap_or_else(|| value.text.to_string())
-                        } else {
-                            value.text.to_string()
-                        };
-                        element = element
-                            .role(Role::Button)
-                            .aria_label(SharedString::from(label))
-                            .track_focus(&instance.focus[&source])
-                            .tab_stop(true)
-                            .focus(|style| style)
-                            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                                window.focus(&focus, cx)
-                            });
-                    } else if let Node::Element { tag, .. } = instance.node(item.source)
-                        && tags::resolve(tag).is_ok_and(|tag| tag.role == Some(tags::Role::Heading))
-                    {
-                        element = element.role(Role::Heading);
+                            chain.push(instance.styles.nodes[node][0].text.clone());
+                        }
+                        current = instance.template.source.nodes[node].parent();
                     }
+                    chain.reverse();
+                    paragraph.fragments.push((range.len, chain));
                 }
-                if matches!(item.kind, ItemKind::Input) {
+                element = element.child(paragraph);
+                if matches!(item.kind, ItemKind::Button) {
+                    let focus = instance.focus[&source].clone();
+                    let label = if let Node::Element { attributes, .. } = instance.node(source) {
+                        attributes
+                            .get("aria-label")
+                            .cloned()
+                            .unwrap_or_else(|| value.text.to_string())
+                    } else {
+                        value.text.to_string()
+                    };
                     element = element
-                        .track_focus(&instance.focus[&item.source])
+                        .role(Role::Button)
+                        .aria_label(SharedString::from(label))
+                        .track_focus(&instance.focus[&source])
+                        .tab_stop(true)
                         .focus(|style| style)
-                        .child(instance.inputs[&item.source].clone());
-                }
-                if !anonymous {
-                    use EventKind;
-                    let handle = instance.handle;
-                    let source = item.source;
-                    let sink = self.click.clone();
-                    element = element.on_click(move |event, _, cx| {
-                        cx.stop_propagation();
-                        sink(
-                            Emission::new(handle, source, EventKind::Click, events::click(event)),
-                            cx,
-                        );
-                    });
-                    for (kind, pressed) in [
-                        (EventKind::PointerDown, true),
-                        (EventKind::PointerUp, false),
-                    ] {
-                        if !self.interests.contains(&kind) {
-                            continue;
-                        }
-                        let sink = self.click.clone();
-                        let focus = instance.focus.get(&source).cloned();
-                        if pressed {
-                            element = element.on_mouse_down(
-                                MouseButton::Left,
-                                move |event, window, cx| {
-                                    if let Some(focus) = &focus {
-                                        window.focus(focus, cx);
-                                    }
-                                    cx.stop_propagation();
-                                    sink(
-                                        Emission::new(
-                                            handle,
-                                            source,
-                                            kind,
-                                            events::pointer(
-                                                event.position,
-                                                event.button,
-                                                true,
-                                                event.modifiers,
-                                            ),
-                                        ),
-                                        cx,
-                                    );
-                                },
-                            );
-                        } else {
-                            element =
-                                element.on_mouse_up(MouseButton::Left, move |event, _, cx| {
-                                    cx.stop_propagation();
-                                    sink(
-                                        Emission::new(
-                                            handle,
-                                            source,
-                                            kind,
-                                            events::pointer(
-                                                event.position,
-                                                event.button,
-                                                false,
-                                                event.modifiers,
-                                            ),
-                                        ),
-                                        cx,
-                                    );
-                                });
-                        }
-                    }
-                    if let Some(focus) = instance.focus.get(&source) {
-                        let sink = self.click.clone();
-                        let focus = focus.clone();
-                        let input = instance.inputs.get(&source).cloned();
-                        let button = matches!(item.kind, ItemKind::Button);
-                        let interested = self.interests.contains(&EventKind::KeyDown);
-                        element = element.capture_key_down(move |event, window, cx| {
-                            if !focus.is_focused(window) {
-                                return;
-                            }
-                            let target = input.as_ref().map(|input| input.read(cx).event_target());
-                            let composing = target
-                                .as_ref()
-                                .is_some_and(|target| target["isComposing"] == true);
-                            let navigation = event.keystroke.key == "tab";
-                            let activation = !composing
-                                && (event.keystroke.key == "enter"
-                                    || button && event.keystroke.key == "space");
-                            // Defer only the defaults that Bun can cancel. Native
-                            // text editing and IME stay immediate on the UI thread.
-                            if navigation || activation {
-                                window.prevent_default();
-                                cx.stop_propagation();
-                            }
-                            if interested || navigation || activation {
-                                let mut payload = events::keyboard(
-                                    &event.keystroke,
-                                    event.is_held,
-                                    navigation || activation,
-                                );
-                                payload["isComposing"] = serde_json::json!(composing);
-                                if let Some(target) = target {
-                                    payload["target"] = target;
-                                }
-                                let mut emission =
-                                    Emission::new(handle, source, EventKind::KeyDown, payload);
-                                emission.navigation =
-                                    navigation.then_some(event.keystroke.modifiers.shift);
-                                sink(emission, cx);
-                            }
+                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                            window.focus(&focus, cx)
                         });
-                        let sink = self.click.clone();
-                        let focus = instance.focus[&source].clone();
-                        let interested = self.interests.contains(&EventKind::KeyUp);
-                        element = element.capture_key_up(move |event, window, cx| {
-                            if !focus.is_focused(window) {
-                                return;
-                            }
-                            let activation = button && event.keystroke.key == "space";
-                            if activation {
-                                window.prevent_default();
+                } else if let Node::Element { tag, .. } = instance.node(source)
+                    && tags::resolve(tag).is_ok_and(|tag| tag.role == Some(tags::Role::Heading))
+                {
+                    element = element.role(Role::Heading);
+                }
+            }
+            if matches!(item.kind, ItemKind::Input) {
+                element = element
+                    .track_focus(&instance.focus[&source])
+                    .focus(|style| style)
+                    .child(instance.inputs[&source].clone());
+            }
+            if !anonymous {
+                use EventKind;
+                let handle = instance.handle;
+                let sink = self.click.clone();
+                element = element.on_click(move |event, _, cx| {
+                    cx.stop_propagation();
+                    sink(
+                        Emission::new(handle, source, EventKind::Click, events::click(event)),
+                        cx,
+                    );
+                });
+                for (kind, pressed) in [
+                    (EventKind::PointerDown, true),
+                    (EventKind::PointerUp, false),
+                ] {
+                    if !self.interests.contains(&kind) {
+                        continue;
+                    }
+                    let sink = self.click.clone();
+                    let focus = instance.focus.get(&source).cloned();
+                    if pressed {
+                        element =
+                            element.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                                if let Some(focus) = &focus {
+                                    window.focus(focus, cx);
+                                }
                                 cx.stop_propagation();
-                            }
-                            if interested || activation {
                                 sink(
                                     Emission::new(
                                         handle,
                                         source,
-                                        EventKind::KeyUp,
-                                        events::keyboard(&event.keystroke, false, activation),
+                                        kind,
+                                        events::pointer(
+                                            event.position,
+                                            event.button,
+                                            true,
+                                            event.modifiers,
+                                        ),
                                     ),
                                     cx,
                                 );
-                            }
+                            });
+                    } else {
+                        element = element.on_mouse_up(MouseButton::Left, move |event, _, cx| {
+                            cx.stop_propagation();
+                            sink(
+                                Emission::new(
+                                    handle,
+                                    source,
+                                    kind,
+                                    events::pointer(
+                                        event.position,
+                                        event.button,
+                                        false,
+                                        event.modifiers,
+                                    ),
+                                ),
+                                cx,
+                            );
                         });
                     }
                 }
-                for &child in &plan.children[index] {
-                    if let Some(children) = elements[child].take() {
-                        element = element.children(children);
-                    }
+                if let Some(focus) = instance.focus.get(&source) {
+                    let sink = self.click.clone();
+                    let focus = focus.clone();
+                    let input = instance.inputs.get(&source).cloned();
+                    let button = matches!(item.kind, ItemKind::Button);
+                    let interested = self.interests.contains(&EventKind::KeyDown);
+                    element = element.capture_key_down(move |event, window, cx| {
+                        if !focus.is_focused(window) {
+                            return;
+                        }
+                        let target = input.as_ref().map(|input| input.read(cx).event_target());
+                        let composing = target
+                            .as_ref()
+                            .is_some_and(|target| target["isComposing"] == true);
+                        let navigation = event.keystroke.key == "tab";
+                        let activation = !composing
+                            && (event.keystroke.key == "enter"
+                                || button && event.keystroke.key == "space");
+                        // Defer only the defaults that Bun can cancel. Native
+                        // text editing and IME stay immediate on the UI thread.
+                        if navigation || activation {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        }
+                        if interested || navigation || activation {
+                            let mut payload = events::keyboard(
+                                &event.keystroke,
+                                event.is_held,
+                                navigation || activation,
+                            );
+                            payload["isComposing"] = serde_json::json!(composing);
+                            if let Some(target) = target {
+                                payload["target"] = target;
+                            }
+                            let mut emission =
+                                Emission::new(handle, source, EventKind::KeyDown, payload);
+                            emission.navigation =
+                                navigation.then_some(event.keystroke.modifiers.shift);
+                            sink(emission, cx);
+                        }
+                    });
+                    let sink = self.click.clone();
+                    let focus = instance.focus[&source].clone();
+                    let interested = self.interests.contains(&EventKind::KeyUp);
+                    element = element.capture_key_up(move |event, window, cx| {
+                        if !focus.is_focused(window) {
+                            return;
+                        }
+                        let activation = button && event.keystroke.key == "space";
+                        if activation {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        }
+                        if interested || activation {
+                            sink(
+                                Emission::new(
+                                    handle,
+                                    source,
+                                    EventKind::KeyUp,
+                                    events::keyboard(&event.keystroke, false, activation),
+                                ),
+                                cx,
+                            );
+                        }
+                    });
                 }
-                let (tag, id) = match instance.node(item.source) {
+            }
+            for &child in plan.children(index) {
+                if let Some(child) = elements[child].take() {
+                    element = element.child(child);
+                }
+            }
+            let (tag, id) = if anonymous {
+                ("text".into(), None)
+            } else {
+                match instance.node(source) {
                     Node::Element {
                         tag, attributes, ..
                     } => (tag.clone(), attributes.get("id").cloned()),
                     _ => ("text".into(), None),
-                };
-                let observed = Observed {
-                    pending: Some(element),
-                    element: None,
-                    hover: (!anonymous)
-                        .then(|| instance.styles.nodes[item.source][state + 1].clone()),
-                    current_color: if anonymous {
-                        [false; 2]
-                    } else {
-                        [
-                            instance.styles.current_color[item.source][state],
-                            instance.styles.current_color[item.source][state + 1],
-                        ]
-                    },
-                    handle: instance.handle,
-                    source: item.source,
-                    tag,
-                    id,
-                    stats: self.stats.clone(),
                 }
-                .into_any_element();
-                elements[index] = Some(vec![observed]);
+            };
+            let observed = Observed {
+                pending: Some(element),
+                element: None,
+                hover: (!anonymous).then(|| instance.styles.nodes[source][state + 1].clone()),
+                current_color: if anonymous {
+                    [false; 2]
+                } else {
+                    [
+                        instance.styles.current_color[source][state],
+                        instance.styles.current_color[source][state + 1],
+                    ]
+                },
+                handle: instance.handle,
+                source,
+                tag,
+                id,
+                stats: self.stats.clone(),
             }
-            let mut roots = Vec::new();
-            for (index, item) in plan.items.iter().enumerate() {
-                if item.parent.is_none()
-                    && let Some(elements) = elements[index].take()
-                {
-                    roots.extend(elements);
-                }
-            }
-            if let Some(parent) = instance.attach_to {
-                // Accumulate row chunks once, then flatten at the region. This
-                // avoids repeatedly copying the already assembled sibling list.
-                let key = (parent.handle.id, parent.handle.generation, parent.node);
-                attached.entry(key).or_default().push(roots);
-            } else {
-                self.roots.extend(roots.into_iter().rev());
+            .into_any_element();
+            elements[index] = Some(observed);
+        }
+        for (index, item) in plan.items().iter().enumerate() {
+            if item.parent.is_none()
+                && let Some(element) = elements[index].take()
+            {
+                self.roots.push(element);
             }
         }
-        self.roots.reverse();
         let layouts = self
             .roots
             .iter_mut()

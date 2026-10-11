@@ -1,6 +1,96 @@
 //! Component attachment, lifetime and authored traversal independent of GPUI.
-use crate::{Handle, Instance, tags, template::Node};
+use crate::{Handle, Instance, presentation::TextSource, tags, template::Node};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Accepted authored topology shared by text composition and placed flow.
+/// Region expansion preserves physical element boundaries and row order.
+pub(crate) struct Placements<'a> {
+    pub records: &'a BTreeMap<u64, &'a Instance>,
+    attachments: BTreeMap<(u64, usize), Vec<u64>>,
+}
+
+impl<'a> Placements<'a> {
+    pub fn new(records: &'a BTreeMap<u64, &'a Instance>) -> Self {
+        let mut attachments = BTreeMap::<(u64, usize), Vec<u64>>::new();
+        for instance in records.values() {
+            if let Some(parent) = instance.attach_to {
+                attachments
+                    .entry((parent.handle.id, parent.node))
+                    .or_default()
+                    .push(instance.handle.id);
+            }
+        }
+        // Install ordered memberships after all ordinary attachments, so
+        // allocation order cannot append rows after the explicit row order.
+        for instance in records.values() {
+            for (&node, order) in &instance.orders {
+                attachments.insert(
+                    (instance.handle.id, node),
+                    order.iter().map(|handle| handle.id).collect(),
+                );
+            }
+        }
+        Self {
+            records,
+            attachments,
+        }
+    }
+
+    pub fn roots(&self, id: u64) -> Vec<TextSource> {
+        let owner = self.records[&id];
+        owner
+            .template
+            .source
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(node, source)| {
+                source.parent().is_none()
+                    && !matches!(source, Node::Text { text, .. }
+                    if text.trim().is_empty()
+                        && !owner.template.source.slots.iter().any(|slot| slot.node == *node))
+            })
+            .map(|(node, _)| TextSource {
+                handle: owner.handle,
+                node,
+            })
+            .collect()
+    }
+
+    pub fn children(&self, source: TextSource) -> Vec<TextSource> {
+        let owner = self.records[&source.handle.id];
+        self.expand(
+            owner.template.children[source.node]
+                .iter()
+                .map(|&node| TextSource {
+                    handle: owner.handle,
+                    node,
+                })
+                .collect(),
+        )
+    }
+
+    pub fn expand(&self, sources: Vec<TextSource>) -> Vec<TextSource> {
+        let mut pending: Vec<_> = sources.into_iter().rev().collect();
+        let mut expanded = Vec::new();
+        while let Some(source) = pending.pop() {
+            let owner = self.records[&source.handle.id];
+            if matches!(
+                owner.template.source.nodes[source.node],
+                Node::Region { .. }
+            ) {
+                if let Some(children) = self.attachments.get(&(source.handle.id, source.node)) {
+                    for &child in children.iter().rev() {
+                        pending.extend(self.roots(child).into_iter().rev());
+                    }
+                }
+            } else {
+                expanded.push(source);
+            }
+        }
+        expanded
+    }
+}
 
 /** Walk exact parent generations once, including records staged in this batch. */
 pub(crate) fn descendants<'a>(

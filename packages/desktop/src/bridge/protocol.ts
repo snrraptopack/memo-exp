@@ -73,6 +73,18 @@ export class DesktopConnectionError extends Error {
 
 export interface SceneSnapshot {
   readonly sequence: number;
+  /** Accepted scene flow after transparent regions are expanded. Instance
+   * presentation/text_groups remain projections of their local templates. */
+  readonly flow?: {
+    readonly items: readonly {
+      readonly kind: 'container' | 'paragraph' | 'button' | 'input';
+      readonly source: { readonly handle: SceneHandle; readonly node: number };
+      readonly parent: number | null;
+      readonly group: number | null;
+      readonly anchor: { readonly handle: SceneHandle; readonly node: number } | null;
+    }[];
+    readonly text_groups: readonly TextGroupValue[];
+  };
   readonly renderer?: {
     readonly frames: number;
     readonly sequence: number;

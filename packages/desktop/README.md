@@ -187,7 +187,7 @@ GPUI adapter implements the presentation and native controls.
 | --- | --- | --- |
 | Flow containers | `div`, `form`, `article`, `aside`, `main`, `nav`, `section`, `header`, `footer`, `address`, `blockquote`, `figure`, `figcaption`, `dd`, `dl` | Contain supported flow content |
 | Text blocks | `p`, `pre`, `h1`–`h6`, `dt` | Contain supported phrasing content and form native text groups |
-| Inline text | `span`, `b`, `strong`, `i`, `em`, `cite`, `dfn`, `var`, `code`, `kbd`, `samp`, `abbr`, `data`, `time`, `mark`, `s`, `del`, `u`, `ins` | Contribute styled runs within a text group; no independent layout box |
+| Inline text | `span`, `b`, `strong`, `i`, `em`, `cite`, `dfn`, `var`, `code`, `kbd`, `samp`, `abbr`, `data`, `time`, `mark`, `s`, `del`, `u`, `ins` | Contribute styled runs in block/paragraph flow; direct flex/grid children retain separate items |
 | Lists | `ul`, `ol`, `li` | List containers accept list items; `li` requires a list parent |
 | Button | `button` | Native activation/focus and phrasing content |
 | Input | `input` | Empty native text control; only omitted `type` or `type="text"` |
@@ -201,9 +201,14 @@ There is no browser parser repairing invalid nesting. Fragment roots and
 component roots are checked at their actual placement. Components, forwarded
 children, conditionals, and keyed inline rows inside `p`, `span`, headings, or
 button labels contribute to their enclosing paragraph's shaping input. Inline
-styles retain their original element/owner sources. Regions directly in a flow
-container still delimit separate anonymous paragraphs; arbitrary mixtures of
-component-produced blocks and inline content do not yet share one flow planner.
+styles retain their original element/owner sources. In a flow container, Rust
+expands component and fragment roots before grouping adjacent text and inline
+elements. A block or control splits that anonymous paragraph. Flex/grid keeps
+each direct authored element as a separate item and groups only adjacent raw
+text. Component boundaries contribute no layout wrapper. Independent mounted
+application roots keep separate formatting contexts.
+A single authored element root keeps its native source and ID, including an
+inline root presented as a standalone paragraph.
 Native controls and text expose some accessibility behavior; full HTML landmark,
 labeling, selection, and control semantics are not established by a tag name.
 
@@ -463,6 +468,28 @@ before native acceptance. Rejection preserves text, revisions, and dependency
 plans; multiple writes restored to their original value in one transaction leave
 the revision unchanged. Embedded content keeps its component identity and
 lifecycle, and contributes no extra text box in GPUI.
+
+[rust/src/flow.rs](rust/src/flow.rs) retains the accepted scene-level layout after
+transparent regions are expanded. It reuses the source walker and text comparison
+above; it does not create application state, subscriptions, or reactive owners.
+Topology changes and accepted CSS changes between block and flex/grid regroup
+placed content. Ordinary edits reuse the layout and source paths and refresh its
+dependent text groups. Empty anonymous groups stay subscribed but create no
+native box or flex/grid gap. Inline box sizing and inline interaction styles
+remain unsupported, including for inline elements placed as flex/grid items.
+Hover/focus CSS that changes between block and flex/grid rejects explicitly;
+regrouping in response to native interaction states is still unimplemented.
+
+`host.inspect().flow` exposes the actual placed `items` and `text_groups` consumed
+by GPUI. Each item's `source` names its authored owner handle and node. `parent`
+indexes another placed item; `group` indexes the scene's accepted text groups.
+An anonymous paragraph has an `anchor` pointing to its first inline source and
+inherits through its surrounding container. It copies no authored ID or event
+target. Per-instance `presentation` and `text_groups` remain local template
+projections; they do not describe the final grouping across component boundaries.
+An empty scene omits `flow`. Shaping cache identity includes the actual text as
+well as the revision and geometry/style inputs, so disappearing and returning
+groups cannot reuse lines for different content with the same initial revision.
 
 ## Third-party libraries
 

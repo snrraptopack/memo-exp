@@ -785,3 +785,98 @@ it('composes compiled children, conditional text and keyed callbacks inside nati
     await host.close();
   }
 });
+
+it('places compiled mixed component roots before grouping block and flex content', async () => {
+  const { code } = compileDesktop(
+    `
+    import './flow.css';
+    function Forward({children}) { return <>{children}</>; }
+    function Inline({value}) { return <strong>{value}</strong>; }
+    function Mixed() { return <><em>A</em><p>Block</p><span>Z</span></>; }
+    function Pair() { return <><span>A</span><em>B</em></>; }
+    export function App() {
+      let block = false;
+      let itemized = true;
+      let value = 'X';
+      return <section>
+        <div id="mixed">Before <Forward>{block ? <Mixed/> : <Inline value={value}/>}</Forward> after</div>
+        <div id="items" class={itemized ? 'items' : 'flow'}><Pair/></div>
+        <button id="content" onClick={() => block = !block}>Switch content</button>
+        <button id="layout" onClick={() => itemized = !itemized}>Switch layout</button>
+        <input id="input" value={value} onInput={event => value = event.currentTarget.value}/>
+      </section>;
+    }
+    `,
+    {
+      moduleId: 'native-mixed-flow.tsx',
+      runtimePath,
+      readStylesheet: () => '.items { display: flex; gap: 12px; } .flow { display: block; }',
+    },
+  );
+  const module = (await import(
+    `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
+  )) as { App(): SceneInstance };
+  const host = createProcessHost({
+    executable: resolve(
+      import.meta.dirname,
+      '../rust/target/debug',
+      process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host',
+    ),
+  });
+  const templates: SceneTemplate[] = [];
+  const app = createDesktopApplication({
+    ...host,
+    async install(template) {
+      templates.push(template);
+      await host.install(template);
+    },
+  });
+  try {
+    const root = app.mount(module.App);
+    await root.ready;
+    const initial = await host.inspect();
+    const owner = initial.instances.find((instance) =>
+      instance.text_groups.some((group) => group.text === 'Switch content'),
+    )!;
+    const readFlow = async () => (await host.inspect()).flow!.text_groups.map((group) => group.text);
+    const template = templates.find((template) => template.id === owner.template)!;
+    const dispatch = (id: string, type: 'click' | 'change', payload?: unknown) => {
+      const node = template.nodes.findIndex((node) =>
+        node.kind === 'element' && node.attributes?.id === id,
+      );
+      const site = template.events.findIndex((event) => event.node === node && event.type === type);
+      expect(site).toBeGreaterThanOrEqual(0);
+      return app.dispatch(owner.handle, site, payload);
+    };
+    expect(await readFlow()).toEqual(['Before X after', 'A', 'B', 'Switch content', 'Switch layout']);
+
+    // The same normal DOM event authoring updates an inline child through two
+    // retained owners. Check each accepted value, including UTF-8 run lengths.
+    for (const value of ['a', 'ab', 'ab🙂']) {
+      await dispatch('input', 'change', {
+        target: { value },
+        currentTarget: { value },
+      });
+      expect((await readFlow())[0]).toBe(`Before ${value} after`);
+    }
+    await dispatch('content', 'click');
+    expect(await readFlow()).toEqual([
+      'Before A', 'Block', 'Z after', 'A', 'B', 'Switch content', 'Switch layout',
+    ]);
+    await dispatch('layout', 'click');
+    expect(await readFlow()).toEqual([
+      'Before A', 'Block', 'Z after', 'AB', 'Switch content', 'Switch layout',
+    ]);
+    await dispatch('content', 'click');
+    expect((await readFlow())[0]).toBe('Before ab🙂 after');
+    await dispatch('layout', 'click');
+    expect(await readFlow()).toEqual([
+      'Before ab🙂 after', 'A', 'B', 'Switch content', 'Switch layout',
+    ]);
+    await root.dispose();
+    expect((await host.inspect()).flow).toBeUndefined();
+  } finally {
+    await app.dispose();
+    await host.close();
+  }
+});

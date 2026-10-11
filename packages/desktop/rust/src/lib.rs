@@ -2,6 +2,7 @@
 pub mod bridge;
 mod composition;
 pub mod css;
+pub mod flow;
 pub mod forest;
 pub mod presentation;
 pub mod tags;
@@ -104,11 +105,15 @@ pub struct Scene {
     rules: css::PreparedRules,
     styles_dirty: bool,
     composition: composition::CompositionPlan,
+    flow: flow::SceneFlow,
 }
 #[derive(Serialize)]
 pub struct Snapshot {
     pub sequence: u64,
     pub instances: Vec<InstanceSnapshot>,
+    /// Actual placed flow. Per-instance presentation remains a local projection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flow: Option<flow::SceneFlow>,
 }
 #[derive(Serialize)]
 pub struct InstanceSnapshot {
@@ -141,6 +146,9 @@ impl Scene {
     }
     pub fn sequence(&self) -> u64 {
         self.sequence
+    }
+    pub fn flow(&self) -> &flow::SceneFlow {
+        &self.flow
     }
     pub fn presentation_order(&self) -> forest::SceneOrder {
         forest::order(&self.instances)
@@ -392,6 +400,25 @@ impl Scene {
         for (handle, group, value) in composed {
             stage_instance(&self.instances, &mut staged, handle)?.text_groups[group] = value;
         }
+        let changed: BTreeSet<_> = staged.keys().copied().collect();
+        let next_flow = if topology_changed || properties_changed || self.styles_dirty {
+            let records = candidate_records(&self.instances, &staged);
+            if topology_changed || self.flow.needs_rebuild(&records)? {
+                flow::SceneFlow::prepare(&records, &self.flow)?
+            } else {
+                self.flow.refresh(|id| records[&id], &changed)
+            }
+        } else {
+            self.flow.refresh(
+                |id| {
+                    staged
+                        .get(&id)
+                        .map_or_else(|| self.instances.get(&id), Option::as_ref)
+                        .expect("Placed flow references a validated live owner")
+                },
+                &changed,
+            )
+        };
         prepare(
             &staged
                 .values()
@@ -411,12 +438,14 @@ impl Scene {
         if let Some(composition) = next_composition {
             self.composition = composition;
         }
+        self.flow = next_flow;
         Ok(self.sequence)
     }
 
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
             sequence: self.sequence,
+            flow: (!self.flow.is_empty()).then(|| self.flow.clone()),
             instances: self
                 .instances
                 .values()

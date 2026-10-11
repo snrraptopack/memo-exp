@@ -1,8 +1,8 @@
-//! Prepare native flow and paragraph identities once, independently of GPUI frames.
+//! Prepare local template flow and paragraph identities independently of GPUI.
 //!
-//! Inline spans and adjacent text fragments form a single shaping input. A span
-//! is not a flex child. Geometry, styled runs and shaped-line caching follow in
-//! the GPUI adapter; this module does not claim to measure or draw text.
+//! These projections supply named paragraph inputs and local inspection data.
+//! SceneFlow expands component placements and resolves anonymous block flow and
+//! flex/grid items. GPUI measures and draws the accepted scene-level result.
 use crate::{
     tags::{Content, Layout, Tag},
     template::{Node, Template},
@@ -11,7 +11,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemKind {
     Container,
@@ -316,7 +316,7 @@ pub struct TextPath {
     pub ancestry: Arc<[TextSource]>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct TextSource {
     pub handle: crate::Handle,
     pub node: usize,

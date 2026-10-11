@@ -10,6 +10,9 @@ use std::{cell::RefCell, rc::Rc};
 #[derive(PartialEq)]
 struct Key {
     revision: u64,
+    // An anonymous group can disappear and return between two painted frames.
+    // Its source identity and initial revision may match an older cached group.
+    text: SharedString,
     style: TextStyle,
     font_size: Pixels,
     line_height: Pixels,
@@ -120,6 +123,7 @@ impl Element for Paragraph {
                 };
                 let key = Key {
                     revision,
+                    text: text.clone(),
                     style: style.clone(),
                     font_size,
                     line_height,
