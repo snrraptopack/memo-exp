@@ -176,10 +176,10 @@ fn invalid_tag_and_content_contracts_never_install_a_partial_template() {
                 {"kind":"element","tag":"span","parent":null,"text":""}
             ]),
             json!([]),
-            json!([{"node":0,"type":"click"}])
+            json!([{"node":0,"type":"keydown"}])
         )
         .unwrap_err()
-        .contains("onClick requires a supported control")
+        .contains("Invalid or duplicate desktop event")
     );
     // Correcting the same template identity works after every rejected definition.
     install(

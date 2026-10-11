@@ -1,8 +1,8 @@
 //! Debug-only platform event injection; uses the real hit tests and scroll handler.
 use crate::DesktopView;
 use gpui::{
-    App, Entity, KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, MouseDownEvent, MouseUpEvent,
-    PlatformInput, ScrollDelta, ScrollWheelEvent, Window, point, px, size,
+    App, Entity, KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, Window, point, px, size,
 };
 use memoized_dom_desktop_host::Handle;
 use serde::Deserialize;
@@ -105,9 +105,9 @@ impl WindowRequest {
                     px(dimension(self.height)?),
                 ));
             }
-            "click" => {
-                let handle = self.handle.ok_or("Missing click owner")?;
-                let node = self.node.ok_or("Missing click node")?;
+            "click" | "hover" => {
+                let handle = self.handle.ok_or("Missing pointer target owner")?;
+                let node = self.node.ok_or("Missing pointer target node")?;
                 let position = {
                     let view = view.read(cx);
                     let stats = view.renderer.stats.borrow();
@@ -122,7 +122,17 @@ impl WindowRequest {
                     )
                 };
                 if !view.read(cx).scroll.bounds().contains(&position) {
-                    return Err("Test button is outside the viewport".into());
+                    return Err("Test pointer target is outside the viewport".into());
+                }
+                if self.action == "hover" {
+                    window.dispatch_event(
+                        PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            ..Default::default()
+                        }),
+                        cx,
+                    );
+                    return Ok(());
                 }
                 window.dispatch_event(
                     PlatformInput::MouseDown(MouseDownEvent {

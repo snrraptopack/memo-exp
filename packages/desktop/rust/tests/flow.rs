@@ -455,3 +455,109 @@ fn interaction_display_regrouping_rejects_without_changing_accepted_flow() {
         .unwrap();
     assert_eq!(texts(&scene), ["Before still accepted after"]);
 }
+
+#[test]
+fn inline_events_require_a_real_box_and_regrouping_rejects_atomically() {
+    let mut scene = Scene::default();
+    install(
+        &mut scene,
+        "parent",
+        json!([
+            {"kind":"element","tag":"div","parent":null,"text":"",
+                "style":[{"property":"display","value":"flex"}]},
+            {"kind":"region","parent":0}
+        ]),
+        json!([]),
+    );
+    let leaf: Template = serde_json::from_value(json!({
+        "id":"interactive-inline",
+        "nodes":[
+            {"kind":"element","tag":"span","parent":null,"text":""},
+            {"kind":"text","parent":0,"text":""}
+        ],
+        "slots":[{"node":1,"type":"text"}],
+        "events":[{"node":0,"type":"click"},{"node":0,"type":"pointerdown"},{"node":0,"type":"pointerup"}]
+    }))
+    .unwrap();
+    scene.install(leaf).unwrap();
+    scene
+        .commit(transaction(
+            1,
+            json!([
+                mount(1, "parent", None, json!([])),
+                mount(
+                    2,
+                    "interactive-inline",
+                    Some((1, 1)),
+                    json!([{"slot":0,"value":"Click"}])
+                )
+            ]),
+        ))
+        .unwrap();
+    assert_eq!(
+        scene.flow().boxed_inline(2).unwrap().as_ref(),
+        &std::collections::BTreeSet::from([0])
+    );
+    let before = serde_json::to_value(scene.snapshot()).unwrap();
+    let error = scene
+        .commit(transaction(
+            2,
+            json!([{
+                "kind":"properties", "handle":handle(1),
+                "properties":[{"node":0,"attributes":{},"style":"display: block"}]
+            }]),
+        ))
+        .unwrap_err();
+    assert!(
+        error.contains("inline events require an independent native box"),
+        "{error}"
+    );
+    assert_eq!(serde_json::to_value(scene.snapshot()).unwrap(), before);
+    scene
+        .commit(transaction(2, json!([update(2, "Still clickable")])))
+        .unwrap();
+    assert_eq!(texts(&scene), ["Still clickable"]);
+}
+
+#[test]
+fn boxed_inline_containers_regroup_their_own_phrasing_children() {
+    let mut scene = Scene::default();
+    install(
+        &mut scene,
+        "inline-container",
+        json!([
+            {"kind":"element","tag":"span","parent":null,"text":"",
+                "style":[{"property":"display","value":"grid"}]},
+            {"kind":"element","tag":"strong","parent":0,"text":""},
+            {"kind":"text","parent":1,"text":"A"},
+            {"kind":"element","tag":"em","parent":0,"text":""},
+            {"kind":"text","parent":3,"text":"B"}
+        ]),
+        json!([]),
+    );
+    scene
+        .commit(transaction(
+            1,
+            json!([mount(1, "inline-container", None, json!([]))]),
+        ))
+        .unwrap();
+    assert_eq!(texts(&scene), ["A", "B"]);
+    assert_eq!(
+        scene.flow().boxed_inline(1).unwrap().as_ref(),
+        &std::collections::BTreeSet::from([0, 1, 3])
+    );
+    scene
+        .commit(transaction(
+            2,
+            json!([{
+                "kind":"properties", "handle":handle(1),
+                "properties":[{"node":0,"attributes":{},"style":"display: block"}]
+            }]),
+        ))
+        .unwrap();
+    assert_eq!(texts(&scene), ["AB"]);
+    assert_eq!(
+        scene.flow().boxed_inline(1).unwrap().as_ref(),
+        &std::collections::BTreeSet::from([0])
+    );
+}

@@ -21,10 +21,10 @@ export interface DesktopProcessHost extends DesktopHost {
     action: 'insert' | 'compose' | 'commit' | 'backspace' | 'select-all',
     text?: string,
   ): Promise<void>;
-  /** Debug builds only; routes clicks and wheel movement through GPUI hit testing. */
+  /** Debug builds only; routes pointer and wheel movement through GPUI hit testing. */
   testWindow(
     event:
-      | { action: 'click'; handle: NativeSceneEvent['handle']; node: number }
+      | { action: 'click' | 'hover'; handle: NativeSceneEvent['handle']; node: number }
       | { action: 'scroll'; delta: number }
       | { action: 'resize'; width: number; height: number }
       | { action: 'key'; key: string; phase?: 'down' | 'up' },

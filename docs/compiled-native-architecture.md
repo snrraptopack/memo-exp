@@ -268,7 +268,7 @@ The window adapter validates all changed cascades before the scene accepts a tra
 
 CSS generators use this same pipeline: Tailwind, Sass, and similar tools first produce ordinary CSS through their normal build tooling, then the desktop compiler and native cascade consume that output. Utility class names have no renderer-specific meaning. Compatibility depends on the generated CSS features, including escaped identifiers, layers, custom properties, nesting, conditional rules, and modern color/value syntax. Full Tailwind compatibility is not implemented; these features need general CSS contracts and real generated-output fixtures rather than utility-name translation.
 
-`rust/gpui/src/styles.rs` translates prepared CSS into GPUI fields for block/flex/grid layout, dimensions, spacing, alignment, overflow, borders, colors, fonts, decoration, opacity, and cursors. GPUI supplies layout and painting. Grid currently supports equal repeated `1fr` or `minmax(0, 1fr)` tracks, matching GPUI's own representation. Lengths support px, rem, percentages where applicable, zero, and auto. Unsupported properties, values, selectors, at-rules, inline box styles, and inline interaction styles fail explicitly. Dynamic style/class expressions now publish through typed element-property transactions. Variables, media queries, and general grid tracks remain unimplemented. This is an adapter for ordinary CSS, not a new styling syntax or layout engine.
+`rust/gpui/src/styles.rs` translates prepared CSS into GPUI fields for block/flex/grid layout, dimensions, spacing, alignment, overflow, borders, colors, fonts, decoration, opacity, and cursors. GPUI supplies layout and painting. Grid currently supports equal repeated `1fr` or `minmax(0, 1fr)` tracks, matching GPUI's own representation. Lengths support px, rem, percentages where applicable, zero, and auto. Unsupported properties, values, selectors, and at-rules fail explicitly. Inline box styles and hover styles work on independently boxed elements; flattened paragraph runs retain their smaller text refinement contract. Native mounting validates that distinction against accepted placement. Dynamic style/class expressions now publish through typed element-property transactions. Variables, media queries, and general grid tracks remain unimplemented. This is an adapter for ordinary CSS, not a new styling syntax or layout engine.
 
 ## Compiler output
 
@@ -411,7 +411,7 @@ Define supported primitive and style semantics explicitly. Authored JSX uses the
 
 ## First implementation and validation
 
-The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Inline box sizing, inline interaction hitboxes, and native hover/focus regrouping remain presentation gaps.
+The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing and interaction hitboxes, and native hover/focus regrouping remain presentation gaps. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
@@ -655,6 +655,26 @@ GPUI checks additionally verify mixed-flow vertical bounds, separate flex/grid
 element items, per-letter typing, unchanged redraw shaping, and the existing
 counter/Todo scrolling and retained-control contracts. These checks establish
 the implemented presentation behavior; they are not a scalability benchmark.
+
+The flow plan also records which inline elements own independent native boxes.
+CSS validation and conversion use that placement rather than rejecting every
+inline tag. Standalone inline roots, direct flex/grid items, and their own
+flex/grid phrasing children support ordinary dimensions, spacing, font size,
+paint, and hover styling. Paragraph runs retain the smaller refinement contract.
+The generated Rust capability projection permits inline click/pointer events;
+mounting rejects a target flattened into paragraph text until measured run hit
+testing exists. Regrouping revalidates affected placement capabilities, including
+untouched children, before replacing native style caches. Text edits retain
+their existing cascade and native style cache identities.
+
+`examples/inline-boxes` uses the normal mount entry and TSX/CSS authoring path.
+Its real GPUI check covers hover geometry, pointer-down/up/click ordering,
+cross-owner bubbling, retained state during reactive sizing, nested grid items,
+keyboard activation without an invented pointer release, and unchanged redraw
+shaping. The release check exposed GPUI listener ordering: its click callback
+runs before the same element's mouse-up callback in bubble order. The native
+event adapter emits that mouse release before click, then stops native
+propagation so the shared JavaScript runtime handles authored bubbling once.
 
 Broken-pipe failures also retain the existing connection retirement boundary.
 A write can fail before Bun observes the host's exit or drains its stderr. The

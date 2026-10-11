@@ -251,8 +251,8 @@ fn main() {
                                         Preparation::Template(template) => {
                                             view.renderer.prepare(template)
                                         }
-                                        Preparation::Instances(instances) => {
-                                            view.renderer.prepare_instances(instances)
+                                        Preparation::Instances { instances, flow } => {
+                                            view.renderer.prepare_instances(instances, flow)
                                         }
                                     }
                                 });

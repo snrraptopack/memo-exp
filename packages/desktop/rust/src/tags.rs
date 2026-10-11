@@ -298,6 +298,7 @@ pub fn supports_event(tag: &Tag, event: crate::template::EventKind) -> bool {
     match event {
         EventKind::Change => tag.layout == Layout::Input,
         EventKind::Submit => tag.name == "form",
+        EventKind::Click | EventKind::PointerDown | EventKind::PointerUp => true,
         _ => tag.layout != Layout::Inline,
     }
 }

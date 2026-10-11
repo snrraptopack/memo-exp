@@ -63,6 +63,9 @@ enum Input {
 #[derive(Default, Serialize)]
 struct FlowLayout {
     items: Vec<PlacedItem>,
+    /// Inline elements with independent Taffy boxes in this accepted placement.
+    #[serde(skip)]
+    boxed_inline: BTreeMap<u64, Arc<BTreeSet<usize>>>,
     #[serde(skip)]
     children: Vec<Vec<usize>>,
     #[serde(skip)]
@@ -108,6 +111,15 @@ impl SceneFlow {
     }
     pub fn is_empty(&self) -> bool {
         self.layout.items.is_empty()
+    }
+
+    pub fn boxed_inline(&self, owner: u64) -> Option<&Arc<BTreeSet<usize>>> {
+        self.layout.boxed_inline.get(&owner)
+    }
+
+    pub(crate) fn inline_placements_changed(&self, previous: &Self) -> bool {
+        !Arc::ptr_eq(&self.layout, &previous.layout)
+            && self.layout.boxed_inline != previous.layout.boxed_inline
     }
 
     pub(crate) fn needs_rebuild(&self, records: &BTreeMap<u64, &Instance>) -> Result<bool, String> {
@@ -158,7 +170,11 @@ impl SceneFlow {
                         unreachable!()
                     };
                     let definition = tags::resolve(tag)?;
+                    let inline_container =
+                        definition.layout == Layout::Inline && itemized(owner, source.node)?;
+                    let container = definition.layout == Layout::Block || inline_container;
                     let kind = match definition.layout {
+                        _ if container => ItemKind::Container,
                         Layout::Block => ItemKind::Container,
                         Layout::Control => ItemKind::Button,
                         Layout::Input => ItemKind::Input,
@@ -172,9 +188,14 @@ impl SceneFlow {
                         group: None,
                         anchor: None,
                     });
-                    if definition.layout == Layout::Block {
+                    if definition.layout == Layout::Inline {
+                        layout.modes.push((source, inline_container));
+                    }
+                    if container {
                         let mode = itemized(owner, source.node)?;
-                        layout.modes.push((source, mode));
+                        if definition.layout == Layout::Block {
+                            layout.modes.push((source, mode));
+                        }
                         let marker = owner
                             .template
                             .presentation
@@ -252,6 +273,32 @@ impl SceneFlow {
         for (index, item) in layout.items.iter().enumerate() {
             if let Some(parent) = item.parent {
                 layout.children[parent].push(index);
+            }
+            let owner = records[&item.source.handle.id];
+            if !item.anonymous()
+                && matches!(owner.node(item.source.node), Node::Element { tag, .. }
+                    if tags::resolve(tag).is_ok_and(|tag| tag.layout == Layout::Inline))
+            {
+                let nodes = layout.boxed_inline.entry(owner.handle.id).or_default();
+                Arc::make_mut(nodes).insert(item.source.node);
+            }
+        }
+        // Tag support alone cannot establish a hit target. A span in a flex
+        // container has a native box; a span flattened into a paragraph does not.
+        for owner in records.values() {
+            for event in &owner.template.source.events {
+                if let Node::Element { tag, .. } = owner.node(event.node)
+                    && tags::resolve(tag)?.layout == Layout::Inline
+                    && !layout
+                        .boxed_inline
+                        .get(&owner.handle.id)
+                        .is_some_and(|nodes| nodes.contains(&event.node))
+                {
+                    return Err(format!(
+                        "Desktop template {}, node {} <{}>: inline events require an independent native box; paragraph-run hit testing is not implemented",
+                        owner.template.source.id, event.node, tag
+                    ));
+                }
             }
         }
         let old: BTreeMap<_, _> = previous

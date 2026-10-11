@@ -8,7 +8,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "address": {
       "attributes": [
@@ -72,7 +76,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "blockquote": {
       "attributes": [
@@ -100,7 +108,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "button": {
       "attributes": [
@@ -129,7 +141,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "code": {
       "attributes": [
@@ -139,7 +155,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "container": {
       "attributes": [
@@ -167,7 +187,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "dd": {
       "attributes": [
@@ -195,7 +219,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "dfn": {
       "attributes": [
@@ -205,7 +233,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "div": {
       "attributes": [
@@ -269,7 +301,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "figcaption": {
       "attributes": [
@@ -496,7 +532,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "input": {
       "attributes": [
@@ -528,7 +568,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "kbd": {
       "attributes": [
@@ -538,7 +582,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "li": {
       "attributes": [
@@ -584,7 +632,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "nav": {
       "attributes": [
@@ -666,7 +718,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "samp": {
       "attributes": [
@@ -676,7 +732,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "section": {
       "attributes": [
@@ -704,7 +764,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "strong": {
       "attributes": [
@@ -714,7 +778,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "text": {
       "attributes": [
@@ -724,7 +792,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "time": {
       "attributes": [
@@ -734,7 +806,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "u": {
       "attributes": [
@@ -744,7 +820,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     },
     "ul": {
       "attributes": [
@@ -772,7 +852,11 @@
         "title",
         "aria-label"
       ],
-      "events": []
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
     }
   },
   "version": 1

@@ -56,13 +56,16 @@ pub fn process_line_with_prepare(
 ) -> Outcome {
     process_line_with_validation(scene, line, |candidate| match candidate {
         Preparation::Template(template) => prepare(template),
-        Preparation::Instances(_) => Ok(()),
+        Preparation::Instances { .. } => Ok(()),
     })
 }
 
 pub enum Preparation<'a> {
     Template(&'a crate::template::PreparedTemplate),
-    Instances(&'a [&'a crate::Instance]),
+    Instances {
+        instances: &'a [&'a crate::Instance],
+        flow: &'a crate::flow::SceneFlow,
+    },
 }
 
 /// Use one callback so install and commit validation can share adapter caches.
@@ -89,8 +92,8 @@ pub fn process_line_with_validation(
                         })
                         .map(|()| Value::Null),
                     Command::Apply { transaction } => scene
-                        .commit_with(transaction, |instances| {
-                            prepare(Preparation::Instances(instances))
+                        .commit_with_flow(transaction, |instances, flow| {
+                            prepare(Preparation::Instances { instances, flow })
                         })
                         .map(|sequence| {
                             changed = true;

@@ -97,6 +97,40 @@ pub fn click(event: &ClickEvent) -> Value {
     result
 }
 
+/// GPUI's click listener runs before the same element's mouse-up listener during
+/// bubbling. Stopping native propagation selects one authored target, but also
+/// skips that later listener. Publish its release first, then the logical click.
+/// Keyboard activation has no mouse release and must not synthesize one.
+pub fn emit_click(
+    sink: &EventSink,
+    handle: Handle,
+    node: usize,
+    event: &ClickEvent,
+    include_pointer_up: bool,
+    cx: &mut App,
+) {
+    if include_pointer_up && let ClickEvent::Mouse(mouse) = event {
+        sink(
+            Emission::new(
+                handle,
+                node,
+                EventKind::PointerUp,
+                pointer(
+                    mouse.up.position,
+                    mouse.up.button,
+                    false,
+                    mouse.up.modifiers,
+                ),
+            ),
+            cx,
+        );
+    }
+    sink(
+        Emission::new(handle, node, EventKind::Click, click(event)),
+        cx,
+    );
+}
+
 impl Emission {
     pub fn new(handle: Handle, node: usize, kind: EventKind, mut payload: Value) -> Self {
         payload["type"] = serde_json::to_value(kind).expect("event kind serializes");

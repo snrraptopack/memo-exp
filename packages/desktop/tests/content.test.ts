@@ -880,3 +880,60 @@ it('places compiled mixed component roots before grouping block and flex content
     await host.close();
   }
 });
+
+it('mounts the inline box example normally and routes pointer events across retained owners', async () => {
+  const code = await buildDesktopEntry(resolve(import.meta.dirname, '../examples/inline-boxes/main.ts'), {
+    runtimePath,
+  });
+  const host = createProcessHost({
+    executable: resolve(
+      import.meta.dirname,
+      '../rust/target/debug',
+      process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host',
+    ),
+  });
+  const templates: SceneTemplate[] = [];
+  const app = createDesktopApplication({
+    ...host,
+    async install(template) {
+      templates.push(template);
+      await host.install(template);
+    },
+  });
+  try {
+    await runDesktopEntry(app, () => import(
+      `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`,
+    ));
+    const initial = await host.inspect();
+    const chip = initial.instances.find((instance) => instance.template.endsWith('#Chip'))!;
+    const parent = initial.instances.find((instance) => instance.template.endsWith('#InlineBoxes'))!;
+    const chipTemplate = templates.find((template) => template.id === chip.template)!;
+    const propertyNode = Object.entries(chip.properties ?? {}).find(([, node]) =>
+      node.attributes?.id === 'chip',
+    )?.[0];
+    const chipNode = propertyNode === undefined
+      ? chipTemplate.nodes.findIndex((node) => node.kind === 'element' && node.attributes?.id === 'chip')
+      : Number(propertyNode);
+    expect(chipNode).toBeGreaterThanOrEqual(0);
+    for (const type of ['pointerdown', 'pointerup', 'click']) {
+      await app.dispatchEvent({ type: 'event', handle: chip.handle, node: chipNode, payload: { type } });
+    }
+    const clicked = await host.inspect();
+    expect(clicked.flow!.text_groups.some((group) => group.text === 'Clicks: 1\nDown: 1\nUp: 1')).toBe(true);
+    expect(clicked.flow!.text_groups.some((group) => group.text === 'Parent clicks: 1')).toBe(true);
+
+    const parentTemplate = templates.find((template) => template.id === parent.template)!;
+    const resize = parentTemplate.nodes.findIndex((node) =>
+      node.kind === 'element' && node.attributes?.id === 'resize',
+    );
+    await app.dispatchEvent({ type: 'event', handle: parent.handle, node: resize, payload: { type: 'click' } });
+    const resized = await host.inspect();
+    const retained = resized.instances.find((instance) => instance.handle.id === chip.handle.id)!;
+    expect(retained.handle).toEqual(chip.handle);
+    expect(retained.styles![chipNode]!.states[0]!['width']).toBe('280px');
+    expect(resized.flow!.text_groups.some((group) => group.text === 'Clicks: 1\nDown: 1\nUp: 1')).toBe(true);
+  } finally {
+    await app.dispose();
+    await host.close();
+  }
+});

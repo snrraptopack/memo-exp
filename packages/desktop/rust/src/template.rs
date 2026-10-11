@@ -206,10 +206,13 @@ impl Template {
             if !valid || !events.insert((event.node, event.r#type)) {
                 return Err(invalid(
                     match event.r#type {
-                        EventKind::Click => "Invalid or duplicate control event; onClick requires a supported control",
-                        EventKind::Change => "Invalid or duplicate control event; onChange requires an input control",
+                        EventKind::Click => "Invalid or duplicate click event",
+                        EventKind::Change => {
+                            "Invalid or duplicate control event; onChange requires an input control"
+                        }
                         _ => "Invalid or duplicate desktop event",
-                    }.into(),
+                    }
+                    .into(),
                 ));
             }
         }

@@ -224,6 +224,26 @@ impl Scene {
         transaction: Transaction,
         prepare: impl FnOnce(&[&Instance]) -> Result<(), String>,
     ) -> Result<u64, String> {
+        self.commit_prepared(transaction, false, |instances, _| prepare(instances))
+    }
+
+    /// Validate native styles against candidate placement before accepting it.
+    /// Regrouping can change an untouched child's box capabilities, so those
+    /// transitions validate all live candidates. Ordinary edits remain local.
+    pub fn commit_with_flow(
+        &mut self,
+        transaction: Transaction,
+        prepare: impl FnOnce(&[&Instance], &flow::SceneFlow) -> Result<(), String>,
+    ) -> Result<u64, String> {
+        self.commit_prepared(transaction, true, prepare)
+    }
+
+    fn commit_prepared(
+        &mut self,
+        transaction: Transaction,
+        validate_placement: bool,
+        prepare: impl FnOnce(&[&Instance], &flow::SceneFlow) -> Result<(), String>,
+    ) -> Result<u64, String> {
         if transaction.sequence != self.sequence + 1 {
             return Err("Out-of-order scene transaction".into());
         }
@@ -419,12 +439,17 @@ impl Scene {
                 &changed,
             )
         };
-        prepare(
-            &staged
+        let candidates = if validate_placement && next_flow.inline_placements_changed(&self.flow) {
+            candidate_records(&self.instances, &staged)
+                .into_values()
+                .collect::<Vec<_>>()
+        } else {
+            staged
                 .values()
                 .filter_map(Option::as_ref)
-                .collect::<Vec<_>>(),
-        )?;
+                .collect::<Vec<_>>()
+        };
+        prepare(&candidates, &next_flow)?;
         for (id, instance) in staged {
             if let Some(instance) = instance {
                 self.instances.insert(id, instance);

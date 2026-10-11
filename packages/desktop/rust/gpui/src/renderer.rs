@@ -164,29 +164,39 @@ impl Renderer {
     }
     /// Validate and prepare actual GPUI styles before the host accepts installation.
     pub fn prepare(&mut self, template: &PreparedTemplate) -> Result<(), String> {
-        styles::prepare(template)?;
+        styles::prepare_definition(template)?;
         Ok(())
     }
 
     /// Validate all changed placements before replacing any accepted cache.
     /// Shared cascade identity skips conversion for ordinary text/input edits.
-    pub fn prepare_instances(&mut self, instances: &[&Instance]) -> Result<(), String> {
+    pub fn prepare_instances(
+        &mut self,
+        instances: &[&Instance],
+        flow: &SceneFlow,
+    ) -> Result<(), String> {
         let mut prepared = Vec::new();
+        let empty = BTreeSet::new();
         for instance in instances {
             let key = (instance.handle.id, instance.handle.generation);
-            if self
-                .styles
-                .get(&key)
-                .is_some_and(|cached| Arc::ptr_eq(&cached.cascade, &instance.styles))
-            {
+            let boxed_inline = flow.boxed_inline(instance.handle.id).cloned();
+            if self.styles.get(&key).is_some_and(|cached| {
+                Arc::ptr_eq(&cached.cascade, &instance.styles)
+                    && cached.boxed_inline == boxed_inline
+            }) {
                 continue;
             }
-            let native = styles::prepare_cascade(&instance.template, &instance.styles)?;
+            let native = styles::prepare_cascade(
+                &instance.template,
+                &instance.styles,
+                boxed_inline.as_deref().unwrap_or(&empty),
+            )?;
             prepared.push((
                 key,
                 CachedStyles {
                     cascade: instance.styles.clone(),
                     native: Arc::new(native),
+                    boxed_inline,
                 },
             ));
         }
@@ -571,12 +581,10 @@ impl Element for SceneElement {
                 use EventKind;
                 let handle = instance.handle;
                 let sink = self.click.clone();
+                let pointer_up = self.interests.contains(&EventKind::PointerUp);
                 element = element.on_click(move |event, _, cx| {
                     cx.stop_propagation();
-                    sink(
-                        Emission::new(handle, source, EventKind::Click, events::click(event)),
-                        cx,
-                    );
+                    events::emit_click(&sink, handle, source, event, pointer_up, cx);
                 });
                 for (kind, pressed) in [
                     (EventKind::PointerDown, true),
@@ -901,6 +909,7 @@ mod tests {
     use super::Renderer;
     use memoized_dom_desktop_host::{Scene, Template, Transaction};
     use serde_json::json;
+    use std::{collections::BTreeSet, sync::Arc};
 
     #[test]
     fn newly_matched_invalid_inline_styles_reject_before_scene_or_cache_publication() {
@@ -939,8 +948,8 @@ mod tests {
             ]})).unwrap()
         };
         let error = scene
-            .commit_with(transaction(true), |instances| {
-                renderer.prepare_instances(instances)
+            .commit_with_flow(transaction(true), |instances, flow| {
+                renderer.prepare_instances(instances, flow)
             })
             .unwrap_err();
         assert!(error.contains("inline <strong>"));
@@ -950,11 +959,105 @@ mod tests {
         // The failed attempt consumes neither handles nor sequence. The same
         // leaf without that ancestor has no padding rule and can be accepted.
         scene
-            .commit_with(transaction(false), |instances| {
-                renderer.prepare_instances(instances)
+            .commit_with_flow(transaction(false), |instances, flow| {
+                renderer.prepare_instances(instances, flow)
             })
             .unwrap();
         assert_eq!(scene.instances().count(), 2);
         assert_eq!(renderer.styles.len(), 2);
+    }
+
+    #[test]
+    fn inline_box_styles_follow_placement_and_rejection_preserves_native_caches() {
+        let mut scene = Scene::default();
+        let mut renderer = Renderer::default();
+        let parent: Template = serde_json::from_value(json!({
+            "id":"boxed-parent", "nodes":[
+                {"kind":"element","tag":"div","parent":null,"text":"",
+                    "style":[{"property":"display","value":"flex"}]},
+                {"kind":"region","parent":0}
+            ], "slots":[], "events":[]
+        }))
+        .unwrap();
+        let child: Template = serde_json::from_value(json!({
+            "id":"boxed-child", "nodes":[
+                {"kind":"element","tag":"span","parent":null,"text":"",
+                    "style":[{"property":"padding","value":"8px"},
+                        {"property":"width","value":"120px"},
+                        {"property":"background-color","value":"red"}]},
+                {"kind":"text","parent":0,"text":""}
+            ], "slots":[{"node":1,"type":"text"}], "events":[]
+        }))
+        .unwrap();
+        for template in [parent, child] {
+            scene
+                .install_with(template, |template| renderer.prepare(template))
+                .unwrap();
+        }
+        let transaction = |sequence, operations| {
+            serde_json::from_value(json!({"sequence":sequence,"operations":operations})).unwrap()
+        };
+        scene.commit_with_flow(transaction(1, json!([
+            {"kind":"mount","handle":{"id":1,"generation":1},"template":"boxed-parent","values":[]},
+            {"kind":"mount","handle":{"id":2,"generation":1},"template":"boxed-child",
+                "attach_to":{"handle":{"id":1,"generation":1},"node":1},
+                "values":[{"slot":0,"value":"Short"}]}
+        ])), |instances, flow| renderer.prepare_instances(instances, flow)).unwrap();
+        let key = (2, 1);
+        let accepted = renderer.styles[&key].native.clone();
+        assert!(accepted.nodes[0][0].background.is_some());
+        assert!(accepted.nodes[0][0].text.background_color.is_none());
+        assert_eq!(
+            renderer.styles[&key]
+                .boxed_inline
+                .as_ref()
+                .unwrap()
+                .as_ref(),
+            &BTreeSet::from([0])
+        );
+
+        scene.commit_with_flow(transaction(2, json!([
+            {"kind":"update","handle":{"id":2,"generation":1},"values":[{"slot":0,"value":"Longer"}]}
+        ])), |instances, flow| renderer.prepare_instances(instances, flow)).unwrap();
+        assert!(Arc::ptr_eq(&accepted, &renderer.styles[&key].native));
+        let before = serde_json::to_value(scene.snapshot()).unwrap();
+        let accepted_parent = renderer.styles[&(1, 1)].native.clone();
+        let regroup = json!({"kind":"properties","handle":{"id":1,"generation":1},
+            "properties":[{"node":0,"attributes":{},"style":"display: block"}]});
+        let error = scene
+            .commit_with_flow(
+                transaction(3, json!([regroup.clone()])),
+                |instances, flow| renderer.prepare_instances(instances, flow),
+            )
+            .unwrap_err();
+        assert!(
+            error.contains("CSS padding-") && error.contains("on inline <span>"),
+            "{error}"
+        );
+        assert_eq!(serde_json::to_value(scene.snapshot()).unwrap(), before);
+        assert!(Arc::ptr_eq(&accepted, &renderer.styles[&key].native));
+        assert!(Arc::ptr_eq(
+            &accepted_parent,
+            &renderer.styles[&(1, 1)].native
+        ));
+
+        // Removing the box-only CSS in the same transaction makes flattening
+        // valid. The existing child handle and text survive the regrouping.
+        scene
+            .commit_with_flow(
+                transaction(
+                    3,
+                    json!([
+                        regroup,
+                        {"kind":"properties","handle":{"id":2,"generation":1},
+                            "properties":[{"node":0,"attributes":{},"style":"color: blue"}]}
+                    ]),
+                ),
+                |instances, flow| renderer.prepare_instances(instances, flow),
+            )
+            .unwrap();
+        assert!(renderer.styles[&key].boxed_inline.is_none());
+        assert_eq!(scene.flow().values()[0].text.as_ref(), "Longer");
+        assert_eq!(scene.instances().count(), 2);
     }
 }

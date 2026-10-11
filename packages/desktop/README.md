@@ -19,11 +19,14 @@ From the repository root:
 bun run desktop:dev
 bun run desktop:todo
 bun run desktop:reactivity
+bun run desktop:inline
 ```
 
 These commands build the shared runtime, compiler, desktop adapter, and native
 window executable. The examples exercise controls and component/list ownership,
-todo interactions and styling, and cross-module state respectively.
+todo interactions and styling, cross-module state, and inline element boxes
+respectively. The inline example checks sizing, hover, pointer events, and a grid
+inside a span using ordinary CSS and the normal mount entry.
 
 An authored entry still looks like this:
 
@@ -282,10 +285,10 @@ produce empty text. Objects, arrays, functions, and promises are not text values
 
 | Authored handler | Scene event | Restrictions or defaults |
 | --- | --- | --- |
-| `onClick` | `click` | Supported non-inline elements; native button activation |
+| `onClick` | `click` | Supported native boxes, including independently boxed inline elements; native button activation |
 | `onInput`, `onChange` | `change` | Text input only; aliases for the same site, not separate browser input/change timing |
 | `onKeyDown`, `onKeyUp` | `keydown`, `keyup` | Supported non-inline elements; keyboard fields supplied by the host |
-| `onPointerDown`, `onPointerUp` | `pointerdown`, `pointerup` | Supported non-inline elements; pointer fields supplied by the host |
+| `onPointerDown`, `onPointerUp` | `pointerdown`, `pointerup` | Supported native boxes, including independently boxed inline elements; pointer fields supplied by the host |
 | `onFocus`, `onBlur` | `focus`, `blur` | Supported non-inline elements; non-bubbling and noncancelable |
 | `onSubmit` | `submit` | `form` only; authored submission callback |
 
@@ -306,6 +309,12 @@ every field is present. Capture-phase JSX handlers are not implemented.
 The pointer adapter currently represents a mouse with pointer ID 1. Pointer
 notifications are noncancelable; click activation is cancelable. Keyboard `code`,
 touch/pen metadata, and the full browser event field set are not supplied.
+
+Pointer release precedes click for native mouse activation. GPUI processes its
+click listener before the same element's mouse-up listener, so the event adapter
+delivers both before stopping native propagation. Keyboard activation emits a
+click without inventing a pointer release. Authored bubbling remains in the
+shared JavaScript runtime.
 
 Bubbling follows authored ancestors across component attachment regions.
 `change` is noncancelable because the native edit has already happened. Button
@@ -344,9 +353,14 @@ at-rules such as `@media` are not implemented.
 
 Lengths generally support `px`, `rem`, percentages, zero, and `auto` where the
 property permits them. Property-specific checks further restrict these values.
-Inline text supports a smaller refinement set: color, background color, font
-family/weight/style, and supported text decorations. Inline box sizing, per-span
-font sizes, and inline interaction styles require further implementation.
+Inline text inside a paragraph supports a smaller refinement set: color,
+background color, font family/weight/style, and supported text decorations.
+Paragraph-run box sizing, per-run font sizes, and interaction styles require
+further implementation. An inline element with its own native box supports the
+ordinary box properties above, including padding, dimensions, font size, and
+hover styling. Its placement determines this capability; a tag name alone does
+not. A boxed span with `display: flex` or `display: grid` also lays out its own
+phrasing children as separate items.
 
 The exact value adapters are in [gpui/src/styles.rs](rust/gpui/src/styles.rs),
 shorthand/cascade handling in [rust/src/css.rs](rust/src/css.rs), and selector
@@ -475,8 +489,12 @@ above; it does not create application state, subscriptions, or reactive owners.
 Topology changes and accepted CSS changes between block and flex/grid regroup
 placed content. Ordinary edits reuse the layout and source paths and refresh its
 dependent text groups. Empty anonymous groups stay subscribed but create no
-native box or flex/grid gap. Inline box sizing and inline interaction styles
-remain unsupported, including for inline elements placed as flex/grid items.
+native box or flex/grid gap. The plan records independently boxed inline nodes
+for native CSS and event validation. Installation validates CSS syntax; mounting
+validates placement-dependent capabilities. When regrouping changes those
+capabilities, the adapter rechecks untouched children before replacing any style
+cache. Unsupported sizing or events on flattened paragraph runs reject the
+transaction; the previous layout, values, and native caches remain accepted.
 Hover/focus CSS that changes between block and flex/grid rejects explicitly;
 regrouping in response to native interaction states is still unimplemented.
 
@@ -605,6 +623,8 @@ not methods available on application element refs.
 
 Run the desktop suite with `bun run test:desktop`. The native window smoke commands
 are `bun run desktop:test:window` and `bun run desktop:test:todo` from the root.
+After building the window, `bun run --cwd packages/desktop test:inline` checks the
+inline example through real GPUI hover, pointer, click, layout, and redraw paths.
 After building, shared-state native verification can also be run with:
 
 ```sh

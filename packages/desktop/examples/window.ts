@@ -10,6 +10,7 @@ import { createProcessHost } from '@memoized-dom/desktop/host';
 import { buildDesktopEntry } from '@memoized-dom/desktop/dev';
 import { runTodoSmoke } from './testing/todo';
 import { runReactivitySmoke } from './testing/reactivity';
+import { runInlineBoxSmoke } from './testing/inline-boxes';
 
 const entry =
   process.argv.find((arg) => arg.startsWith('--entry='))?.slice(8) ??
@@ -26,11 +27,12 @@ const executable =
   );
 const todoSmoke = process.argv.includes('--todo-smoke');
 const reactivitySmoke = process.argv.includes('--reactivity-smoke');
+const inlineSmoke = process.argv.includes('--inline-smoke');
 const compareBrowser = process.argv.includes('--compare-browser');
 const host = createProcessHost({
   executable,
   window: true,
-  args: process.argv.includes('--smoke') || todoSmoke || reactivitySmoke ? ['--smoke'] : [],
+  args: process.argv.includes('--smoke') || todoSmoke || reactivitySmoke || inlineSmoke ? ['--smoke'] : [],
 });
 const templates = new Map<string, SceneTemplate>();
 const layoutSnapshots: SceneSnapshot[] = [];
@@ -97,11 +99,10 @@ async function waitForInput(source: number, value: string): Promise<SceneSnapsho
   }
   throw new Error(`Native input did not publish its callback and dependent text: ${value}`);
 }
-let runFailed = false;
-let runFailure: unknown;
+const failures: unknown[] = [];
 try {
   await host.ready;
-  if (process.argv.includes('--smoke') || todoSmoke || reactivitySmoke) {
+  if (process.argv.includes('--smoke') || todoSmoke || reactivitySmoke || inlineSmoke) {
     // Exercise the real GPUI clock before scene publication. Clock admission
     // alone must not resolve this promise; the native frame callback must run.
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -122,7 +123,9 @@ try {
     () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`),
   );
   const root = roots.get('root')!;
-  if (reactivitySmoke) {
+  if (inlineSmoke) {
+    smokeReport = await runInlineBoxSmoke({ host, waitForFrame, settleEvents: () => events });
+  } else if (reactivitySmoke) {
     smokeReport = await runReactivitySmoke({ host, waitForFrame, settleEvents: () => events });
   } else if (todoSmoke) {
     smokeReport = await runTodoSmoke({
@@ -474,12 +477,10 @@ try {
     await host.windowClosed;
   }
 } catch (error) {
-  runFailed = true;
-  runFailure = error;
+  failures.push(error);
 } finally {
   // A shutdown failure must not hide the interaction failure that led here.
   // Attempt every teardown step even when an earlier step rejects.
-  const failures: unknown[] = runFailed ? [runFailure] : [];
   for (const teardown of [
     async () => {
       unsubscribe();
@@ -502,10 +503,12 @@ try {
       failures.push(error);
     }
   }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1)
-    throw new AggregateError(failures, 'Desktop window run and teardown failed');
 }
+// Report after teardown rather than throwing from finally. Every failure remains
+// visible, including the original interaction failure and subsequent shutdown.
+if (failures.length === 1) throw failures[0];
+if (failures.length > 1)
+  throw new AggregateError(failures, 'Desktop window run and teardown failed');
 if (smokeReport && compareBrowser) {
   // Compare immutable accepted snapshots after the native process has closed.
   // Browser startup cannot interfere with the keyboard/focus measurements.
@@ -518,7 +521,9 @@ if (smokeReport && compareBrowser) {
 }
 if (smokeReport)
   console.log(
-    reactivitySmoke
+    inlineSmoke
+      ? 'GPUI inline sizing/hover/pointer smoke test passed:'
+      : reactivitySmoke
       ? 'GPUI shared state/async/effects/refs smoke test passed:'
       : todoSmoke
         ? 'GPUI todo layout/interactions smoke test passed:'

@@ -11,7 +11,10 @@ use memoized_dom_desktop_host::{
     tags,
     template::{Node, PreparedTemplate},
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 pub struct NativeStyles {
     pub nodes: Vec<[StyleRefinement; 4]>,
@@ -20,16 +23,33 @@ pub struct NativeStyles {
 pub struct CachedStyles {
     pub cascade: Arc<Vec<CascadedStyle>>,
     pub native: Arc<NativeStyles>,
+    pub boxed_inline: Option<Arc<BTreeSet<usize>>>,
 }
 pub type StyleCache = BTreeMap<(u64, u64), CachedStyles>;
 
+#[cfg(test)]
 pub fn prepare(template: &PreparedTemplate) -> Result<NativeStyles, String> {
-    prepare_cascade(template, &template.styles)
+    prepare_cascade(template, &template.styles, &BTreeSet::new())
+}
+
+/// Validate CSS syntax at installation. Inline box restrictions depend on the
+/// eventual component placement and are checked again before mounting it.
+pub fn prepare_definition(template: &PreparedTemplate) -> Result<NativeStyles, String> {
+    convert_cascade(template, &template.styles, None)
 }
 
 pub fn prepare_cascade(
     template: &PreparedTemplate,
     cascade: &[CascadedStyle],
+    boxed_inline: &BTreeSet<usize>,
+) -> Result<NativeStyles, String> {
+    convert_cascade(template, cascade, Some(boxed_inline))
+}
+
+fn convert_cascade(
+    template: &PreparedTemplate,
+    cascade: &[CascadedStyle],
+    boxed_inline: Option<&BTreeSet<usize>>,
 ) -> Result<NativeStyles, String> {
     let mut nodes = Vec::new();
     let mut current_color = Vec::new();
@@ -40,6 +60,8 @@ pub fn prepare_cascade(
             continue;
         };
         let semantics = tags::resolve(tag)?;
+        let text_run = semantics.layout == tags::Layout::Inline
+            && boxed_inline.is_some_and(|boxed| !boxed.contains(&index));
         let defaults = css::expand_declarations(
             &tags::defaults(tag)
                 .iter()
@@ -57,7 +79,7 @@ pub fn prepare_cascade(
             inherited_border[state] = properties
                 .get("border-color")
                 .is_some_and(|value| value.eq_ignore_ascii_case("currentcolor"));
-            if semantics.layout == tags::Layout::Inline {
+            if text_run {
                 for property in properties.keys() {
                     if !matches!(
                         property.as_str(),
@@ -70,7 +92,7 @@ pub fn prepare_cascade(
                             | "text-decoration-color"
                     ) {
                         return Err(format!(
-                            "CSS {property} on inline <{tag}> requires inline box/size support"
+                            "CSS {property} on inline <{tag}> requires an independent native box; paragraph inline box/size support is not implemented"
                         ));
                     }
                 }
@@ -88,9 +110,7 @@ pub fn prepare_cascade(
                     template.source.id
                 )
             })?;
-            if semantics.layout == tags::Layout::Inline
-                && let Some(background) = properties.get("background-color")
-            {
+            if text_run && let Some(background) = properties.get("background-color") {
                 style.text.background_color = Some(color(background)?);
                 style.background = None;
             }
