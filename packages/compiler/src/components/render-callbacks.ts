@@ -13,7 +13,8 @@ import type { Ctx } from '../context';
 import type { MapCallExpression } from '../context';
 import { attrExpr, keyPathOf } from '../context/ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
-import {matchMapCall} from '../lists/source-shapes';
+import { planOrderedAttributes } from '../jsx/attributes';
+import { matchMapCall } from '../lists/source-shapes';
 import {
   localBindingForProp,
   objectBindingName,
@@ -38,33 +39,69 @@ export interface RenderCallbackPlan {
 }
 
 /** Normalize a callback on clones; planning never removes authored keys. */
-export function planRenderCallback(source: t.Expression, fail: (message: string) => never): RenderCallbackPlan {
-  if ((!astFactory.isArrowFunctionExpression(source) && !astFactory.isFunctionExpression(source)) || source.async || source.generator) {
-    return fail('memo-dom: render callbacks must be synchronous inline arrows or function expressions');
+export function planRenderCallback(
+  source: t.Expression,
+  fail: (message: string) => never,
+): RenderCallbackPlan {
+  if (
+    (!astFactory.isArrowFunctionExpression(source) && !astFactory.isFunctionExpression(source)) ||
+    source.async ||
+    source.generator
+  ) {
+    return fail(
+      'memo-dom: render callbacks must be synchronous inline arrows or function expressions',
+    );
   }
   const body = source.body;
-  const returned = astFactory.isJSXElement(body) ? body :
-    astFactory.isBlockStatement(body) && body.body.length === 1 && astFactory.isReturnStatement(body.body[0]) &&
-      astFactory.isJSXElement(body.body[0].argument) ? body.body[0].argument : null;
-  const first = source.params[0], second = source.params[1];
-  if (returned === null || source.params.length < 1 || source.params.length > 2 ||
-      (!astFactory.isIdentifier(first) && !astFactory.isObjectPattern(first) && !astFactory.isArrayPattern(first)) ||
-      (second !== undefined && !astFactory.isIdentifier(second))) {
-    return fail('memo-dom: render callbacks take an item binding pattern and optional index, then return one JSX element');
+  const returned = astFactory.isJSXElement(body)
+    ? body
+    : astFactory.isBlockStatement(body) &&
+        body.body.length === 1 &&
+        astFactory.isReturnStatement(body.body[0]) &&
+        astFactory.isJSXElement(body.body[0].argument)
+      ? body.body[0].argument
+      : null;
+  const first = source.params[0],
+    second = source.params[1];
+  if (
+    returned === null ||
+    source.params.length < 1 ||
+    source.params.length > 2 ||
+    (!astFactory.isIdentifier(first) &&
+      !astFactory.isObjectPattern(first) &&
+      !astFactory.isArrayPattern(first)) ||
+    (second !== undefined && !astFactory.isIdentifier(second))
+  ) {
+    return fail(
+      'memo-dom: render callbacks take an item binding pattern and optional index, then return one JSX element',
+    );
   }
   const itemPattern = cloneRuntimeBindingPattern(first);
   const bindings = extractPatternIdentifiers(itemPattern as unknown as BaseNode);
-  if (!bindings.length) return fail('memo-dom: render callback item patterns must bind at least one name');
+  if (!bindings.length)
+    return fail('memo-dom: render callback item patterns must bind at least one name');
   const itemParam = astFactory.isIdentifier(itemPattern) ? itemPattern.name : bindings[0]!.name;
   const jsx = cloneEstreeNode(returned);
   let keyExpression: t.Expression | null = null;
-  jsx.openingElement.attributes = jsx.openingElement.attributes.filter(attribute => {
-    if (astFactory.isJSXSpreadAttribute(attribute) || !astFactory.isJSXIdentifier(attribute.name) || attribute.name.name !== 'key') return true;
+  jsx.openingElement.attributes = jsx.openingElement.attributes.filter((attribute) => {
+    if (
+      astFactory.isJSXSpreadAttribute(attribute) ||
+      !astFactory.isJSXIdentifier(attribute.name) ||
+      attribute.name.name !== 'key'
+    )
+      return true;
     keyExpression = attrExpr(attribute.value);
     if (keyExpression === null) return fail('memo-dom: key={...} needs an expression');
     return false;
   });
-  return {jsx,itemPattern,itemParam,indexParam:second?.name ?? null,keyExpression,keyPath:keyPathOf(keyExpression,itemParam)};
+  return {
+    jsx,
+    itemPattern,
+    itemParam,
+    indexParam: second?.name ?? null,
+    keyExpression,
+    keyPath: keyPathOf(keyExpression, itemParam),
+  };
 }
 
 interface NodeHolder {
@@ -72,17 +109,10 @@ interface NodeHolder {
 }
 
 /** Is this JSX element the returned root of a declared callback prop value? */
-export function isRenderCallbackJsxRoot(
-  ctx: Ctx,
-  input: BaseNode | NodeHolder,
-): boolean {
+export function isRenderCallbackJsxRoot(ctx: Ctx, input: BaseNode | NodeHolder): boolean {
   const element = 'node' in input ? input.node : input;
   let fn = ctx.astAnalysis?.parentByNode.get(element) ?? null;
-  while (
-    fn !== null &&
-    fn.type !== 'ArrowFunctionExpression' &&
-    fn.type !== 'FunctionExpression'
-  ) {
+  while (fn !== null && fn.type !== 'ArrowFunctionExpression' && fn.type !== 'FunctionExpression') {
     fn = ctx.astAnalysis?.parentByNode.get(fn) ?? null;
   }
   if (fn === null) return false;
@@ -97,13 +127,9 @@ export function isRenderCallbackJsxRoot(
   if (!returnedRoot) return false;
   const container = ctx.astAnalysis?.parentByNode.get(fn) ?? null;
   const attribute =
-    container === null
-      ? null
-      : ctx.astAnalysis?.parentByNode.get(container) ?? null;
+    container === null ? null : (ctx.astAnalysis?.parentByNode.get(container) ?? null);
   const opening =
-    attribute === null
-      ? null
-      : ctx.astAnalysis?.parentByNode.get(attribute) ?? null;
+    attribute === null ? null : (ctx.astAnalysis?.parentByNode.get(attribute) ?? null);
   if (
     container?.type !== 'JSXExpressionContainer' ||
     attribute?.type !== 'JSXAttribute' ||
@@ -125,9 +151,7 @@ export function isRenderCallbackJsxRoot(
     return false;
   }
   return (
-    ctx.componentProps
-      .get(tagName)
-      ?.renderCallbacks.includes(attributeName) === true ||
+    ctx.componentProps.get(tagName)?.renderCallbacks.includes(attributeName) === true ||
     // Linker discovery passes intentionally begin with incomplete imported
     // contracts. Let the later component-prop validation own the diagnostic;
     // this root-level key is valid if the fixed point resolves it as a
@@ -141,26 +165,35 @@ export interface RenderCallbackProps {
   readonly objectBinding: string | null;
   readonly bindingProps: ReadonlyMap<string, string>;
 }
-export function captureRenderCallbackProps(plan: ComponentPropsPlan | undefined): RenderCallbackProps {
+export function captureRenderCallbackProps(
+  plan: ComponentPropsPlan | undefined,
+): RenderCallbackProps {
   const bindingProps = new Map<string, string>();
-  if (plan !== undefined) for (const binding of new Set([...plan.bindings, ...plan.names])) {
-    const name = propNameForBinding(plan, binding) ??
-      (localBindingForProp(plan, binding) !== null ? binding : null);
-    if (name !== null) bindingProps.set(binding, name);
-  }
-  return {objectBinding: plan === undefined ? null : objectBindingName(plan), bindingProps};
+  if (plan !== undefined)
+    for (const binding of new Set([...plan.bindings, ...plan.names])) {
+      const name =
+        propNameForBinding(plan, binding) ??
+        (localBindingForProp(plan, binding) !== null ? binding : null);
+      if (name !== null) bindingProps.set(binding, name);
+    }
+  return { objectBinding: plan === undefined ? null : objectBindingName(plan), bindingProps };
 }
 function propReferenceName(props: RenderCallbackProps, expression: t.Expression): string | null {
-  if (props.objectBinding !== null && astFactory.isMemberExpression(expression) && !expression.computed &&
-    astFactory.isIdentifier(expression.object, {name: props.objectBinding}) && astFactory.isIdentifier(expression.property)) {
+  if (
+    props.objectBinding !== null &&
+    astFactory.isMemberExpression(expression) &&
+    !expression.computed &&
+    astFactory.isIdentifier(expression.object, { name: props.objectBinding }) &&
+    astFactory.isIdentifier(expression.property)
+  ) {
     return expression.property.name;
   }
-  return astFactory.isIdentifier(expression) ? props.bindingProps.get(expression.name) ?? null : null;
+  return astFactory.isIdentifier(expression)
+    ? (props.bindingProps.get(expression.name) ?? null)
+    : null;
 }
 
-function returnedExpression(
-  callback: t.ArrowFunctionExpression,
-): t.Expression | null {
+function returnedExpression(callback: t.ArrowFunctionExpression): t.Expression | null {
   if (astFactory.isExpression(callback.body)) return callback.body;
   if (
     callback.body.body.length === 1 &&
@@ -174,14 +207,20 @@ function returnedExpression(
 
 /** Context adapter used while discovering authored composition contracts. */
 export function matchRenderCallbackMap(
-  ctx: Ctx, componentName: string, call: MapCallExpression,
+  ctx: Ctx,
+  componentName: string,
+  call: MapCallExpression,
 ): RenderCallbackInvocation | null {
-  return planRenderCallbackMap(captureRenderCallbackProps(ctx.componentProps.get(componentName)), call);
+  return planRenderCallbackMap(
+    captureRenderCallbackProps(ctx.componentProps.get(componentName)),
+    call,
+  );
 }
 
 /** Match a structural prop invocation using captured composition facts. */
 export function planRenderCallbackMap(
-  props: RenderCallbackProps, call: MapCallExpression,
+  props: RenderCallbackProps,
+  call: MapCallExpression,
 ): RenderCallbackInvocation | null {
   if (matchMapCall(call) === null || call.arguments.length !== 1) return null;
   const callback = call.arguments[0];
@@ -191,9 +230,7 @@ export function planRenderCallbackMap(
     returned === null ||
     !astFactory.isCallExpression(returned) ||
     !astFactory.isExpression(returned.callee) ||
-    returned.arguments.some(
-      (argument) => !astFactory.isExpression(argument),
-    )
+    returned.arguments.some((argument) => !astFactory.isExpression(argument))
   ) {
     return null;
   }
@@ -218,24 +255,56 @@ export function scanRenderCallbacks(ctx: Ctx): void {
     const plan = ctx.componentProps.get(componentName)!;
     walkAst<BaseNode>(componentPath.node, {
       enter(node) {
-        if (
-          node.type !== 'CallExpression' &&
-          node.type !== 'OptionalCallExpression'
-        ) {
+        if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') {
           return;
         }
-      const invocation = matchRenderCallbackMap(
-        ctx,
-        componentName,
+        const invocation = matchRenderCallbackMap(
+          ctx,
+          componentName,
           node as unknown as MapCallExpression,
-      );
-      if (
-        invocation !== null &&
-        !plan.renderCallbacks.includes(invocation.propName)
-      ) {
-        plan.renderCallbacks.push(invocation.propName);
-      }
+        );
+        if (invocation !== null && !plan.renderCallbacks.includes(invocation.propName)) {
+          plan.renderCallbacks.push(invocation.propName);
+        }
       },
     });
+  }
+
+  // Wrappers inherit the callee's composition contract. Resolve this to a
+  // fixed point so declaration order does not affect a forwarding chain.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [name, component] of ctx.compPaths) {
+      const plan = ctx.componentProps.get(name)!;
+      const props = captureRenderCallbackProps(plan);
+      walkAst<BaseNode>(component.node, {
+        enter(node) {
+          if (node.type !== 'JSXOpeningElement') return;
+          const opening = node as unknown as t.JSXOpeningElement;
+          if (!astFactory.isJSXIdentifier(opening.name)) return;
+          const target =
+            ctx.componentProps.get(opening.name.name)?.renderCallbacks ??
+            ctx.importedComponents.get(opening.name.name)?.renderCallbacks ??
+            [];
+          if (!target.length) return;
+          const attributes = planOrderedAttributes(opening.attributes, {
+            cloneExpressions: false,
+            skipKey: true,
+            fail: (message) => {
+              throw component.buildCodeFrameError(message);
+            },
+          });
+          for (const attribute of attributes.entries) {
+            if (attribute.type !== 'attribute' || !target.includes(attribute.name)) continue;
+            const source = propReferenceName(props, attribute.value);
+            if (source !== null && !plan.renderCallbacks.includes(source)) {
+              plan.renderCallbacks.push(source);
+              changed = true;
+            }
+          }
+        },
+      });
+    }
   }
 }

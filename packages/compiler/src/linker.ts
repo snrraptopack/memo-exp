@@ -49,7 +49,7 @@ import { discoverProject } from './linking/project';
 import { linkManifestWorklist } from './linking/graph';
 import { domManifestAnalysis } from './dom/manifest';
 import { installCompilerIntrinsics } from './dom/intrinsics';
-import { resolveRenderUsage } from './components/render-usage';
+import { resolveProjectRenderUsage, refineRenderProps } from './linking/render-props';
 import { planInitialRendering } from './dom/render-plan';
 import { type InitialRenderPlan } from './planning/initial-content';
 import { planInitialDom } from './dom/initial-dom';
@@ -638,18 +638,7 @@ function compileLinkedModules(
     });
   }
 
-  const renderUsage = resolveRenderUsage(
-    [...manifests.values()].flatMap((manifest) => manifest.componentUsages),
-  );
-  for (const [target, usage] of renderUsage) {
-    for (const prop of usage.jsx) {
-      if (usage.scalar.has(prop)) {
-        throw new Error(
-          `memo-dom: component '${target}' prop '${prop}' is used as both scalar data and JSX content; split the prop or component contract`,
-        );
-      }
-    }
-  }
+  const renderUsage = resolveProjectRenderUsage(manifests);
 
   const componentGraph = linkComponentGraph(
     [...manifests.values()].flatMap((manifest) => manifest.components),
@@ -797,9 +786,10 @@ function compileLinkedModules(
         (candidate) => candidate.type === 'component' && candidate.key === declaration.key,
       );
       if (exported?.type === 'component') {
-        const usage = renderUsage.get(declaration.key);
-        linkedComponentRenderProps[declaration.local] = exported.renderProps.filter(
-          (prop) => usage?.scalar.has(prop) !== true || usage.jsx.has(prop),
+        linkedComponentRenderProps[declaration.local] = refineRenderProps(
+          declaration.key,
+          exported.renderProps,
+          renderUsage,
         );
       }
     }

@@ -95,23 +95,39 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
       child.stdin.write(line);
       await child.stdin.flush();
     },
-    (error) => fail(error),
+    (error) => {
+      const code = (error as Error & { code?: string }).code;
+      fail(error, code === 'EPIPE' || code === 'ECONNRESET');
+    },
   );
-  const fail = (error: Error): void => {
+  const fail = (error: Error, drainExit = false): void => {
     if (failure) return;
     failure = new DesktopConnectionError(error.message, { cause: error });
     clearTimeout(startupDeadline);
     rejectReady(failure);
     resolveClosed();
-    pending.fail(failure);
+    if (!drainExit) pending.fail(failure);
     retireFrames(failure);
     // A broken stream cannot safely publish again. Retire the process as well
     // as its promises, including hosts that no longer respond to shutdown.
-    if (child.exitCode === null) {
+    let exiting = child.exitCode !== null;
+    if (!exiting) {
       try {
         child.kill('SIGKILL');
+        exiting = true;
       } catch {}
     }
+    if (drainExit && exiting) {
+      // A write can see EPIPE before Bun reports process exit. Retire the
+      // connection immediately, then drain the terminated child's diagnostics
+      // before rejecting outstanding requests with the same terminal error.
+      const terminal = failure;
+      void child.exited.then(async (code) => {
+        await stderr;
+        terminal.message = `Desktop host exited (${code}): ${diagnostics.trim() || error.message}`;
+        pending.fail(terminal);
+      });
+    } else if (drainExit) pending.fail(failure);
   };
   if (options.window && startupTimeout)
     startupDeadline = setTimeout(() => {

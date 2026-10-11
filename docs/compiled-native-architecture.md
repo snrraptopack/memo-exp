@@ -98,7 +98,7 @@ and flag allocation; target callbacks choose commit expressions and scheduling.
 DOM-only cell and route emission live behind DOM adapters. A dependency test
 bundles the desktop compiler graph and rejects any dependency on `compiler/src/dom`.
 
-Native candidate forests, primitive/callback/scope prop equality, event objects,
+Native candidate forests, data/callback/content/scope prop reception, event objects,
 and acknowledgment handling remain desktop responsibilities. They represent
 asynchronous native acceptance and native capabilities. The optimized DOM list
 runtime and movement algorithm retain their existing implementation.
@@ -411,7 +411,7 @@ Define supported primitive and style semantics explicitly. Authored JSX uses the
 
 ## First implementation and validation
 
-The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and primitive component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. General object props, forwarded component children and render callbacks still require desktop emission contracts. Delegated row callbacks and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside a paragraph, button label, or other phrasing-only container remain unsupported by the native text-composition contract.
+The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside a paragraph, button label, or other phrasing-only container remain unsupported by the native text-composition contract.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
@@ -483,7 +483,7 @@ The application publication queue evaluates all participating destinations befor
 
 `compiler/src/linking/project.ts` and `desktop/project.ts` resolve authored exports through shared manifest discovery and linking. Single-file compilation with a module reader uses that same project path; `desktop/imports.ts` contains reader type aliases rather than another resolver. Named aliases, named default declarations, and bindings imported then exported by a barrel retain canonical declaration identities. Import metadata does not turn arbitrary functions or values into components. The build adapter currently resolves relative component imports; package component imports and direct re-export-from syntax need a defined linking contract. `components.ts` translates core prop plans into mutable lexical bindings plus a prop receiver. Flat destructuring, aliases, constant primitive defaults, positional scalar parameters, and generic props envelopes are supported. Component setup runs once; receiving new props updates those bindings without repeating setup or replacing child state.
 
-Lowering emits a region at each fixed component site. Regions carry an explicit parent node and never masquerade as an authored tag. `desktop/src/runtime/ownership.ts` creates a child once, records its parent and destination, and groups the tree into one publication family. Parent invalidations evaluate affected prop expressions, compare primitive fields, and propagate changed props before descendant text preparation. All destination reads finish before one atomic tree publication. A failed read or rejected commit restores pending destinations; accepted-value and prop caches advance only after acknowledgment. Later callbacks retain their pending invalidations while publication is in flight. The runtime validates region uniqueness, factory ownership, primitive prop values, and unsupported recursive construction. Construction failure cleans up every allocated descendant without publishing a partial tree.
+Lowering emits a region at each fixed component site. Regions carry an explicit parent node and never masquerade as an authored tag. `desktop/src/runtime/ownership.ts` creates a child once, records its parent and destination, and groups the tree into one publication family. Parent invalidations evaluate affected prop expressions, compare primitive fields, and propagate changed props before descendant text preparation. All destination reads finish before one atomic tree publication. A failed read or rejected commit restores pending destinations; accepted-value and prop caches advance only after acknowledgment. Later callbacks retain their pending invalidations while publication is in flight. The runtime validates region uniqueness, factory ownership, data/callback/content prop values, and unsupported recursive construction. Construction failure cleans up every allocated descendant without publishing a partial tree.
 
 Callback props remain JavaScript functions and never cross the native scene protocol. Each declaring owner weakly caches wrappers by callback identity. Forwarding an owned callback preserves its declaring owner; invoking it invalidates that owner conservatively, including when authored code throws. The surrounding event dispatch publishes all dirty owners in the same family, so a row can update or delete its parent-owned task atomically. Named callbacks preserve prop identity across list reads. Rejected publication retains callback writes for retry. Async callback results are rejected; precise callback-prop write metadata is a later optimization.
 
@@ -523,7 +523,7 @@ The full-order operation is an O(rows) baseline emitted only when membership/ord
 
 `compiler/src/desktop/emit-scene.ts` emits a local factory for each inline branch or row. These factories close over the authored component's bindings; they introduce retained structural owners rather than new application state scopes. Templates remain module constants. Definition metadata includes descendant fragment templates and named-component dependencies, so inactive nested structure is installed without invoking its factories or reading its destinations.
 
-Row bindings and indexes travel in compiler-created `runtime/scope.ts` envelopes. The envelope is immutable and recognized by a private weak registry. Captured object references stay in JavaScript and never enter native transactions; ordinary authored child props still require primitives or owned callbacks. Receivers update row bindings without remounting. Scope equality compares captured values, allowing unchanged rows to avoid unnecessary prop reception. Preparation restores accepted bindings before awaiting publication, and acceptance installs the new bindings, preserving the existing rejection and in-flight update contract.
+Row bindings and indexes travel in compiler-created `runtime/scope.ts` envelopes. The envelope is immutable and recognized by a private weak registry. Captured object references stay in JavaScript and never enter native transactions; ordinary authored child props also preserve JavaScript objects/arrays and opaque compiled content. Receivers update row bindings without remounting. Scope equality compares captured values, allowing unchanged rows to avoid unnecessary prop reception. Preparation restores accepted bindings before awaiting publication, and acceptance installs the new bindings, preserving the existing rejection and in-flight update contract.
 
 The desktop owner forest records lexical parent/child links separately from structural placement. Writes from inline handlers invalidate their enclosing state owner and its inline descendants. Event flushing resolves that state owner before entering the publication queue, so an already executed write survives retirement of the old inline subtree while a replacement is in flight. Receiving row captures invalidates only that structural subtree. A named component inside a fragment remains an independent state owner; its local input state survives keyed movement. Retirement releases lexical links together with the existing callbacks, readers, and handles. Fragment reads and writes currently use conservative dependencies because the shared component facts do not yet describe generated row locals; narrowing those dependencies is a future optimization.
 
@@ -582,3 +582,67 @@ native drift test compares it with the Rust definitions. TypeScript contributors
 do not need Rust installed to consume the projection. Unsupported runtime spread
 keys fail before native publication; unsupported input/CSS semantics still fail
 native validation. The desktop README contains the supported capability forms.
+
+### Deferred content and declaring ownership
+
+Desktop composition runs the existing `scanRenderProps` and `scanRenderCallbacks`
+discovery passes. Callback forwarding resolves through wrappers to a fixed point.
+`linking/render-props.ts` refines provisional exported content candidates with the
+same whole-project caller evidence used by DOM emission. Desktop applies this
+refinement to both imported factory contracts and callee lowering, preventing
+ordinary scalar row fields from becoming structural content merely because the
+callee is exported and untyped. Manifest discovery keeps provisional export
+candidates for cross-module linking. Desktop emission uses positive JSX caller
+evidence for structural slots; unobserved untyped exports keep scalar behavior.
+The shared scan's default DOM discovery policy is unchanged.
+
+`desktop/content.ts` emits deferred fragment factories and descriptor readers from
+shared child/callback plans. Plain forwarding preserves a descriptor rather than
+creating another wrapper. A named keyed row captures its item/index when its props
+are read. Fragment factories stay inside the authored closure; templates remain
+at module scope and install without executing inactive setup.
+
+`desktop/src/runtime/content.ts` keeps an opaque descriptor's factory, reader,
+and declaring owner in weak metadata. It never serializes those values or a JSX
+tree. The existing region/list readers evaluate content and callback descriptors
+into retained destinations. Placement is structural; lexical invalidation follows
+the declaring owner. Named descendants remain independent state owners.
+
+Declaring scopes also record which placement owners consume their content. This
+lets caller changes replay keys/captures evaluated by a collection in another
+component. Speculative preparation retains old and new dependency edges so
+rejection cannot disconnect accepted content. Acceptance releases sources no
+longer placed; retirement removes both sides. These edges feed the existing owner
+invalidation and core publication scheduling. They are conservative dependency
+metadata rather than a second reactive runtime.
+
+Ordinary object/array props remain identity-preserving JavaScript data. A parent
+invalidation conservatively refreshes a child holding data references; unchanged
+native values still produce no writes. Props alone neither instrument mutations
+inside uncompiled libraries nor create a deep observable store. Text destinations
+retain their primitive contract.
+
+Retained region/list identity includes factory and declaring owner as well as
+branch/key. Keys and descriptor props validate before new row allocation. Native
+ref/effect activation and cache advancement retain their accepted transaction
+boundary. Rejected candidates reuse their identities on retry and run setup
+cleanup if canceled.
+
+Verified contracts include multi-wrapper children, repeated placements with
+independent state, conditional/named content, empty children, row-local captures,
+render callback events, mutable data references, caller-dependent row keys,
+duplicate-key rejection, accepted lifecycle boundaries, real module/barrel
+builds, and Rust forest/CSS placement. Native phrasing-only structural composition,
+arbitrary render-callback selectors, named JSX helper callbacks, and JSX setup
+variables remain explicit limits.
+
+Broken-pipe failures also retain the existing connection retirement boundary.
+A write can fail before Bun observes the host's exit or drains its stderr. The
+adapter immediately retires the connection and terminates the child, then settles
+outstanding requests after exit diagnostics drain. Deadline and protocol failures
+retain their existing immediate errors. A deterministic stream fixture covers
+this ordering alongside real process crash, request loss, and shutdown tests.
+The previously observed shutdown timeout did not reproduce in three GPUI
+composition runs with counter input, per-letter Unicode editing, keyed movement,
+and a burst of inspections; those runs do not establish behavior under CPU
+saturation. The existing shutdown deadline remains unchanged.

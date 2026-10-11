@@ -1,4 +1,4 @@
-import { expect, it } from 'bun:test';
+import { expect, it, spyOn } from 'bun:test';
 import { createProcessHost, type DesktopProcessOptions } from '../src/bridge/process';
 
 // Keep generated literals out of Windows command-line quote parsing.
@@ -99,6 +99,66 @@ it('rejects outstanding requests and later work when the host crashes', async ()
   for (const error of errors) expect((error as Error).message).toContain('native host crashed');
   expect((await rejection(host.inspect())).message).toContain('exited (7)');
   expect((await rejection(host.close())).message).toContain('exited (7)');
+});
+
+it('drains diagnostics when a pipe failure arrives before process exit', async () => {
+  let output!: ReadableStreamDefaultController<Uint8Array>;
+  let errors!: ReadableStreamDefaultController<Uint8Array>;
+  let exit!: (code: number) => void;
+  let exitCode: number | null = null;
+  const exited = new Promise<number>((resolve) => {
+    exit = resolve;
+  });
+  const encoder = new TextEncoder();
+  const process = {
+    stdin: {
+      write() {
+        throw Object.assign(new Error('EPIPE: broken pipe'), { code: 'EPIPE' });
+      },
+      async flush() {},
+      end() {},
+    },
+    stdout: new ReadableStream<Uint8Array>({
+      start(controller) {
+        output = controller;
+        controller.enqueue(encoder.encode('{"type":"ready"}\n'));
+      },
+    }),
+    stderr: new ReadableStream<Uint8Array>({
+      start(controller) {
+        errors = controller;
+      },
+    }),
+    exited,
+    get exitCode() {
+      return exitCode;
+    },
+    kill() {
+      // The writer fails first. Exit notification and stderr completion arrive
+      // later, reproducing the race without relying on platform pipe timing.
+      queueMicrotask(() => {
+        errors.enqueue(encoder.encode('native host crashed'));
+        errors.close();
+        output.close();
+        exitCode = 7;
+        exit(7);
+      });
+    },
+  };
+  const spawn = spyOn(Bun, 'spawn').mockReturnValue(
+    process as unknown as ReturnType<typeof Bun.spawn>,
+  );
+  try {
+    const host = createProcessHost({ executable: 'controlled-host', window: true });
+    await host.ready;
+    const failures = await Promise.all([rejection(host.inspect()), rejection(host.redraw())]);
+    expect(failures[0]).toBe(failures[1]);
+    for (const error of failures) expect(error.message).toContain('native host crashed');
+    await expect(host.inspect()).rejects.toThrow('exited (7)');
+    await expect(host.close()).rejects.toThrow('exited (7)');
+  } finally {
+    spawn.mockRestore();
+  }
 });
 
 for (const response of [

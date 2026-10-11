@@ -97,7 +97,7 @@ it('rejects generator and render-prop callback contracts during compilation', ()
     compileDesktop(
       `function Child({action}){return <button onClick={()=>action()}>Run</button>;}export function App(){return <Child action={()=><p>render prop</p>}/>;}`,
     ),
-  ).toThrow('render-prop callbacks');
+  ).toThrow('JSX callbacks require a declared render-callback prop');
 });
 
 it('publishes a forwarded async callback in its declaring owner across await', async () => {
@@ -419,20 +419,12 @@ it.each([
     'does not declare prop',
   ],
   [
-    `function Child({value}){return <p>{value}</p>;} export function App(){return <Child value={{a:1}}/>;}`,
-    'primitive expressions',
-  ],
-  [
     `function Child({value=f()}){return <p>{value}</p>;} export function App(){return <Child/>;}`,
     'constant primitive',
   ],
   [
     `function Child({value:{nested}}){return <p>{nested}</p>;} export function App(){return <Child/>;}`,
     'nested and rest',
-  ],
-  [
-    `function Child(){return <p>child</p>;} export function App(){return <Child>contents</Child>;}`,
-    'render-prop regions',
   ],
 ])('rejects unfinished prop contracts explicitly', (source, message) => {
   expect(() => compileDesktop(source, { moduleId: 'bad-props.tsx' })).toThrow(message);

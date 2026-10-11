@@ -19,6 +19,7 @@ import { emitDesktopScene } from './emit-scene';
 import { desktopCssRules } from './css';
 import { desktopProps } from './components';
 import type { DesktopModuleReader } from './imports';
+import { localRenderProps } from '../linking/render-props';
 import { linkDesktopProject } from './project';
 import { canonicalModuleId, linkImports } from '../linking/resolution';
 import { allocateMapSite } from '../lists/map-site';
@@ -29,6 +30,8 @@ import { emitModuleComputeds } from '../emission/computeds';
 import { valueExpression } from './value';
 import { planHandlerWrites } from '../handlers/analyze';
 import { emitModuleControlFlow } from '../emission/control-flow';
+import { renderPropReferenceName } from '../analysis/render-prop-reference';
+import { matchRenderCallbackMap } from '../components/render-callbacks';
 import { desktopPrelude } from './prelude';
 import { liftModuleStateCells } from '../cells';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
@@ -53,6 +56,7 @@ export interface DesktopCompileOptions {
   readModule?: DesktopModuleReader;
   /** Graph builds supply canonical state identities and fixed-point helper effects. */
   linkedImports?: Record<string, LinkedImport>;
+  linkedComponentRenderProps?: Record<string, string[]>;
   coreRuntimePath?: string;
   /** Only this graph's module entities activate in its desktop application. */
   activationModules?: readonly string[];
@@ -96,9 +100,14 @@ export function compileDesktop(
   };
   normalizeComponentDeclarations(path);
   let linkedImports = options.linkedImports;
+  let linkedComponentRenderProps = options.linkedComponentRenderProps;
   if (!linkedImports && options.readModule) {
     const project = linkDesktopProject(source, options);
     const entry = project.entries.get(canonicalModuleId(moduleId))!;
+    linkedComponentRenderProps = localRenderProps(
+      project.manifests.get(entry.id)!,
+      project.renderUsage,
+    );
     linkedImports = linkImports(
       entry,
       project.manifests.get(entry.id)!,
@@ -111,6 +120,7 @@ export function compileDesktop(
     moduleId,
     rootId: 'Desktop',
     linkedImports,
+    linkedComponentRenderProps,
     moduleStateCells: true,
     externalReactiveSources: options.externalReactiveSources,
   });
@@ -151,6 +161,8 @@ export function compileDesktop(
   const attributes = fresh('__desktopAttributes');
   const define = fresh('__desktopDefine');
   const scope = fresh('__desktopScope');
+  const content = fresh('__desktopContentFactory');
+  const renderCallback = fresh('__desktopRenderFactory');
   const core = fresh('__desktopCore');
   const defineModule = fresh('__desktopModule');
   const affected = fresh('__desktopAffected');
@@ -170,6 +182,8 @@ export function compileDesktop(
   let eventsUsed = false;
   let attributesUsed = false;
   let scopesUsed = false;
+  let contentUsed = false;
+  let renderCallbacksUsed = false;
   const templates: t.Statement[] = [];
   const definitions: t.Statement[] = [];
   const subscriptionBindings = new Map<string, SubscriptionImport>();
@@ -251,6 +265,18 @@ export function compileDesktop(
       instrument,
       attributes,
       scope,
+      content,
+      renderCallback,
+      isContent(expression) {
+        const prop = renderPropReferenceName(ctx, name, expression);
+        return prop !== null && ctx.componentProps.get(name)!.renderProps.includes(prop);
+      },
+      isRenderCallback(expression) {
+        const prop = renderPropReferenceName(ctx, name, expression);
+        return prop !== null && ctx.componentProps.get(name)!.renderCallbacks.includes(prop);
+      },
+      renderPlan: (expression) => planned.regionShapes.renderCallbackFor(expression),
+      renderInvocation: (call) => matchRenderCallbackMap(ctx, name, call),
       fail,
       fresh,
       components: ctx.componentProps,
@@ -301,6 +327,8 @@ export function compileDesktop(
     eventsUsed ||= emitted.eventsUsed;
     attributesUsed ||= emitted.attributesUsed;
     scopesUsed ||= emitted.scopesUsed;
+    contentUsed ||= emitted.contentUsed;
+    renderCallbacksUsed ||= emitted.renderCallbacksUsed;
     definitions.push(
       b.expressionStatement(
         b.callExpression(define, [
@@ -427,6 +455,10 @@ export function compileDesktop(
                   ? [b.importSpecifier(attributes, b.identifier('sceneAttributes'))]
                   : []),
                 ...(scopesUsed ? [b.importSpecifier(scope, b.identifier('sceneScope'))] : []),
+                ...(contentUsed ? [b.importSpecifier(content, b.identifier('sceneContent'))] : []),
+                ...(renderCallbacksUsed
+                  ? [b.importSpecifier(renderCallback, b.identifier('sceneRenderCallback'))]
+                  : []),
               ]
             : []),
         ],

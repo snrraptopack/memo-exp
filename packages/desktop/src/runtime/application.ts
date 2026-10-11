@@ -46,8 +46,8 @@ export interface SceneMountOptions {
   readonly children?: readonly SceneChildBinding[];
   readonly receiveProps?: (props: Readonly<Record<string, unknown>>) => void;
   readonly components?: readonly SceneComponent[];
-  readonly regions?: readonly SceneRegionBinding[];
-  readonly lists?: readonly SceneListBinding[];
+  readonly regions?: readonly (SceneRegionBinding | SceneContentBinding)[];
+  readonly lists?: readonly (SceneListBinding | SceneRenderListBinding)[];
 }
 
 export interface SceneEffectBinding {
@@ -94,6 +94,22 @@ export interface SceneRegionBinding {
     readonly branch: number;
     readonly props: Readonly<Record<string, unknown>>;
   };
+}
+
+/** The callee places content without taking over its lexical state ownership. */
+export interface SceneContentBinding {
+  readonly node: number;
+  readonly sources: readonly string[] | null;
+  readonly content: () => unknown;
+  readonly scalar?: SceneComponent;
+}
+
+export interface SceneRenderListBinding {
+  readonly node: number;
+  readonly sources: readonly string[] | null;
+  readonly render: () => unknown;
+  /** Arguments are evaluated in the callee's collection scope. */
+  readonly read: () => readonly (readonly unknown[])[];
 }
 
 export interface SceneInstance {

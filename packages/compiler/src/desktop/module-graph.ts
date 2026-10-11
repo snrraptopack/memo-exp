@@ -1,4 +1,5 @@
 /** Link and emit a desktop source graph using shared project facts. */
+import { localRenderProps } from '../linking/render-props';
 import { linkImports } from '../linking/resolution';
 import { linkDesktopProject } from './project';
 import { compileDesktop, type DesktopCompileOptions, type DesktopCompiledSource } from './compile';
@@ -16,7 +17,7 @@ export function compileDesktopGraph(
   source: string,
   options: DesktopCompileOptions,
 ): DesktopModuleGraph {
-  const { entries, manifests, linkOptions } = linkDesktopProject(source, options);
+  const { entries, manifests, linkOptions, renderUsage } = linkDesktopProject(source, options);
   const modules = new Map<string, DesktopCompiledSource>();
   for (const entry of entries.values()) {
     modules.set(
@@ -32,6 +33,7 @@ export function compileDesktopGraph(
           entries,
           linkOptions,
         ),
+        linkedComponentRenderProps: localRenderProps(manifests.get(entry.id)!, renderUsage),
         activationModules: [...entries.keys()],
         readStylesheet: options.readStylesheet
           ? (specifier) => options.readStylesheet!(specifier, entry.originalId)

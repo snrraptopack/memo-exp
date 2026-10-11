@@ -245,8 +245,8 @@ Spread handlers and refs stay in JavaScript. Their accepted identities change
 after native acknowledgment, so a refused transaction preserves the previous
 handlers and ref capabilities. A spread `ref` value uses the core callback or
 callback-array contract; an explicit assignable JSX `ref` still uses the shared
-compiler adapter. Component spread values follow the same current primitive /
-owned-callback restrictions as named component props.
+compiler adapter. Component spreads follow the same JavaScript data, owned
+callback, and compiled content contracts as named component props.
 
 Arbitrary `data-*` and ARIA attributes, class-map objects, and additional browser
 properties remain unsupported. Known named attributes fail at compilation;
@@ -259,8 +259,8 @@ Finite dynamic JSX tags use the shared tag-selection planner. For example,
 scene region. Local or linked component candidates and member-selected tags use
 the same path. Keeping a selected component preserves its state; changing the
 selected branch uses staged replacement and deterministic retirement. Arbitrary
-runtime tag names without a provable finite candidate set are rejected. Component
-children and JSX-producing render callbacks remain pending.
+runtime tag names without a provable finite candidate set are rejected.
+Component children and structural render callbacks use the composition contract below.
 
 Style object names normalize from camelCase to CSS property names. Nonzero numeric
 values receive `px`, except `opacity`, `lineHeight`, `fontWeight`, `flexGrow`, and
@@ -363,9 +363,12 @@ consumers of raw ESM exports do not get application-cell live reads.
 
 Setup calculations replay before destination reads. Components have independent
 owners; inline structural fragments share their enclosing lexical state. Child
-props currently accept primitives and owned callbacks, including async callbacks.
-Render-prop callbacks and general object props are not implemented. Component
-factories and list-row construction remain synchronous. Keyed rows require unique
+props accept primitives, ordinary JavaScript objects and arrays, owned callbacks
+(including async callbacks), and compiler-owned content. Objects retain their
+identities in JavaScript. When their parent publishes an invalidation, child reads
+refresh conservatively so an in-place edit is visible. These values are not
+serialized to Rust, cloned, proxied, or made reactive by passing them as props.
+Component factories and list-row construction remain synchronous. Keyed rows require unique
 string or finite number keys and retain their owners across reordering.
 
 Native publication is asynchronous. Accepted slot/prop/topology caches advance
@@ -386,6 +389,66 @@ Provider replay, arbitrary package graphs beyond the linked relative graph,
 and direct re-export-from syntax remain integration
 boundaries. Browser globals and DOM-dependent libraries require explicit target
 adaptation. The desktop build does not create a DOM for them.
+
+## Component children and render callbacks
+
+Use ordinary TSX for nested children or a named JSX content prop:
+
+```tsx
+function Panel({ children }) {
+  return <section class="panel">{children}</section>;
+}
+
+function Collection({ items, renderItem }) {
+  return <ul>{items.map((item, index) => renderItem(item, index))}</ul>;
+}
+
+function App() {
+  let count = 0;
+  let items = [{ id: 'first', title: 'First task' }];
+
+  return (
+    <Panel>
+      <button onClick={() => count++}>{count}</button>
+      <Collection
+        items={items}
+        renderItem={(item, index) => (
+          <li key={item.id}>
+            <p>{item.title}: {count}: {index}</p>
+          </li>
+        )}
+      />
+    </Panel>
+  );
+}
+```
+
+The compiler turns this content into deferred retained factories. Forwarding a
+content or callback prop preserves its declaring owner. A handler in the content
+writes the component that authored it; a named component inside the content owns
+its own state. Repeated placements receive separate retained instances.
+
+Collection callbacks take an item binding pattern and optional index, synchronously
+return one JSX element, and supply an explicit string or finite-number key.
+The collection forwards its item and optional index directly. Reordering preserves
+row handles and named descendant state. Changes to caller values used in callback
+keys also replay the collection reader.
+
+The internal `SceneContent` value is opaque compiler metadata, separate from a
+native element or browser node. It stays in JavaScript alongside data props and
+callbacks. Rust receives the existing mount, update, dispose, and order operations.
+Templates are installed without running inactive content setup. Native acceptance
+controls ref/effect activation; canceled candidates clean up their setup once.
+
+Composition discovery, callback normalization, and whole-project scalar/content
+resolution are shared with the DOM compiler. Scalar caller evidence keeps an
+untyped imported prop scalar. Discovery retains provisional export candidates;
+desktop emission requires positive JSX caller evidence before turning an
+unobserved untyped export into a structural slot. Native regions still require flow/list containers:
+structural content in a paragraph, span, or button label needs native text
+composition work. Named JSX-returning helper callbacks, arbitrary callback
+selection expressions, and JSX stored in setup variables remain outside the
+desktop emission contract.
 
 ## Third-party libraries
 

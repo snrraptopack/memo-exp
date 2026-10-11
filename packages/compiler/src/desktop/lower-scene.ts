@@ -22,6 +22,8 @@ import type { ParentRow } from '../lists/map-site';
 import type { HandlerWritePlan } from '../handlers/plan';
 import type { CallbackSourcePlan } from '../planning/component-callbacks';
 import { planDirectChildren } from '../jsx/children';
+import { desktopContent, desktopRenderCallback } from './content';
+import type { RenderCallbackPlan, RenderCallbackInvocation } from '../components/render-callbacks';
 
 type SceneNode =
   | {
@@ -47,6 +49,9 @@ export interface DesktopFragment {
 
 export interface DesktopScene {
   setup: t.Statement[];
+  contentSetup: t.Statement[];
+  contentUsed: boolean;
+  renderCallbacksUsed: boolean;
   nodes: SceneNode[];
   slots: TextSlot[];
   events: { node: number; type: DesktopEventType }[];
@@ -70,6 +75,12 @@ export function lowerDesktopScene(
     instrument: t.Identifier;
     attributes: t.Identifier;
     scope: t.Identifier;
+    content: t.Identifier;
+    renderCallback: t.Identifier;
+    isContent(expression: t.Expression): boolean;
+    isRenderCallback(expression: t.Expression): boolean;
+    renderPlan(expression: t.Expression): RenderCallbackPlan;
+    renderInvocation(call: MapCallExpression): RenderCallbackInvocation | null;
     lexical?: boolean;
     returns?: ComponentReturnPlan;
     parentRow?: ParentRow;
@@ -86,6 +97,9 @@ export function lowerDesktopScene(
   const { sources } = options;
   const fail: (message: string, at: t.Node) => never = options.fail;
   const setup: t.Statement[] = [];
+  const contentSetup: t.Statement[] = [];
+  let contentUsed = false;
+  let renderCallbacksUsed = false;
   const nodes: SceneNode[] = [];
   const slots: TextSlot[] = [];
   const bindings: t.Expression[] = [];
@@ -112,10 +126,37 @@ export function lowerDesktopScene(
     });
     return dependencies;
   };
-  const componentCall = (element: t.JSXElement) =>
-    desktopComponentCall(element, { ...options, sourcesFor: dependenciesFor });
+  const componentCall = (
+    element: t.JSXElement,
+    captures: readonly t.Identifier[] = [],
+    row: ParentRow | undefined = options.parentRow,
+  ) =>
+    desktopComponentCall(element, {
+      ...options,
+      sourcesFor: dependenciesFor,
+      content(value) {
+        contentUsed = true;
+        return desktopContent(value, {
+          ...options,
+          captures,
+          row,
+          setup: contentSetup,
+          inline: inlineCall,
+        });
+      },
+      renderCallback(value) {
+        renderCallbacksUsed = true;
+        return desktopRenderCallback(value, {
+          ...options,
+          captures,
+          row,
+          setup: contentSetup,
+          inline: inlineCall,
+        });
+      },
+    });
   const inlineCall = (
-    branch: t.JSXElement | t.JSXFragment,
+    branch: t.Node,
     captures: readonly t.Identifier[] = [],
     parentRow: ParentRow | undefined = options.parentRow,
   ) => {
@@ -127,6 +168,7 @@ export function lowerDesktopScene(
       parentRow,
     });
     fragments.push({ component, captures, scene });
+    componentNames.add(component.name);
     const props = b.objectExpression(
       captures.length
         ? [b.objectProperty(b.identifier('scope'), b.callExpression(options.scope, [...captures]))]
@@ -155,15 +197,18 @@ export function lowerDesktopScene(
       fresh: options.fresh,
       fail,
       sourcesFor: dependenciesFor,
+      invocation: options.renderInvocation(call),
     });
     const node = nodes.length;
     nodes.push({ kind: 'region', parent, multiple: true });
-    componentNames.add(plan.component.name);
+    if (plan.component) componentNames.add(plan.component.name);
     lists.push(
       b.objectExpression([
         b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
         b.objectProperty(b.identifier('sources'), valueExpression(plan.sources)),
-        b.objectProperty(b.identifier('component'), plan.component),
+        plan.component
+          ? b.objectProperty(b.identifier('component'), plan.component)
+          : b.objectProperty(b.identifier('render'), plan.render!),
         b.objectProperty(b.identifier('read'), plan.read),
       ]),
     );
@@ -230,7 +275,7 @@ export function lowerDesktopScene(
   };
   const emit = (element: t.Node, parent: number | null): void => {
     const map = matchMapCall(element);
-    if (map && nodeHasJsx(element)) {
+    if (map && (nodeHasJsx(element) || options.renderInvocation(map))) {
       addList(map, parent);
       return;
     }
@@ -250,7 +295,7 @@ export function lowerDesktopScene(
       const expression = unwrapTypeExpression(element.expression);
       if (b.isJSXEmptyExpression(expression)) return;
       const map = matchMapCall(expression);
-      if (map && nodeHasJsx(expression)) {
+      if (map && (nodeHasJsx(expression) || options.renderInvocation(map))) {
         addList(map, parent);
         return;
       }
@@ -310,7 +355,7 @@ export function lowerDesktopScene(
     const plan = planDirectChildren(children, {
       preserveTextBoundaries: true,
       cloneExpressions: false,
-      isForwarded: () => false,
+      isForwarded: options.isContent,
       fail: (message) => fail(message, root),
     });
     for (const child of plan) {
@@ -329,8 +374,34 @@ export function lowerDesktopScene(
         case 'condition':
           addRegion(child.expression, parent);
           break;
-        case 'slot':
-          fail('forwarded JSX slots require scene ownership', child.expression);
+        case 'slot': {
+          const node = nodes.length;
+          nodes.push({ kind: 'region', parent });
+          // An exported untyped content prop can also receive scalar text.
+          // Keep that value in a lexical fragment rather than serializing a prop.
+          const value = options.fresh('__desktopContentValue');
+          const scalar = inlineCall(
+            b.jsxFragment(b.jsxOpeningFragment(), b.jsxClosingFragment(), [
+              b.jsxExpressionContainer(value),
+            ]),
+            [value],
+          );
+          regions.push(
+            b.objectExpression([
+              b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
+              b.objectProperty(
+                b.identifier('sources'),
+                valueExpression(dependenciesFor(child.expression)),
+              ),
+              b.objectProperty(
+                b.identifier('content'),
+                b.arrowFunctionExpression([], child.expression),
+              ),
+              b.objectProperty(b.identifier('scalar'), scalar.component),
+            ]),
+          );
+          break;
+        }
       }
     }
   };
@@ -358,6 +429,9 @@ export function lowerDesktopScene(
   if (!nodes.length) fail('empty desktop fragments are not implemented yet', root);
   return {
     setup,
+    contentSetup,
+    contentUsed,
+    renderCallbacksUsed,
     nodes,
     slots,
     events,

@@ -3,13 +3,15 @@ import type { SceneOperation, TextWrite } from '../bridge/protocol';
 import type { PreparedPublication } from './publication';
 import type { Child, Family, Owner, PreparedOwner } from './ownership-model';
 import type { SceneComponent } from './definitions';
-import { affected, sameProps, textValue, type SceneProps as Props } from './values';
+import { affected, needsPropRefresh, textValue, type SceneProps as Props } from './values';
 import { readRegion } from './regions';
 import { readProperties, sameProperties, type PreparedProperties } from './properties';
 import { readList } from './lists';
 
 export function createTreePreparer(hooks: {
   invalidate(owner: Owner, sources: readonly string[] | null): void;
+  depend(consumer: Owner, source: Owner | undefined): void;
+  acceptDependencies(consumer: Owner): void;
   retire(members: readonly Owner[]): void;
   owned(roots: Owner | readonly Owner[]): Owner[];
   construct(
@@ -18,13 +20,23 @@ export function createTreePreparer(hooks: {
     component: SceneComponent,
     props: Props,
     staging: boolean,
+    lexicalOwner?: Owner,
   ): Child;
   acceptMount(owner: Owner): void;
   acceptProperties(owner: Owner, properties: readonly PreparedProperties[]): void;
   mountOperation(owner: Owner): SceneOperation;
 }) {
-  const { invalidate, retire, owned, construct, acceptMount, acceptProperties, mountOperation } =
-    hooks;
+  const {
+    invalidate,
+    depend,
+    acceptDependencies,
+    retire,
+    owned,
+    construct,
+    acceptMount,
+    acceptProperties,
+    mountOperation,
+  } = hooks;
   const restore = (prepared: readonly PreparedOwner[]): void => {
     for (const item of prepared)
       invalidate(item.owner, item.sources === null ? null : [...item.sources]);
@@ -94,7 +106,7 @@ export function createTreePreparer(hooks: {
           if (!child.binding || child.owner.disposed || !affected(child.binding.sources, sources))
             continue;
           const next = owner.readProps(child.binding.read());
-          if (sameProps(child.props, next)) continue;
+          if (!needsPropRefresh(child.props, next)) continue;
           receive(child, next);
           props.push([child, next]);
         }
@@ -102,24 +114,44 @@ export function createTreePreparer(hooks: {
         for (const region of owner.regions) {
           if (owner.mounted && !affected(region.binding.sources, sources)) continue;
           const next = readRegion(region.binding, owner.readProps);
+          depend(owner, next.lexicalOwner);
           let child: Child | undefined;
-          if (next.branch === region.branch && !region.child?.owner.disposed) {
+          if (
+            next.branch === region.branch &&
+            !region.child?.owner.disposed &&
+            region.child?.component === (next.component ?? undefined) &&
+            region.child?.lexicalOwner === next.lexicalOwner
+          ) {
             if (region.candidate) retire(owned(region.candidate.child.owner));
             child = region.child;
           } else {
-            if (region.candidate && region.candidate.branch !== next.branch)
+            if (
+              region.candidate &&
+              (region.candidate.branch !== next.branch ||
+                region.candidate.child.component !== next.component ||
+                region.candidate.child.lexicalOwner !== next.lexicalOwner)
+            ) {
               retire(owned(region.candidate.child.owner));
+              region.candidate = undefined;
+            }
             if (next.component) {
               if (!region.candidate)
                 region.candidate = {
                   branch: next.branch,
-                  child: construct(owner, region.binding.node, next.component, next.props, true),
+                  child: construct(
+                    owner,
+                    region.binding.node,
+                    next.component,
+                    next.props,
+                    true,
+                    next.lexicalOwner,
+                  ),
                 };
               child = region.candidate.child;
             }
             if (region.child) removed.add(region.child.owner);
           }
-          if (child && !sameProps(child.props, next.props)) {
+          if (child && needsPropRefresh(child.props, next.props)) {
             receive(child, next.props);
             props.push([child, next.props]);
           }
@@ -131,6 +163,7 @@ export function createTreePreparer(hooks: {
         for (const list of owner.lists) {
           if (owner.mounted && !affected(list.binding.sources, sources)) continue;
           const values = readList(list.binding, owner.readProps);
+          for (const value of values) depend(owner, value.lexicalOwner);
           const wanted = new Set(values.map((value) => value.key));
           const canceled = [...list.candidates]
             .filter(([key]) => !wanted.has(key))
@@ -140,15 +173,37 @@ export function createTreePreparer(hooks: {
             list.rows.filter((row) => !row.owner.disposed).map((row) => [row.key, row]),
           );
           const rows = values.map((value) => {
-            let row = accepted.get(value.key) ?? list.candidates.get(value.key);
+            let row = accepted.get(value.key);
+            if (
+              row &&
+              (row.component !== value.component || row.lexicalOwner !== value.lexicalOwner)
+            )
+              row = undefined;
+            const candidate = list.candidates.get(value.key);
+            if (
+              candidate &&
+              (candidate.component !== value.component ||
+                candidate.lexicalOwner !== value.lexicalOwner)
+            ) {
+              retire(owned(candidate.owner));
+              list.candidates.delete(value.key);
+            }
+            row ??= list.candidates.get(value.key);
             if (!row) {
               row = {
-                ...construct(owner, list.binding.node, list.binding.component, value.props, true),
+                ...construct(
+                  owner,
+                  list.binding.node,
+                  value.component,
+                  value.props,
+                  true,
+                  value.lexicalOwner,
+                ),
                 key: value.key,
               };
               list.candidates.set(value.key, row);
             }
-            if (!sameProps(row.props, value.props)) {
+            if (needsPropRefresh(row.props, value.props)) {
               receive(row, value.props);
               props.push([row, value.props]);
             }
@@ -270,6 +325,7 @@ export function createTreePreparer(hooks: {
             ];
           }
           item.owner.children.sort((a, b) => a.node - b.node);
+          acceptDependencies(item.owner);
           item.owner.effectInvalidations?.(item.sources);
         }
       },

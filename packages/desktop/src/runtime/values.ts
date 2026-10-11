@@ -1,4 +1,5 @@
 import { isSceneScope, sameSceneScope } from './scope';
+import { isSceneContent, type SceneContent } from './content';
 
 export type SceneProps = Readonly<Record<string, unknown>>;
 export type SceneCallback = (...args: unknown[]) => unknown;
@@ -23,24 +24,36 @@ export function sameProps(a: SceneProps, b: SceneProps): boolean {
 export function propValues(
   value: SceneProps,
   bindCallback?: (callback: SceneCallback) => SceneCallback,
+  bindContent?: (content: SceneContent) => SceneContent,
 ): SceneProps {
   const props = Object.create(null) as Record<string, unknown>;
   for (const [key, item] of Object.entries(value)) {
-    if (isSceneScope(item)) props[key] = item;
+    if (isSceneContent(item)) props[key] = bindContent ? bindContent(item) : item;
+    else if (isSceneScope(item)) props[key] = item;
     else if (typeof item === 'function' && bindCallback)
       props[key] = bindCallback(item as SceneCallback);
     else {
-      if (
-        item !== null &&
-        !['undefined', 'string', 'number', 'boolean', 'bigint'].includes(typeof item)
-      )
-        throw new TypeError(
-          'Desktop child props currently require primitive values or owned callbacks',
-        );
+      if (typeof item === 'function')
+        throw new TypeError('Desktop callback props require an owning component');
+      if (typeof item === 'symbol') throw new TypeError('Desktop child props cannot be symbols');
       props[key] = item;
     }
   }
   return props;
+}
+
+/** Reference equality cannot prove that ordinary data was not edited in place. */
+export function needsPropRefresh(previous: SceneProps, next: SceneProps): boolean {
+  return (
+    !sameProps(previous, next) ||
+    Object.values(next).some(
+      (value) =>
+        value !== null &&
+        typeof value === 'object' &&
+        !isSceneScope(value) &&
+        !isSceneContent(value),
+    )
+  );
 }
 export function textValue(value: unknown): string {
   if (value == null || typeof value === 'boolean') return '';

@@ -8,7 +8,10 @@ import type {
   SceneRowKey,
   TextBinding,
   ScenePropertyBinding,
+  SceneContentBinding,
+  SceneRenderListBinding,
 } from './application';
+import type { SceneComponent } from './definitions';
 import type { PreparedProperties } from './properties';
 import type { SceneProps } from './values';
 
@@ -17,9 +20,11 @@ export interface Child {
   node: number;
   owner: Owner;
   props: SceneProps;
+  component: SceneComponent;
+  lexicalOwner?: Owner;
 }
 export interface Region {
-  binding: SceneRegionBinding;
+  binding: SceneRegionBinding | SceneContentBinding;
   branch: number;
   child?: Child;
   candidate?: { branch: number; child: Child };
@@ -28,7 +33,7 @@ export interface Row extends Child {
   key: SceneRowKey;
 }
 export interface ListRegion {
-  binding: SceneListBinding;
+  binding: SceneListBinding | SceneRenderListBinding;
   rows: Row[];
   candidates: Map<SceneRowKey, Row>;
 }
@@ -49,6 +54,9 @@ export interface Owner {
   parent?: Owner;
   lexicalParent?: Owner;
   lexicalChildren: Set<Owner>;
+  /** Placement consumers replay when their content's declaring scope changes. */
+  contentConsumers: Set<Owner>;
+  contentSources: Set<Owner>;
   attachment?: SceneAttachment;
   template: SceneTemplate;
   bindings: readonly TextBinding[];

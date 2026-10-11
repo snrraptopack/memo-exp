@@ -10,11 +10,14 @@ export {
   type SceneMountOptions,
   type ScenePropertyBinding,
   type SceneRegionBinding,
+  type SceneContentBinding,
   type SceneListBinding,
+  type SceneRenderListBinding,
   type SceneRowKey,
 } from './runtime/application';
 export { defineSceneComponent, type SceneComponent } from './runtime/definitions';
 export { sceneAttributes } from './runtime/properties';
+export { sceneContent, sceneRenderCallback, type SceneContent } from './runtime/content';
 export { sceneScope } from './runtime/scope';
 export { defineSceneModule } from './runtime/modules';
 export { affected as sceneSourcesChanged } from './runtime/values';

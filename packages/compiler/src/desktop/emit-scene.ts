@@ -28,6 +28,8 @@ interface EmittedScene {
   eventsUsed: boolean;
   attributesUsed: boolean;
   scopesUsed: boolean;
+  contentUsed: boolean;
+  renderCallbacksUsed: boolean;
   mount: t.CallExpression;
 }
 
@@ -55,6 +57,8 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
   let eventsUsed = scene.handlers.length > 0;
   let scopesUsed = false;
   let attributesUsed = scene.attributesUsed;
+  let contentUsed = scene.contentUsed;
+  let renderCallbacksUsed = scene.renderCallbacksUsed;
 
   for (const fragment of scene.fragments) {
     const envelope = options.fresh('__desktopFragmentProps');
@@ -123,9 +127,15 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
     for (const dependency of emitted.dependencies) dependencies.add(dependency);
     fragmentTemplates.push(emitted.template, ...emitted.fragmentTemplates);
     eventsUsed ||= emitted.eventsUsed;
+    contentUsed ||= emitted.contentUsed;
+    renderCallbacksUsed ||= emitted.renderCallbacksUsed;
     attributesUsed ||= emitted.attributesUsed;
     scopesUsed ||= fragment.captures.length > 0 || emitted.scopesUsed;
   }
+
+  // Deferred content references fragment factories, so create it after every
+  // factory has been defined without evaluating the fragment's authored setup.
+  setup.push(...scene.contentSetup);
 
   const properties: t.ObjectProperty[] = [];
   if (options.volatile)
@@ -163,6 +173,8 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
     eventsUsed,
     attributesUsed,
     scopesUsed,
+    contentUsed,
+    renderCallbacksUsed,
     mount: b.callExpression(options.mount, [
       template,
       b.arrayExpression(scene.bindings),

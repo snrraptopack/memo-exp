@@ -11,6 +11,7 @@ import { readList } from './lists';
 import type { SceneSemanticRuntime } from './semantic';
 import { readProperties, type PreparedProperties } from './properties';
 import { configureOwnerLifecycle } from './lifecycle';
+import { bindSceneContent, type SceneContent } from './content';
 
 /** Independent lexical owners form a tree; one family queue protects its caches. */
 export function createOwnerForest(
@@ -20,7 +21,9 @@ export function createOwnerForest(
   semantic: SceneSemanticRuntime,
 ) {
   let nextId = 1;
-  let placement: { family: Family; parent: Owner; node: number; staging: boolean } | undefined;
+  let placement:
+    | { family: Family; parent: Owner; node: number; staging: boolean; lexicalOwner?: Owner }
+    | undefined;
   const owners = new Map<SceneInstance, Owner>();
   const handles = new Map<number, Owner>();
   const installations = new WeakMap<SceneTemplate, Promise<void>>();
@@ -39,14 +42,33 @@ export function createOwnerForest(
   };
   const invalidate = (owner: Owner, sources: readonly string[] | null): void => {
     const pending = [owner];
+    const visited = new Set<Owner>();
     while (pending.length) {
       const member = pending.pop()!;
-      if (member.disposed) continue;
+      if (member.disposed || visited.has(member)) continue;
+      visited.add(member);
       member.dirty = true;
       if (sources === null) member.pending = null;
       else if (member.pending) for (const source of sources) member.pending.add(source);
       pending.push(...member.lexicalChildren);
+      for (const consumer of member.contentConsumers) {
+        // Content keys and captures may read any declaring-scope binding.
+        consumer.pending = null;
+        pending.push(consumer);
+      }
     }
+  };
+  const depend = (consumer: Owner, source: Owner | undefined): void => {
+    if (!source || consumer === source) return;
+    source.contentConsumers.add(consumer);
+    consumer.contentSources.add(source);
+  };
+  const acceptDependencies = (consumer: Owner): void => {
+    // Staging retains both old and new edges so rejection cannot disconnect
+    // accepted content. Acceptance can now release sources no longer placed.
+    for (const source of consumer.contentSources) source.contentConsumers.delete(consumer);
+    consumer.contentSources.clear();
+    for (const child of consumer.children) depend(consumer, child.lexicalOwner);
   };
   const stateOwner = (owner: Owner): Owner => {
     // An inline handler writes the enclosing closure. Named components remain
@@ -98,6 +120,10 @@ export function createOwnerForest(
       member.lexicalParent?.lexicalChildren.delete(member);
       member.lexicalParent = undefined;
       member.lexicalChildren.clear();
+      for (const source of member.contentSources) source.contentConsumers.delete(member);
+      for (const consumer of member.contentConsumers) consumer.contentSources.delete(member);
+      member.contentSources.clear();
+      member.contentConsumers.clear();
       member.children = [];
       member.regions = [];
       member.lists = [];
@@ -146,10 +172,11 @@ export function createOwnerForest(
     component: SceneComponent,
     props: Props,
     staging: boolean,
+    lexicalOwner?: Owner,
   ): Child => {
     const previous = placement;
     const offset = parent.family.members.length;
-    placement = { family: parent.family, parent, node, staging };
+    placement = { family: parent.family, parent, node, staging, lexicalOwner };
     try {
       const instance = runFactory(() => component(props));
       const owner = owners.get(instance);
@@ -164,7 +191,7 @@ export function createOwnerForest(
         roots[0] !== owner
       )
         throw new Error('Desktop child factory must return one compiled component owner');
-      return { node, owner, props };
+      return { node, owner, props, component, lexicalOwner };
     } catch (error) {
       if (staging) retire(parent.family.members.slice(offset));
       throw error;
@@ -209,6 +236,8 @@ export function createOwnerForest(
   });
   const prepare = createTreePreparer({
     invalidate,
+    depend,
+    acceptDependencies,
     retire,
     owned,
     construct,
@@ -391,6 +420,7 @@ export function createOwnerForest(
         : undefined;
       const handle = Object.freeze({ id: nextId++, generation: 1 });
       let callbacks: WeakMap<SceneCallback, SceneCallback> | undefined;
+      const contentBindings = new WeakMap<SceneContent, SceneContent>();
       const entityId = `${parent?.entityId ?? 'Desktop'}/${encodeURIComponent(template.id)}[${handle.id}]`;
       const owner: Owner = {
         entityId,
@@ -405,30 +435,36 @@ export function createOwnerForest(
         initialProperties,
         acknowledgedProperties: new Map(),
         readProps: (props) =>
-          propValues(props, (callback) => {
-            // Forwarding preserves the declaring owner and stable callback identity.
-            if (ownedCallbacks.has(callback)) return callback;
-            let bound = callbacks?.get(callback);
-            if (!bound) {
-              bound = function (this: unknown, ...args: unknown[]) {
-                if (owner.disposed || isClosed())
-                  throw new Error('Desktop callback targets a disposed owner');
-                try {
-                  const result = Reflect.apply(callback, this, args);
-                  if (result instanceof Promise)
-                    return result.finally(() => invalidateState(owner, null));
-                  return result;
-                } finally {
-                  invalidateState(owner, null);
-                }
-              };
-              (callbacks ??= new WeakMap()).set(callback, bound);
-              ownedCallbacks.add(bound);
-            }
-            return bound;
-          }),
-        lexicalParent: options.lexical ? parent : undefined,
+          propValues(
+            props,
+            (callback) => {
+              // Forwarding preserves the declaring owner and stable callback identity.
+              if (ownedCallbacks.has(callback)) return callback;
+              let bound = callbacks?.get(callback);
+              if (!bound) {
+                bound = function (this: unknown, ...args: unknown[]) {
+                  if (owner.disposed || isClosed())
+                    throw new Error('Desktop callback targets a disposed owner');
+                  try {
+                    const result = Reflect.apply(callback, this, args);
+                    if (result instanceof Promise)
+                      return result.finally(() => invalidateState(owner, null));
+                    return result;
+                  } finally {
+                    invalidateState(owner, null);
+                  }
+                };
+                (callbacks ??= new WeakMap()).set(callback, bound);
+                ownedCallbacks.add(bound);
+              }
+              return bound;
+            },
+            (content) => bindSceneContent(content, owner, contentBindings),
+          ),
+        lexicalParent: options.lexical ? (placement?.lexicalOwner ?? parent) : undefined,
         lexicalChildren: new Set(),
+        contentConsumers: new Set(),
+        contentSources: new Set(),
         receive: options.receiveProps,
         prepare: options.prepare,
         initial,
@@ -521,7 +557,7 @@ export function createOwnerForest(
       try {
         for (const definition of componentTemplates([
           ...(options.components ?? []),
-          ...(options.lists ?? []).map((list) => list.component),
+          ...(options.lists ?? []).flatMap((list) => ('component' in list ? [list.component] : [])),
         ])) {
           if (staging && !installations.has(definition))
             throw new Error('Desktop branch dependency was not installed before staging');
@@ -540,8 +576,9 @@ export function createOwnerForest(
             throw new Error('Invalid or duplicate desktop component region');
           regions.add(binding.node);
           const next = readRegion(binding, owner.readProps);
+          depend(owner, next.lexicalOwner);
           const child = next.component
-            ? construct(owner, binding.node, next.component, next.props, staging)
+            ? construct(owner, binding.node, next.component, next.props, staging, next.lexicalOwner)
             : undefined;
           owner.regions.push({ binding, branch: next.branch, child });
           if (child) owner.children.push(child);
@@ -552,10 +589,18 @@ export function createOwnerForest(
             throw new Error('Invalid or duplicate desktop list region');
           regions.add(binding.node);
           const values = readList(binding, owner.readProps);
+          for (const value of values) depend(owner, value.lexicalOwner);
           const list = {
             binding,
             rows: values.map((value) => ({
-              ...construct(owner, binding.node, binding.component, value.props, staging),
+              ...construct(
+                owner,
+                binding.node,
+                value.component,
+                value.props,
+                staging,
+                value.lexicalOwner,
+              ),
               key: value.key,
             })),
             candidates: new Map(),
