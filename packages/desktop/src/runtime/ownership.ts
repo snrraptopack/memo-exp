@@ -454,11 +454,16 @@ export function createOwnerForest(
       owners.set(instance, owner);
       handles.set(handle.id, owner);
       group.root ??= owner;
-      semantic.register(entityId, parent?.entityId ?? 'Desktop', (full) => {
-        if (owner.disposed) return;
-        if (full) invalidate(owner, null);
-        semantic.request(group, () => flush(stateOwner(owner)));
-      });
+      semantic.register(
+        entityId,
+        parent?.entityId ?? 'Desktop',
+        (full) => {
+          if (owner.disposed) return;
+          if (full) invalidate(owner, null);
+          semantic.request(group, () => flush(stateOwner(owner)));
+        },
+        options.volatile,
+      );
       configureOwnerLifecycle(owner, options);
       if (!staging) group.installs.push(install(template));
       const regions = new Set<number>();

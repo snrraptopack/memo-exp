@@ -11,6 +11,7 @@ export {
   runInApplicationRuntime,
   runWithApplicationRuntime,
   registerEntity,
+  register,
   unregisterSubtree,
   invalidateEntity,
   markDirty,

@@ -1,6 +1,6 @@
 # Compiled native desktop architecture
 
-Date: 2026-10-11. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, structural publication, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Desktop uses the shared semantic kernel and access resolver, application-owned state cells, component setup replay, module control-flow calculations, async write continuations, and core effects, refs, and cleanup behind native acceptance. Additional controls, browser capability equivalents, provider integration, and native incremental geometry remain future work.
+Date: 2026-10-11. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, structural publication, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Desktop uses the shared semantic analysis coordinator, semantic kernel and access resolver, application-owned state cells, component render plans, setup replay, module calculations, guarded callback publications, external subscriptions, visible-frame opaque pulls, and core effects, refs, and cleanup behind native acceptance. Additional controls, browser capability equivalents, provider integration, and native incremental geometry remain future work.
 
 ## The technique we aim to use
 
@@ -72,7 +72,36 @@ Keep authored JavaScript evaluation order, exceptions, alias behavior, and callb
 
 The desktop target executes the existing framework's application kernel and access resolver. Its core is the shared JavaScript application runtime, with a desktop adapter for scene preparation and publication. Rust owns native presentation. It does not need to interpret access tables, execute authored JavaScript, or recreate the compiler's reactive graph.
 
-`compiler/src/desktop/module-graph.ts` discovers the participating source graph and reuses the core fixed-point export worklist, helper effects, read collection, access-reader planning, and callback write plans. State-only `.ts` modules receive semantic compilation alongside JSX modules. `runtime/src/core.ts` exposes semantic primitives without initializing a DOM host. `desktop/src/runtime/semantic.ts` registers scene owners in that kernel and converts dirty entity work into requests to the existing native publication adapter. Component-local source sets remain destination metadata; they no longer require a separate reactive scheduler.
+`compiler/src/linking/project.ts` owns source collection, fixed-point project discovery, and re-export identity seeding. `desktop/project.ts` selects the scene analysis profile and reader policy; `desktop/module-graph.ts` emits the resulting linked graph. State-only `.ts` modules receive semantic compilation alongside JSX modules. `runtime/src/core.ts` exposes semantic primitives without initializing a DOM host. `desktop/src/runtime/semantic.ts` registers scene owners in that kernel and converts dirty entity work into requests to the existing native publication adapter. Component-local source sets remain destination metadata; they no longer require a separate reactive scheduler.
+
+### Shared compiler stages and target adapters
+
+Both manifest discovery and final compilation use `analysis/pipeline.ts`. Its
+ordered stages establish lexical bindings, module and instance state, opaque
+sources, derivations, control flow, effects, and source reads. Profiles supply
+source transformations, validation, and target preparation; they do not repeat
+the semantic scan list. Manifest analysis receives an explicit target adapter and
+does not call DOM preparation indirectly.
+
+| Stage | Shared owner | Desktop adapter responsibility |
+| --- | --- | --- |
+| Source graph and binding identities | `linking/project.ts`, `linking/discovery.ts`, `linking/graph.ts` | Source reader, scene manifest analysis, target linking options |
+| Semantic fact ordering | `analysis/pipeline.ts` | Scene imports, supported source validation, native list source preparation |
+| Component returns, callbacks, expression sources, placement and lists | `planning/component-render.ts` | Consume full plans and lower supported destinations to templates, slots and regions |
+| Ordered attributes and children | `jsx/attributes.ts`, `jsx/children.ts`, `jsx/conditional-plan.ts` | Native capability checks, stable text addresses, captured nullish values |
+| Access readers and callback publication | `analysis/access-table.ts`, `handlers/publication.ts` | Explicit reader collapsing, native/local commit ABI and async segment boundaries |
+| State, calculations and source subscriptions | `cells.ts`, `emission/computeds.ts`, `emission/external-reactivity.ts` | Application activation, accepted scene-owner lifetime and adapter imports |
+
+Reader planning accepts an explicit scene policy rather than changing or faking
+the analysis context. Publication planning owns guarded execution-site rewriting
+and flag allocation; target callbacks choose commit expressions and scheduling.
+DOM-only cell and route emission live behind DOM adapters. A dependency test
+bundles the desktop compiler graph and rejects any dependency on `compiler/src/dom`.
+
+Native candidate forests, primitive/callback/scope prop equality, event objects,
+and acknowledgment handling remain desktop responsibilities. They represent
+asynchronous native acceptance and native capabilities. The optimized DOM list
+runtime and movement algorithm retain their existing implementation.
 
 The existing implementations to reuse are:
 
@@ -119,7 +148,7 @@ The immediate approach retains the optimized DOM emitter and list implementation
 
 Core `commit()` synchronously drains entity update functions; desktop publication awaits native acceptance. A completed reactive drain therefore does not mean that the native scene has accepted its changes. The desktop adapter must keep preparing changes separately from advancing accepted slot caches, props, topology, and cleanup. Rejected publication preserves the accepted scene and retryable work; updates arriving during a host wait remain pending for a later transaction. Authored state mutations are not rolled back.
 
-Effects, refs, and lifecycle operations respect this boundary. `RenderEnvironment.effectBoundary` allows desktop to queue the existing core effect executions until initial mounts and pending publications have succeeded. Component effect registration and ref binding occur after acceptance; rejected candidates never activate them. Accepted retirement uses core subtree cleanup, including reverse ref disposal and effect teardown. The default DOM environment retains its existing immediate core effect execution. Volatile browser pulls and document-specific APIs still need target capabilities; importing a browser or server barrel does not make them interchangeable.
+Effects, refs, and lifecycle operations respect this boundary. `RenderEnvironment.effectBoundary` allows desktop to queue the existing core effect executions until initial mounts and pending publications have succeeded. Component effect registration, external subscriptions, and ref binding occur after acceptance; rejected candidates never activate them. Accepted retirement uses core subtree cleanup, including reverse ref disposal, subscription disposal, and effect teardown. The default DOM environment retains its existing immediate core effect execution. Desktop supplies native frame scheduling and visibility to the existing volatile capability; document-specific APIs require their own target capabilities.
 
 ### Implemented shared-runtime milestone and remaining parity
 
@@ -133,7 +162,7 @@ Setup derivations and eligible if/switch calculations consume the shared source-
 
 `desktop/tests/runtime-parity.test.ts` verifies same-loaded-module isolation, setup replay, local and module control flow, async segments and rejection, retained local timers, native async event acknowledgment, effect gating and feedback, derived-value effect guards, module effect isolation, rejected candidate cancellation, ref accepted values, reverse cleanup, and teardown failures. Shared ref-value compilation, prelude ordering, module control flow, and execution-site instrumentation live outside the DOM emitter. The optimized DOM list implementation remains intact.
 
-Native refs provide retained handle and node identity, tagName, connection state, static attributes, and accepted input value. They do not implement HTMLElement's full browser document, focus, measurement, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, browser volatile pulls, package imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
+Native refs provide retained handle and node identity, tagName, connection state, static attributes, and accepted input value. They do not implement HTMLElement's full browser document, focus, measurement, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
 
 ## Package and compiler boundaries
 
@@ -171,7 +200,7 @@ packages/desktop/
     rust/gpui/src/input/      retained editing state and platform input handler
 ```
 
-Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` entry. The compiler root continues to expose DOM compilation. Both backends use the existing core modules. Desktop graph discovery currently reuses the core DOM analysis coordinator for module facts; final destination emission is desktop-specific. Extracting a neutral analysis coordinator is a later organization change, not a reason to duplicate its analyses.
+Expose desktop compilation through a separate `@memoized-dom/compiler/desktop` entry. The compiler root continues to expose DOM compilation. Both backends use the shared analysis coordinator and explicit manifest adapters. Desktop compilation has no dependency on DOM emission; final destination emission remains target-specific.
 
 Keep the dependency direction explicit: desktop compilation depends on shared analysis; shared analysis does not depend on either backend. Desktop application execution does not import compiler tooling or parsing dependencies. A build/example runner imports the desktop compiler entry separately from the application runtime.
 
@@ -181,20 +210,9 @@ Reuse the same semantic analysis and ownership contracts across targets. Separat
 
 `packages/desktop/rust/src/tags.rs` is the authoritative translation registry. The compiler emits element records containing the original tag string, parent index, text leaves, typed slots, and event sites. It checks the supported source syntax and callback contracts. Rust resolves each tag, validates content and event placement, and prepares a native presentation plan before installing the template. Unsupported tags therefore fail at native installation today, rather than at compilation. Error messages identify the template, node, and tag. Future build-time validation should consume the same native definitions instead of maintaining a second semantic registry in TypeScript.
 
-| Authored tag | Native meaning | Current content contract | Presentation preparation |
-| --- | --- | --- | --- |
-| `div` | Generic block container | Supported flow content | Container item with ordered child items |
-| `p` | Paragraph | Text and inline spans | One paragraph item and combined text group |
-| `span` | Inline range | Text and nested spans | Remains within its containing text group; no independent flex box |
-| `button` | Button control | Text and inline spans | Control item, combined label group, permitted click site |
-| `input` (text type) | Editable single-line control | Empty | Retained editor entity, value slot, native change event |
-| Semantic blocks (`main`, `section`, `article`, etc.) | Explicit block flow contracts | Supported flow content | Ordered native containers |
-| `h1`–`h6`, `pre`, `dt` | Text blocks | Supported phrasing content | Paragraph groups with native default styles |
-| `strong`, `em`, `code`, `mark`, etc. | Styled inline ranges | Supported phrasing content | UTF-8 text runs within one paragraph |
-| `br`, `hr` | Line break / separator | Empty | Paragraph newline / styled block |
-| `ul`, `ol`, `li`, `dl`, `dd` | List / definition flow | Explicit list or flow rules | Retained items; ordered and bullet marker text |
-| `container` | Prototype alias for `div` | Same as `div` | Same as `div` |
-| `text` | Prototype alias for `span` | Same as `span` | Same inline behavior |
+The supported tag catalogue and property contracts live in the
+[desktop package README](../packages/desktop/README.md). Keep that capability
+reference synchronized with Rust rather than duplicating its table here.
 
 The registry defines supported tags, CSS defaults, and recognized HTML names with pending native behavior. Forms support authored submit handlers and button/input activation defaults. Links, images, non-text input types, tables, media, and other unfinished controls fail explicitly. Adding their names to the pending catalogue does not enable them. The implemented content model is a desktop subset: buttons and inputs are separate controls, paragraphs contain phrasing content, and `li` requires a list parent. Controls use GPUI focus and accessibility roles; headings and paragraph labels use GPUI accessibility nodes. Full HTML semantics, landmark roles, paragraph selection, and rich editing remain unimplemented.
 
@@ -347,6 +365,40 @@ Retain shaped text, measured results, and paint records using the inputs that ac
 
 ## Input, scheduling, and platform services
 
+External state observation uses the existing compiler metadata and core volatile
+capability. A configured subscription activates on accepted owner mount, publishes
+its canonical source key inside the captured application scope, and is disposed
+through core cleanup. Library JavaScript remains uncompiled; its values keep their
+ordinary sharing semantics. Opaque reads register as volatile owners and replay
+their instance calculations on visible native frames. This does not create a
+second desktop subscription or reactive store layer.
+
+External subscriptions serving module calculations and module effects activate
+with those module entities and retire with the core application. This permits a
+component to read a derived value through a state module and barrel without
+importing the library directly. Component-only subscriptions retain accepted
+scene-owner lifetime. Both use the same ownership-aware subscription emitter.
+
+`tests/structural-host-parity.test.ts` runs one scenario table against DOM and
+desktop adapters: stable selection retains identity, inactive factories stay
+unexecuted, replacement retires once, reentry constructs fresh state, and disposal
+suppresses late invalidations. Native acknowledgment rejection has its own scene
+tests because synchronous DOM replacement has a different publication boundary.
+
+The optional host `nextFrame()` capability separates clock admission from frame
+delivery. Rust acknowledges the request immediately and GPUI later emits the
+token and current visibility from `window.on_next_frame`. Hidden windows can
+defer frame delivery without expiring a publication request. Clock work requests
+platform frames without notifying the scene as dirty. Hosts without a clock do
+not poll opaque values. Explicit subscriptions are still usable on those hosts.
+
+Ordinary package bundling and package component linking remain separate concerns.
+Utilities and external state libraries can execute without our compiler. A
+package exporting Memoized DOM component source requires target-aware component
+linking; DOM-dependent libraries require actual native capabilities. The
+[README](../packages/desktop/README.md#third-party-libraries) describes the current
+integration contract and build metadata.
+
 The host owns hit testing, pointer capture, focus traversal, selection, caret presentation, and IME integration. Native feedback can update presentation without an authored callback. Application-defined behavior dispatches through the live handler registry and participates in normal state scheduling.
 
 Begin with a clear platform event-loop integration and one ordered publication path. Render on demand when accepted changes, platform damage, or active animation require it. Idle applications should not reconstruct scene descriptions or poll authored state unnecessarily.
@@ -429,7 +481,7 @@ The application publication queue evaluates all participating destinations befor
 
 ### Implemented fixed component ownership
 
-`compiler/src/desktop/imports.ts` resolves authored component exports using shared declaration and prop-shape discovery. Named aliases, named default declarations, and bindings imported then exported by a barrel retain canonical declaration identities. Import metadata does not turn arbitrary functions or values into components. The build adapter currently resolves relative component imports; package component imports and direct re-export-from syntax need a defined linking contract. `components.ts` translates core prop plans into mutable lexical bindings plus a prop receiver. Flat destructuring, aliases, constant primitive defaults, positional scalar parameters, and generic props envelopes are supported. Component setup runs once; receiving new props updates those bindings without repeating setup or replacing child state.
+`compiler/src/linking/project.ts` and `desktop/project.ts` resolve authored exports through shared manifest discovery and linking. Single-file compilation with a module reader uses that same project path; `desktop/imports.ts` contains reader type aliases rather than another resolver. Named aliases, named default declarations, and bindings imported then exported by a barrel retain canonical declaration identities. Import metadata does not turn arbitrary functions or values into components. The build adapter currently resolves relative component imports; package component imports and direct re-export-from syntax need a defined linking contract. `components.ts` translates core prop plans into mutable lexical bindings plus a prop receiver. Flat destructuring, aliases, constant primitive defaults, positional scalar parameters, and generic props envelopes are supported. Component setup runs once; receiving new props updates those bindings without repeating setup or replacing child state.
 
 Lowering emits a region at each fixed component site. Regions carry an explicit parent node and never masquerade as an authored tag. `desktop/src/runtime/ownership.ts` creates a child once, records its parent and destination, and groups the tree into one publication family. Parent invalidations evaluate affected prop expressions, compare primitive fields, and propagate changed props before descendant text preparation. All destination reads finish before one atomic tree publication. A failed read or rejected commit restores pending destinations; accepted-value and prop caches advance only after acknowledgment. Later callbacks retain their pending invalidations while publication is in flight. The runtime validates region uniqueness, factory ownership, primitive prop values, and unsupported recursive construction. Construction failure cleans up every allocated descendant without publishing a partial tree.
 
@@ -443,7 +495,7 @@ Compiler/runtime tests exercise prop propagation, local state, aliases/defaults,
 
 ### Conditional component and inline regions
 
-`compiler/src/desktop/regions.ts` consumes the existing `jsx/conditional-plan.ts` without changing DOM lowering or list behavior. Ternaries, normalized else-if chains, and `&&`/`||` JSX choices select a named component, an inline subtree/fragment, renderable text, or an empty branch. Logical choices follow the shared planner's truthiness contract; nullish component choices receive an explicit diagnostic rather than incorrect truthiness lowering. Conditional component roots can consist of a region alone. Each syntactic branch has its own identity, even when two alternatives use the same component factory. Prop expressions and inline destination reads run only for the selected alternative. Source metadata combines the selection and branch prop dependencies. Inline branches currently use conservative source dependencies.
+`compiler/src/desktop/regions.ts` consumes the existing `jsx/conditional-plan.ts` and component return plans. Ternaries, normalized else-if chains, supported early returns and switch returns, and `&&`/`||`/`??` JSX choices select a named component, an inline subtree/fragment, renderable text, or an empty branch. Nullish choices evaluate the left value once, retain `0` and empty strings, and select the fallback only for null or undefined. The selected value travels in the existing JavaScript scope envelope. DOM validation retains its existing supported logical operators. Conditional component roots can consist of a region alone. Each syntactic branch has its own identity, even when two alternatives use the same component factory. Prop expressions and inline destination reads run only for the selected alternative. Source metadata combines the selection and branch prop dependencies. Inline branches currently use conservative source dependencies.
 
 Generated component definitions expose immutable templates and lazy dependency metadata through `runtime/definitions.ts`. The application installs all reachable definitions, including inactive alternatives, before initial publication. Installation validates native tags and styles without invoking inactive component setup. Later candidate construction requires already installed templates and dependencies, preventing installation from entering the publication barrier while a transaction is being prepared. Candidate mounts do not append to an already settled installation queue.
 

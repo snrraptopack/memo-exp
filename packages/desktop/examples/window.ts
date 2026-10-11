@@ -97,8 +97,26 @@ async function waitForInput(source: number, value: string): Promise<SceneSnapsho
   }
   throw new Error(`Native input did not publish its callback and dependent text: ${value}`);
 }
+let runFailed = false;
+let runFailure: unknown;
 try {
   await host.ready;
+  if (process.argv.includes('--smoke') || todoSmoke || reactivitySmoke) {
+    // Exercise the real GPUI clock before scene publication. Clock admission
+    // alone must not resolve this promise; the native frame callback must run.
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const frame = await Promise.race([
+        host.nextFrame!(),
+        new Promise<never>((_, reject) => {
+          deadline = setTimeout(() => reject(new Error('Native frame clock timed out')), 10_000);
+        }),
+      ]);
+      if (typeof frame.visible !== 'boolean') throw new Error('Invalid native frame visibility');
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
   const roots = await runDesktopEntry(
     app,
     () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`),
@@ -455,16 +473,38 @@ try {
     );
     await host.windowClosed;
   }
+} catch (error) {
+  runFailed = true;
+  runFailure = error;
 } finally {
-  unsubscribe();
-  await events;
-  try {
-    await app.dispose();
-  } finally {
-    const start = performance.now();
-    await host.close();
-    shutdownMs = performance.now() - start;
+  // A shutdown failure must not hide the interaction failure that led here.
+  // Attempt every teardown step even when an earlier step rejects.
+  const failures: unknown[] = runFailed ? [runFailure] : [];
+  for (const teardown of [
+    async () => {
+      unsubscribe();
+    },
+    async () => {
+      await events;
+    },
+    async () => {
+      await app.dispose();
+    },
+    async () => {
+      const start = performance.now();
+      await host.close();
+      shutdownMs = performance.now() - start;
+    },
+  ]) {
+    try {
+      await teardown();
+    } catch (error) {
+      failures.push(error);
+    }
   }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, 'Desktop window run and teardown failed');
 }
 if (smokeReport && compareBrowser) {
   // Compare immutable accepted snapshots after the native process has closed.

@@ -2,14 +2,8 @@ import { exportedLocals } from './module-exports';
 export { exportedLocals } from './module-exports';
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import {
-  cloneNode as cloneEstreeNode,
-  ESTREE_VISITOR_KEYS,
-  walkAst,
-  type BaseNode,
-} from '../ast';
-import { planAccessReaders } from '../analysis/access-table';
-import { prepareProgramAnalysis } from '../dom/prepare';
+import { cloneNode as cloneEstreeNode, ESTREE_VISITOR_KEYS, walkAst, type BaseNode } from '../ast';
+import type { ManifestAnalysis } from './analysis';
 import {
   analyzedComponentDeclarations,
   analyzedComponentExport,
@@ -21,8 +15,17 @@ import {
   moduleFunctionStringCandidates,
   moduleStateStringCandidates,
 } from '../analysis/type-candidates';
-import { canonicalStateKey, isConstObjectState, isStoreObject, nodeHasJsx, unwrapTypeExpression, type LinkedImport, type StateKind, type TransparentSourceMethod } from '../context';
-import { createCtx } from '../dom/context';
+import {
+  canonicalStateKey,
+  isConstObjectState,
+  isStoreObject,
+  nodeHasJsx,
+  unwrapTypeExpression,
+  type LinkedImport,
+  type StateKind,
+  type TransparentSourceMethod,
+} from '../context';
+import type { Ctx } from '../context';
 import { DEFAULT_TRANSPARENT_ASYNC_SOURCES } from '../context/model';
 import { renderPropReferenceName } from '../analysis/render-prop-reference';
 import { normalizeComponentDeclarations } from '../components/declarations';
@@ -39,7 +42,7 @@ import type {
   ModuleManifest,
 } from './model';
 
-function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPropUsage[] {
+function analyzedComponentUsages(ctx: Ctx): ComponentPropUsage[] {
   const usages = new Map<string, ComponentPropUsage>();
   const record = (
     target: string,
@@ -47,8 +50,10 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
     kind: ComponentPropUsage['kind'],
     forwardedFrom?: ComponentPropUsage['forwardedFrom'],
   ): void => {
-    usages.set(`${target}\0${prop}\0${kind}\0${forwardedFrom?.target??''}\0${forwardedFrom?.prop??''}`,
-      { target, prop, kind, ...(forwardedFrom?{forwardedFrom}:{}) });
+    usages.set(
+      `${target}\0${prop}\0${kind}\0${forwardedFrom?.target ?? ''}\0${forwardedFrom?.prop ?? ''}`,
+      { target, prop, kind, ...(forwardedFrom ? { forwardedFrom } : {}) },
+    );
   };
 
   for (const [owner, componentPath] of ctx.compPaths) {
@@ -78,18 +83,22 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
               nodeHasJsx(value.expression))
           ) {
             record(target, name, 'jsx');
-          } else if (astFactory.isJSXExpressionContainer(value) && astFactory.isExpression(value.expression)) {
-            const prop=renderPropReferenceName(ctx,owner,value.expression);
-            record(target,name,'scalar',prop===null?undefined:{target:`${ctx.moduleId}#${owner}`,prop});
+          } else if (
+            astFactory.isJSXExpressionContainer(value) &&
+            astFactory.isExpression(value.expression)
+          ) {
+            const prop = renderPropReferenceName(ctx, owner, value.expression);
+            record(
+              target,
+              name,
+              'scalar',
+              prop === null ? undefined : { target: `${ctx.moduleId}#${owner}`, prop },
+            );
           } else {
             record(target, name, 'scalar');
           }
         }
-        if (
-          element.children.some(
-            (child) => !astFactory.isJSXText(child) || child.value !== '',
-          )
-        ) {
+        if (element.children.some((child) => !astFactory.isJSXText(child) || child.value !== '')) {
           record(target, 'children', 'jsx');
         }
       },
@@ -103,10 +112,7 @@ function analyzedComponentUsages(ctx: ReturnType<typeof createCtx>): ComponentPr
   );
 }
 
-function componentCandidateKeys(
-  ctx: ReturnType<typeof createCtx>,
-  names: readonly string[],
-): string[] {
+function componentCandidateKeys(ctx: Ctx, names: readonly string[]): string[] {
   return [
     ...new Set(
       names.flatMap((name) => {
@@ -163,10 +169,7 @@ function directComponentNames(
 }
 
 function directFunctionComponentNames(
-  fn:
-    | t.FunctionDeclaration
-    | t.FunctionExpression
-    | t.ArrowFunctionExpression,
+  fn: t.FunctionDeclaration | t.FunctionExpression | t.ArrowFunctionExpression,
   componentNames: ReadonlySet<string>,
 ): string[] {
   const output = new Set<string>();
@@ -190,11 +193,7 @@ function directFunctionComponentNames(
             visit(entry as t.Node);
           }
         }
-      } else if (
-        child != null &&
-        typeof child === 'object' &&
-        'type' in child
-      ) {
+      } else if (child != null && typeof child === 'object' && 'type' in child) {
         visit(child as t.Node);
       }
     }
@@ -210,7 +209,7 @@ function transparentSourceMethod(
   const options = call.arguments[1];
   if (!astFactory.isObjectExpression(options)) {
     return astFactory.isIdentifier(call.callee)
-      ? factoryMethods.get(call.callee.name) ?? 'GET'
+      ? (factoryMethods.get(call.callee.name) ?? 'GET')
       : 'GET';
   }
   for (const property of options.properties) {
@@ -230,7 +229,8 @@ function transparentSourceMethod(
       method === 'PUT' ||
       method === 'PATCH' ||
       method === 'DELETE'
-    ) return method;
+    )
+      return method;
     return null;
   }
   return 'GET';
@@ -250,9 +250,10 @@ function directTransparentSourceFunctions(
         ? fn.body.body[0].argument
         : null
       : fn.body;
-    const current = expression !== null && astFactory.isExpression(expression)
-      ? unwrapTypeExpression(expression)
-      : null;
+    const current =
+      expression !== null && astFactory.isExpression(expression)
+        ? unwrapTypeExpression(expression)
+        : null;
     return astFactory.isCallExpression(current) &&
       astFactory.isIdentifier(current.callee) &&
       factories.has(current.callee.name)
@@ -277,18 +278,12 @@ function directTransparentSourceFunctions(
     if (!astFactory.isVariableDeclaration(declaration)) continue;
     for (const item of declaration.declarations) {
       if (!astFactory.isIdentifier(item.id) || item.init === null) continue;
-      const init = astFactory.isExpression(item.init)
-        ? unwrapTypeExpression(item.init)
-        : item.init;
+      const init = astFactory.isExpression(item.init) ? unwrapTypeExpression(item.init) : item.init;
       if (
-        (astFactory.isFunctionExpression(init) ||
-          astFactory.isArrowFunctionExpression(init)) &&
+        (astFactory.isFunctionExpression(init) || astFactory.isArrowFunctionExpression(init)) &&
         returnsSource(init) !== null
       ) {
-        result.set(
-          item.id.name,
-          transparentSourceMethod(returnsSource(init)!, factoryMethods),
-        );
+        result.set(item.id.name, transparentSourceMethod(returnsSource(init)!, factoryMethods));
       }
     }
   }
@@ -331,10 +326,7 @@ function importRefs(program: t.Program): ImportRef[] {
   return refs;
 }
 
-function applicationMounts(
-  program: t.Program,
-  runtimePath: string,
-): string[] {
+function applicationMounts(program: t.Program, runtimePath: string): string[] {
   // Hydrating clients import `hydrate` from the explicit hydration subpath;
   // it roots the application graph exactly like a base-runtime `mount`.
   const mountEntryPaths = new Set([runtimePath, `${runtimePath}/hydrate`]);
@@ -374,9 +366,7 @@ function applicationMounts(
     }
     const component = expression.arguments[1];
     if (component === undefined || !astFactory.isIdentifier(component)) {
-      throw new Error(
-        'memo-dom: mount() must receive a statically imported component identifier',
-      );
+      throw new Error('memo-dom: mount() must receive a statically imported component identifier');
     }
     mounted.push(component.name);
   };
@@ -404,6 +394,7 @@ export function analyzeManifest(
   options: CompileModulesOptions,
   rootId: string,
   linkedRoutes: readonly CompilerRouteDefinition[],
+  analysis: ManifestAnalysis,
 ): ModuleManifest {
   let manifest: ModuleManifest | undefined;
   const compilerPath = {
@@ -412,141 +403,126 @@ export function analyzeManifest(
       return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
-        const authoredImports = importRefs(compilerPath.node);
-        const ctx = createCtx({
-          ...compilerOptions(options, rootId),
-          moduleId: entry.id,
-          linkedImports,
-          linkedRoutes,
-        });
-        prepareProgramAnalysis(ctx, compilerPath);
-        const readers = planAccessReaders(ctx);
-        const exports: Record<string, LinkedExport> = {};
-        const functionTagCandidates = moduleFunctionStringCandidates(
-          compilerPath.node,
-        );
-        const transparentFunctionFactories = directTransparentSourceFunctions(
-          compilerPath.node,
-          ctx.transparentSourceFactories,
-          ctx.transparentSourceFactoryMethods,
-        );
-        for (const [exported, local] of exportedLocals(compilerPath.node)) {
-          if (ctx.comps.has(local)) {
-            exports[exported] = {
-              type: 'component',
-              ...analyzedComponentExport(ctx, entry.id, local, {
-                listResourceFree: ctx.domOnlyRowComponents.has(local),
-              }),
-            };
-            continue;
-          }
-          const importedComponent = ctx.importedComponents.get(local);
-          if (importedComponent !== undefined) {
-            exports[exported] = {
-              ...importedComponent,
-              delegatedEvents: [...(importedComponent.delegatedEvents ?? [])],
-              renderProps: [...(importedComponent.renderProps ?? [])],
-              renderCallbacks: [...(importedComponent.renderCallbacks ?? [])],
-              refProps: [...(importedComponent.refProps ?? [])],
-              subtreeReads: [...(importedComponent.subtreeReads ?? [])],
-            };
-            continue;
-          }
-          const kind = ctx.state.get(local);
-          if (kind !== undefined) {
-            exports[exported] = {
-              type: 'state',
-              kind,
-              key: ctx.stateKeys.get(local) ?? `${entry.id}#${local}`,
-              transparentSource:
-                linkedImports[local]?.type === 'state'
-                  ? linkedImports[local]?.transparentSource === true
-                  : ctx.transparentModuleSources.has(local),
-              tagCandidates: [...(ctx.stateTagCandidates.get(local) ?? [])],
-              componentCandidates: componentCandidateKeys(
-                ctx,
-                ctx.stateComponentCandidates.get(local) ?? [],
-              ),
-            };
-            continue;
-          }
-          if (ctx.transparentModuleSources.has(local)) {
-            exports[exported] = {
-              type: 'state',
-              kind: 'let',
-              key: ctx.transparentModuleSources.get(local) ?? `${entry.id}#${local}`,
-              transparentSource: true,
-              tagCandidates: [],
-              componentCandidates: [],
-            };
-            continue;
-          }
-          const summary =
-            ctx.importedFunctions.get(local) ??
-            (ctx.helpers.has(local) ? summarizeHelper(ctx, local) : undefined);
-          if (summary !== undefined) {
-            const listReturn = plainListReturn(ctx, local);
-            exports[exported] = {
-              type: 'function',
-              ...(listReturn === undefined ? {} : { plainListReturn: listReturn }),
-              ...(transparentFunctionFactories.has(local)
-                ? {
-                    transparentSourceFactory: true,
-                    ...(transparentFunctionFactories.get(local) === null
-                      ? {}
-                      : {
-                          transparentSourceMethod:
-                            transparentFunctionFactories.get(local)!,
-                        }),
-                  }
-                : {}),
-              tagCandidates: [
-                ...(functionTagCandidates.get(local) ??
-                  ctx.functionTagCandidates.get(local) ??
-                  []),
-              ],
-              componentCandidates: componentCandidateKeys(
-                ctx,
-                ctx.functionComponentCandidates.get(local) ?? [],
-              ),
-              reads: [...summary.reads].map((key) => canonicalStateKey(ctx, key)).sort(),
-              ...(summary.opaqueReads === true ? { opaqueReads: true } : {}),
-              writes: [...summary.writes].map((key) => canonicalStateKey(ctx, key)).sort(),
-              boundedWrites: [...summary.boundedWrites]
-                .map((key) => canonicalStateKey(ctx, key))
-                .sort(),
-              parameterWrites: summary.parameterWrites
-                .map((effect) => ({
-                  index: effect.index,
-                  path: [...effect.path],
-                }))
-                .sort(
-                  (a, b) =>
-                    a.index - b.index ||
-                    a.path.join('.').localeCompare(b.path.join('.')),
-                ),
-              unbounded: summary.unbounded,
-            };
-            continue;
-          }
-          exports[exported] = { type: 'value' };
-        }
-        manifest = {
-          exports,
-          imports: authoredImports,
-          mounts: applicationMounts(
-            compilerPath.node,
-            options.runtimePath ?? '@memoized-dom/runtime',
-          ),
-          components: analyzedComponentDeclarations(entry.id, ctx),
-          componentUsages: analyzedComponentUsages(ctx),
-          routedPreparations: analyzeRoutedPreparations(ctx, compilerPath),
-          readers: Object.fromEntries(
-            [...readers.entries()]
-              .sort(([left], [right]) => left.localeCompare(right))
-              .map(([key, patterns]) => [key, [...patterns].sort()]),
-          ),
-        };
+  const authoredImports = importRefs(compilerPath.node);
+  const ctx = analysis.prepare(compilerPath, {
+    ...compilerOptions(options, rootId),
+    moduleId: entry.id,
+    linkedImports,
+    linkedRoutes,
+  });
+  const readers = analysis.readers(ctx);
+  const exports: Record<string, LinkedExport> = {};
+  const functionTagCandidates = moduleFunctionStringCandidates(compilerPath.node);
+  const transparentFunctionFactories = directTransparentSourceFunctions(
+    compilerPath.node,
+    ctx.transparentSourceFactories,
+    ctx.transparentSourceFactoryMethods,
+  );
+  for (const [exported, local] of exportedLocals(compilerPath.node)) {
+    if (ctx.comps.has(local)) {
+      exports[exported] = {
+        type: 'component',
+        ...analyzedComponentExport(ctx, entry.id, local, {
+          listResourceFree: analysis.listResourceFree(ctx, local),
+        }),
+      };
+      continue;
+    }
+    const importedComponent = ctx.importedComponents.get(local);
+    if (importedComponent !== undefined) {
+      exports[exported] = {
+        ...importedComponent,
+        delegatedEvents: [...(importedComponent.delegatedEvents ?? [])],
+        renderProps: [...(importedComponent.renderProps ?? [])],
+        renderCallbacks: [...(importedComponent.renderCallbacks ?? [])],
+        refProps: [...(importedComponent.refProps ?? [])],
+        subtreeReads: [...(importedComponent.subtreeReads ?? [])],
+      };
+      continue;
+    }
+    const kind = ctx.state.get(local);
+    if (kind !== undefined) {
+      exports[exported] = {
+        type: 'state',
+        kind,
+        key: ctx.stateKeys.get(local) ?? `${entry.id}#${local}`,
+        transparentSource:
+          linkedImports[local]?.type === 'state'
+            ? linkedImports[local]?.transparentSource === true
+            : ctx.transparentModuleSources.has(local),
+        tagCandidates: [...(ctx.stateTagCandidates.get(local) ?? [])],
+        componentCandidates: componentCandidateKeys(
+          ctx,
+          ctx.stateComponentCandidates.get(local) ?? [],
+        ),
+      };
+      continue;
+    }
+    if (ctx.transparentModuleSources.has(local)) {
+      exports[exported] = {
+        type: 'state',
+        kind: 'let',
+        key: ctx.transparentModuleSources.get(local) ?? `${entry.id}#${local}`,
+        transparentSource: true,
+        tagCandidates: [],
+        componentCandidates: [],
+      };
+      continue;
+    }
+    const summary =
+      ctx.importedFunctions.get(local) ??
+      (ctx.helpers.has(local) ? summarizeHelper(ctx, local) : undefined);
+    if (summary !== undefined) {
+      const listReturn = plainListReturn(ctx, local);
+      exports[exported] = {
+        type: 'function',
+        ...(listReturn === undefined ? {} : { plainListReturn: listReturn }),
+        ...(transparentFunctionFactories.has(local)
+          ? {
+              transparentSourceFactory: true,
+              ...(transparentFunctionFactories.get(local) === null
+                ? {}
+                : {
+                    transparentSourceMethod: transparentFunctionFactories.get(local)!,
+                  }),
+            }
+          : {}),
+        tagCandidates: [
+          ...(functionTagCandidates.get(local) ?? ctx.functionTagCandidates.get(local) ?? []),
+        ],
+        componentCandidates: componentCandidateKeys(
+          ctx,
+          ctx.functionComponentCandidates.get(local) ?? [],
+        ),
+        reads: [...summary.reads].map((key) => canonicalStateKey(ctx, key)).sort(),
+        ...(summary.opaqueReads === true ? { opaqueReads: true } : {}),
+        writes: [...summary.writes].map((key) => canonicalStateKey(ctx, key)).sort(),
+        boundedWrites: [...summary.boundedWrites].map((key) => canonicalStateKey(ctx, key)).sort(),
+        parameterWrites: summary.parameterWrites
+          .map((effect) => ({
+            index: effect.index,
+            path: [...effect.path],
+          }))
+          .sort((a, b) => a.index - b.index || a.path.join('.').localeCompare(b.path.join('.'))),
+        unbounded: summary.unbounded,
+      };
+      continue;
+    }
+    exports[exported] = { type: 'value' };
+  }
+  manifest = {
+    exports,
+    imports: authoredImports,
+    mounts: applicationMounts(compilerPath.node, options.runtimePath ?? '@memoized-dom/runtime'),
+    components: analyzedComponentDeclarations(entry.id, ctx),
+    componentUsages: analyzedComponentUsages(ctx),
+    routedPreparations: analyzeRoutedPreparations(ctx, compilerPath),
+    readers: Object.fromEntries(
+      [...readers.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, patterns]) => [key, [...patterns].sort()]),
+    ),
+  };
   if (manifest === undefined) {
     throw new Error(`memo-dom: failed to analyze module '${entry.id}'`);
   }
@@ -568,174 +544,151 @@ export function discoverManifest(
       return compilerError(message, entry.id, at as unknown as BaseNode);
     },
   };
-        normalizeComponentDeclarations(compilerPath);
-        const locals = new Map<string, LinkedExport>();
-        const tagCandidates = moduleStateStringCandidates(compilerPath.node);
-        const functionTagCandidates = moduleFunctionStringCandidates(
-          compilerPath.node,
-        );
-        const components = discoverComponentExports(compilerPath.node, entry.id);
-        const componentNames = new Set(components.keys());
-        const providerSources = new Map(
-          (options.transparentAsyncSources ??
-            DEFAULT_TRANSPARENT_ASYNC_SOURCES).map(
-            (d) => [d.module, d.source] as const,
-          ),
-        );
-        const providerFactories = new Set<string>();
-        for (const stmt of compilerPath.node.body) {
-          if (!astFactory.isImportDeclaration(stmt)) continue;
-          const def = providerSources.get(stmt.source.value);
-          if (def === undefined) continue;
-          for (const spec of stmt.specifiers) {
-            if (
-              astFactory.isImportSpecifier(spec) &&
-              astFactory.isIdentifier(spec.imported) &&
-              spec.imported.name === def
-            ) {
-              providerFactories.add(spec.local.name);
-            }
-          }
-        }
-        const transparentFunctionFactories = directTransparentSourceFunctions(
-          compilerPath.node,
-          providerFactories,
-        );
-        for (const [name, component] of components) {
-          locals.set(name, { type: 'component', ...component });
-        }
-        for (const stmt of compilerPath.node.body) {
-          const inner = astFactory.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
-          if (astFactory.isVariableDeclaration(inner)) {
-            for (const decl of inner.declarations) {
-              if (!astFactory.isIdentifier(decl.id)) continue;
-              const init =
-                decl.init !== null && astFactory.isExpression(decl.init)
-                  ? unwrapTypeExpression(decl.init)
-                  : decl.init;
-              if (
-                astFactory.isArrowFunctionExpression(init) ||
-                astFactory.isFunctionExpression(init)
-              ) {
-                const componentCandidates = directFunctionComponentNames(
-                  init,
-                  componentNames,
-                ).map((name) => `${entry.id}#${name}`);
-                locals.set(decl.id.name, {
-                  type: 'function',
-                  ...(transparentFunctionFactories.has(decl.id.name)
-                    ? {
-                        transparentSourceFactory: true,
-                        ...(transparentFunctionFactories.get(decl.id.name) === null
-                          ? {}
-                          : {
-                              transparentSourceMethod:
-                                transparentFunctionFactories.get(decl.id.name)!,
-                            }),
-                      }
-                    : {}),
-                  tagCandidates: [
-                    ...(functionTagCandidates.get(decl.id.name) ?? []),
-                  ],
-                  componentCandidates,
-                  reads: [],
-                  writes: [],
-                  boundedWrites: [],
-                  parameterWrites: [],
-                  unbounded: true,
-                });
-                continue;
-              }
-              let kind: StateKind | undefined;
-              if (
-                astFactory.isCallExpression(init) &&
-                astFactory.isIdentifier(init.callee) &&
-                providerFactories.has(init.callee.name)
-              ) {
-                locals.set(decl.id.name, {
-                  type: 'state',
-                  kind: 'let',
-                  key: `${entry.id}#${decl.id.name}`,
-                  transparentSource: true,
-                  tagCandidates: [],
-                  componentCandidates: [],
-                });
-                continue;
-              }
-              if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
-              else if (isStoreObject(init)) kind = 'store';
-              else if (isConstObjectState(init)) kind = 'const';
-              if (kind !== undefined) {
-                const names = new Set<string>();
-                if (astFactory.isExpression(init)) {
-                  directComponentNames(
-                    init,
-                    componentNames,
-                    names,
-                  );
+  normalizeComponentDeclarations(compilerPath);
+  const locals = new Map<string, LinkedExport>();
+  const tagCandidates = moduleStateStringCandidates(compilerPath.node);
+  const functionTagCandidates = moduleFunctionStringCandidates(compilerPath.node);
+  const components = discoverComponentExports(compilerPath.node, entry.id);
+  const componentNames = new Set(components.keys());
+  const providerSources = new Map(
+    (options.transparentAsyncSources ?? DEFAULT_TRANSPARENT_ASYNC_SOURCES).map(
+      (d) => [d.module, d.source] as const,
+    ),
+  );
+  const providerFactories = new Set<string>();
+  for (const stmt of compilerPath.node.body) {
+    if (!astFactory.isImportDeclaration(stmt)) continue;
+    const def = providerSources.get(stmt.source.value);
+    if (def === undefined) continue;
+    for (const spec of stmt.specifiers) {
+      if (
+        astFactory.isImportSpecifier(spec) &&
+        astFactory.isIdentifier(spec.imported) &&
+        spec.imported.name === def
+      ) {
+        providerFactories.add(spec.local.name);
+      }
+    }
+  }
+  const transparentFunctionFactories = directTransparentSourceFunctions(
+    compilerPath.node,
+    providerFactories,
+  );
+  for (const [name, component] of components) {
+    locals.set(name, { type: 'component', ...component });
+  }
+  for (const stmt of compilerPath.node.body) {
+    const inner = astFactory.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
+    if (astFactory.isVariableDeclaration(inner)) {
+      for (const decl of inner.declarations) {
+        if (!astFactory.isIdentifier(decl.id)) continue;
+        const init =
+          decl.init !== null && astFactory.isExpression(decl.init)
+            ? unwrapTypeExpression(decl.init)
+            : decl.init;
+        if (astFactory.isArrowFunctionExpression(init) || astFactory.isFunctionExpression(init)) {
+          const componentCandidates = directFunctionComponentNames(init, componentNames).map(
+            (name) => `${entry.id}#${name}`,
+          );
+          locals.set(decl.id.name, {
+            type: 'function',
+            ...(transparentFunctionFactories.has(decl.id.name)
+              ? {
+                  transparentSourceFactory: true,
+                  ...(transparentFunctionFactories.get(decl.id.name) === null
+                    ? {}
+                    : {
+                        transparentSourceMethod: transparentFunctionFactories.get(decl.id.name)!,
+                      }),
                 }
-                locals.set(decl.id.name, {
-                  type: 'state',
-                  kind,
-                  key: `${entry.id}#${decl.id.name}`,
-                  tagCandidates: [...(tagCandidates.get(decl.id.name) ?? [])],
-                  componentCandidates: [...names].map(
-                    (name) => `${entry.id}#${name}`,
-                  ),
-                });
-              }
-            }
-          } else if (
-            astFactory.isFunctionDeclaration(inner) &&
-            inner.id != null &&
-            !components.has(inner.id.name)
-          ) {
-            const componentCandidates = directFunctionComponentNames(
-              inner,
-              componentNames,
-            ).map((name) => `${entry.id}#${name}`);
-            locals.set(inner.id.name, {
-              type: 'function',
-              ...(transparentFunctionFactories.has(inner.id.name)
-                ? {
-                    transparentSourceFactory: true,
-                    ...(transparentFunctionFactories.get(inner.id.name) === null
-                      ? {}
-                      : {
-                          transparentSourceMethod:
-                            transparentFunctionFactories.get(inner.id.name)!,
-                        }),
-                  }
-                : {}),
-              tagCandidates: [
-                ...(functionTagCandidates.get(inner.id.name) ?? []),
-              ],
-              componentCandidates,
-              reads: [],
-              writes: [],
-              boundedWrites: [],
-              parameterWrites: [],
-              unbounded: true,
-            });
+              : {}),
+            tagCandidates: [...(functionTagCandidates.get(decl.id.name) ?? [])],
+            componentCandidates,
+            reads: [],
+            writes: [],
+            boundedWrites: [],
+            parameterWrites: [],
+            unbounded: true,
+          });
+          continue;
+        }
+        let kind: StateKind | undefined;
+        if (
+          astFactory.isCallExpression(init) &&
+          astFactory.isIdentifier(init.callee) &&
+          providerFactories.has(init.callee.name)
+        ) {
+          locals.set(decl.id.name, {
+            type: 'state',
+            kind: 'let',
+            key: `${entry.id}#${decl.id.name}`,
+            transparentSource: true,
+            tagCandidates: [],
+            componentCandidates: [],
+          });
+          continue;
+        }
+        if (inner.kind === 'let' || inner.kind === 'var') kind = 'let';
+        else if (isStoreObject(init)) kind = 'store';
+        else if (isConstObjectState(init)) kind = 'const';
+        if (kind !== undefined) {
+          const names = new Set<string>();
+          if (astFactory.isExpression(init)) {
+            directComponentNames(init, componentNames, names);
           }
+          locals.set(decl.id.name, {
+            type: 'state',
+            kind,
+            key: `${entry.id}#${decl.id.name}`,
+            tagCandidates: [...(tagCandidates.get(decl.id.name) ?? [])],
+            componentCandidates: [...names].map((name) => `${entry.id}#${name}`),
+          });
         }
-        const exports: Record<string, LinkedExport> = {};
-        for (const [exported, local] of exportedLocals(compilerPath.node)) {
-          const value = locals.get(local);
-          if (value !== undefined) exports[exported] = value;
-        }
-        manifest = {
-          exports,
-          imports: importRefs(compilerPath.node),
-          mounts: applicationMounts(
-            compilerPath.node,
-            options.runtimePath ?? '@memoized-dom/runtime',
-          ),
-          components: [],
-          componentUsages: [],
-          routedPreparations: [],
-          readers: {},
-        };
+      }
+    } else if (
+      astFactory.isFunctionDeclaration(inner) &&
+      inner.id != null &&
+      !components.has(inner.id.name)
+    ) {
+      const componentCandidates = directFunctionComponentNames(inner, componentNames).map(
+        (name) => `${entry.id}#${name}`,
+      );
+      locals.set(inner.id.name, {
+        type: 'function',
+        ...(transparentFunctionFactories.has(inner.id.name)
+          ? {
+              transparentSourceFactory: true,
+              ...(transparentFunctionFactories.get(inner.id.name) === null
+                ? {}
+                : {
+                    transparentSourceMethod: transparentFunctionFactories.get(inner.id.name)!,
+                  }),
+            }
+          : {}),
+        tagCandidates: [...(functionTagCandidates.get(inner.id.name) ?? [])],
+        componentCandidates,
+        reads: [],
+        writes: [],
+        boundedWrites: [],
+        parameterWrites: [],
+        unbounded: true,
+      });
+    }
+  }
+  const exports: Record<string, LinkedExport> = {};
+  for (const [exported, local] of exportedLocals(compilerPath.node)) {
+    const value = locals.get(local);
+    if (value !== undefined) exports[exported] = value;
+  }
+  manifest = {
+    exports,
+    imports: importRefs(compilerPath.node),
+    mounts: applicationMounts(compilerPath.node, options.runtimePath ?? '@memoized-dom/runtime'),
+    components: [],
+    componentUsages: [],
+    routedPreparations: [],
+    readers: {},
+  };
   if (manifest === undefined) {
     throw new Error(`memo-dom: failed to discover module '${entry.id}'`);
   }

@@ -3,6 +3,7 @@ import type { CompileModulesOptions, ModuleEntry, ModuleManifest } from './model
 import type { CompilerRouteDefinition } from '../analysis/routes';
 import { resolveModule, linkImports } from './resolution';
 import { analyzeManifest } from './discovery';
+import type { ManifestAnalysis } from './analysis';
 
 function stableManifest(manifest: ModuleManifest): string {
   return JSON.stringify(manifest);
@@ -31,6 +32,7 @@ export function linkManifestWorklist(
   options: CompileModulesOptions,
   rootId: string,
   linkedRoutes: readonly CompilerRouteDefinition[],
+  analysis: ManifestAnalysis,
 ): Map<string, ModuleManifest> {
   const manifests = new Map(initial);
   const importers = reverseModuleDependencies(entries, manifests, options);
@@ -45,13 +47,7 @@ export function linkManifestWorklist(
     const entry = entries.get(id)!;
     const previous = manifests.get(id)!;
     const linked = linkImports(entry, previous, manifests, entries, options);
-    const current = analyzeManifest(
-      entry,
-      linked,
-      options,
-      rootId,
-      linkedRoutes,
-    );
+    const current = analyzeManifest(entry, linked, options, rootId, linkedRoutes, analysis);
     analyses++;
     if (analyses > maximumAnalyses) {
       throw new Error('memo-dom: cross-module export summaries did not converge');

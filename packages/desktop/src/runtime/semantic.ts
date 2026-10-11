@@ -4,6 +4,7 @@ import {
   createApplicationRuntime,
   markDirty,
   registerEntity,
+  register,
   runWithApplicationRuntime,
   setScheduler,
   unregisterSubtree,
@@ -11,6 +12,7 @@ import {
 } from '@memoized-dom/runtime/core';
 import { configureNodeContext } from '@memoized-dom/runtime/node-context';
 import { initializeSceneModules } from './modules';
+import type { DesktopHost } from '../bridge/protocol';
 
 // Local writes already carry their exact source set in the scene owner.
 // A full routed invalidation dominates this reason in the shared kernel.
@@ -37,13 +39,29 @@ function publicationJob(publish: PublicationJob['publish']): PublicationJob {
   return { publish, promise, resolve, reject, observed: false };
 }
 
-export function createSceneSemanticRuntime() {
+export function createSceneSemanticRuntime(host: Pick<DesktopHost, 'nextFrame'> = {}) {
   configureNodeContext();
   const effects = new Map<string, () => void>();
   const activations = new Map<string, () => void>();
   const holds = new Set<Promise<void>>();
+  let closed = false;
+  let visible = true;
+  const drainFailures: unknown[] = [];
   const runtime = createApplicationRuntime(undefined, {
-    schedule: null,
+    schedule: host.nextFrame
+      ? (callback) => {
+          void host.nextFrame!()
+            .then((frame) => {
+              if (closed) return;
+              visible = frame.visible;
+              callback();
+            })
+            .catch((error) => {
+              if (!closed) drainFailures.push(error);
+            });
+        }
+      : null,
+    visible: () => visible,
     effects: 'run',
     refs: 'run',
     effectBoundary(id, execute) {
@@ -51,14 +69,12 @@ export function createSceneSemanticRuntime() {
     },
   });
   const run = <T>(callback: () => T): T => runWithApplicationRuntime(runtime, callback);
-  let closed = false;
   let lifecycleReady = false;
   let lifecycleStopped = false;
   const pending = new Map<object, PublicationJob>();
   const running = new Map<object, PublicationJob>();
   const failed = new Set<PublicationJob>();
   const rejectedFamilies = new Set<object>();
-  const drainFailures: unknown[] = [];
   let collecting: Set<PublicationJob> | undefined;
   const releaseLifecycle = (): void => {
     if (
@@ -163,11 +179,12 @@ export function createSceneSemanticRuntime() {
         commit();
       });
     },
-    register(id: string, parent: string, update: (full: boolean) => void): void {
+    register(id: string, parent: string, update: (full: boolean) => void, volatile = false): void {
       run(() =>
-        registerEntity({
+        (volatile ? register : registerEntity)({
           id,
           parent,
+          volatile,
           render(reasons?: DirtyReasons) {
             const local =
               reasons === LOCAL_WRITE ||

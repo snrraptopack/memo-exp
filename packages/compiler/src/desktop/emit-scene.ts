@@ -1,7 +1,8 @@
 /** Emit retained scene factories without turning inline JSX into state scopes. */
 import type * as t from '../ast/compiler-types';
 import * as b from '../ast/factory';
-import { valueExpression, type DesktopScene } from './lower-scene';
+import type { DesktopScene } from './lower-scene';
+import { valueExpression } from './value';
 
 interface EmitOptions {
   id: string;
@@ -13,6 +14,7 @@ interface EmitOptions {
   templates: t.Statement[];
   modules: readonly string[];
   lexical?: boolean;
+  volatile?: boolean;
   receive?: t.Expression;
   prepare?: t.Expression;
   lifecycle?: readonly t.ObjectProperty[];
@@ -88,6 +90,7 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
       receive,
       prepare: undefined,
       lifecycle: undefined,
+      volatile: false,
     });
 
     // Factories live inside the authored closure. Their templates live at module
@@ -122,6 +125,8 @@ export function emitDesktopScene(scene: DesktopScene, options: EmitOptions): Emi
   }
 
   const properties: t.ObjectProperty[] = [];
+  if (options.volatile)
+    properties.push(b.objectProperty(b.identifier('volatile'), b.booleanLiteral(true)));
   properties.push(b.objectProperty(b.identifier('modules'), valueExpression(options.modules)));
   if (options.lexical)
     properties.push(b.objectProperty(b.identifier('lexical'), b.booleanLiteral(true)));

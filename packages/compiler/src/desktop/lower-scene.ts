@@ -1,3 +1,4 @@
+import { valueExpression } from './value';
 /** Encode authored structure; Rust owns tag translation and content semantics. */
 import type * as t from '../ast/compiler-types';
 import * as b from '../ast/factory';
@@ -10,7 +11,8 @@ import { normalizeCssPropertyName } from '@tsrx/core';
 import type { ComponentPropsPlan } from '../components/props';
 import type { LinkedComponentImport } from '../context/model';
 import { desktopComponentCall } from './component-call';
-import { desktopRegionPlan } from './regions';
+import { desktopRegionPlan, desktopBranchesPlan } from './regions';
+import type { ComponentReturnPlan } from '../components/return-plan';
 import { nodeHasJsx } from '../context/ast';
 import { matchMapCall, type MapSite } from '../lists';
 import type { MapCallExpression } from '../context';
@@ -18,6 +20,8 @@ import { desktopListPlan } from './lists';
 import type { ParentRow } from '../lists/map-site';
 import type { HandlerWritePlan } from '../handlers/plan';
 import type { CallbackSourcePlan } from '../planning/component-callbacks';
+import { planOrderedAttributes } from '../jsx/attributes';
+import { planDirectChildren } from '../jsx/children';
 
 const desktopEventNames = {
   onClick: 'click',
@@ -79,6 +83,7 @@ export function lowerDesktopScene(
     instrument: t.Identifier;
     scope: t.Identifier;
     lexical?: boolean;
+    returns?: ComponentReturnPlan;
     parentRow?: ParentRow;
     components: ReadonlyMap<string, ComponentPropsPlan>;
     imports: ReadonlyMap<string, LinkedComponentImport>;
@@ -124,7 +129,12 @@ export function lowerDesktopScene(
     parentRow: ParentRow | undefined = options.parentRow,
   ) => {
     const component = options.fresh('__desktopFragment');
-    const scene = lowerDesktopScene(branch, { ...options, lexical: true, parentRow });
+    const scene = lowerDesktopScene(branch, {
+      ...options,
+      returns: undefined,
+      lexical: true,
+      parentRow,
+    });
     fragments.push({ component, captures, scene });
     const props = b.objectExpression(
       captures.length
@@ -178,6 +188,12 @@ export function lowerDesktopScene(
       fresh: options.fresh,
       fail,
     });
+    addPlannedRegion(plan, parent);
+  };
+  const addPlannedRegion = (
+    plan: ReturnType<typeof desktopRegionPlan>,
+    parent: number | null,
+  ): void => {
     const node = nodes.length;
     nodes.push({ kind: 'region', parent });
     for (const choice of plan.choices) if (b.isIdentifier(choice)) componentNames.add(choice.name);
@@ -232,7 +248,7 @@ export function lowerDesktopScene(
       return;
     }
     if (b.isJSXFragment(element)) {
-      for (const child of element.children) emit(child, parent);
+      emitChildren(element.children, parent);
       return;
     }
     if (b.isJSXText(element)) {
@@ -282,10 +298,19 @@ export function lowerDesktopScene(
     nodes.push({ kind: 'element', tag, parent, text: '', attributes, style });
     const eventTypes = new Set<string>();
     const seen = new Set<string>();
-    for (const attribute of opening.attributes) {
-      if (!b.isJSXAttribute(attribute) || !b.isJSXIdentifier(attribute.name))
+    const attributePlan = planOrderedAttributes(opening.attributes, {
+      cloneExpressions: false,
+      fail: (message) => fail(message, opening),
+    });
+    for (const [index, entry] of attributePlan.entries.entries()) {
+      const attribute = opening.attributes[index]!;
+      if (
+        entry.type === 'spread' ||
+        !b.isJSXAttribute(attribute) ||
+        !b.isJSXIdentifier(attribute.name)
+      )
         fail('spread and namespaced attributes are not implemented', attribute);
-      const name = attribute.name.name === 'className' ? 'class' : attribute.name.name;
+      const name = entry.name === 'className' ? 'class' : entry.name;
       if (seen.has(name)) fail(`duplicate ${name} attribute`, attribute);
       seen.add(name);
       if (name === 'ref') {
@@ -296,7 +321,7 @@ export function lowerDesktopScene(
             b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
             b.objectProperty(
               b.identifier('value'),
-              options.refValue(unwrapTypeExpression(attribute.value.expression) as t.Expression),
+              options.refValue(unwrapTypeExpression(entry.value) as t.Expression),
             ),
           ]),
         );
@@ -309,9 +334,7 @@ export function lowerDesktopScene(
           !(tag === 'input' && ['value', 'placeholder'].includes(name))
         )
           fail(`desktop attribute ${name} is not implemented`, attribute);
-        let literal: t.Node | null | undefined = attribute.value;
-        if (literal && b.isJSXExpressionContainer(literal))
-          literal = unwrapTypeExpression(literal.expression);
+        const literal = unwrapTypeExpression(entry.value);
         if (
           tag === 'input' &&
           name === 'value' &&
@@ -369,7 +392,7 @@ export function lowerDesktopScene(
       const value = attribute.value;
       if (!value || !b.isJSXExpressionContainer(value))
         fail(`${name} requires a callback expression`, attribute);
-      const expression = unwrapTypeExpression(value.expression) as t.Expression;
+      const expression = unwrapTypeExpression(entry.value) as t.Expression;
       const localCallback = callbacks.forEvent(expression);
       const moduleCallback = localCallback ? null : options.moduleCallback(expression);
       const callback = localCallback ?? moduleCallback;
@@ -401,9 +424,56 @@ export function lowerDesktopScene(
         ]),
       );
     }
-    for (const child of element.children) emit(child, node);
+    emitChildren(element.children, node);
   };
-  emit(root, null);
+  const emitChildren = (children: t.JSXElement['children'], parent: number | null): void => {
+    const plan = planDirectChildren(children, {
+      preserveTextBoundaries: true,
+      cloneExpressions: false,
+      isForwarded: () => false,
+      fail: (message) => fail(message, root),
+    });
+    for (const child of plan) {
+      switch (child.type) {
+        case 'text':
+          if (child.static && b.isStringLiteral(child.expression))
+            addText(child.expression.value, parent);
+          else addBinding(child.expression, addText('', parent), 'text');
+          break;
+        case 'node':
+          emit(child.node, parent);
+          break;
+        case 'list':
+          addList(child.expression, parent);
+          break;
+        case 'condition':
+          addRegion(child.expression, parent);
+          break;
+        case 'slot':
+          fail('forwarded JSX slots require scene ownership', child.expression);
+      }
+    }
+  };
+  if (options.returns) {
+    addPlannedRegion(
+      desktopBranchesPlan(
+        {
+          pickExpr: b.callExpression(options.returns.pick, []),
+          branches: options.returns.branches,
+        },
+        {
+          call: componentCall,
+          inline: inlineCall,
+          sourcesFor: dependenciesFor,
+          fresh: options.fresh,
+          fail,
+        },
+      ),
+      null,
+    );
+  } else {
+    emit(root, null);
+  }
   // A component handle owns all fragment roots; regions flatten them at placement.
   if (!nodes.length) fail('empty desktop fragments are not implemented yet', root);
   return {
@@ -419,24 +489,6 @@ export function lowerDesktopScene(
     fragments,
     componentNames: [...componentNames],
   };
-}
-
-export function valueExpression(value: unknown): t.Expression {
-  if (Array.isArray(value)) return b.arrayExpression(value.map(valueExpression));
-  if (value !== null && typeof value === 'object')
-    return b.objectExpression(
-      Object.entries(value).map(([key, item]) =>
-        b.objectProperty(
-          /^[A-Za-z_$][\w$]*$/.test(key) ? b.identifier(key) : b.stringLiteral(key),
-          valueExpression(item),
-        ),
-      ),
-    );
-  if (value === null) return b.nullLiteral();
-  if (typeof value === 'string') return b.stringLiteral(value);
-  if (typeof value === 'number') return b.numericLiteral(value);
-  if (typeof value === 'boolean') return b.booleanLiteral(value);
-  throw new TypeError('Invalid desktop template value');
 }
 
 function assertNoGeneratorCallbacks(

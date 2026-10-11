@@ -1,13 +1,19 @@
 /** Target-independent component return structure, completed before emission. */
 import type { ComponentListSites } from './list-sites';
-import type { ComponentPath } from '../context';
+import type { ComponentPath, Ctx } from '../context';
 import { analyzeComponentReturns, type ComponentReturns } from '../components/return-plan';
 import type { ComponentExpressionSources } from '../analysis/expression-sources';
 import type { ComponentPullPlan } from '../analysis/primitive-pull';
 import type { ComponentPlacement } from './component-placement';
 import type { ComponentRegionReplay } from '../analysis/region-replay';
 import { planComponentRegionShapes, type ComponentRegionShapes } from './region-shapes';
-import type {ComponentCallbacks} from './component-callbacks';
+import type { ComponentCallbacks } from './component-callbacks';
+import { planComponentCallbacks } from './component-callbacks';
+import { planExpressionSources } from './expression-sources';
+import { planComponentPulls } from './primitive-pull';
+import { planComponentPlacements } from './component-placement';
+import { planRegionReplays } from './region-replay';
+import { planComponentListSites } from './list-sites';
 
 export interface PlannedComponent {
   readonly name: string;
@@ -27,13 +33,30 @@ export interface ModuleRenderPlan {
 }
 
 export interface ComponentRenderInputs {
-  readonly callbacks: ReadonlyMap<string,ComponentCallbacks>;
+  readonly callbacks: ReadonlyMap<string, ComponentCallbacks>;
   readonly expressionSources: ReadonlyMap<string, ComponentExpressionSources>;
   readonly pullPlans: ReadonlyMap<string, ComponentPullPlan>;
   readonly placements: ReadonlyMap<string, ComponentPlacement>;
   readonly regionReplays: ReadonlyMap<string, ComponentRegionReplay>;
   readonly listSites: ReadonlyMap<string, ComponentListSites>;
   readonly renderCallbackProps: ReadonlyMap<string, readonly string[]>;
+}
+
+/** Capture the same complete plan before either target replaces any factory. */
+export function planModuleRendering(ctx: Ctx): ModuleRenderPlan {
+  return planComponentRendering(ctx.compPaths, {
+    callbacks: new Map(
+      [...ctx.compPaths].map(([name, path]) => [name, planComponentCallbacks(ctx, name, path)]),
+    ),
+    expressionSources: planExpressionSources(ctx),
+    pullPlans: planComponentPulls(ctx),
+    placements: planComponentPlacements(ctx),
+    regionReplays: planRegionReplays(ctx),
+    listSites: planComponentListSites(ctx),
+    renderCallbackProps: new Map(
+      [...ctx.componentProps].map(([name, props]) => [name, [...props.renderCallbacks]]),
+    ),
+  });
 }
 
 /**
@@ -52,19 +75,32 @@ export function planComponentRendering(
   return {
     components: [...components].map(([name, source]) => {
       const sources = inputs.expressionSources.get(name);
-      if (sources === undefined) throw new Error(`memo-dom: missing expression-source plan for '${name}'`);
+      if (sources === undefined)
+        throw new Error(`memo-dom: missing expression-source plan for '${name}'`);
       const placement = inputs.placements.get(name);
-      if (placement === undefined) throw new Error(`memo-dom: missing placement plan for '${name}'`);
+      if (placement === undefined)
+        throw new Error(`memo-dom: missing placement plan for '${name}'`);
       const regionReplay = inputs.regionReplays.get(name);
-      if (regionReplay === undefined) throw new Error(`memo-dom: missing region-replay plan for '${name}'`);
+      if (regionReplay === undefined)
+        throw new Error(`memo-dom: missing region-replay plan for '${name}'`);
       const listSites = inputs.listSites.get(name);
-      if (listSites === undefined) throw new Error(`memo-dom: missing list-site plan for '${name}'`);
-      const callbacks=inputs.callbacks.get(name);
-      if(callbacks===undefined)throw new Error(`memo-dom: missing callback-source plan for '${name}'`);
-      return { name, source, returns: analyzeComponentReturns(source, name), expressionSources: sources,
+      if (listSites === undefined)
+        throw new Error(`memo-dom: missing list-site plan for '${name}'`);
+      const callbacks = inputs.callbacks.get(name);
+      if (callbacks === undefined)
+        throw new Error(`memo-dom: missing callback-source plan for '${name}'`);
+      return {
+        name,
+        source,
+        returns: analyzeComponentReturns(source, name),
+        expressionSources: sources,
         callbacks,
-        pullPlan: inputs.pullPlans.get(name) ?? null, placement, regionReplay,
-        regionShapes: planComponentRegionShapes(source, inputs.renderCallbackProps), listSites };
+        pullPlan: inputs.pullPlans.get(name) ?? null,
+        placement,
+        regionReplay,
+        regionShapes: planComponentRegionShapes(source, inputs.renderCallbackProps),
+        listSites,
+      };
     }),
   };
 }

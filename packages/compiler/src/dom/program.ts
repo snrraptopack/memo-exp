@@ -16,23 +16,17 @@ import { generatedIdentifier, md, requireIdentifiers } from './identifiers';
 import { planAccessReaders } from '../analysis/access-table';
 import { emitAccessTable } from './access-table';
 import { prepareProgramAnalysis } from './prepare';
-import { liftModuleStateCells } from '../cells';
+import { liftModuleStateCells } from './cells';
 import { emitDomComponents } from './dom';
 import { emittedRuntimeHelpers } from './runtime-requirements';
 import { emitInitialMount } from './initial-entry';
-import { planComponentListSites } from '../planning/list-sites';
-import { planComponentRendering, type ModuleRenderPlan } from '../planning/component-render';
-import { planComponentCallbacks } from '../planning/component-callbacks';
+import { planModuleRendering, type ModuleRenderPlan } from '../planning/component-render';
 import { planModuleCallbacks } from '../planning/module-callbacks';
 import { instrumentSharedCallback } from './handlers';
-import { planExpressionSources } from '../planning/expression-sources';
-import { planComponentPulls } from '../planning/primitive-pull';
-import { planComponentPlacements } from '../planning/component-placement';
-import { planRegionReplays } from '../planning/region-replay';
 import { rejectUnownedCleanup } from './lifecycle';
 import { rejectUnownedEffects, rewriteModuleEffects } from '../effects';
 import { routeManifestStatements, initialRoutePreparationStatements } from './router';
-import { analyzeRoutedPreparations } from '../routed';
+import { analyzeRoutedPreparations } from './routed';
 import { rewriteTransparentDataReads } from './read-rewriting';
 import { externalReactiveImportStatements } from './external-reactivity';
 
@@ -102,19 +96,7 @@ function prepareProgram(ctx: Ctx, programPath: ProgramTransformPath): ModuleRend
   ctx.moduleCallbacks = planModuleCallbacks(ctx, programPath);
   for (const site of ctx.moduleCallbacks.retained)
     instrumentSharedCallback(ctx, site.target, site.executionAware);
-  return planComponentRendering(ctx.compPaths, {
-    callbacks: new Map(
-      [...ctx.compPaths].map(([name, path]) => [name, planComponentCallbacks(ctx, name, path)]),
-    ),
-    expressionSources: planExpressionSources(ctx),
-    pullPlans: planComponentPulls(ctx),
-    placements: planComponentPlacements(ctx),
-    regionReplays: planRegionReplays(ctx),
-    listSites: planComponentListSites(ctx),
-    renderCallbackProps: new Map(
-      [...ctx.componentProps].map(([name, props]) => [name, [...props.renderCallbacks]]),
-    ),
-  });
+  return planModuleRendering(ctx);
 }
 
 function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {

@@ -309,7 +309,7 @@ describe('desktop compilation and publication', () => {
   });
 
   it.each([
-    [`export function Counter(){ return <Missing />; }`, 'unresolved desktop component'],
+    [`export function Counter(){ return <Missing />; }`, 'not a linked component factory'],
     [
       `export function Counter(){ let color='red'; return <button style={{color}}>Hi</button>; }`,
       'style objects currently require static values',

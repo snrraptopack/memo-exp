@@ -22,10 +22,7 @@ function isEmptyBranch(node: t.Node): boolean {
   );
 }
 
-function validateBranchJsx(
-  jsx: JsxNode,
-  fail: (msg: string, at?: t.Node) => never,
-): void {
+function validateBranchJsx(jsx: JsxNode, fail: (msg: string, at?: t.Node) => never): void {
   const stack: t.Node[] = [jsx];
   while (stack.length > 0) {
     const node = stack.pop()!;
@@ -88,6 +85,13 @@ export function planConditionalBranches(
       astFactory.numericLiteral(1),
     );
     branchNodes = [expr.right, null];
+  } else if (expr.operator === '??') {
+    pickExpr = astFactory.conditionalExpression(
+      astFactory.binaryExpression('==', cloneEstreeNode(expr.left), astFactory.nullLiteral()),
+      astFactory.numericLiteral(0),
+      astFactory.numericLiteral(1),
+    );
+    branchNodes = [expr.right, expr.left];
   } else {
     pickExpr = astFactory.conditionalExpression(
       cloneEstreeNode(expr.left),

@@ -21,7 +21,8 @@ it.skipIf(!chromeExecutable())('preserves DOM shape and custom-element creation 
     entryPoints: ['packages/runtime/src/index.ts'],
     bundle: true, write: false, format: 'iife', globalName: 'MMD',
   });
-  const browser = await puppeteer.launch({ executablePath, headless: true, pipe: true });
+  // Use the WebSocket transport: Bun on Windows can stall on Chromium's pipe.
+  const browser = await puppeteer.launch({ executablePath, headless: true });
   try {
     const page = await browser.newPage();
     await page.addScriptTag({ content: bundle.outputFiles[0]!.text });

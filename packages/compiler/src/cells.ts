@@ -20,8 +20,6 @@ import {
   variableDeclaratorFor,
 } from './context';
 import type { Ctx } from './context';
-import type { DomContext } from './dom/context';
-import { generatedIdentifier, md } from './dom/identifiers';
 
 type ReactiveKind = 'let' | 'store' | 'computed';
 
@@ -216,19 +214,17 @@ function replaceAt(
 export function liftModuleStateCells(
   ctx: Ctx,
   programPath: ProgramContainer,
-  emission?: CellEmission,
+  emitter: CellEmission,
 ): void {
-  const emitter: CellEmission = emission ?? {
-    fresh: (name) => generatedIdentifier(ctx as DomContext, name),
-    runtime: (name) => md(ctx as DomContext, name),
-    header: (ctx as DomContext).emission.header,
-  };
   if (ctx.moduleStateCells !== true) return;
   const program = programPath.node as unknown as BaseNode;
   refreshAstAnalysis(ctx, program);
   const lifts = new Map<string, CellLift>();
 
   for (const [local, kind] of ctx.state) {
+    // Library facades remain library-owned even when application computeds
+    // are lifted. Their adapters publish changes through the access table.
+    if (ctx.externalReactiveBindings.has(local)) continue;
     if (kind !== 'let' && kind !== 'store' && !(emitter.includeDerived && kind === 'computed'))
       continue;
     const key = ctx.stateKeys.get(local);

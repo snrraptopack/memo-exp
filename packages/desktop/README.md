@@ -346,8 +346,8 @@ For host integrations, `DesktopApplication` exposes `run`, `mount`, `dispatch`,
 `dispose`; these are component-owner APIs, not element methods. A normal mounted
 `DesktopRoot` additionally has `rootId` and `unmount()`.
 
-Provider replay, shared volatile-pull integration, arbitrary package graphs beyond the
-linked relative graph, and direct re-export-from syntax remain integration
+Provider replay, arbitrary package graphs beyond the linked relative graph,
+and direct re-export-from syntax remain integration
 boundaries. Browser globals and DOM-dependent libraries require explicit target
 adaptation. The desktop build does not create a DOM for them.
 
@@ -361,7 +361,7 @@ rewritten in Rust merely because the presentation target is native.
 | --- | --- |
 | Utilities, validation, parsing, formatting, and data processing | Can run when compatible with Bun and their required APIs; normal package resolution/bundling applies |
 | Network, storage, filesystem, and native addons | Depend on Bun/platform support and the package's actual API requirements; desktop does not emulate browser-only storage or extension APIs |
-| Headless state, form, or query libraries | Their JavaScript may run; desktop still needs to wire the existing compiler external-source analysis, subscriptions, and shared opaque-value pull capability |
+| Headless state, form, or query libraries | Application reads use shared external-source analysis: configured subscriptions publish source keys, and opaque values can use shared visible-frame pulls |
 | Libraries that create or inspect DOM nodes | Cannot use desktop ref handles as browser elements; require a native adapter or an alternative implementation |
 | Memoized DOM component packages | Need components compiled for this target or supported source/package linking, plus implemented tags, attributes, and CSS; arbitrary package component linking is not established yet |
 | CSS libraries | Generated CSS enters the normal CSS pipeline and must fit the supported features described above |
@@ -376,7 +376,7 @@ tracks application reads and writes around external values. Package component
 linking is a separate concern from external-state observation. Unknown external
 calls already receive conservative shared compiler effect summaries.
 
-Web already implements two complementary external-value paths. Shared analysis
+Both targets use two complementary external-value paths. Shared analysis
 in [external-reactivity.ts](../compiler/src/analysis/external-reactivity.ts)
 records configured subscription contracts. Shared
 [opaque-volatility.ts](../compiler/src/analysis/opaque-volatility.ts) identifies
@@ -385,15 +385,45 @@ reevaluates registered volatile entities through the application's scheduling
 environment. This fallback can observe changing external values without a
 library subscription or changes to its published JavaScript.
 
-Desktop has not yet wired these paths fully: its compiler omits those analysis
-passes, and its semantic runtime uses `schedule: null` and direct entity
-registration. Consequently, library-owned asynchronous changes do not currently
-refresh desktop destinations automatically. The required work is to reuse the
-existing contracts and runtime capability, emit the appropriate scene-owner
-subscriptions/volatile registration, and supply native frame and visibility
-scheduling. Subscription callbacks must retain application ownership, and
-disposal must use the existing cleanup machinery. A separate desktop external
-store or subscription system is not required.
+Desktop runs those same analysis passes. Configured subscription adapters activate
+after the scene owner is accepted. Their callbacks re-enter the captured core
+application, publish the canonical source key, and invalidate the subscribing
+owner. Core cleanup releases subscriptions when the owner retires; late callbacks
+ignore retired owners. Library-owned values remain library-owned and are not
+replaced with application state cells.
+
+Subscriptions needed by module calculations or module effects belong to the core
+application lifetime. This includes calculations in a state-only file imported
+through a barrel. They remain active after an individual scene reader unmounts
+and are released when the application is disposed. Direct component-only sources
+retain the accepted component lifetime described above.
+
+Opaque scene owners register through core's existing volatile capability. The
+process window host supplies `nextFrame()` and native visibility, without a
+browser document. A clock request is acknowledged immediately; a separate frame
+message resolves it when GPUI runs the next frame. Hidden frames do not pull
+values. Headless/custom hosts that omit `nextFrame` do not automatically poll
+opaque values; explicit subscriptions still work there. Observable changes are
+sampled on visible frames rather than promised as one callback per mutation.
+
+The desktop build accepts the shared `externalReactiveSources` metadata. A
+subscription adapter receives the imported value and a listener, and returns a
+cleanup function. The library itself remains ordinary JavaScript. For example:
+
+```ts
+const externalReactiveSources = [
+  {
+    module: 'my-store',
+    source: 'store',
+    subscribe: { module: './store-adapter.ts', export: 'observeStore' },
+  },
+];
+```
+
+Pass this metadata to the desktop build or compiler options. Prefer a library's
+subscription API for prompt updates; frame pulls are the existing conservative
+fallback for opaque reads. These paths reuse core registration, access routing,
+visibility scheduling, and cleanup rather than introducing a desktop state system.
 
 Ordinary application callbacks can already call compatible library functions and
 assign results to compiled application state. Uncompiled package singletons

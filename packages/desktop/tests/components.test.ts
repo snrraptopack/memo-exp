@@ -242,10 +242,11 @@ it('rejects a failed child read before publishing any parent values, then retrie
   await f.app.dispose();
 });
 
-it('rejects recursive construction without publishing a partial tree', async () => {
-  const { App } = await load(`export function App(){return <main><App/></main>;}`);
+it('rejects recursive components during shared analysis before publishing a partial tree', async () => {
   const f = recording();
-  expect(() => f.app.mount(App)).toThrow('Recursive desktop component attachment');
+  expect(() => compileDesktop(`export function App(){return <main><App/></main>;}`)).toThrow(
+    "recursive component 'App'",
+  );
   await f.app.dispose();
   expect(f.transactions).toHaveLength(0);
 });
@@ -395,7 +396,7 @@ it('does not treat arbitrary value imports as compiled components', () => {
     compileDesktop(`import {Value} from './value.ts'; export function App(){return <Value/>;}`, {
       readModule: () => ({ moduleId: 'value.ts', source: 'export const Value=1;' }),
     }),
-  ).toThrow('unresolved desktop component <Value>');
+  ).toThrow('<Value /> is not a linked component factory');
 });
 
 it('reports cyclic component re-exports without recursing indefinitely', () => {
@@ -409,7 +410,7 @@ it('reports cyclic component re-exports without recursing indefinitely', () => {
             : `import {Child} from './a.ts';export {Child};`,
       }),
     }),
-  ).toThrow('cyclic component re-export');
+  ).toThrow('cyclic re-export');
 });
 
 it.each([

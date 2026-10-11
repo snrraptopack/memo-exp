@@ -2,18 +2,21 @@
 
 import type * as t from './ast/compiler-types';
 import * as astFactory from './ast/factory';
-import { cloneNode as cloneEstreeNode, walkAst, type BaseNode } from './ast';
+import { walkAst, type BaseNode } from './ast';
 import { astBindingAt, refreshAstAnalysis, type ProgramPath } from './context';
-import { type DomContext as Ctx } from './dom/context';
-import { mdd, mr } from './dom/identifiers';
+import type { Ctx } from './context';
 
 const ROUTER_MODULE = '@memoized-dom/router';
-const SERVER_CONTEXT_FIELDS = new Set([
-  'request',
-  'locals',
-  'services',
-  'platform',
-]);
+const SERVER_CONTEXT_FIELDS = new Set(['request', 'locals', 'services', 'platform']);
+
+export interface RoutedPreparationEmission {
+  preparation: CompilerRoutedPreparation;
+  callback: t.ArrowFunctionExpression | t.FunctionExpression;
+  declarator: t.VariableDeclarator;
+  usesTransparentSource: boolean;
+}
+
+export type RoutedPreparationLowering = (emission: RoutedPreparationEmission) => void;
 
 export interface CompilerRoutedPreparation {
   readonly id: string;
@@ -62,12 +65,11 @@ function serverImportBindings(program: t.Program): Set<string> {
       !astFactory.isImportDeclaration(statement) ||
       statement.importKind === 'type' ||
       !statement.source.value.startsWith('#server/')
-    ) continue;
+    )
+      continue;
     for (const specifier of statement.specifiers) {
-      if (
-        !astFactory.isImportSpecifier(specifier) ||
-        specifier.importKind !== 'type'
-      ) bindings.add(specifier.local.name);
+      if (!astFactory.isImportSpecifier(specifier) || specifier.importKind !== 'type')
+        bindings.add(specifier.local.name);
     }
   }
   return bindings;
@@ -113,10 +115,7 @@ function contextFields(
   return [...new Set(fields)];
 }
 
-function directConstDeclarator(
-  ctx: Ctx,
-  call: t.CallExpression,
-): t.VariableDeclarator | null {
+function directConstDeclarator(ctx: Ctx, call: t.CallExpression): t.VariableDeclarator | null {
   const parents = ctx.astAnalysis?.parentByNode;
   if (parents === undefined) return null;
   let current = call as unknown as BaseNode;
@@ -149,10 +148,7 @@ function owningComponent(ctx: Ctx, call: t.CallExpression): string | null {
   const parents = ctx.astAnalysis?.parentByNode;
   if (parents === undefined) return null;
   const componentByNode = new Map<BaseNode, string>(
-    [...ctx.compPaths].map(([name, path]) => [
-      path.node as unknown as BaseNode,
-      name,
-    ]),
+    [...ctx.compPaths].map(([name, path]) => [path.node as unknown as BaseNode, name]),
   );
   let current: BaseNode | null = call as unknown as BaseNode;
   while (current !== null) {
@@ -174,7 +170,7 @@ function owningComponent(ctx: Ctx, call: t.CallExpression): string | null {
 export function analyzeRoutedPreparations(
   ctx: Ctx,
   programPath: ProgramPath,
-  lower = false,
+  lower?: RoutedPreparationLowering,
 ): CompilerRoutedPreparation[] {
   const bindings = routedBindings(programPath.node);
   if (bindings.size === 0) return [];
@@ -239,7 +235,8 @@ export function analyzeRoutedPreparations(
               astFactory.isIdentifier(candidate) &&
               serverImports.has(candidate.name) &&
               astBindingAt(ctx, candidate, candidate.name)?.kind === 'import'
-            ) usesServerImport = true;
+            )
+              usesServerImport = true;
           },
         });
       }
@@ -249,7 +246,8 @@ export function analyzeRoutedPreparations(
             astFactory.isIdentifier(candidate) &&
             ctx.transparentSourceFactories.has(candidate.name) &&
             astBindingAt(ctx, candidate, candidate.name)?.kind === 'import'
-          ) usesTransparentSource = true;
+          )
+            usesTransparentSource = true;
         },
       });
       const index = counters.get(component) ?? 0;
@@ -261,17 +259,14 @@ export function analyzeRoutedPreparations(
         component,
         binding: declarator.id.name,
         contextFields: fields,
-        server:
-          usesServerImport || fields.some(field => SERVER_CONTEXT_FIELDS.has(field)),
+        server: usesServerImport || fields.some((field) => SERVER_CONTEXT_FIELDS.has(field)),
         ...(location?.line === undefined ? {} : { line: location.line }),
         ...(location?.column === undefined ? {} : { column: location.column }),
       };
       preparations.push(preparation);
 
       if (lower) {
-        const callbackScope = ctx.astAnalysis?.nodeToScope.get(
-          argument as unknown as BaseNode,
-        );
+        const callbackScope = ctx.astAnalysis?.nodeToScope.get(argument as unknown as BaseNode);
         walkAst<BaseNode>(argument as unknown as BaseNode, {
           enter(candidate) {
             if (!astFactory.isIdentifier(candidate)) return;
@@ -280,7 +275,8 @@ export function analyzeRoutedPreparations(
               binding === undefined ||
               !binding.references.includes(candidate) ||
               binding.scope.isProgramScope
-            ) return;
+            )
+              return;
             let scope = binding.scope;
             while (scope !== null && scope !== callbackScope) scope = scope.parent!;
             if (scope === callbackScope) return;
@@ -291,48 +287,7 @@ export function analyzeRoutedPreparations(
           },
         });
 
-        const properties = [
-          astFactory.objectProperty(
-            astFactory.identifier('id'),
-            astFactory.stringLiteral(preparation.id),
-          ),
-          astFactory.objectProperty(
-            astFactory.identifier('server'),
-            astFactory.booleanLiteral(preparation.server),
-          ),
-        ];
-        if (!(ctx.routedEnvironment === 'client' && preparation.server)) {
-          properties.push(
-            astFactory.objectProperty(
-              astFactory.identifier('prepare'),
-              cloneEstreeNode(argument, true),
-            ),
-          );
-        }
-        if (
-          usesTransparentSource &&
-          !(ctx.routedEnvironment === 'client' && preparation.server)
-        ) {
-          properties.push(
-            astFactory.objectProperty(
-              astFactory.identifier('settle'),
-              mdd(ctx, 'settleRoutedValue'),
-            ),
-          );
-          ctx.usesTransparentData = true;
-        }
-        ctx.emission.header.push(
-          astFactory.expressionStatement(
-            astFactory.callExpression(mr(ctx, 'registerRoutedPreparation'), [
-              astFactory.objectExpression(properties),
-            ]),
-          ),
-        );
-        declarator.init = astFactory.callExpression(
-          mr(ctx, 'readRoutedPreparation'),
-          [astFactory.stringLiteral(preparation.id)],
-        );
-        ctx.usesRouter = true;
+        lower({ preparation, callback: argument, declarator, usesTransparentSource });
       }
     },
   });
@@ -340,12 +295,13 @@ export function analyzeRoutedPreparations(
   if (lower && preparations.length > 0) {
     refreshAstAnalysis(ctx, programPath.node as unknown as BaseNode);
     if (ctx.routedEnvironment === 'client' && serverImports.size > 0) {
-      programPath.node.body = programPath.node.body.filter(statement => {
+      programPath.node.body = programPath.node.body.filter((statement) => {
         if (
           !astFactory.isImportDeclaration(statement) ||
           !statement.source.value.startsWith('#server/')
-        ) return true;
-        statement.specifiers = statement.specifiers.filter(specifier => {
+        )
+          return true;
+        statement.specifiers = statement.specifiers.filter((specifier) => {
           const binding = ctx.astAnalysis?.rootScope.getBinding(specifier.local.name);
           return binding !== undefined && binding.references.length > 0;
         });

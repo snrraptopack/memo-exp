@@ -5,7 +5,7 @@ import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { ComponentExportInfo } from '../components/manifest';
 import type { CompilerRoutedPreparation } from '../routed';
 import type { InitialRenderPlan } from '../planning/initial-content';
-import type { InitialDelivery } from '../dom/delivery-plan';
+import type { InitialDelivery } from '../planning/initial-delivery';
 import type { ComponentPropUsage } from '../components/render-usage';
 import type {
   ParameterWrite,
@@ -33,7 +33,9 @@ export interface CompileModulesOptions
   /** Emit one browser program for an HTML document, when its initial content is proved.
    * A host predicate can validate its shell before emission. Direct JS entries omit this.
    */
-  initialContent?: boolean | ((plan: InitialRenderPlan, delivery: InitialDelivery | undefined) => boolean);
+  initialContent?:
+    | boolean
+    | ((plan: InitialRenderPlan, delivery: InitialDelivery | undefined) => boolean);
 }
 
 export interface StateExport {
@@ -64,13 +66,11 @@ export interface ComponentExport extends ComponentExportInfo {
   type: 'component';
 }
 
-export interface ValueExport { type: 'value' }
+export interface ValueExport {
+  type: 'value';
+}
 
-export type LinkedExport =
-  | StateExport
-  | FunctionExport
-  | ComponentExport
-  | ValueExport;
+export type LinkedExport = StateExport | FunctionExport | ComponentExport | ValueExport;
 
 export interface ImportRef {
   local: string;

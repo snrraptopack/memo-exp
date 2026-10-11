@@ -8,9 +8,7 @@
 
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import {
-  cloneNode as cloneEstreeNode,
-} from '../ast';
+import { cloneNode as cloneEstreeNode } from '../ast';
 
 export type OrderedAttributeEntry =
   | { type: 'spread'; value: t.Expression }
@@ -24,6 +22,8 @@ export interface OrderedAttributePlan {
 
 export interface OrderedAttributeOptions {
   skipKey?: boolean;
+  /** Scene callback analysis needs the authored nodes' lexical identities. */
+  cloneExpressions?: boolean;
   fail(message: string): never;
 }
 
@@ -42,14 +42,20 @@ export function planOrderedAttributes(
   for (let index = 0; index < attributes.length; index++) {
     const attribute = attributes[index]!;
     if (astFactory.isJSXSpreadAttribute(attribute)) {
-      entries.push({type:'spread', value:cloneEstreeNode(attribute.argument)});
+      entries.push({
+        type: 'spread',
+        value:
+          options.cloneExpressions === false
+            ? attribute.argument
+            : cloneEstreeNode(attribute.argument),
+      });
       continue;
     }
 
     const name = jsxAttributeName(attribute.name);
     if (name === 'key' && options.skipKey) continue;
     const event = /^on[A-Z]/.test(name);
-    entries.push({type:'attribute', name, value:jsxAttributeValue(attribute, options.fail), event});
+    entries.push({ type: 'attribute', name, value: jsxAttributeValue(attribute, options), event });
     if (event && index > lastSpread) {
       safeEventKeys.push(name);
     }
@@ -60,29 +66,27 @@ export function planOrderedAttributes(
   };
 }
 
-export function jsxAttributeName(
-  name: t.JSXIdentifier | t.JSXNamespacedName,
-): string {
-  return astFactory.isJSXIdentifier(name)
-    ? name.name
-    : `${name.namespace.name}:${name.name.name}`;
+export function jsxAttributeName(name: t.JSXIdentifier | t.JSXNamespacedName): string {
+  return astFactory.isJSXIdentifier(name) ? name.name : `${name.namespace.name}:${name.name.name}`;
 }
 
 function jsxAttributeValue(
   attribute: t.JSXAttribute,
-  fail: (message: string) => never,
+  options: OrderedAttributeOptions,
 ): t.Expression {
   if (attribute.value == null) return astFactory.booleanLiteral(true);
   if (astFactory.isStringLiteral(attribute.value)) {
-    return cloneEstreeNode(attribute.value);
+    return options.cloneExpressions === false ? attribute.value : cloneEstreeNode(attribute.value);
   }
   if (
     astFactory.isJSXExpressionContainer(attribute.value) &&
     astFactory.isExpression(attribute.value.expression)
   ) {
-    return cloneEstreeNode(attribute.value.expression);
+    return options.cloneExpressions === false
+      ? attribute.value.expression
+      : cloneEstreeNode(attribute.value.expression);
   }
-  return fail(
+  return options.fail(
     `memo-dom: attribute '${jsxAttributeName(
       attribute.name,
     )}' must contain a JavaScript expression`,

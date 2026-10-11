@@ -1,10 +1,7 @@
-import type { InternalMemoDomOptions } from '../dom/context';
+import type { AnalysisOptions } from '../context';
 import type { CompileModulesOptions } from './model';
 
-export function compilerOptions(
-  options: CompileModulesOptions,
-  rootId = 'App',
-): InternalMemoDomOptions {
+export function compilerOptions(options: CompileModulesOptions, rootId = 'App'): AnalysisOptions {
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
     ...(options.hotRuntimePath === undefined ? {} : { hotRuntimePath: options.hotRuntimePath }),
@@ -18,7 +15,9 @@ export function compilerOptions(
       ? {}
       : { externalReactiveSources: options.externalReactiveSources }),
     ...(options.hot === undefined ? {} : { hot: options.hot }),
-    ...(options.moduleStateCells === undefined ? {} : { moduleStateCells: options.moduleStateCells }),
+    ...(options.moduleStateCells === undefined
+      ? {}
+      : { moduleStateCells: options.moduleStateCells }),
     ...(options.ssrWriter === undefined ? {} : { ssrWriter: options.ssrWriter }),
     ...(options.routedEnvironment === undefined
       ? {}

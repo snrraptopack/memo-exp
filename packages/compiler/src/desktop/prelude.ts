@@ -4,7 +4,7 @@ import * as b from '../ast/factory';
 import { cloneNode, walkAst } from '../ast';
 import type { Ctx } from '../context';
 import { planPreludeReplay } from '../emission/prelude';
-import { valueExpression } from './lower-scene';
+import { valueExpression } from './value';
 
 export function desktopPrelude(
   ctx: Ctx,

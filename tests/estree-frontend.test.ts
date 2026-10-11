@@ -35,7 +35,10 @@ import { analyzeComputed } from '../packages/compiler/src/analysis/computed';
 import { cloneRuntimeBindingPattern } from '../packages/compiler/src/analysis/runtime-pattern';
 import { isStaticDerivedChain } from '../packages/compiler/src/lists/static-derived';
 import { discoverComponentExports } from '../packages/compiler/src/components/manifest';
-import { GeneratedIdentifiers, initializeGeneratedIdentifiers } from '../packages/compiler/src/dom/identifiers';
+import {
+  GeneratedIdentifiers,
+  initializeGeneratedIdentifiers,
+} from '../packages/compiler/src/dom/identifiers';
 import { runAnalysis } from '../packages/compiler/src/dom/analyze';
 import { isRenderCallbackJsxRoot } from '../packages/compiler/src/components/render-callbacks';
 import { scanModuleControlFlow } from '../packages/compiler/src/module-control-flow';
@@ -54,10 +57,13 @@ import { scanInstanceDerivations } from '../packages/compiler/src/analysis/insta
 import { normalizeComponentJsxValues } from '../packages/compiler/src/components/jsx-values';
 import { normalizeRenderFunctions } from '../packages/compiler/src/components/render-functions';
 import { lowerRouterJsx } from '../packages/compiler/src/dom/router';
-import {planRouterJsx} from '../packages/compiler/src/analysis/routes';
-import { planDynamicTags, recordDynamicTagPropModes } from '../packages/compiler/src/planning/dynamic-tags';
+import { planRouterJsx } from '../packages/compiler/src/analysis/routes';
+import {
+  planDynamicTags,
+  recordDynamicTagPropModes,
+} from '../packages/compiler/src/planning/dynamic-tags';
 import { lowerDynamicTags } from '../packages/compiler/src/dom/dynamic-tags';
-import { liftModuleStateCells } from '../packages/compiler/src/cells';
+import { liftModuleStateCells } from '../packages/compiler/src/dom/cells';
 import {
   discoverTopLevelFunctions,
   findUnlinkedValueImports,
@@ -90,21 +96,21 @@ describe('ESTree parser and printer boundary', () => {
     const transform = (program: BaseNode): string => {
       transformEstreeProgram(
         {
-          node: program as unknown as Parameters<
-            typeof transformEstreeProgram
-          >[0]['node'],
+          node: program as unknown as Parameters<typeof transformEstreeProgram>[0]['node'],
           buildCodeFrameError(message: string) {
             return new Error(message);
           },
         },
         { moduleId: './frontend.tsx' },
       );
-      const transitional = collectNodes(program, (node): node is BaseNode =>
-        node.type === 'StringLiteral' ||
-        node.type === 'NumericLiteral' ||
-        node.type === 'BooleanLiteral' ||
-        node.type === 'NullLiteral' ||
-        node.type === 'ObjectProperty'
+      const transitional = collectNodes(
+        program,
+        (node): node is BaseNode =>
+          node.type === 'StringLiteral' ||
+          node.type === 'NumericLiteral' ||
+          node.type === 'BooleanLiteral' ||
+          node.type === 'NullLiteral' ||
+          node.type === 'ObjectProperty',
       );
       expect(transitional).toEqual([]);
       return printEstree(program).code;
@@ -139,7 +145,7 @@ describe('ESTree parser and printer boundary', () => {
     runAnalysis(context, programPath);
 
     expect([...context.comps.keys()]).toEqual(['App']);
-    expect([...context.instanceState.get('App') ?? []]).toEqual(['count']);
+    expect([...(context.instanceState.get('App') ?? [])]).toEqual(['count']);
     expect(context.componentProps.get('App')).toMatchObject({
       mode: 'object',
       names: ['name'],
@@ -169,9 +175,7 @@ describe('ESTree parser and printer boundary', () => {
       { name: 'renderRow', kind: 'jsx-helper' },
     ]);
     expect(
-      findUnlinkedValueImports(parsed.program, new Set(['linked'])).map(
-        ({ local }) => local,
-      ),
+      findUnlinkedValueImports(parsed.program, new Set(['linked'])).map(({ local }) => local),
     ).toEqual(['localMissing']);
   });
 
@@ -209,10 +213,10 @@ describe('ESTree parser and printer boundary', () => {
 
     expect(parsed.program.type).toBe('Program');
     expect(parsed.diagnostics).toEqual([]);
-    expect(collectNodes(parsed.program, isIdentifier).map((node) => node.name))
-      .toContain('Counter');
-    expect(collectNodes(parsed.program, isNumericLiteral).map((node) => node.value))
-      .toEqual([1]);
+    expect(collectNodes(parsed.program, isIdentifier).map((node) => node.name)).toContain(
+      'Counter',
+    );
+    expect(collectNodes(parsed.program, isNumericLiteral).map((node) => node.value)).toEqual([1]);
 
     const printed = printEstree(parsed.program, {
       comments: parsed.comments,
@@ -224,9 +228,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(printed.code).toContain('<button>{count}</button>');
     expect(printed.map?.sources).toEqual(['Counter.tsx']);
     expect(printed.map?.mappings.length).toBeGreaterThan(0);
-    expect(
-      parseEstree(printed.code, { filename: 'Counter.tsx' }).diagnostics,
-    ).toEqual([]);
+    expect(parseEstree(printed.code, { filename: 'Counter.tsx' }).diagnostics).toEqual([]);
   });
 
   it('prints trees containing nodes produced by the ESTree builders', () => {
@@ -235,9 +237,7 @@ describe('ESTree parser and printer boundary', () => {
     });
     const transformed = transformAst(parsed.program, {
       enter(node) {
-        return isNumericLiteral(node) && node.value === 1
-          ? numericLiteral(42)
-          : undefined;
+        return isNumericLiteral(node) && node.value === 1 ? numericLiteral(42) : undefined;
       },
     });
 
@@ -269,11 +269,8 @@ describe('ESTree parser and printer boundary', () => {
   it('returns diagnostics and exposes a typed throwing API', () => {
     const source = 'export const = ;';
     const parsed = parseEstree(source, { filename: 'broken.ts' });
-    expect(parsed.diagnostics.some((diagnostic) => diagnostic.severity === 'Error'))
-      .toBe(true);
-    expect(() =>
-      parseEstreeOrThrow(source, { filename: 'broken.ts' }),
-    ).toThrow(EstreeParseError);
+    expect(parsed.diagnostics.some((diagnostic) => diagnostic.severity === 'Error')).toBe(true);
+    expect(() => parseEstreeOrThrow(source, { filename: 'broken.ts' })).toThrow(EstreeParseError);
   });
 
   it('attaches the module and source location to parser failures', () => {
@@ -321,10 +318,7 @@ describe('ESTree parser and printer boundary', () => {
       { filename: 'events.tsx' },
     );
 
-    expect(hostJsxEventNames(parsed.program)).toEqual([
-      'onClick',
-      'onMouseEnter',
-    ]);
+    expect(hostJsxEventNames(parsed.program)).toEqual(['onClick', 'onMouseEnter']);
   });
 
   it('classifies handler calls directly from parsed ESTree', () => {
@@ -343,9 +337,7 @@ describe('ESTree parser and printer boundary', () => {
     );
 
     expect(handler).not.toBeNull();
-    expect(
-      callsOnlyCommittedLocalHelpers(handler!, (name) => name === 'save'),
-    ).toBe(true);
+    expect(callsOnlyCommittedLocalHelpers(handler!, (name) => name === 'save')).toBe(true);
     expect(callsOnlyCommittedLocalHelpers(handler!, () => false)).toBe(false);
   });
 
@@ -377,10 +369,9 @@ describe('ESTree parser and printer boundary', () => {
   });
 
   it('recognizes static list sources from parsed ESTree', () => {
-    const parsed = parseEstreeOrThrow(
-      `['a', 'b'].map((value) => value.toUpperCase());`,
-      { filename: 'list.ts' },
-    );
+    const parsed = parseEstreeOrThrow(`['a', 'b'].map((value) => value.toUpperCase());`, {
+      filename: 'list.ts',
+    });
     const array = findNode(
       parsed.program,
       (node): node is BaseNode => node.type === 'ArrayExpression',
@@ -417,18 +408,13 @@ describe('ESTree parser and printer boundary', () => {
     expect(expression).not.toBeNull();
     const result = analyzeComputed(context, expression!);
     expect(result.impure).toBe(false);
-    expect([...result.reads].sort()).toEqual([
-      'count',
-      'store',
-      'store.total',
-    ]);
+    expect([...result.reads].sort()).toEqual(['count', 'store', 'store.total']);
   });
 
   it('strips runtime pattern annotations from parsed TS-ESTree', () => {
-    const parsed = parseEstreeOrThrow(
-      'const read = ({ value }: { value: string }) => value;',
-      { filename: 'pattern.ts' },
-    );
+    const parsed = parseEstreeOrThrow('const read = ({ value }: { value: string }) => value;', {
+      filename: 'pattern.ts',
+    });
     const pattern = findNode(
       parsed.program,
       (node): node is BaseNode => node.type === 'ObjectPattern',
@@ -436,12 +422,8 @@ describe('ESTree parser and printer boundary', () => {
 
     expect(pattern).not.toBeNull();
     const cloned = cloneRuntimeBindingPattern(pattern!);
-    const originalAnnotation = (
-      pattern as unknown as Record<string, unknown>
-    ).typeAnnotation;
-    const clonedAnnotation = (
-      cloned as unknown as Record<string, unknown>
-    ).typeAnnotation;
+    const originalAnnotation = (pattern as unknown as Record<string, unknown>).typeAnnotation;
+    const clonedAnnotation = (cloned as unknown as Record<string, unknown>).typeAnnotation;
     expect(originalAnnotation).not.toBeNull();
     expect(cloned).not.toBe(pattern);
     expect(clonedAnnotation).toBeNull();
@@ -507,10 +489,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(analysis.rootScope.getBinding('alias')?.references).toHaveLength(1);
     const viewScope = analysis.nodeToScope.get(view!);
     expect([...viewScope!.bindings.keys()].sort()).toEqual(['inner']);
-    expect([...viewScope!.parent!.bindings.keys()].sort()).toEqual([
-      'local',
-      'rest',
-    ]);
+    expect([...viewScope!.parent!.bindings.keys()].sort()).toEqual(['local', 'rest']);
     expect(viewScope?.getBinding('local')?.references).toHaveLength(1);
     expect(viewScope?.getBinding('inner')?.references).toHaveLength(2);
     expect(viewScope?.getBinding('inner')?.constantViolations).toHaveLength(1);
@@ -632,10 +611,7 @@ describe('ESTree parser and printer boundary', () => {
 
     expect('branches' in returns).toBe(true);
     if ('branches' in returns) {
-      expect(returns.branches.map((branch) => branch?.type ?? null)).toEqual([
-        'JSXElement',
-        null,
-      ]);
+      expect(returns.branches.map((branch) => branch?.type ?? null)).toEqual(['JSXElement', null]);
     }
   });
 
@@ -688,9 +664,7 @@ describe('ESTree parser and printer boundary', () => {
         [
           'Child',
           {
-            value: [
-              { type: 'state', key: './prop-origins.tsx#shared' },
-            ],
+            value: [{ type: 'state', key: './prop-origins.tsx#shared' }],
             label: [{ type: 'local' }],
           },
         ],
@@ -738,14 +712,10 @@ describe('ESTree parser and printer boundary', () => {
       expect.objectContaining({
         bindings: ['label'],
         sources: ['active'],
-        resets: [
-          expect.objectContaining({ binding: 'label' }),
-        ],
+        resets: [expect.objectContaining({ binding: 'label' })],
       }),
     ]);
-    expect(context.instanceDerivedBindings.get('View')).toEqual(
-      new Set(['label']),
-    );
+    expect(context.instanceDerivedBindings.get('View')).toEqual(new Set(['label']));
     expect(context.instanceState.get('View')).toEqual(new Set());
   });
 
@@ -781,9 +751,7 @@ describe('ESTree parser and printer boundary', () => {
     expect(component).not.toBeNull();
     scanOpaqueVolatility(context);
 
-    expect(context.opaqueBindings.get('View')).toEqual(
-      new Set(['createClient', 'client']),
-    );
+    expect(context.opaqueBindings.get('View')).toEqual(new Set(['createClient', 'client']));
     expect(context.volatileComponents).toEqual(new Set(['View']));
   });
 
@@ -838,14 +806,10 @@ describe('ESTree parser and printer boundary', () => {
       (node): node is BaseNode => node.type === 'MemberExpression',
     );
     const rendered = members.find(
-      (member) =>
-        (member as unknown as { object?: { name?: string } }).object?.name ===
-        'alias',
+      (member) => (member as unknown as { object?: { name?: string } }).object?.name === 'alias',
     );
     const aliases = new AliasTracker((name, binding) =>
-      binding !== undefined && bindingScopeIsProgram(binding)
-        ? moduleOrigin(name, 'store')
-        : null,
+      binding !== undefined && bindingScopeIsProgram(binding) ? moduleOrigin(name, 'store') : null,
     );
 
     expect(declarator).not.toBeNull();
@@ -950,9 +914,7 @@ describe('ESTree parser and printer boundary', () => {
         sources: ['count'],
       }),
     ]);
-    expect(context.instanceDerivedBindings.get('View')).toEqual(
-      new Set(['doubled']),
-    );
+    expect(context.instanceDerivedBindings.get('View')).toEqual(new Set(['doubled']));
   });
 
   it('expands component JSX aliases directly on an Yuku tree', () => {
@@ -1045,12 +1007,19 @@ describe('ESTree parser and printer boundary', () => {
       usesRouter: false,
     } as unknown as Ctx;
 
-    lowerRouterJsx(context,planRouterJsx({
-      node: parsed.program as unknown as Parameters<typeof planRouterJsx>[0]['node'],
-      buildCodeFrameError(message) {
-        return new Error(message);
-      },
-    },context.moduleId,context.linkedRoutes));
+    lowerRouterJsx(
+      context,
+      planRouterJsx(
+        {
+          node: parsed.program as unknown as Parameters<typeof planRouterJsx>[0]['node'],
+          buildCodeFrameError(message) {
+            return new Error(message);
+          },
+        },
+        context.moduleId,
+        context.linkedRoutes,
+      ),
+    );
 
     expect(context.localRoutes).toEqual([
       expect.objectContaining({
@@ -1117,7 +1086,8 @@ describe('ESTree parser and printer boundary', () => {
       moduleStateCells: true,
       state: new Map([['count', 'let']]),
       stateKeys: new Map([['count', './cells.tsx#count']]),
-      emission:{header:[],identifiers:new GeneratedIdentifiers(parsed.program)},
+      externalReactiveBindings: new Set(),
+      emission: { header: [], identifiers: new GeneratedIdentifiers(parsed.program) },
       astAnalysis: analyzeScope(parsed.program),
     } as unknown as Ctx;
 
@@ -1134,8 +1104,7 @@ describe('ESTree parser and printer boundary', () => {
     );
     const methods = calls.flatMap((call) => {
       const callee = (call as unknown as { callee?: BaseNode }).callee;
-      const property = (callee as unknown as { property?: { name?: string } })
-        ?.property;
+      const property = (callee as unknown as { property?: { name?: string } })?.property;
       return property?.name === undefined ? [] : [property.name];
     });
     expect(methods).toContain('setCell');

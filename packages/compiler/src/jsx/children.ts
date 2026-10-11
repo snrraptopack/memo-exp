@@ -20,7 +20,7 @@ export type JsxChild = t.JSXElement['children'][number];
 export type JsxNode = t.JSXElement | t.JSXFragment;
 
 export type DirectChildPlan =
-  | { type: 'text'; expression: t.Expression }
+  | { type: 'text'; expression: t.Expression; static?: boolean }
   | { type: 'node'; node: JsxNode }
   | { type: 'list'; expression: MapCallExpression }
   | {
@@ -30,6 +30,9 @@ export type DirectChildPlan =
   | { type: 'slot'; expression: t.Expression };
 
 export interface DirectChildClassifier {
+  /** Retained text destinations may keep each authored text boundary. */
+  preserveTextBoundaries?: boolean;
+  cloneExpressions?: boolean;
   isForwarded(expression: t.Expression): boolean;
   fail(message: string): never;
 }
@@ -56,7 +59,9 @@ export function planDirectChildren(
     if (astFactory.isJSXText(child)) {
       const value = child.value;
       if (value !== '') {
-        pendingText.push(astFactory.stringLiteral(value));
+        if (classifier.preserveTextBoundaries) {
+          result.push({ type: 'text', expression: astFactory.stringLiteral(value), static: true });
+        } else pendingText.push(astFactory.stringLiteral(value));
       }
       continue;
     }
@@ -99,10 +104,12 @@ export function planDirectChildren(
       continue;
     }
 
-    pendingText.push(cloneEstreeNode(expression));
+    const value = classifier.cloneExpressions === false ? expression : cloneEstreeNode(expression);
+    if (classifier.preserveTextBoundaries) {
+      result.push({ type: 'text', expression: value });
+    } else pendingText.push(value);
   }
 
   flushText();
   return result;
 }
-

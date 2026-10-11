@@ -22,6 +22,8 @@ export interface SceneChildBinding {
 }
 
 export interface SceneMountOptions {
+  /** Shared semantic analysis found values changing outside instrumented writes. */
+  readonly volatile?: boolean;
   /** Compiler lifecycle registrations execute after native acceptance. */
   readonly activate?: (owner: SceneInstance) => void;
   readonly cleanups?: readonly (() => void)[];
@@ -138,7 +140,7 @@ export function mountScene(
 /** Ownership, expression preparation and publication stay separate from entry evaluation. */
 export function createDesktopApplication(host: DesktopHost): DesktopApplication {
   let closed = false;
-  const semantic = createSceneSemanticRuntime();
+  const semantic = createSceneSemanticRuntime(host);
 
   const forest = createOwnerForest(
     createPublicationQueue(host),

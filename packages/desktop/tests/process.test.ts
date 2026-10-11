@@ -2,15 +2,66 @@ import { expect, it } from 'bun:test';
 import { createProcessHost, type DesktopProcessOptions } from '../src/bridge/process';
 
 // Keep generated literals out of Windows command-line quote parsing.
-const child = (script: string, options: Partial<DesktopProcessOptions> = {}) => createProcessHost({ executable: process.execPath,
-  args: ['-e', `await import('data:text/javascript;base64,${Buffer.from(script).toString('base64')}');`], window: true, ...options });
+const child = (script: string, options: Partial<DesktopProcessOptions> = {}) =>
+  createProcessHost({
+    executable: process.execPath,
+    args: [
+      '-e',
+      `await import('data:text/javascript;base64,${Buffer.from(script).toString('base64')}');`,
+    ],
+    window: true,
+    ...options,
+  });
 const receive = `import {createInterface} from 'node:readline';
   const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
   console.log(JSON.stringify({type:'ready'}));`;
 
+it('distinguishes clock admission from the native frame and carries window visibility', async () => {
+  const host = child(`${receive}
+    for await (const line of lines) {
+      const request = JSON.parse(line);
+      console.log(JSON.stringify({id:request.id,result:null}));
+      if (request.kind === 'shutdown') break;
+      if (request.kind === 'frame') {
+        await Bun.sleep(10);
+        console.log(JSON.stringify({type:'frame',id:request.id,visible:false}));
+      }
+    }
+  `);
+  await host.ready;
+  try {
+    expect(await host.nextFrame!()).toEqual({ visible: false });
+  } finally {
+    await host.close();
+  }
+});
+
+it('retires a deferred hidden-window frame during shutdown without failing the connection', async () => {
+  const host = child(`${receive}
+    for await (const line of lines) {
+      const request = JSON.parse(line);
+      console.log(JSON.stringify({id:request.id,result:null}));
+      if (request.kind === 'shutdown') break;
+    }
+  `);
+  await host.ready;
+  const frame = host.nextFrame!().then(
+    () => undefined,
+    (error) => error as Error,
+  );
+  await host.redraw();
+  await host.close();
+  expect((await frame)?.message).toContain('closing');
+});
+
 // Settle subprocess I/O before asserting a rejection in the current Bun runner.
 async function rejection(promise: Promise<unknown>): Promise<Error> {
-  const error = await promise.then(() => { throw new Error('Expected host rejection'); }, error => error as Error);
+  const error = await promise.then(
+    () => {
+      throw new Error('Expected host rejection');
+    },
+    (error) => error as Error,
+  );
   expect(error).toBeInstanceOf(Error);
   return error;
 }
@@ -42,15 +93,22 @@ it('rejects outstanding requests and later work when the host crashes', async ()
     }
   `);
   await host.ready;
-  const first = host.inspect().catch(error => error as Error);
-  const second = host.redraw().catch(error => error as Error);
+  const first = host.inspect().catch((error) => error as Error);
+  const second = host.redraw().catch((error) => error as Error);
   const errors = await Promise.all([first, second]);
   for (const error of errors) expect((error as Error).message).toContain('native host crashed');
   expect((await rejection(host.inspect())).message).toContain('exited (7)');
   expect((await rejection(host.close())).message).toContain('exited (7)');
 });
 
-for (const response of [null, [], { id: 1 }, { id: 1, result: null, error: 'ambiguous' }, { id: 1, error: 7 }, { id: 1, type: 'unknown', result: null }]) {
+for (const response of [
+  null,
+  [],
+  { id: 1 },
+  { id: 1, result: null, error: 'ambiguous' },
+  { id: 1, error: 7 },
+  { id: 1, type: 'unknown', result: null },
+]) {
   it(`fails malformed response envelopes without leaving pending requests: ${JSON.stringify(response)}`, async () => {
     const host = child(`${receive}
       await Bun.sleep(30);
@@ -61,7 +119,9 @@ for (const response of [null, [], { id: 1 }, { id: 1, result: null, error: 'ambi
     try {
       expect((await rejection(host.inspect())).message).toContain('Invalid desktop host response');
       expect((await rejection(host.redraw())).message).toContain('Invalid desktop host response');
-    } finally { expect((await rejection(host.close())).message).toContain('Invalid desktop host response'); }
+    } finally {
+      expect((await rejection(host.close())).message).toContain('Invalid desktop host response');
+    }
   });
 }
 
@@ -76,9 +136,13 @@ it('keeps an explicit native rejection recoverable on the same connection', asyn
   `);
   await host.ready;
   try {
-    expect((await rejection(host.commit({sequence:1,operations:[]}))).message).toContain('rejected transaction');
-    expect(await host.inspect()).toEqual({sequence:0,instances:[]});
-  } finally { await host.close(); }
+    expect((await rejection(host.commit({ sequence: 1, operations: [] }))).message).toContain(
+      'rejected transaction',
+    );
+    expect(await host.inspect()).toEqual({ sequence: 0, instances: [] });
+  } finally {
+    await host.close();
+  }
 });
 
 it('bounds retained native diagnostics while preserving the end of a crash report', async () => {
@@ -88,7 +152,7 @@ it('bounds retained native diagnostics while preserving the end of a crash repor
     }
   `);
   await host.ready;
-  const error = await host.inspect().catch(error => error as Error);
+  const error = await host.inspect().catch((error) => error as Error);
   expect((error as Error).message).toContain('final crash diagnostic');
   expect((error as Error).message.length).toBeLessThan(17_000);
   expect((await rejection(host.close())).message).toContain('final crash diagnostic');
@@ -107,21 +171,30 @@ it('retires all requests after a lost response and never retries ambiguous publi
   const publication = rejection(host.commit({ sequence: 1, operations: [] }));
   const inspection = rejection(host.inspect());
   const errors = await Promise.all([publication, inspection]);
-  expect(errors.map(error => error.message)).toEqual(['Desktop host timed out during apply', 'Desktop host timed out during apply']);
-  expect((await rejection(host.commit({ sequence: 1, operations: [] }))).message).toContain('timed out during apply');
+  expect(errors.map((error) => error.message)).toEqual([
+    'Desktop host timed out during apply',
+    'Desktop host timed out during apply',
+  ]);
+  expect((await rejection(host.commit({ sequence: 1, operations: [] }))).message).toContain(
+    'timed out during apply',
+  );
   expect((await rejection(host.close())).message).toContain('timed out during apply');
 });
 
 it('bounds shutdown even when it is acknowledged but the process never exits', async () => {
-  const host = child(`${receive}
+  const host = child(
+    `${receive}
     for await(const line of lines) {
       const request=JSON.parse(line);
       console.log(JSON.stringify({id:request.id,result:null}));
       setInterval(()=>{},1000); break;
     }
-  `, { shutdownTimeoutMs: 500 });
+  `,
+    { shutdownTimeoutMs: 500 },
+  );
   await host.ready;
-  const first = rejection(host.close()); const second = rejection(host.close());
+  const first = rejection(host.close());
+  const second = rejection(host.close());
   expect((await first).message).toContain('timed out during shutdown');
   expect((await second).message).toContain('timed out during shutdown');
 });
@@ -139,6 +212,8 @@ it('settles readiness when a host is closed before startup completes', async () 
 
 it('validates deadline configuration before spawning a process', () => {
   for (const value of [-1, 1.5, Infinity, NaN, 2_147_483_648]) {
-    expect(() => createProcessHost({ executable: 'must-not-be-spawned', requestTimeoutMs: value })).toThrow('nonnegative timer duration');
+    expect(() =>
+      createProcessHost({ executable: 'must-not-be-spawned', requestTimeoutMs: value }),
+    ).toThrow('nonnegative timer duration');
   }
 });

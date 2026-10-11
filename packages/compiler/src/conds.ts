@@ -21,13 +21,11 @@ export interface CondSite {
   suffix: string;
 }
 
-export function matchCond(
-  expr: t.Node,
-): t.ConditionalExpression | t.LogicalExpression | null {
+export function matchCond(expr: t.Node): t.ConditionalExpression | t.LogicalExpression | null {
   if (astFactory.isConditionalExpression(expr)) return expr;
   if (
     astFactory.isLogicalExpression(expr) &&
-    (expr.operator === '&&' || expr.operator === '||')
+    (expr.operator === '&&' || expr.operator === '||' || expr.operator === '??')
   ) {
     return expr;
   }
@@ -40,5 +38,9 @@ export function analyzeCondSite(
   usedConds: { count: number },
 ): CondSite {
   const plan = planConditionalBranches(expr, errorAt);
-  return { pickExpr: plan.pickExpr, branches: [...plan.branches], suffix: `when${usedConds.count++}` };
+  return {
+    pickExpr: plan.pickExpr,
+    branches: [...plan.branches],
+    suffix: `when${usedConds.count++}`,
+  };
 }

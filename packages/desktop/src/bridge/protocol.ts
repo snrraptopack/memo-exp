@@ -49,6 +49,8 @@ export interface NativeSceneEvent {
   readonly edit?: number;
 }
 export interface DesktopHost {
+  /** Optional platform clock. Headless hosts leave conservative pulls disabled. */
+  nextFrame?(): Promise<{ readonly visible: boolean }>;
   /** Reject only for explicit refusal; ambiguous failures must use DesktopConnectionError. */
   install(template: SceneTemplate): Promise<void>;
   commit(transaction: SceneTransaction): Promise<SceneAcknowledgment>;

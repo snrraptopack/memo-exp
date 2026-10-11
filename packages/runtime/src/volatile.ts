@@ -1,13 +1,21 @@
 /** Optional opaque-value pull frames over the shared application kernel. */
 import {
-  getActiveApplicationRuntime, markDirty, onRegistryChange, onRuntimeDisposed,
-  registerEntity, runInApplicationRuntime,
-  type ApplicationRuntime, type Entity,
+  getActiveApplicationRuntime,
+  markDirty,
+  onRegistryChange,
+  onRuntimeDisposed,
+  registerEntity,
+  runInApplicationRuntime,
+  type ApplicationRuntime,
+  type Entity,
 } from './kernel';
 
 let installed = false;
 
-interface VolatileState { ids: Set<string>; scheduled: boolean }
+interface VolatileState {
+  ids: Set<string>;
+  scheduled: boolean;
+}
 const STORE = 'mmd:volatile';
 
 function stateFor(runtime: ApplicationRuntime, observedId?: string): VolatileState {
@@ -30,17 +38,20 @@ function scheduleVolatileFrame(runtime: ApplicationRuntime): void {
   const schedule = k.environment.schedule;
   if (schedule === null) return;
   state.scheduled = true;
-  schedule(() => runInApplicationRuntime(runtime, () => {
-    state.scheduled = false;
-    try {
-      if (k.environment.document.hidden !== true) {
-        for (const id of state.ids) markDirty(id, -1);
+  schedule(() =>
+    runInApplicationRuntime(runtime, () => {
+      state.scheduled = false;
+      try {
+        const visible = k.environment.visible?.() ?? k.environment.document.hidden !== true;
+        if (visible) {
+          for (const id of state.ids) markDirty(id, -1);
+        }
+      } finally {
+        // Preserve pull recovery after failures, while respecting removed owners.
+        if (state.ids.size > 0) scheduleVolatileFrame(runtime);
       }
-    } finally {
-      // Preserve pull recovery after failures, while respecting removed owners.
-      if (state.ids.size > 0) scheduleVolatileFrame(runtime);
-    }
-  }));
+    }),
+  );
 }
 
 /** General registration includes the opaque-pull capability. */
@@ -51,14 +62,15 @@ export function register(entity: Entity): void {
     onRegistryChange((id, kind) => {
       const runtime = getActiveApplicationRuntime();
       const volatile = kind === 'add' && runtime.state.registry.get(id)?.volatile === true;
-      const state = volatile ? stateFor(runtime, id)
-        : runtime.state.extensions.get(STORE) as VolatileState | undefined;
+      const state = volatile
+        ? stateFor(runtime, id)
+        : (runtime.state.extensions.get(STORE) as VolatileState | undefined);
       if (state === undefined) return;
       if (volatile) state.ids.add(id);
       else state.ids.delete(id);
       if (kind === 'add') scheduleVolatileFrame(runtime);
     });
-    onRuntimeDisposed(runtime => {
+    onRuntimeDisposed((runtime) => {
       const state = runtime.state.extensions.get(STORE) as VolatileState | undefined;
       state?.ids.clear();
     });

@@ -21,6 +21,7 @@ enum Command {
     },
     Inspect,
     Redraw,
+    Frame,
     Acknowledge {
         handle: Handle,
         site: usize,
@@ -41,6 +42,7 @@ pub struct Outcome {
     pub shutdown: bool,
     pub input_ack: Option<(Handle, usize, u64)>,
     pub event_result: Option<(u64, bool)>,
+    pub frame: bool,
 }
 
 pub fn process_line(scene: &mut Scene, line: &str) -> Outcome {
@@ -74,6 +76,7 @@ pub fn process_line_with_validation(
     let mut shutdown = false;
     let mut input_ack = None;
     let mut event_result = None;
+    let mut frame = false;
     let response = match serde_json::from_str::<Request>(line) {
         Ok(request) => {
             let result = if request.version != 1 {
@@ -99,6 +102,10 @@ pub fn process_line_with_validation(
                     }
                     Command::Redraw => {
                         changed = true;
+                        Ok(Value::Null)
+                    }
+                    Command::Frame => {
+                        frame = true;
                         Ok(Value::Null)
                     }
                     Command::Acknowledge { handle, site, edit } => {
@@ -150,6 +157,7 @@ pub fn process_line_with_validation(
         shutdown,
         input_ack,
         event_result,
+        frame,
     }
 }
 

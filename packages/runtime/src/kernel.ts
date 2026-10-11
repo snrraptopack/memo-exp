@@ -136,9 +136,7 @@ interface KernelState {
   preparation?: RenderPreparationOwner;
 }
 
-function createKernelState(
-  environment: RenderEnvironment,
-): KernelState {
+function createKernelState(environment: RenderEnvironment): KernelState {
   return {
     registry: new Map(),
     dirty: new Set(),
@@ -190,12 +188,18 @@ export function createApplicationRuntime(
       runWithApplicationRuntime(runtime, () => {
         const ids = [...state.registry.keys()];
         for (const id of ids) {
-          try { unregisterSubtreeInState(state, id); }
-          catch (error) { errors.push(error); }
+          try {
+            unregisterSubtreeInState(state, id);
+          } catch (error) {
+            errors.push(error);
+          }
         }
         for (const listener of runtimeDisposedListeners) {
-          try { listener(runtime); }
-          catch (error) { errors.push(error); }
+          try {
+            listener(runtime);
+          } catch (error) {
+            errors.push(error);
+          }
         }
         state.dirty.clear();
         state.dirtyReasons.clear();
@@ -227,9 +231,7 @@ const defaultRuntime: ApplicationRuntime = {
   id: 'browser-default',
   state: createKernelState(clientEnvironment()),
   dispose() {
-    throw new Error(
-      '[memo-dom] the default browser runtime cannot be disposed',
-    );
+    throw new Error('[memo-dom] the default browser runtime cannot be disposed');
   },
 };
 
@@ -260,9 +262,7 @@ export function onRuntimeDisposed(listener: RuntimeCreatedListener): void {
 }
 
 /** Invoke `listener` for every application runtime created from now on. */
-export function onRuntimeCreated(
-  listener: RuntimeCreatedListener,
-): () => void {
+export function onRuntimeCreated(listener: RuntimeCreatedListener): () => void {
   runtimeCreatedListeners.push(listener);
   return () => {
     const index = runtimeCreatedListeners.indexOf(listener);
@@ -271,19 +271,14 @@ export function onRuntimeCreated(
 }
 
 /** Route subsequent kernel operations through `runtime`. */
-export function setActiveApplicationRuntime(
-  runtime: ApplicationRuntime,
-): ApplicationRuntime {
+export function setActiveApplicationRuntime(runtime: ApplicationRuntime): ApplicationRuntime {
   const previous = activeRuntime;
   activeRuntime = runtime;
   return previous;
 }
 
 /** Scope `fn` to `runtime`, restoring the previous runtime afterwards. */
-export function runInApplicationRuntime<T>(
-  runtime: ApplicationRuntime,
-  fn: () => T,
-): T {
+export function runInApplicationRuntime<T>(runtime: ApplicationRuntime, fn: () => T): T {
   const previous = activeRuntime;
   const invoke = () => {
     activeRuntime = runtime;
@@ -329,6 +324,8 @@ export function runWithRenderEnvironment<T>(
     mode: overrides.mode ?? previous.mode,
     document: overrides.document ?? previous.document,
     schedule: overrides.schedule !== undefined ? overrides.schedule : previous.schedule,
+    visible: overrides.visible ?? (overrides.document === undefined ? previous.visible : undefined),
+    effectBoundary: overrides.effectBoundary ?? previous.effectBoundary,
     effects: overrides.effects ?? previous.effects,
     refs: overrides.refs ?? previous.refs,
     // An explicit `hydration: undefined` leaves adoption, e.g. for a region
@@ -418,14 +415,12 @@ export function registryGeneration(): number {
 export function registerEntity(entity: Entity): void {
   const runtime = getActiveApplicationRuntime();
   const k = runtime.state;
-  const parent =
-    entity.parent !== null ? k.registry.get(entity.parent) : undefined;
+  const parent = entity.parent !== null ? k.registry.get(entity.parent) : undefined;
   const preparation = k.preparation ?? parent?.preparation;
   preparation?.attach(entity);
   // any reader renders); else derive from the parent — string scan fallback
   entity.depth =
-    entity.depth ??
-    (parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id));
+    entity.depth ?? (parent && parent.depth !== undefined ? parent.depth + 1 : depthOf(entity.id));
   k.registry.set(entity.id, entity);
 
   if (parent) {
@@ -597,7 +592,12 @@ export function invalidateEntity(id: EntityId): void {
   enqueueEntityInvalidation(id);
 }
 
-type DirtyReasonMerger = (store: DirtyReasonStore, id: EntityId, wasDirty: boolean, reason: DirtyReasonInput) => void;
+type DirtyReasonMerger = (
+  store: DirtyReasonStore,
+  id: EntityId,
+  wasDirty: boolean,
+  reason: DirtyReasonInput,
+) => void;
 
 /** @internal Exact invalidation entry used by the optional cause adapter. */
 export function enqueueEntityInvalidation(
@@ -610,7 +610,11 @@ export function enqueueEntityInvalidation(
 }
 
 /** @internal Enqueue a resolved write's readers before a synchronous commit. */
-export function enqueueEntityInvalidations(ids: readonly EntityId[], reason?: DirtyReasonInput, merge?: DirtyReasonMerger): void {
+export function enqueueEntityInvalidations(
+  ids: readonly EntityId[],
+  reason?: DirtyReasonInput,
+  merge?: DirtyReasonMerger,
+): void {
   if (ids.length === 0) return;
   const runtime = getActiveApplicationRuntime();
   const k = runtime.state;
@@ -621,7 +625,12 @@ export function enqueueEntityInvalidations(ids: readonly EntityId[], reason?: Di
   if (marked) scheduleCommit(runtime);
 }
 
-function enqueueDirty(k: KernelState, id: EntityId, reason?: DirtyReasonInput, merge?: DirtyReasonMerger): boolean {
+function enqueueDirty(
+  k: KernelState,
+  id: EntityId,
+  reason?: DirtyReasonInput,
+  merge?: DirtyReasonMerger,
+): boolean {
   if (!k.registry.has(id)) return false;
   if (k.inCommit && k.markedBy !== null && k.renderingEntity !== null) {
     k.markedBy.set(id, k.renderingEntity);
@@ -734,8 +743,7 @@ export function commit(): void {
         const e = k.registry.get(id);
         if (e) {
           if (failedEntities === null || !blockedByFailure(e)) pending.push(e);
-        }
-        else {
+        } else {
           k.dirty.delete(id); // dead letter: dirtied, then unregistered
           clearDirtyReasons(k.dirtyReasons, id);
         }
@@ -749,13 +757,12 @@ export function commit(): void {
       // they require a coherent post-DOM view. Failed branches retry only on
       // a later externally scheduled commit, never repeatedly in this drain.
       if (renderErrors !== null && !hasRenderWork) break;
-      const batch = hasRenderWork
-        ? pending.filter((e) => e.phase !== 'effect')
-        : pending;
+      const batch = hasRenderWork ? pending.filter((e) => e.phase !== 'effect') : pending;
       batch.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
 
       for (const e of batch) {
-        if (k.registry.get(e.id) !== e || failedEntities !== null && blockedByFailure(e)) continue;
+        if (k.registry.get(e.id) !== e || (failedEntities !== null && blockedByFailure(e)))
+          continue;
         if (k.dirty.delete(e.id)) {
           const renders = (k.renderCounts!.get(e.id) ?? 0) + 1;
           k.renderCounts!.set(e.id, renders);

@@ -299,6 +299,20 @@ fn main() {
                                 eprintln!("Desktop response bridge failed: {error}");
                                 return true;
                             }
+                            if outcome.frame {
+                                // A clock request creates frame demand without dirtying
+                                // the scene. The shared kernel decides whether to pull.
+                                let output = view.output.clone();
+                                let id = outcome.response["id"].clone();
+                                window.on_next_frame(move |window, cx| {
+                                    if let Err(error) = output.send(&json!({
+                                        "type": "frame", "id": id, "visible": window.is_visible()
+                                    })) {
+                                        eprintln!("Desktop frame bridge failed: {error}");
+                                        cx.quit();
+                                    }
+                                });
+                            }
                             if outcome.changed {
                                 *view.live.borrow_mut() = view
                                     .scene

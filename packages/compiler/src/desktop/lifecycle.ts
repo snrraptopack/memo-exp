@@ -3,9 +3,10 @@ import type * as t from '../ast/compiler-types';
 import * as b from '../ast/factory';
 import { walkAst } from '../ast/walk';
 import { cloneNode } from '../ast';
-import type { Ctx, ComponentPath, EffectSite, ModuleEffectSite } from '../context';
+import { type Ctx, type ComponentPath, type EffectSite, type ModuleEffectSite } from '../context';
 import { isIntrinsicLifecycleCall } from '../intrinsics';
-import { valueExpression } from './lower-scene';
+import { valueExpression } from './value';
+import { emitOwnedSourceSubscriptions } from '../emission/external-reactivity';
 
 interface LifecycleEmission {
   fresh(name: string): t.Identifier;
@@ -43,6 +44,12 @@ export function desktopLifecycle(
   component: string,
   path: ComponentPath,
   emitter: LifecycleEmission & { owner: t.Identifier },
+  external: { sources: readonly string[]; adapter(source: string): string } = {
+    sources: [],
+    adapter() {
+      throw new Error('Missing subscription adapter');
+    },
+  },
 ): { setup: t.Statement[]; properties: t.ObjectProperty[]; statements: Set<t.Statement> } {
   const sites = ctx.effects.get(component) ?? [];
   const statements = new Set(sites.map((site) => site.statement));
@@ -73,18 +80,25 @@ export function desktopLifecycle(
   const parent = b.memberExpression(owner, b.identifier('entityId'));
   const identity = (index: number) =>
     b.binaryExpression('+', parent, b.stringLiteral(`/$effects/${index}`));
-  if (sites.length) {
+  const activations = sites.map((site) =>
+    desktopEffectRegistration(site, parent, identity(site.index), emitter),
+  );
+  activations.push(
+    ...emitOwnedSourceSubscriptions(ctx, external.sources, parent, {
+      fresh: emitter.fresh,
+      runtime: emitter.runtime,
+      adapter: external.adapter,
+      guard: b.memberExpression(owner, b.identifier('mounted')),
+      afterChange: [
+        b.expressionStatement(b.callExpression(emitter.runtime('invalidateEntity'), [parent])),
+      ],
+    }),
+  );
+  if (activations.length) {
     properties.push(
       b.objectProperty(
         b.identifier('activate'),
-        b.arrowFunctionExpression(
-          [owner],
-          b.blockStatement(
-            sites.map((site) =>
-              desktopEffectRegistration(site, parent, identity(site.index), emitter),
-            ),
-          ),
-        ),
+        b.arrowFunctionExpression([owner], b.blockStatement(activations)),
       ),
     );
     const bindings: t.Expression[] = [];

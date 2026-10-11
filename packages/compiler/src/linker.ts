@@ -16,16 +16,16 @@ import {
   type AstComment,
   memoizedEstreeFrontend,
 } from './ast';
-import {
-  compileAst,
-  compileAstDetailed,
-  type CompilerSourceMap,
-} from './compile';
-import {
-  linkComponentGraph,
-} from './component-linker';
+import { compileAst, compileAstDetailed, type CompilerSourceMap } from './compile';
+import { linkComponentGraph } from './component-linker';
 import { createCtx, type InternalMemoDomOptions } from './dom/context';
-import { type LinkedComponentRowUse, type MemoDomOptions, type ParameterWrite, type StateKind, type TransparentSourceMethod } from './context';
+import {
+  type LinkedComponentRowUse,
+  type MemoDomOptions,
+  type ParameterWrite,
+  type StateKind,
+  type TransparentSourceMethod,
+} from './context';
 import {
   collectCompilerRoutes,
   validateCompilerRouteGraph,
@@ -43,14 +43,11 @@ import type {
   StateExport,
 } from './linking/model';
 export type { CompileModulesOptions } from './linking/model';
-import {
-  canonicalModuleId,
-  linkImports,
-  resolveModule,
-} from './linking/resolution';
+import { canonicalModuleId, linkImports, resolveModule } from './linking/resolution';
 import { compilerOptions } from './linking/options';
-import { discoverManifest, exportedLocals } from './linking/discovery';
+import { discoverProject, seedComponentReexports } from './linking/project';
 import { linkManifestWorklist } from './linking/graph';
+import { domManifestAnalysis } from './dom/manifest';
 import { installCompilerIntrinsics } from './dom/intrinsics';
 import { resolveRenderUsage } from './components/render-usage';
 import { planInitialRendering } from './dom/render-plan';
@@ -185,9 +182,7 @@ function resolveApplicationRoot(
       }
       const target = resolveModule(entry.id, ref.source, entries, options);
       const component =
-        target === undefined
-          ? undefined
-          : manifests.get(target.id)?.exports[ref.imported];
+        target === undefined ? undefined : manifests.get(target.id)?.exports[ref.imported];
       if (target === undefined || component?.type !== 'component') {
         throw new Error(
           `memo-dom: mount root '${mounted}' does not resolve to a compiled component`,
@@ -222,16 +217,13 @@ function routeComponentKey(
 ): string | undefined {
   if (route.component === undefined) return undefined;
   const manifest = manifests.get(route.moduleId);
-  const local = manifest?.components.find(
-    component => component.local === route.component,
-  );
+  const local = manifest?.components.find((component) => component.local === route.component);
   if (local !== undefined) return local.key;
-  const reference = manifest?.imports.find(ref => ref.local === route.component);
+  const reference = manifest?.imports.find((ref) => ref.local === route.component);
   if (reference === undefined) return undefined;
   const target = resolveModule(route.moduleId, reference.source, entries, options);
-  const exported = target === undefined
-    ? undefined
-    : manifests.get(target.id)?.exports[reference.imported];
+  const exported =
+    target === undefined ? undefined : manifests.get(target.id)?.exports[reference.imported];
   return exported?.type === 'component' ? exported.key : undefined;
 }
 
@@ -252,7 +244,7 @@ function lazyRouteImports(
   const candidates = new Map<string, LazyRouteImport>();
   for (const route of routes) {
     if (route.moduleId !== entry.id || route.componentKey === undefined) continue;
-    const ref = manifest.imports.find(candidate => candidate.local === route.component);
+    const ref = manifest.imports.find((candidate) => candidate.local === route.component);
     if (ref === undefined || ref.imported === '*') continue;
     const target = resolveModule(entry.id, ref.source, entries, options);
     if (target === undefined) continue;
@@ -277,18 +269,26 @@ function lazyRouteImports(
       const element = node as unknown as t.JSXElement;
       if (element.openingElement.name.type !== 'JSXIdentifier') return;
       if (!candidates.has(element.openingElement.name.name)) return;
-      if (!element.openingElement.attributes.some(attribute =>
-        attribute.type === 'JSXAttribute' &&
-        attribute.name.type === 'JSXIdentifier' &&
-        attribute.name.name === 'route')) return;
+      if (
+        !element.openingElement.attributes.some(
+          (attribute) =>
+            attribute.type === 'JSXAttribute' &&
+            attribute.name.type === 'JSXIdentifier' &&
+            attribute.name.name === 'route',
+        )
+      )
+        return;
       allowed.add(element.openingElement.name);
       if (element.closingElement !== null) allowed.add(element.closingElement.name);
     },
   });
   walkAst<BaseNode>(entry.ast as unknown as BaseNode, {
     enter(node) {
-      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') &&
-        candidates.has((node as t.Identifier).name) && !allowed.has(node)) {
+      if (
+        (node.type === 'Identifier' || node.type === 'JSXIdentifier') &&
+        candidates.has((node as t.Identifier).name) &&
+        !allowed.has(node)
+      ) {
         candidates.delete((node as t.Identifier).name);
       }
     },
@@ -317,15 +317,25 @@ function eagerModules(
     const entry = entries.get(id);
     if (entry === undefined) continue;
     for (const statement of entry.ast.body) {
-      if (statement.type !== 'ImportDeclaration' ||
-        statement.importKind === 'type' || statement.importKind === 'typeof') continue;
+      if (
+        statement.type !== 'ImportDeclaration' ||
+        statement.importKind === 'type' ||
+        statement.importKind === 'typeof'
+      )
+        continue;
       const target = resolveModule(id, statement.source.value, entries, options);
       if (target === undefined) continue;
-      const runtimeSpecifiers = statement.specifiers.filter(specifier =>
-        specifier.type !== 'ImportSpecifier' ||
-        (specifier.importKind !== 'type' && specifier.importKind !== 'typeof'));
-      const lazy = runtimeSpecifiers.length > 0 && runtimeSpecifiers.every(specifier =>
-        lazyImportsByModule.get(id)?.[specifier.local.name]?.moduleId === target.id);
+      const runtimeSpecifiers = statement.specifiers.filter(
+        (specifier) =>
+          specifier.type !== 'ImportSpecifier' ||
+          (specifier.importKind !== 'type' && specifier.importKind !== 'typeof'),
+      );
+      const lazy =
+        runtimeSpecifiers.length > 0 &&
+        runtimeSpecifiers.every(
+          (specifier) =>
+            lazyImportsByModule.get(id)?.[specifier.local.name]?.moduleId === target.id,
+        );
       if (!lazy) pending.push(target.id);
     }
   }
@@ -336,9 +346,9 @@ function joinRoutePatterns(parent: string, child: string): string {
   if (parent.endsWith('/*')) {
     throw new TypeError(`catch-all route '${parent}' cannot have child routes`);
   }
-  return validateCompilerRoutePattern(child === '/'
-    ? parent
-    : parent === '/' ? child : `${parent}${child}`);
+  return validateCompilerRoutePattern(
+    child === '/' ? parent : parent === '/' ? child : `${parent}${child}`,
+  );
 }
 
 function instantiateRouteSubtrees(
@@ -360,7 +370,9 @@ function instantiateRouteSubtrees(
     if (template.calleeComponent !== undefined) {
       const callee = routeComponentKey(
         { ...template, component: template.calleeComponent },
-        entries, manifests, options,
+        entries,
+        manifests,
+        options,
       );
       if (callee !== undefined) calledOwners.add(callee);
     }
@@ -379,18 +391,16 @@ function instantiateRouteSubtrees(
     nextChain.add(ownerKey);
     const local = new Map<string, CompilerRouteDefinition>();
     for (const template of byOwner.get(ownerKey) ?? []) {
-      const id = callsite === null
-        ? template.id
-        : `${callsite.id}>>${template.id}`;
-      const parentId = template.parentId === undefined
-        ? callsite?.id
-        : local.get(template.parentId)?.id;
+      const id = callsite === null ? template.id : `${callsite.id}>>${template.id}`;
+      const parentId =
+        template.parentId === undefined ? callsite?.id : local.get(template.parentId)?.id;
       const instance: CompilerRouteDefinition = {
         ...template,
         id,
-        fullPattern: callsite === null
-          ? template.fullPattern
-          : joinRoutePatterns(callsite.fullPattern, template.fullPattern),
+        fullPattern:
+          callsite === null
+            ? template.fullPattern
+            : joinRoutePatterns(callsite.fullPattern, template.fullPattern),
         ...(parentId === undefined ? {} : { parentId }),
       };
       local.set(template.id, instance);
@@ -398,7 +408,9 @@ function instantiateRouteSubtrees(
       if (template.calleeComponent === undefined) continue;
       const callee = routeComponentKey(
         { ...template, component: template.calleeComponent },
-        entries, manifests, options,
+        entries,
+        manifests,
+        options,
       );
       if (callee !== undefined) expand(callee, instance, nextChain);
     }
@@ -434,17 +446,16 @@ function attachRoutedPreparations(
     }
   }
   const consumed = new Set<string>();
-  const linked = routes.map(route => {
+  const linked = routes.map((route) => {
     const componentKey = routeComponentKey(route, entries, manifests, options);
-    const list =
-      componentKey === undefined ? undefined : preparations.get(componentKey);
+    const list = componentKey === undefined ? undefined : preparations.get(componentKey);
     if (list !== undefined) consumed.add(componentKey!);
     return {
       ...route,
       ...(componentKey === undefined ? {} : { componentKey }),
       ...(list === undefined || list.length === 0
         ? {}
-        : { preparations: Object.freeze(list.map(preparation => preparation.id)) }),
+        : { preparations: Object.freeze(list.map((preparation) => preparation.id)) }),
     };
   });
   if (requireAttachment) {
@@ -507,30 +518,8 @@ function compileLinkedModules(
     }
   });
 
-  const discovered = new Map<string, ModuleManifest>();
-  for (const entry of entries.values()) {
-    discovered.set(entry.id, discoverManifest(entry, options));
-  }
-  // Seed import-then-export identities before strict JSX/root discovery. A
-  // component alias must already be a component even when its importer is
-  // analyzed before the barrel; subsequent worklist passes refine its facts.
-  for (let round = 0; round < entries.size; round++) {
-    let changed = false;
-    for (const entry of entries.values()) {
-      const manifest = discovered.get(entry.id)!;
-      for (const [exported, local] of exportedLocals(entry.ast)) {
-        if (manifest.exports[exported] !== undefined) continue;
-        const reference = manifest.imports.find(candidate => candidate.local === local);
-        if (reference === undefined || reference.imported === '*') continue;
-        const target = resolveModule(entry.id, reference.source, entries, options);
-        const identity = target === undefined ? undefined : discovered.get(target.id)?.exports[reference.imported];
-        if (identity?.type !== 'component') continue;
-        manifest.exports[exported] = identity;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
+  // Component aliases must be known before strict JSX/root discovery.
+  const discovered = discoverProject(entries, options, seedComponentReexports);
   const enforceSingleApplicationRoot = options.enforceSingleApplicationRoot !== false;
   const discoveredRoot = resolveApplicationRoot(
     entries,
@@ -539,7 +528,11 @@ function compileLinkedModules(
     enforceSingleApplicationRoot,
   );
   const routeInstances = instantiateRouteSubtrees(
-    collectedRoutes, discoveredRoot, entries, discovered, options,
+    collectedRoutes,
+    discoveredRoot,
+    entries,
+    discovered,
+    options,
   );
   const rootId = discoveredRoot?.rootId ?? 'App';
   const manifests = linkManifestWorklist(
@@ -548,6 +541,7 @@ function compileLinkedModules(
     options,
     rootId,
     routeInstances,
+    domManifestAnalysis,
   );
   let linkedRoutes = attachRoutedPreparations(
     routeInstances,
@@ -563,33 +557,57 @@ function compileLinkedModules(
     enforceSingleApplicationRoot,
   );
   // Capture initial content before any backend mutates component bodies.
-  const initialRender = planInitialRendering(authoredPrograms, applicationRoot,
+  const initialRender = planInitialRendering(
+    authoredPrograms,
+    applicationRoot,
     (importer, specifier) => resolveModule(importer, specifier, entries, options)?.id,
-    options.runtimePath ?? '@memoized-dom/runtime');
-  const initialHtml = emitInitialHtml(initialRender);
-  const requestHtmlShape = initialRender.kind === 'request' &&
-    emitInitialHtml({...initialRender,kind:'html'}) !== null;
-  const initialDom = initialRender.kind === 'bindings' && initialHtml !== null ? planInitialDom(initialRender) : null;
-  const initialDelivery = options.hot === true || options.routedEnvironment === 'server' && options.moduleStateCells === false
-    ? undefined : planInitialDelivery(
-    initialRender, initialHtml, initialDom !== null || requestHtmlShape, applicationRoot?.key,
-    new Map([...entries].map(([id, entry]) => [id, entry.source])),
-    [...manifests.values()].some(manifest => Object.values(manifest.exports).some(value =>
-      value.type === 'state' || value.type === 'function' && (value.writes.length > 0 || value.unbounded))),
+    options.runtimePath ?? '@memoized-dom/runtime',
   );
-  const initialContent = (initialHtml !== null || requestHtmlShape) &&
-    (initialRender.kind === 'html' || initialRender.kind === 'mixed' || initialRender.kind === 'request' || initialDom !== null) &&
-    options.hot !== true && options.routedEnvironment !== 'server' &&
+  const initialHtml = emitInitialHtml(initialRender);
+  const requestHtmlShape =
+    initialRender.kind === 'request' &&
+    emitInitialHtml({ ...initialRender, kind: 'html' }) !== null;
+  const initialDom =
+    initialRender.kind === 'bindings' && initialHtml !== null
+      ? planInitialDom(initialRender)
+      : null;
+  const initialDelivery =
+    options.hot === true ||
+    (options.routedEnvironment === 'server' && options.moduleStateCells === false)
+      ? undefined
+      : planInitialDelivery(
+          initialRender,
+          initialHtml,
+          initialDom !== null || requestHtmlShape,
+          applicationRoot?.key,
+          new Map([...entries].map(([id, entry]) => [id, entry.source])),
+          [...manifests.values()].some((manifest) =>
+            Object.values(manifest.exports).some(
+              (value) =>
+                value.type === 'state' ||
+                (value.type === 'function' && (value.writes.length > 0 || value.unbounded)),
+            ),
+          ),
+        );
+  const initialContent =
+    (initialHtml !== null || requestHtmlShape) &&
+    (initialRender.kind === 'html' ||
+      initialRender.kind === 'mixed' ||
+      initialRender.kind === 'request' ||
+      initialDom !== null) &&
+    options.hot !== true &&
+    options.routedEnvironment !== 'server' &&
     (typeof options.initialContent === 'function'
-      ? options.initialContent(initialRender, initialDelivery) : options.initialContent === true);
-  const routeManifestModule =
-    applicationRoot?.moduleId ?? entries.values().next().value?.id;
+      ? options.initialContent(initialRender, initialDelivery)
+      : options.initialContent === true);
+  const routeManifestModule = applicationRoot?.moduleId ?? entries.values().next().value?.id;
   const lazyImportsByModule = new Map<string, Record<string, LazyRouteImport>>();
   if (options.routedEnvironment === 'client' && routeManifestModule !== undefined) {
     for (const entry of entries.values()) {
-      lazyImportsByModule.set(entry.id, lazyRouteImports(
-        entry, manifests.get(entry.id)!, linkedRoutes, entries, options,
-      ));
+      lazyImportsByModule.set(
+        entry.id,
+        lazyRouteImports(entry, manifests.get(entry.id)!, linkedRoutes, entries, options),
+      );
     }
     const eager = eagerModules(
       applicationRoot?.mountModuleId ?? routeManifestModule,
@@ -602,22 +620,27 @@ function compileLinkedModules(
         if (eager.has(imported.moduleId)) delete imports[local];
       }
     }
-    linkedRoutes = linkedRoutes.map(route => {
-      const imported = route.component === undefined
-        ? undefined
-        : lazyImportsByModule.get(route.moduleId)?.[route.component];
-      return imported === undefined ? route : {
-        ...route,
-        lazyComponent: {
-          moduleId: imported.moduleId,
-          exportName: imported.exportName,
-          specifier: routeImportSpecifier(routeManifestModule, imported.moduleId),
-        },
-      };
+    linkedRoutes = linkedRoutes.map((route) => {
+      const imported =
+        route.component === undefined
+          ? undefined
+          : lazyImportsByModule.get(route.moduleId)?.[route.component];
+      return imported === undefined
+        ? route
+        : {
+            ...route,
+            lazyComponent: {
+              moduleId: imported.moduleId,
+              exportName: imported.exportName,
+              specifier: routeImportSpecifier(routeManifestModule, imported.moduleId),
+            },
+          };
     });
   }
 
-  const renderUsage = resolveRenderUsage([...manifests.values()].flatMap(manifest => manifest.componentUsages));
+  const renderUsage = resolveRenderUsage(
+    [...manifests.values()].flatMap((manifest) => manifest.componentUsages),
+  );
   for (const [target, usage] of renderUsage) {
     for (const prop of usage.jsx) {
       if (usage.scalar.has(prop)) {
@@ -640,49 +663,60 @@ function compileLinkedModules(
   for (const entry of entries.values()) {
     // Open host code can create structure outside the linked component graph.
     // Keep full adoption there, including dynamic imports and runtime escapes.
-    walkAst(entry.ast as unknown as BaseNode, { enter(node) {
-      if (node.type === 'ImportExpression') {
-        hydrationCapabilities.list = hydrationCapabilities.markup = true;
-      }
-    } });
+    walkAst(entry.ast as unknown as BaseNode, {
+      enter(node) {
+        if (node.type === 'ImportExpression') {
+          hydrationCapabilities.list = hydrationCapabilities.markup = true;
+        }
+      },
+    });
     for (const statement of entry.ast.body) {
-      if (statement.type !== 'ImportDeclaration' || statement.importKind === 'type' ||
-          statement.specifiers.length > 0 && statement.specifiers.every(specifier => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type')) continue;
+      if (
+        statement.type !== 'ImportDeclaration' ||
+        statement.importKind === 'type' ||
+        (statement.specifiers.length > 0 &&
+          statement.specifiers.every(
+            (specifier) => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type',
+          ))
+      )
+        continue;
       const source = statement.source.value;
       if (typeof source !== 'string') continue;
       if (source === (options.runtimePath ?? '@memoized-dom/runtime')) {
-        if (statement.specifiers.some(specifier => specifier.type !== 'ImportSpecifier' ||
-            specifier.imported.type !== 'Identifier' || !['mount','mountInitial'].includes(specifier.imported.name))) {
+        if (
+          statement.specifiers.some(
+            (specifier) =>
+              specifier.type !== 'ImportSpecifier' ||
+              specifier.imported.type !== 'Identifier' ||
+              !['mount', 'mountInitial'].includes(specifier.imported.name),
+          )
+        ) {
           hydrationCapabilities.list = hydrationCapabilities.markup = true;
         }
-      } else if (!resolveModule(entry.id, source, entries, options) &&
-          !['@memoized-dom/runtime/hydrate','virtual:memoized-dom/hydration'].includes(source) &&
-          !/^@memoized-dom\/(?:data|router)(?:\/internal)?$/.test(source) &&
-          !/\.(?:css|less|sass|scss|styl|stylus)(?:[?#]|$)/.test(source)) {
+      } else if (
+        !resolveModule(entry.id, source, entries, options) &&
+        !['@memoized-dom/runtime/hydrate', 'virtual:memoized-dom/hydration'].includes(source) &&
+        !/^@memoized-dom\/(?:data|router)(?:\/internal)?$/.test(source) &&
+        !/\.(?:css|less|sass|scss|styl|stylus)(?:[?#]|$)/.test(source)
+      ) {
         hydrationCapabilities.list = hydrationCapabilities.markup = true;
       }
     }
     const manifest = manifests.get(entry.id)!;
     metadata[entry.originalId] = {
       componentExports: Object.entries(manifest.exports)
-        .filter(
-          (entry): entry is [string, ComponentExport] =>
-            entry[1].type === 'component',
-        )
+        .filter((entry): entry is [string, ComponentExport] => entry[1].type === 'component')
         .map(([exported, component]) => ({
           exported,
           local:
-            manifest.components.find(
-              (declaration) => declaration.key === component.key,
-            )?.local ?? component.key.slice(component.key.lastIndexOf('#') + 1),
+            manifest.components.find((declaration) => declaration.key === component.key)?.local ??
+            component.key.slice(component.key.lastIndexOf('#') + 1),
           listLightweight: component.listLightweight,
           ...(component.listResourceFree === true ? { listResourceFree: true } : {}),
         }))
         .sort((left, right) => left.local.localeCompare(right.local)),
       stateExports: Object.entries(manifest.exports)
-        .filter(
-          (entry): entry is [string, StateExport] => entry[1].type === 'state',
-        )
+        .filter((entry): entry is [string, StateExport] => entry[1].type === 'state')
         .map(([exported, state]) => ({
           exported,
           kind: state.kind,
@@ -690,15 +724,10 @@ function compileLinkedModules(
         }))
         .sort((left, right) => left.exported.localeCompare(right.exported)),
       functionExports: Object.entries(manifest.exports)
-        .filter(
-          (entry): entry is [string, FunctionExport] =>
-            entry[1].type === 'function',
-        )
+        .filter((entry): entry is [string, FunctionExport] => entry[1].type === 'function')
         .map(([exported, summary]) => ({
           exported,
-          ...(summary.transparentSourceFactory === true
-            ? { transparentSourceFactory: true }
-            : {}),
+          ...(summary.transparentSourceFactory === true ? { transparentSourceFactory: true } : {}),
           ...(summary.transparentSourceMethod === undefined
             ? {}
             : { transparentSourceMethod: summary.transparentSourceMethod }),
@@ -718,26 +747,13 @@ function compileLinkedModules(
         contextFields: [...preparation.contextFields],
       })),
       readers: Object.fromEntries(
-        Object.entries(manifest.readers).map(([key, patterns]) => [
-          key,
-          [...patterns],
-        ]),
+        Object.entries(manifest.readers).map(([key, patterns]) => [key, [...patterns]]),
       ),
     };
-    const linkedImports = linkImports(
-      entry,
-      manifest,
-      manifests,
-      entries,
-      options,
-      renderUsage,
-    );
+    const linkedImports = linkImports(entry, manifest, manifests, entries, options, renderUsage);
     for (const ref of manifest.imports) {
       const target = resolveModule(entry.id, ref.source, entries, options);
-      if (
-        target !== undefined &&
-        manifests.get(target.id)?.exports[ref.imported] === undefined
-      ) {
+      if (target !== undefined && manifests.get(target.id)?.exports[ref.imported] === undefined) {
         throw compilerError(
           `memo-dom: '${ref.imported}' is not a linkable state, function, or component export of '${ref.source}'`,
           entry.id,
@@ -747,12 +763,10 @@ function compileLinkedModules(
     }
     const linkedComponentPaths: Record<string, string[]> = {};
     const linkedComponentRows: Record<string, LinkedComponentRowUse[]> = {};
-    const linkedComponentPropSources: NonNullable<
-      MemoDomOptions['linkedComponentPropSources']
-    > = {};
-    const linkedComponentRenderProps: NonNullable<
-      MemoDomOptions['linkedComponentRenderProps']
-    > = {};
+    const linkedComponentPropSources: NonNullable<MemoDomOptions['linkedComponentPropSources']> =
+      {};
+    const linkedComponentRenderProps: NonNullable<MemoDomOptions['linkedComponentRenderProps']> =
+      {};
     for (const declaration of manifest.components) {
       linkedComponentPaths[declaration.local] = [
         ...(componentGraph.paths.get(declaration.key) ?? []),
@@ -780,23 +794,20 @@ function compileLinkedModules(
         );
       }
       const exported = Object.values(manifest.exports).find(
-        (candidate) =>
-          candidate.type === 'component' &&
-          candidate.key === declaration.key,
+        (candidate) => candidate.type === 'component' && candidate.key === declaration.key,
       );
       if (exported?.type === 'component') {
         const usage = renderUsage.get(declaration.key);
-        linkedComponentRenderProps[declaration.local] =
-          exported.renderProps.filter(
-            (prop) =>
-              usage?.scalar.has(prop) !== true || usage.jsx.has(prop),
-          );
+        linkedComponentRenderProps[declaration.local] = exported.renderProps.filter(
+          (prop) => usage?.scalar.has(prop) !== true || usage.jsx.has(prop),
+        );
       }
     }
     let compileOptions: InternalMemoDomOptions = {
       ...compilerOptions(options, rootId),
       onRuntimeHelpers(helpers) {
-        if (helpers.has('createListRegion') || helpers.has('createPositionalListRegion')) hydrationCapabilities.list = true;
+        if (helpers.has('createListRegion') || helpers.has('createPositionalListRegion'))
+          hydrationCapabilities.list = true;
         if (helpers.has('materializeMarkup')) hydrationCapabilities.markup = true;
       },
       moduleId: entry.id,
@@ -806,32 +817,72 @@ function compileLinkedModules(
       linkedComponentPropSources,
       linkedComponentRenderProps,
       linkedRoutes,
-      lazyRouteImports: Object.fromEntries(Object.entries(
-        lazyImportsByModule.get(entry.id) ?? {},
-      ).map(([local, imported]) => [local, imported.key])),
+      lazyRouteImports: Object.fromEntries(
+        Object.entries(lazyImportsByModule.get(entry.id) ?? {}).map(([local, imported]) => [
+          local,
+          imported.key,
+        ]),
+      ),
       emitRouteManifest: entry.id === routeManifestModule,
       ...(applicationRoot?.moduleId === entry.id
-        ? { rootComponent: applicationRoot.local,
+        ? {
+            rootComponent: applicationRoot.local,
             ...(options.routedEnvironment === 'server' && initialDelivery !== undefined
-              ? { initialDelivery } : {}) }
+              ? { initialDelivery }
+              : {}),
+          }
         : {}),
     };
-    const initialComponents=Object.fromEntries(Object.entries(initialDom?.factories??{}).flatMap(([key,plan])=>
-      key.startsWith(`${entry.id}#`) ? [[key.slice(entry.id.length+1),plan]] : []));
-    if (options.routedEnvironment==='server' && initialDelivery && initialRender.kind==='bindings' && initialRender.request) {
-      compileOptions={...compileOptions,initialServerComponents:{...initialComponents,
-        ...(entry.id===initialRender.rootModuleId ? {[initialRender.rootLocal]:initialDom!} : {})}};
+    const initialComponents = Object.fromEntries(
+      Object.entries(initialDom?.factories ?? {}).flatMap(([key, plan]) =>
+        key.startsWith(`${entry.id}#`) ? [[key.slice(entry.id.length + 1), plan]] : [],
+      ),
+    );
+    if (
+      options.routedEnvironment === 'server' &&
+      initialDelivery &&
+      initialRender.kind === 'bindings' &&
+      initialRender.request
+    ) {
+      compileOptions = {
+        ...compileOptions,
+        initialServerComponents: {
+          ...initialComponents,
+          ...(entry.id === initialRender.rootModuleId
+            ? { [initialRender.rootLocal]: initialDom! }
+            : {}),
+        },
+      };
     }
-    if (initialContent && (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
-        (entry.id === initialRender.rootModuleId || entry.id === initialRender.mountModuleId || Object.keys(initialComponents).length>0)) {
-      compileOptions = { ...compileOptions,
-        initialDomComponents:initialComponents,
-        ...(entry.id === initialRender.mountModuleId ? {initialMount:{
-          payload:initialRender.kind === 'bindings' && initialRender.request === true,
-        }} : {}),
-        ...(entry.id !== initialRender.rootModuleId ? {} : initialRender.kind === 'mixed'
-          ? {initialBrowserRoot: { target: initialRender.target, component: initialRender.rootLocal,
-            returnSite: initialRender.returnSite, regions: initialRender.regions }} : {initialDomRoot:initialDom!}),
+    if (
+      initialContent &&
+      (initialRender.kind === 'mixed' || initialRender.kind === 'bindings') &&
+      (entry.id === initialRender.rootModuleId ||
+        entry.id === initialRender.mountModuleId ||
+        Object.keys(initialComponents).length > 0)
+    ) {
+      compileOptions = {
+        ...compileOptions,
+        initialDomComponents: initialComponents,
+        ...(entry.id === initialRender.mountModuleId
+          ? {
+              initialMount: {
+                payload: initialRender.kind === 'bindings' && initialRender.request === true,
+              },
+            }
+          : {}),
+        ...(entry.id !== initialRender.rootModuleId
+          ? {}
+          : initialRender.kind === 'mixed'
+            ? {
+                initialBrowserRoot: {
+                  target: initialRender.target,
+                  component: initialRender.rootLocal,
+                  returnSite: initialRender.returnSite,
+                  regions: initialRender.regions,
+                },
+              }
+            : { initialDomRoot: initialDom! }),
       };
     }
     if (sourceMaps) {
@@ -841,7 +892,12 @@ function compileLinkedModules(
       const cssOut = compiled.css ?? entry.css;
       if (cssOut) css[entry.originalId] = cssOut;
     } else {
-      output[entry.originalId] = compileAst(entry.source, compileOptions, entry.ast, entry.comments);
+      output[entry.originalId] = compileAst(
+        entry.source,
+        compileOptions,
+        entry.ast,
+        entry.comments,
+      );
       if (entry.css) css[entry.originalId] = entry.css;
     }
   }
@@ -853,24 +909,32 @@ function compileLinkedModules(
     initialRender,
     initialContent,
     ...(initialDelivery === undefined ? {} : { initialDelivery }),
-    routes: [...new Set(linkedRoutes.map(route => route.fullPattern))]
+    routes: [...new Set(linkedRoutes.map((route) => route.fullPattern))]
       .sort()
-      .map(pattern => ({ pattern })),
-    routeDefinitions: linkedRoutes.map(route => ({
-      id: route.id,
-      pattern: route.fullPattern,
-      moduleId: route.moduleId,
-      ...(route.parentId === undefined ? {} : { parentId: route.parentId }),
-      ...(route.componentKey === undefined ? {} : {
-        componentKey: route.componentKey,
-        componentModuleId: route.componentKey.slice(0, route.componentKey.lastIndexOf('#')),
-      }),
-      ...(route.lazyComponent === undefined ? {} : {
-        lazy: true,
-        loaderModuleId: route.lazyComponent.moduleId,
-      }),
-    })).sort((left, right) =>
-      left.pattern.localeCompare(right.pattern) || left.id.localeCompare(right.id)),
+      .map((pattern) => ({ pattern })),
+    routeDefinitions: linkedRoutes
+      .map((route) => ({
+        id: route.id,
+        pattern: route.fullPattern,
+        moduleId: route.moduleId,
+        ...(route.parentId === undefined ? {} : { parentId: route.parentId }),
+        ...(route.componentKey === undefined
+          ? {}
+          : {
+              componentKey: route.componentKey,
+              componentModuleId: route.componentKey.slice(0, route.componentKey.lastIndexOf('#')),
+            }),
+        ...(route.lazyComponent === undefined
+          ? {}
+          : {
+              lazy: true,
+              loaderModuleId: route.lazyComponent.moduleId,
+            }),
+      }))
+      .sort(
+        (left, right) =>
+          left.pattern.localeCompare(right.pattern) || left.id.localeCompare(right.id),
+      ),
     ...(Object.keys(css).length > 0 ? { css } : {}),
     ...(applicationRoot === undefined ? {} : { applicationRoot }),
   };

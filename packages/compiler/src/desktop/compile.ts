@@ -6,47 +6,40 @@ import { memoizedEstreeFrontend } from '../ast/tsrx/frontend';
 import { printEstree } from '../ast/printer';
 import { stripTypeScript } from '../ast/strip-typescript';
 import { walkAst } from '../ast/walk';
-import { normalizeEstreeDialect, unwrapTypeExpression } from '../ast/normalize';
+import { normalizeEstreeDialect } from '../ast/normalize';
 import { createAnalysisCtx, type ProgramPath, type LinkedImport } from '../context/model';
 import { canonicalStateKey } from '../context';
-import { refreshAstAnalysis } from '../context/ast';
 import { normalizeComponentDeclarations } from '../components/declarations';
-import { scanComponents, scanModuleState, validateLinkedImports } from '../analysis/module-scan';
-import {
-  scanInstanceState,
-  scanInstanceDerivations,
-  excludeRefBindings,
-} from '../analysis/instance';
-import { planComponentCallbacks } from '../planning/component-callbacks';
-import { planExpressionSources } from '../planning/expression-sources';
+import { prepareDesktopAnalysis } from './pipeline';
+import { planModuleRendering } from '../planning/component-render';
+import { moduleExternalSources } from '../planning/external-sources';
 import { compilerError } from '../errors';
 import { lowerDesktopScene } from './lower-scene';
 import { emitDesktopScene } from './emit-scene';
 import { desktopCssRules } from './css';
 import { desktopProps } from './components';
-import { desktopComponentImports, type DesktopModuleReader } from './imports';
-import { analyzeMapSite, matchMapCall } from '../lists';
-import { prepareDesktopListSources } from './lists';
-import { collectReads } from '../analysis/read-collection';
-import { scanComputeds, analyzeComputed } from '../analysis/computed';
-import { scanModuleControlFlow } from '../module-control-flow';
+import type { DesktopModuleReader } from './imports';
+import { linkDesktopProject } from './project';
+import { canonicalModuleId, linkImports } from '../linking/resolution';
+import { allocateMapSite } from '../lists/map-site';
 import { planModuleCallbacks } from '../planning/module-callbacks';
 import { routeDesktopModuleWrites } from './write-routing';
 import { desktopAccessReaders } from './access';
 import { emitModuleComputeds } from '../emission/computeds';
-import { valueExpression } from './lower-scene';
+import { valueExpression } from './value';
 import { planHandlerWrites } from '../handlers/analyze';
-import {
-  scanInstanceControlFlow,
-  finalizeInstancePreludes,
-} from '../analysis/instance-control-flow';
 import { emitModuleControlFlow } from '../emission/control-flow';
 import { desktopPrelude } from './prelude';
 import { liftModuleStateCells } from '../cells';
-import { scanEffects } from '../effects/discovery';
-import { isIntrinsicLifecycleCall, planCompilerIntrinsics } from '../intrinsics';
+import { isIntrinsicLifecycleCall } from '../intrinsics';
 import { compileRefValue } from '../emission/refs';
 import { desktopLifecycle, desktopEffectRegistration } from './lifecycle';
+import {
+  allocateSubscriptionImport,
+  emitOwnedSourceSubscriptions,
+  subscriptionImports,
+  type SubscriptionImport,
+} from '../emission/external-reactivity';
 
 export interface DesktopCompileOptions {
   /** Build adapters also compile state, helper, and component-free utility modules. */
@@ -63,6 +56,8 @@ export interface DesktopCompileOptions {
   coreRuntimePath?: string;
   /** Only this graph's module entities activate in its desktop application. */
   activationModules?: readonly string[];
+  /** The same live-value subscription metadata accepted by the web compiler. */
+  externalReactiveSources?: readonly import('../context').ExternalReactiveSourceDefinition[];
 }
 
 export interface DesktopCompiledSource {
@@ -100,25 +95,26 @@ export function compileDesktop(
     buildCodeFrameError: (message, at) => compilerError(message, moduleId, at),
   };
   normalizeComponentDeclarations(path);
-  const linkedImports =
-    options.linkedImports ??
-    desktopComponentImports(
-      program,
-      moduleId,
-      options.frontend ?? memoizedEstreeFrontend,
-      options.readModule,
+  let linkedImports = options.linkedImports;
+  if (!linkedImports && options.readModule) {
+    const project = linkDesktopProject(source, options);
+    const entry = project.entries.get(canonicalModuleId(moduleId))!;
+    linkedImports = linkImports(
+      entry,
+      project.manifests.get(entry.id)!,
+      project.manifests,
+      project.entries,
+      project.linkOptions,
     );
+  }
   const ctx = createAnalysisCtx({
     moduleId,
     rootId: 'Desktop',
     linkedImports,
     moduleStateCells: true,
+    externalReactiveSources: options.externalReactiveSources,
   });
-  refreshAstAnalysis(ctx, program);
-  planCompilerIntrinsics(ctx, path);
-  validateLinkedImports(ctx, path);
-  scanModuleState(ctx, path);
-  scanComponents(ctx, path);
+  prepareDesktopAnalysis(ctx, path);
   if (!ctx.compPaths.size && options.allowComponentFree) {
     if (stylesheets.length)
       fail('component-free CSS imports require a desktop stylesheet linking contract');
@@ -129,20 +125,6 @@ export function compileDesktop(
       },
     });
   }
-  scanInstanceState(ctx);
-  excludeRefBindings(ctx);
-  scanComputeds(ctx, path);
-  scanModuleControlFlow(ctx, path, analyzeComputed);
-  scanInstanceDerivations(ctx);
-  scanInstanceControlFlow(ctx);
-  finalizeInstancePreludes(ctx);
-  scanEffects(ctx, path);
-  for (const component of ctx.compPaths.values()) {
-    const last = component.node.body.body.at(-1);
-    if (last && b.isReturnStatement(last) && last.argument)
-      prepareDesktopListSources(last.argument, ctx);
-  }
-  collectReads(ctx);
   const readers = desktopAccessReaders(ctx);
   const activationModules = options.activationModules ?? [
     ...new Set([
@@ -151,13 +133,7 @@ export function compileDesktop(
     ]),
   ];
   const moduleCallbacks = planModuleCallbacks(ctx, path);
-  const callbacks = new Map(
-    [...ctx.compPaths].map(([name, component]) => [
-      name,
-      planComponentCallbacks(ctx, name, component),
-    ]),
-  );
-  const expressionFacts = planExpressionSources(ctx);
+  const renderPlan = planModuleRendering(ctx);
   const used = new Set<string>();
   walkAst<t.Node>(program, {
     enter(node) {
@@ -194,26 +170,24 @@ export function compileDesktop(
   let scopesUsed = false;
   const templates: t.Statement[] = [];
   const definitions: t.Statement[] = [];
+  const subscriptionBindings = new Map<string, SubscriptionImport>();
+  const moduleSources = moduleExternalSources(ctx);
+  const subscriptionAdapter = (source: string): string => {
+    const contract = ctx.externalReactiveBindings.get(source);
+    if (!contract) throw new Error('memo-dom: missing external subscription contract');
+    return allocateSubscriptionImport(subscriptionBindings, contract, fresh);
+  };
 
-  for (const [name, component] of ctx.compPaths) {
+  for (const planned of renderPlan.components) {
+    const { name, source: component, returns, callbacks } = planned;
     const fn = component.node;
     if (fn.async || fn.generator) fail('components must be synchronous', fn);
     const statements = fn.body.body;
-    const last = statements.at(-1);
-    if (!last || !b.isReturnStatement(last) || !last.argument)
-      fail('components need a final fixed JSX return', fn);
-    const root = unwrapTypeExpression(last.argument);
-    if (
-      !b.isJSXElement(root) &&
-      !b.isJSXFragment(root) &&
-      !b.isConditionalExpression(root) &&
-      !b.isLogicalExpression(root) &&
-      !matchMapCall(root)
-    )
-      fail('dynamic component roots are not implemented yet', root);
-    for (const statement of statements.slice(0, -1)) {
-      if (b.isReturnStatement(statement))
-        fail('early component returns are not implemented yet', statement);
+    const renderedStatements =
+      'jsx' in returns ? new Set<t.Statement>([returns.statement]) : returns.statements;
+    const root = 'jsx' in returns ? returns.jsx : fn;
+    const prelude = statements.filter((statement) => !renderedStatements.has(statement));
+    for (const statement of prelude) {
       walkAst<t.Node>(statement, {
         enter(node) {
           if (b.isJSXElement(node) || b.isJSXFragment(node))
@@ -239,28 +213,39 @@ export function compileDesktop(
             ? node.id && b.identifier(node.id.name)
             : node;
           if (!value) return;
-          const callback = callbacks.get(name)!.forValue(value);
+          const callback = callbacks.forValue(value);
           if (callback) retainedPlans.push(callback.writesFor());
         },
       });
     for (const plan of retainedPlans) routeWrites(plan, notify);
-    const lifecycle = desktopLifecycle(ctx, name, component, {
-      owner: instance,
-      fresh,
-      runtime: (method) => {
-        coreUsed = true;
-        return b.memberExpression(core, b.identifier(method));
+    const lifecycle = desktopLifecycle(
+      ctx,
+      name,
+      component,
+      {
+        owner: instance,
+        fresh,
+        runtime: (method) => {
+          coreUsed = true;
+          return b.memberExpression(core, b.identifier(method));
+        },
+        instrument(expression) {
+          const callback = callbacks.forValue(expression, true);
+          if (callback) routeWrites(callback.writesFor(), notify);
+        },
       },
-      instrument(expression) {
-        const callback = callbacks.get(name)!.forValue(expression, true);
-        if (callback) routeWrites(callback.writesFor(), notify);
+      {
+        sources: planned.placement.externalSources.filter(
+          (source) => !moduleSources.includes(source),
+        ),
+        adapter: subscriptionAdapter,
       },
-    });
+    );
     const listPrefixes = new Map<string, number>();
-    prepareDesktopListSources(root, ctx);
     const scene = lowerDesktopScene(root, {
-      callbacks: callbacks.get(name)!,
-      sources: expressionFacts.get(name)!,
+      callbacks: callbacks,
+      sources: planned.expressionSources,
+      returns: 'jsx' in returns ? undefined : returns,
       instrument,
       scope,
       fail,
@@ -286,7 +271,13 @@ export function compileDesktop(
         const target = b.arrowFunctionExpression([event], b.callExpression(expression, [event]));
         return { target, helpers: [], writesFor: () => planHandlerWrites(ctx, target, null) };
       },
-      listSite: (call, parentRow) => analyzeMapSite(ctx, call, path, name, listPrefixes, parentRow),
+      listSite: (call, parentRow) =>
+        allocateMapSite(
+          call,
+          planned.listSites.listFor(call, planned.regionShapes.listCallbackFor(call), parentRow),
+          name,
+          listPrefixes,
+        ),
     });
     const props = desktopProps(ctx.componentProps.get(name)!, fresh, fail);
     fn.params = props.params;
@@ -302,6 +293,7 @@ export function compileDesktop(
       receive: props.receive,
       prepare,
       lifecycle: lifecycle.properties,
+      volatile: ctx.volatileComponents.has(name),
     });
     eventsUsed ||= emitted.eventsUsed;
     scopesUsed ||= emitted.scopesUsed;
@@ -338,7 +330,7 @@ export function compileDesktop(
       ]),
       ...lifecycle.setup,
       ...props.setup,
-      ...statements.slice(0, -1).filter((statement) => !lifecycle.statements.has(statement)),
+      ...prelude.filter((statement) => !lifecycle.statements.has(statement)),
       ...emitted.setup,
       b.expressionStatement(b.assignmentExpression('=', instance, emitted.mount)),
       b.returnStatement(instance),
@@ -395,6 +387,16 @@ export function compileDesktop(
     parent: b.stringLiteral('Desktop'),
   });
   coreUsed ||= initializers.length > 0;
+  // Calculations in a component-free module still need live library sources.
+  // Their subscriptions share the application's core lifetime, not a scene row.
+  initializers.push(
+    ...emitOwnedSourceSubscriptions(ctx, moduleSources, b.stringLiteral('Desktop'), {
+      fresh,
+      runtime: (name) => b.memberExpression(core, b.identifier(name)),
+      adapter: subscriptionAdapter,
+    }),
+  );
+  coreUsed ||= moduleSources.length > 0;
   const hasModule = Object.keys(readers).length > 0 || initializers.length > 0;
   const imports: t.Statement[] = [];
   if (coreUsed)
@@ -474,7 +476,15 @@ export function compileDesktop(
     );
   }
   return {
-    code: printEstree(stripTypeScript(program), { comments: parsed.comments }).code,
+    // Subscription adapters remain ordinary imports; their packages are bundled
+    // without asking the library to use this compiler.
+    code: printEstree(
+      stripTypeScript({
+        ...program,
+        body: [...subscriptionImports(subscriptionBindings), ...program.body],
+      }),
+      { comments: parsed.comments },
+    ).code,
     components: [...ctx.compPaths.keys()],
   };
 }

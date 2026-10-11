@@ -67,6 +67,8 @@ export interface RenderEnvironment {
    * entirely (servers render synchronously; nothing keeps ticking).
    */
   schedule: ((fn: () => void) => void) | null;
+  /** Visibility of the destination; semantic hosts need no DocumentLike. */
+  visible?: () => boolean;
   effects: Capability;
   refs: Capability;
   /** Rendering adapters may release side effects only after host acceptance. */
@@ -118,6 +120,7 @@ export function resolveEnvironment(overrides?: Partial<RenderEnvironment>): Rend
       return overrides.document ?? base.document;
     },
     schedule: overrides.schedule === undefined ? base.schedule : overrides.schedule,
+    visible: overrides.visible,
     effects: overrides.effects ?? base.effects,
     refs: overrides.refs ?? base.refs,
     effectBoundary: overrides.effectBoundary,

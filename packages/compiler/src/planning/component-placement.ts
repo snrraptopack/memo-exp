@@ -1,7 +1,11 @@
 /** Source placement and reactive inputs; no host operations or factory ABI. */
 import { keyPathOf, type Ctx } from '../context';
 import { localBindingForProp, objectBindingName } from '../components/props';
-import { analyzeComponentRouteSelectors, type RouteReadSelector } from '../analysis/route-selectors';
+import {
+  analyzeComponentRouteSelectors,
+  type RouteReadSelector,
+} from '../analysis/route-selectors';
+import { externalSourceRoots } from './external-sources';
 
 export interface ListedRowPlacement {
   readonly itemParam: string;
@@ -29,15 +33,18 @@ export function planComponentPlacements(ctx: Ctx): ReadonlyMap<string, Component
     const refs = ctx.listedSites.get(name) ?? [];
     const linkedRefs = ctx.linkedComponentRows.get(name) ?? [];
     const listed = refs.length > 0 || linkedRefs.length > 0;
-    const sourceLocal = refs.some(ref => ref.sourceLocal === true) || linkedRefs.some(ref => ref.sourceLocal);
+    const sourceLocal =
+      refs.some((ref) => ref.sourceLocal === true) || linkedRefs.some((ref) => ref.sourceLocal);
     let row: ListedRowPlacement | null = null;
     if (listed && props.bindings.length > 0) {
       const keyPaths = [
-        ...refs.map(ref => keyPathOf(ref.keyExpr ?? null, ref.itemParam ?? '')),
-        ...linkedRefs.map(ref => ref.keyPath),
+        ...refs.map((ref) => keyPathOf(ref.keyExpr ?? null, ref.itemParam ?? '')),
+        ...linkedRefs.map((ref) => ref.keyPath),
       ];
       const first = JSON.stringify(keyPaths[0]);
-      const common = keyPaths.every(candidate => JSON.stringify(candidate) === first) ? keyPaths[0]! : null;
+      const common = keyPaths.every((candidate) => JSON.stringify(candidate) === first)
+        ? keyPaths[0]!
+        : null;
       const directItem = localBindingForProp(props, 'item');
       const object = objectBindingName(props);
       row = {
@@ -48,10 +55,9 @@ export function planComponentPlacements(ctx: Ctx): ReadonlyMap<string, Component
         sourceLocal,
       };
     }
-    const external = new Set<string>();
+    const sourceReads = new Set<string>();
     const note = (source: string): void => {
-      const root = source.split('.')[0]!;
-      if (ctx.externalReactiveBindings.has(root)) external.add(root);
+      sourceReads.add(source);
     };
     const effects = ctx.effects.get(name);
     if (ctx.externalReactiveBindings.size > 0) {
@@ -67,14 +73,27 @@ export function planComponentPlacements(ctx: Ctx): ReadonlyMap<string, Component
         for (const source of effect.conditionModuleReads) note(source);
       }
     }
-    const externalSources = [...external].sort();
+    const externalSources = externalSourceRoots(ctx, sourceReads);
     placements.set(name, {
-      listed, hasLinkedRows: linkedRefs.length > 0, sourceLocal, row, externalSources,
-      routeSelectors: analyzeComponentRouteSelectors(ctx, path.node,
-        externalSources.filter(source => ctx.routeReactiveBindings.has(source))),
-      hasLocalEffects: effects?.some(site => site.localReads.size > 0 || site.localDerivationReads.size > 0 ||
-        site.conditionLocalReads.size > 0 || site.conditionLocalDerivationReads.size > 0) === true,
-      ownsRoutes: ctx.localRoutes.some(route => route.ownerComponent === name),
+      listed,
+      hasLinkedRows: linkedRefs.length > 0,
+      sourceLocal,
+      row,
+      externalSources,
+      routeSelectors: analyzeComponentRouteSelectors(
+        ctx,
+        path.node,
+        externalSources.filter((source) => ctx.routeReactiveBindings.has(source)),
+      ),
+      hasLocalEffects:
+        effects?.some(
+          (site) =>
+            site.localReads.size > 0 ||
+            site.localDerivationReads.size > 0 ||
+            site.conditionLocalReads.size > 0 ||
+            site.conditionLocalDerivationReads.size > 0,
+        ) === true,
+      ownsRoutes: ctx.localRoutes.some((route) => route.ownerComponent === name),
     });
   }
   return placements;

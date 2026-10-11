@@ -60,11 +60,23 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
   });
   let nextId = 1;
   let closed = false;
+  let windowRetired = false;
   let closing: Promise<void> | undefined;
   let failure: Error | undefined;
   let started = !options.window;
   let startupDeadline: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<(event: NativeSceneEvent) => void>();
+  const frames = new Map<
+    number,
+    {
+      resolve(frame: { visible: boolean }): void;
+      reject(error: Error): void;
+    }
+  >();
+  const retireFrames = (error: Error): void => {
+    for (const frame of frames.values()) frame.reject(error);
+    frames.clear();
+  };
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => {
@@ -92,6 +104,7 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     rejectReady(failure);
     resolveClosed();
     pending.fail(failure);
+    retireFrames(failure);
     // A broken stream cannot safely publish again. Retire the process as well
     // as its promises, including hosts that no longer respond to shutdown.
     if (child.exitCode === null) {
@@ -121,7 +134,19 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
           continue;
         }
         if (response.type === 'closed') {
+          windowRetired = true;
+          retireFrames(new Error('Desktop window closed'));
           resolveClosed();
+          continue;
+        }
+        if (response.type === 'frame') {
+          const frame = frames.get(response.id);
+          if (!frame) {
+            if (closing || windowRetired) continue;
+            throw new Error('Unexpected native frame token');
+          }
+          frames.delete(response.id);
+          frame.resolve({ visible: response.visible });
           continue;
         }
         if (response.type === 'event') {
@@ -191,6 +216,26 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
   return {
     ready,
     windowClosed,
+    nextFrame: options.window
+      ? () => {
+          if (failure) return Promise.reject(failure);
+          if (closed || closing || windowRetired)
+            return Promise.reject(new Error('Desktop host is closing'));
+          if (frames.size >= limits.maxPendingRequests) {
+            return Promise.reject(new Error('Desktop frame queue exceeded its limit'));
+          }
+          const id = nextId;
+          return new Promise<{ visible: boolean }>((resolve, reject) => {
+            frames.set(id, { resolve, reject });
+            // The command is acknowledged immediately. A hidden window may defer
+            // its frame indefinitely; it must not expire a publication deadline.
+            void request({ kind: 'frame' }).catch((error) => {
+              frames.delete(id);
+              reject(error);
+            });
+          });
+        }
+      : undefined,
     onEvent(listener) {
       listeners.add(listener);
       return () => {
@@ -232,6 +277,7 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     },
     close() {
       if (!closing) {
+        retireFrames(new Error('Desktop host is closing'));
         clearTimeout(startupDeadline);
         const deadline = shutdownTimeout
           ? setTimeout(() => {
@@ -279,6 +325,7 @@ type HostResponse =
   | { type: 'ready' }
   | { type: 'closed' }
   | NativeSceneEvent
+  | { type: 'frame'; id: number; visible: boolean }
   | { type?: never; id: number; result?: unknown; error?: string };
 
 /** Check framing before resolving requests; missing results are not success. */
@@ -287,6 +334,16 @@ function decodeResponse(line: string): HostResponse {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Invalid desktop host response');
   const response = value as Record<string, unknown>;
+  if (response.type === 'frame') {
+    if (
+      !Number.isSafeInteger(response.id) ||
+      (response.id as number) <= 0 ||
+      typeof response.visible !== 'boolean'
+    ) {
+      throw new Error('Invalid native desktop frame');
+    }
+    return value as HostResponse;
+  }
   if (response.type === 'ready' || response.type === 'closed' || response.type === 'event')
     return value as HostResponse;
   const result = Object.hasOwn(response, 'result');
