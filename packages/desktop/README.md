@@ -346,7 +346,7 @@ For host integrations, `DesktopApplication` exposes `run`, `mount`, `dispatch`,
 `dispose`; these are component-owner APIs, not element methods. A normal mounted
 `DesktopRoot` additionally has `rootId` and `unmount()`.
 
-Provider replay, browser volatile pulls, arbitrary package graphs beyond the
+Provider replay, shared volatile-pull integration, arbitrary package graphs beyond the
 linked relative graph, and direct re-export-from syntax remain integration
 boundaries. Browser globals and DOM-dependent libraries require explicit target
 adaptation. The desktop build does not create a DOM for them.
@@ -361,27 +361,44 @@ rewritten in Rust merely because the presentation target is native.
 | --- | --- |
 | Utilities, validation, parsing, formatting, and data processing | Can run when compatible with Bun and their required APIs; normal package resolution/bundling applies |
 | Network, storage, filesystem, and native addons | Depend on Bun/platform support and the package's actual API requirements; desktop does not emulate browser-only storage or extension APIs |
-| Headless state, form, or query libraries | Their JavaScript may run, but subscriptions, hidden mutations, and resource cleanup need an explicit integration with application-owned reactive state |
+| Headless state, form, or query libraries | Their JavaScript may run; desktop still needs to wire the existing compiler external-source analysis, subscriptions, and shared opaque-value pull capability |
 | Libraries that create or inspect DOM nodes | Cannot use desktop ref handles as browser elements; require a native adapter or an alternative implementation |
-| Components for another rendering framework | Not directly usable as Memoized DOM scene components; their runtime and rendering contracts differ |
 | Memoized DOM component packages | Need components compiled for this target or supported source/package linking, plus implemented tags, attributes, and CSS; arbitrary package component linking is not established yet |
 | CSS libraries | Generated CSS enters the normal CSS pipeline and must fit the supported features described above |
 
 There are two separate build boundaries. In
 [dev/build.ts](src/dev/build.ts), Bun resolves and bundles package imports, but
 the desktop semantic graph's module reader currently follows **relative imports
-only**. Thus a package can be executable without its internal modules receiving
-our state cells, access tables, write instrumentation, or component metadata.
-Unknown external calls receive conservative shared compiler effect summaries;
-successful bundling does not prove precise dependency routing or native support.
+only**. Package internals consequently do not receive our state cells, access
+tables, write instrumentation, or component metadata. Ordinary third-party
+libraries do not need those transformations to be compatible: the framework
+tracks application reads and writes around external values. Package component
+linking is a separate concern from external-state observation. Unknown external
+calls already receive conservative shared compiler effect summaries.
 
-Ordinary application callbacks can call compatible library functions and assign
-their results to compiled application state. Library-owned asynchronous changes
-do not automatically notify the UI. A subscription integration must publish
-through the owning application's reactive context and unregister during owner
-cleanup. Uncompiled package singletons also retain their normal JavaScript
-sharing semantics; per-application cell isolation applies to compiled state, not
-automatically to those singletons.
+Web already implements two complementary external-value paths. Shared analysis
+in [external-reactivity.ts](../compiler/src/analysis/external-reactivity.ts)
+records configured subscription contracts. Shared
+[opaque-volatility.ts](../compiler/src/analysis/opaque-volatility.ts) identifies
+opaque dependencies, and the runtime's [volatile.ts](../runtime/src/volatile.ts)
+reevaluates registered volatile entities through the application's scheduling
+environment. This fallback can observe changing external values without a
+library subscription or changes to its published JavaScript.
+
+Desktop has not yet wired these paths fully: its compiler omits those analysis
+passes, and its semantic runtime uses `schedule: null` and direct entity
+registration. Consequently, library-owned asynchronous changes do not currently
+refresh desktop destinations automatically. The required work is to reuse the
+existing contracts and runtime capability, emit the appropriate scene-owner
+subscriptions/volatile registration, and supply native frame and visibility
+scheduling. Subscription callbacks must retain application ownership, and
+disposal must use the existing cleanup machinery. A separate desktop external
+store or subscription system is not required.
+
+Ordinary application callbacks can already call compatible library functions and
+assign results to compiled application state. Uncompiled package singletons
+retain their normal JavaScript sharing semantics; per-application cell isolation
+applies to compiled state, not automatically to those singletons.
 
 Package integration should distinguish inert external dependencies, packages
 whose Memoized DOM source/metadata participates in compilation, and libraries
