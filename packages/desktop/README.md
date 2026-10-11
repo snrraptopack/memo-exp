@@ -351,6 +351,46 @@ linked relative graph, and direct re-export-from syntax remain integration
 boundaries. Browser globals and DOM-dependent libraries require explicit target
 adaptation. The desktop build does not create a DOM for them.
 
+## Third-party libraries
+
+Compatibility depends on what a library uses, not whether it was installed from
+npm. JavaScript libraries continue to execute in Bun; they do not need to be
+rewritten in Rust merely because the presentation target is native.
+
+| Library category | Current contract |
+| --- | --- |
+| Utilities, validation, parsing, formatting, and data processing | Can run when compatible with Bun and their required APIs; normal package resolution/bundling applies |
+| Network, storage, filesystem, and native addons | Depend on Bun/platform support and the package's actual API requirements; desktop does not emulate browser-only storage or extension APIs |
+| Headless state, form, or query libraries | Their JavaScript may run, but subscriptions, hidden mutations, and resource cleanup need an explicit integration with application-owned reactive state |
+| Libraries that create or inspect DOM nodes | Cannot use desktop ref handles as browser elements; require a native adapter or an alternative implementation |
+| Components for another rendering framework | Not directly usable as Memoized DOM scene components; their runtime and rendering contracts differ |
+| Memoized DOM component packages | Need components compiled for this target or supported source/package linking, plus implemented tags, attributes, and CSS; arbitrary package component linking is not established yet |
+| CSS libraries | Generated CSS enters the normal CSS pipeline and must fit the supported features described above |
+
+There are two separate build boundaries. In
+[dev/build.ts](src/dev/build.ts), Bun resolves and bundles package imports, but
+the desktop semantic graph's module reader currently follows **relative imports
+only**. Thus a package can be executable without its internal modules receiving
+our state cells, access tables, write instrumentation, or component metadata.
+Unknown external calls receive conservative shared compiler effect summaries;
+successful bundling does not prove precise dependency routing or native support.
+
+Ordinary application callbacks can call compatible library functions and assign
+their results to compiled application state. Library-owned asynchronous changes
+do not automatically notify the UI. A subscription integration must publish
+through the owning application's reactive context and unregister during owner
+cleanup. Uncompiled package singletons also retain their normal JavaScript
+sharing semantics; per-application cell isolation applies to compiled state, not
+automatically to those singletons.
+
+Package integration should distinguish inert external dependencies, packages
+whose Memoized DOM source/metadata participates in compilation, and libraries
+connected through explicit subscriptions or native capabilities. Supporting
+package component resolution requires package exports and target selection,
+dependency identity, stylesheet handling, and real packaged fixtures. It should
+not be implemented by compiling every dependency indiscriminately or pretending
+that a DOM library receives a browser element.
+
 ## Typing and extending the contract
 
 Applications use the framework's ordinary JSX and DOM event authoring types.
