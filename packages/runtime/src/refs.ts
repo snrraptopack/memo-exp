@@ -19,10 +19,13 @@
 
 import { getActiveApplicationRuntime, getActiveEnvironment } from './kernel';
 
-export type RefCallback<T extends Node = Node> = (
-  node: T,
-) => void | (() => void);
-export type RefValue<T extends Node = Node> =
+export interface RefTarget {
+  readonly isConnected: boolean;
+  readonly ownerDocument: Document | null;
+}
+
+export type RefCallback<T extends RefTarget = Node> = (node: T) => void | (() => void);
+export type RefValue<T extends RefTarget = Node> =
   | RefCallback<T>
   | readonly RefValue<T>[]
   | null
@@ -36,18 +39,13 @@ const REF_ASSIGN = Symbol('memo-dom.refAssign');
  * Mark a compiler-emitted adapter that only assigns its node to a source
  * target. Assignment needs no connected document, so it stays synchronous.
  */
-export function refAssign<T extends Node>(
-  assign: RefCallback<T>,
-): RefCallback<T> {
+export function refAssign<T extends RefTarget>(assign: RefCallback<T>): RefCallback<T> {
   (assign as RefCallback<T> & { [REF_ASSIGN]?: true })[REF_ASSIGN] = true;
   return assign;
 }
 
 /** Mount refs left-to-right and return one idempotent reverse-order disposer. */
-export function mountRef<T extends Node>(
-  node: T,
-  value: RefValue<T>,
-): () => void {
+export function mountRef<T extends RefTarget>(node: T, value: RefValue<T>): () => void {
   // Server rendering records ownership but never invokes ref callbacks:
   // there is no attached browser node to hand over. 'defer' will replay
   // refs after hydration adoption (Phase 3); until then it behaves as
@@ -121,7 +119,7 @@ export function mountRef<T extends Node>(
 }
 
 /** A live node: connected to a document that has finished loading. */
-function isLive(node: Node): boolean {
+function isLive(node: RefTarget): boolean {
   return node.isConnected && documentSettled(node.ownerDocument);
 }
 
@@ -135,7 +133,7 @@ function documentSettled(document_: Document | null): boolean {
  * load; during initial load the browser re-processes focus when the
  * document completes, so callbacks wait for `window.load` first.
  */
-function scheduleLive(node: Node, run: () => void): void {
+function scheduleLive(node: RefTarget, run: () => void): void {
   const document_ = node.ownerDocument as Document | null;
   const flush = (): void => {
     if (node.isConnected) {
@@ -170,7 +168,7 @@ function scheduleLive(node: Node, run: () => void): void {
   }
 }
 
-function splitRefs<T extends Node>(
+function splitRefs<T extends RefTarget>(
   value: RefValue<T>,
   eager: RefValue<T>[],
   deferred: RefValue<T>[],
@@ -180,17 +178,14 @@ function splitRefs<T extends Node>(
     for (const entry of value) splitRefs(entry, eager, deferred);
     return;
   }
-  if (
-    typeof value === 'function' &&
-    (value as { [REF_ASSIGN]?: true })[REF_ASSIGN] === true
-  ) {
+  if (typeof value === 'function' && (value as { [REF_ASSIGN]?: true })[REF_ASSIGN] === true) {
     eager.push(value);
   } else {
     deferred.push(value);
   }
 }
 
-function mountValue<T extends Node>(
+function mountValue<T extends RefTarget>(
   node: T,
   value: RefValue<T>,
   disposers: Array<() => void>,
@@ -208,9 +203,7 @@ function mountValue<T extends Node>(
   const disposer = (value as RefCallback<T>)(node);
   if (disposer == null) return;
   if (typeof disposer !== 'function') {
-    throw new TypeError(
-      '[memo-dom] ref callback must return a cleanup function or nothing',
-    );
+    throw new TypeError('[memo-dom] ref callback must return a cleanup function or nothing');
   }
   disposers.push(disposer);
 }

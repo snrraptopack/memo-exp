@@ -50,10 +50,7 @@ const authoredDefaults = new Map<string, unknown>();
  * each request gets a fresh instance. Importing modules call it with the
  * same key and no initial.
  */
-export function defineStateCell<T>(
-  key: string,
-  initial?: T | (() => T),
-): StateCell {
+export function defineStateCell<T>(key: string, initial?: T | (() => T)): StateCell {
   if (initial !== undefined) authoredDefaults.set(key, initial);
   return { key };
 }
@@ -63,9 +60,7 @@ function instantiate(input: unknown): unknown {
 }
 
 function slot<T>(cell: StateCell): { value: T } {
-  const cells = getExtensionStore<Map<string, { value: unknown }>>(
-    'state-cells', () => new Map(),
-  );
+  const cells = getExtensionStore<Map<string, { value: unknown }>>('state-cells', () => new Map());
   let holder = cells.get(cell.key) as { value: T } | undefined;
   if (holder === undefined) {
     holder = {
@@ -92,9 +87,23 @@ export function setCell<T>(cell: StateCell, value: T): void {
 }
 
 /** Functional write; receives the request's current value. */
-export function updateCell<T>(
-  cell: StateCell,
-  change: (current: T) => T,
-): void {
+export function updateCell<T>(cell: StateCell, change: (current: T) => T): void {
   setCell(cell, change(slot<T>(cell).value));
+}
+
+/** Preserve the result of an authored assignment/update while owning its storage. */
+export function mutateCell<T, R>(cell: StateCell, change: (holder: { value: T }) => R): R {
+  const holder = slot<T>(cell);
+  const previous = holder.value;
+  const result = change(holder);
+  // Object mutations retain their identity; scalar no-op assignments should
+  // not feed an effect back into itself indefinitely.
+  if (
+    !Object.is(previous, holder.value) ||
+    (holder.value !== null &&
+      (typeof holder.value === 'object' || typeof holder.value === 'function'))
+  ) {
+    commitWrites([cell.key]);
+  }
+  return result;
 }

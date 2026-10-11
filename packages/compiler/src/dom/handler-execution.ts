@@ -8,6 +8,7 @@ import { createScopeWrites, type ScopeWrites } from '../handlers/write-facts';
 import { buildEventOriginCommit } from './handler-origin';
 import { generatedIdentifier, md } from './identifiers';
 import { HandlerPath } from '../handlers/traversal';
+import { markExecutionSite } from '../handlers/execution-sites';
 import { isPlainDataAssignment } from '../handlers/member-assignment';
 import type { HandlerExecutionSite } from '../handlers/plan';
 
@@ -25,18 +26,22 @@ export function finalizeHandlerInstrumentation(
   executionAwareRoot: boolean,
 ): void {
   ctx.handlerHasRootCommit.set(rootFn, scopes.has(root));
-  let eventOriginCommit:t.Statement|undefined;
+  let eventOriginCommit: t.Statement | undefined;
 
   if (eventBoundary && !scopes.has(root)) {
     const eventScope = createScopeWrites();
     eventScope.eventFallback = true;
-    eventOriginCommit=buildEventOriginCommit(ctx,compName,rowCtx,eventOriginId);
+    eventOriginCommit = buildEventOriginCommit(ctx, compName, rowCtx, eventOriginId);
     scopes.set(root, eventScope);
   }
 
-  const guardedRootSites: Array<HandlerExecutionSite & {
-    commit: t.Statement; flag?:t.Identifier; temporaries?:t.Identifier[];
-  }> = [];
+  const guardedRootSites: Array<
+    HandlerExecutionSite & {
+      commit: t.Statement;
+      flag?: t.Identifier;
+      temporaries?: t.Identifier[];
+    }
+  > = [];
   if (executionAwareRoot) {
     for (const site of executionSites.values()) {
       // All authored writes finish before these guarded commits. An earlier
@@ -47,10 +52,12 @@ export function finalizeHandlerInstrumentation(
           site.writes.instanceContentWrites.add(source);
         }
       }
-      if (site.path.isAssignmentExpression() &&
-          astFactory.isMemberExpression(site.path.node.left) &&
-          site.writes.instanceStructuralWrites.size === 0 &&
-          !isPlainDataAssignment(ctx, rootFn, site.path.node.left, site.path.scope)) {
+      if (
+        site.path.isAssignmentExpression() &&
+        astFactory.isMemberExpression(site.path.node.left) &&
+        site.writes.instanceStructuralWrites.size === 0 &&
+        !isPlainDataAssignment(ctx, rootFn, site.path.node.left, site.path.scope)
+      ) {
         // A setter/proxy can mutate state beyond the apparent receiver.
         site.writes.rootFallback = true;
       }
@@ -64,7 +71,10 @@ export function finalizeHandlerInstrumentation(
   guardedRootSites
     .sort((left, right) => pathDepth(right.path) - pathDepth(left.path))
     .forEach((site) => {
-      site.temporaries = markExecutionSite(ctx, rootFn, site.path, site.flag!);
+      site.temporaries = markExecutionSite(ctx, rootFn, site.path, site.flag!, {
+        fresh: (name) => generatedIdentifier(ctx, name),
+        runtime: (name) => md(ctx, name),
+      });
     });
 
   // Several completed writes can request the same owner or subtree refresh.
@@ -77,19 +87,25 @@ export function finalizeHandlerInstrumentation(
   let pendingRefreshKey: string | null = null;
   for (const site of guardedRootSites) {
     const writes = site.writes;
-    const mergeableRefresh = (writes.rootFallback || writes.instanceLocal &&
-      writes.writes.size === 0 && writes.listItemWrites.size === 0) &&
-      writes.transparentWrites.size === 0 && !writes.eventFallback &&
-      !writes.rowLocal && !writes.rowOwnerLocal;
+    const mergeableRefresh =
+      (writes.rootFallback ||
+        (writes.instanceLocal && writes.writes.size === 0 && writes.listItemWrites.size === 0)) &&
+      writes.transparentWrites.size === 0 &&
+      !writes.eventFallback &&
+      !writes.rowLocal &&
+      !writes.rowOwnerLocal;
     const refreshKey = mergeableRefresh ? JSON.stringify(site.commit) : null;
     if (refreshKey !== null && refreshKey === pendingRefreshKey && pendingRootRefresh !== null) {
       pendingRootRefresh.test = astFactory.logicalExpression(
-        '||', pendingRootRefresh.test, cloneEstreeNode(site.flag!),
+        '||',
+        pendingRootRefresh.test,
+        cloneEstreeNode(site.flag!),
       );
       continue;
     }
     const guarded = astFactory.ifStatement(
-      cloneEstreeNode(site.flag!), cloneEstreeNode(site.commit),
+      cloneEstreeNode(site.flag!),
+      cloneEstreeNode(site.commit),
     );
     guardedCommits.push(guarded);
     pendingRootRefresh = mergeableRefresh ? guarded : null;
@@ -113,15 +129,16 @@ export function finalizeHandlerInstrumentation(
 
   if (guardedRootSites.length > 0) {
     if (!astFactory.isBlockStatement(clonedFn.body)) {
-      throw new Error(
-        'memo-dom: execution-aware callback commit did not produce a block body',
-      );
+      throw new Error('memo-dom: execution-aware callback commit did not produce a block body');
     }
     clonedFn.body.body.unshift(
       astFactory.variableDeclaration(
         'let',
         guardedRootSites.flatMap((site) => [
-          astFactory.variableDeclarator(cloneEstreeNode(site.flag!), astFactory.booleanLiteral(false)),
+          astFactory.variableDeclarator(
+            cloneEstreeNode(site.flag!),
+            astFactory.booleanLiteral(false),
+          ),
           ...(site.temporaries ?? []).map((temporary) =>
             astFactory.variableDeclarator(cloneEstreeNode(temporary)),
           ),
@@ -141,116 +158,4 @@ function pathDepth(path: HandlerPath): number {
     current = current.parentPath;
   }
   return depth;
-}
-
-function markExecutionSite(
-  ctx: Ctx,
-  rootFn: t.Node,
-  path: HandlerPath,
-  flag: t.Identifier,
-): t.Identifier[] {
-  if (
-    path.isAssignmentExpression({ operator: '=' }) &&
-    (astFactory.isIdentifier(path.node.left) ||
-      astFactory.isMemberExpression(path.node.left) &&
-      !astFactory.isSuper(path.node.left.object) &&
-      !astFactory.isPrivateName(path.node.left.property) &&
-      isPlainDataAssignment(ctx, rootFn, path.node.left, path.scope))
-  ) {
-    const original = path.node;
-    const previous = generatedIdentifier(ctx, 'previousValue');
-    const result = generatedIdentifier(ctx, 'assignedValue');
-    const temporaries = [previous, result];
-    let before: t.Expression;
-    let assignment: t.AssignmentExpression;
-    let after: t.Expression;
-
-    if (astFactory.isIdentifier(original.left)) {
-      before = astFactory.identifier(original.left.name);
-      assignment = cloneEstreeNode(original, true);
-      after = astFactory.identifier(original.left.name);
-    } else if (astFactory.isMemberExpression(original.left)) {
-      const receiver = generatedIdentifier(ctx, 'assignmentReceiver');
-      const property = generatedIdentifier(ctx, 'assignmentProperty');
-      temporaries.push(receiver, property);
-      const access = (): t.MemberExpression =>
-        astFactory.memberExpression(
-          cloneEstreeNode(receiver),
-          cloneEstreeNode(property),
-          true,
-        );
-      const propertyExpression = original.left.computed
-        ? cloneEstreeNode(original.left.property as t.Expression, true)
-        : astFactory.stringLiteral((original.left.property as t.Identifier).name);
-      before = astFactory.sequenceExpression([
-        astFactory.assignmentExpression(
-          '=',
-          cloneEstreeNode(receiver),
-          cloneEstreeNode(original.left.object as t.Expression, true),
-        ),
-        astFactory.assignmentExpression('=', cloneEstreeNode(property), propertyExpression),
-        access(),
-      ]);
-      assignment = astFactory.assignmentExpression('=', access(), cloneEstreeNode(original.right, true));
-      after = access();
-    } else {
-      return [];
-    }
-
-    path.replaceWith(
-      astFactory.sequenceExpression([
-        astFactory.assignmentExpression('=', cloneEstreeNode(previous), before),
-        astFactory.assignmentExpression('=', cloneEstreeNode(result), assignment),
-        astFactory.assignmentExpression(
-          '=',
-          cloneEstreeNode(flag),
-          astFactory.logicalExpression(
-            '||',
-            cloneEstreeNode(flag),
-            astFactory.callExpression(md(ctx, 'effectAssignmentChanged'), [
-              cloneEstreeNode(previous),
-              after,
-            ]),
-          ),
-        ),
-        cloneEstreeNode(result),
-      ]),
-    );
-    return temporaries;
-  }
-
-  const mark = astFactory.assignmentExpression(
-    '=',
-    cloneEstreeNode(flag),
-    astFactory.booleanLiteral(true),
-  );
-  if (path.isAssignmentExpression() &&
-      ['&&=', '||=', '??='].includes(path.node.operator)) {
-    // Logical assignments can evaluate the receiver without executing a write.
-    // Keep the native reference and key coercion; only mark the taken RHS.
-    path.node.right = astFactory.sequenceExpression([mark, path.node.right]);
-    return [];
-  }
-  if (path.isVariableDeclarator()) {
-    const init = path.node.init;
-    if (init === null || !astFactory.isExpression(init)) {
-      throw new Error(
-        'memo-dom: execution-aware variable site has no expression initializer',
-      );
-    }
-    path.node.init = astFactory.sequenceExpression([mark, init]);
-    return [];
-  }
-  if (!path.isExpression()) {
-    throw new Error(
-      `memo-dom: unsupported execution-aware write site '${path.node.type}'`,
-    );
-  }
-  path.replaceWith(
-    astFactory.sequenceExpression([
-      mark,
-      cloneEstreeNode(path.node, true),
-    ]),
-  );
-  return [];
 }

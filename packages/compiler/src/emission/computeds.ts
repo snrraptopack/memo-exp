@@ -9,6 +9,8 @@ export interface ComputedEmission {
   runtime(name: string): t.Expression;
   writes(keys: readonly string[]): t.Expression;
   parent?: t.Expression;
+  /** Evaluate application-owned module calculations before initial destinations. */
+  initialize?: boolean;
   /** Native hosts activate module entities inside their application scope. */
   defer?(statements: readonly t.Statement[]): void;
 }
@@ -25,8 +27,11 @@ export function emitModuleComputeds(ctx: Ctx, program: t.Program, target: Comput
     const statement = program.body[statementIndex]!;
     let declNode: t.Node | null | undefined = statement;
     if (astFactory.isExportNamedDeclaration(declNode)) declNode = declNode.declaration;
-    if (!astFactory.isVariableDeclaration(declNode) ||
-      (declNode.kind !== 'const' && declNode.kind !== 'let')) continue;
+    if (
+      !astFactory.isVariableDeclaration(declNode) ||
+      (declNode.kind !== 'const' && declNode.kind !== 'let')
+    )
+      continue;
     const registrations: t.Statement[] = [];
     for (const d of declNode.declarations) {
       if (!astFactory.isIdentifier(d.id) || d.init == null) continue;
@@ -42,7 +47,10 @@ export function emitModuleComputeds(ctx: Ctx, program: t.Program, target: Comput
               astFactory.identifier('id'),
               astFactory.stringLiteral(`${computedPrefix}${name}`),
             ),
-            astFactory.objectProperty(astFactory.identifier('parent'), target.parent ?? astFactory.nullLiteral()),
+            astFactory.objectProperty(
+              astFactory.identifier('parent'),
+              target.parent ?? astFactory.nullLiteral(),
+            ),
             astFactory.objectProperty(
               astFactory.identifier('depth'),
               astFactory.unaryExpression('-', astFactory.numericLiteral(1)),
@@ -62,10 +70,16 @@ export function emitModuleComputeds(ctx: Ctx, program: t.Program, target: Comput
                     ]),
                     astFactory.blockStatement([
                       astFactory.expressionStatement(
-                        astFactory.assignmentExpression('=', astFactory.identifier(name), cloneEstreeNode(next)),
+                        astFactory.assignmentExpression(
+                          '=',
+                          astFactory.identifier(name),
+                          cloneEstreeNode(next),
+                        ),
                       ),
                       astFactory.expressionStatement(
-                        astFactory.callExpression(target.runtime('commitWrites'), [target.writes([name])]),
+                        astFactory.callExpression(target.runtime('commitWrites'), [
+                          target.writes([name]),
+                        ]),
                       ),
                     ]),
                   ),

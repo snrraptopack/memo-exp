@@ -8,23 +8,12 @@
  */
 import type * as t from '../../ast/compiler-types';
 import * as astFactory from '../../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../../ast';
+import { planPreludeReplay } from '../../emission/prelude';
 import { instanceSourceReasons } from '../instance-reasons';
-import type {DomContext as Ctx} from '../context';
-import {
-  type ControlFlowDerivation,
-  type LocalDerivation,
-} from '../../components/props';
+import type { DomContext as Ctx } from '../context';
+import { type ControlFlowDerivation, type LocalDerivation } from '../../components/props';
 import { buildDerivationReplay } from '../derivation-replay';
 import { reasonCondition, structuralReasonsFor } from './local-derived';
-
-interface PreludeStep {
-  order: number;
-  sequence: number;
-  sources: string[];
-  statement: t.Statement;
-  includePull: boolean;
-}
 
 interface PreludeGroup {
   reasons: (number | string)[] | null;
@@ -41,44 +30,12 @@ export function buildRenderPreludeReplay(
   controls: ControlFlowDerivation[],
   pullIndependent: ((expression: t.Expression) => boolean) | null = null,
 ): t.BlockStatement {
-  const order = new Map(body.map((statement, index) => [statement, index]));
-  let sequence = 0;
-  const steps: PreludeStep[] = [
-    ...locals.map((derivation) => ({
-      order: order.get(derivation.declaration) ?? Number.MAX_SAFE_INTEGER,
-      sequence: sequence++,
-      sources: derivation.sources,
-      statement: buildDerivationReplay(ctx, derivation),
-      // Destructuring and custom replays can execute observable operations.
-      // Only ordinary primitive assignments share the DOM slot proof.
-      includePull: derivation.target.type !== 'Identifier' ||
-        derivation.replay !== undefined || derivation.stableTarget === true ||
-        pullIndependent?.(derivation.source) !== true ||
-        // A primitive intermediate may be assigned by control flow whose
-        // condition reads opaque data. Its transitive roots must be proven too.
-        derivation.sources.some(source => pullIndependent?.(astFactory.identifier(source)) !== true),
-    })),
-    ...controls.map((control) => ({
-      order: order.get(control.statement) ?? Number.MAX_SAFE_INTEGER,
-      sequence: sequence++,
-      sources: control.sources,
-      includePull: true,
-      statement: astFactory.blockStatement([
-        ...control.resets.map((reset) =>
-          astFactory.expressionStatement(
-            astFactory.assignmentExpression(
-              '=',
-              astFactory.identifier(reset.binding),
-              cloneEstreeNode(reset.source, true),
-            ),
-          ),
-        ),
-        cloneEstreeNode(control.statement, true),
-      ]),
-    })),
-  ].sort(
-    (left, right) =>
-      left.order - right.order || left.sequence - right.sequence,
+  const steps = planPreludeReplay(
+    body,
+    locals,
+    controls,
+    (derivation) => buildDerivationReplay(ctx, derivation),
+    pullIndependent,
   );
 
   const reasonIds = ctx.instanceReasonIds.get(component);
@@ -91,13 +48,18 @@ export function buildRenderPreludeReplay(
             .flatMap((source) => instanceSourceReasons(ctx, component, source) ?? [])
             .sort((left, right) => left - right);
     const exact: (number | string)[] | null =
-      reasons === null || step.sources.some(source => instanceSourceReasons(ctx, component, source) === null)
+      reasons === null ||
+      step.sources.some((source) => instanceSourceReasons(ctx, component, source) === null)
         ? null
         : [...reasons, ...structuralReasonsFor(ctx, step.sources)];
     const key = exact?.join(' ') ?? '*';
     const previous = groups.at(-1);
     const previousKey = previous?.reasons?.join(' ') ?? '*';
-    if (previous !== undefined && previousKey === key && previous.includePull === step.includePull) {
+    if (
+      previous !== undefined &&
+      previousKey === key &&
+      previous.includePull === step.includePull
+    ) {
       previous.statements.push(step.statement);
     } else {
       groups.push({

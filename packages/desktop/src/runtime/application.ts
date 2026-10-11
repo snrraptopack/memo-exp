@@ -22,6 +22,13 @@ export interface SceneChildBinding {
 }
 
 export interface SceneMountOptions {
+  /** Compiler lifecycle registrations execute after native acceptance. */
+  readonly activate?: (owner: SceneInstance) => void;
+  readonly cleanups?: readonly (() => void)[];
+  readonly effects?: readonly SceneEffectBinding[];
+  readonly refs?: readonly SceneRefBinding[];
+  /** Replay compiler-planned setup calculations before reading destinations. */
+  readonly prepare?: (sources: ReadonlySet<string> | null) => void;
   readonly modules?: readonly string[];
   /** Compiler fragments retain structure but share their enclosing state scope. */
   readonly lexical?: boolean;
@@ -30,6 +37,30 @@ export interface SceneMountOptions {
   readonly components?: readonly SceneComponent[];
   readonly regions?: readonly SceneRegionBinding[];
   readonly lists?: readonly SceneListBinding[];
+}
+
+export interface SceneEffectBinding {
+  readonly index: number;
+  readonly active: boolean;
+  readonly sources: readonly string[];
+  readonly read: () => readonly unknown[];
+}
+
+export interface SceneRefBinding {
+  readonly node: number;
+  readonly value: import('@memoized-dom/runtime/core').RefValue<SceneElement>;
+}
+
+/** Accepted native element capabilities; this is not a browser document node. */
+export interface SceneElement {
+  readonly handle: SceneHandle;
+  readonly node: number;
+  readonly tagName: string;
+  readonly isConnected: boolean;
+  readonly ownerDocument: null;
+  readonly id: string;
+  readonly value: string;
+  getAttribute(name: string): string | null;
 }
 
 export type SceneRowKey = string | number;
@@ -55,10 +86,13 @@ export interface SceneRegionBinding {
 }
 
 export interface SceneInstance {
+  readonly entityId: string;
   readonly handle: SceneHandle;
   readonly ready: Promise<void>;
   readonly mounted: boolean;
   flush(): Promise<void>;
+  /** Compiler callback routing; retired owners ignore late continuations. */
+  invalidate(sources: readonly string[] | null): void;
   dispatch(event: number, payload?: unknown): Promise<unknown>;
   dispose(): Promise<void>;
 }
@@ -165,6 +199,7 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
     },
     async dispose() {
       closed = true;
+      semantic.stopLifecycle();
       const results = await Promise.allSettled(
         forest.roots().map((instance) => instance.dispose()),
       );
@@ -172,7 +207,11 @@ export function createDesktopApplication(host: DesktopHost): DesktopApplication 
         result.status === 'rejected' ? [result.reason] : [],
       );
       if (errors.length) throw new AggregateError(errors, 'Desktop scene disposal failed');
-      semantic.dispose();
+      try {
+        await semantic.flush();
+      } finally {
+        semantic.dispose();
+      }
     },
   };
 }

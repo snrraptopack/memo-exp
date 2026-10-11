@@ -22,5 +22,18 @@ export function rename(title: string): void {
 export function incrementLater(): void {
   // This callback retains its application scope. No click event is needed
   // when the delayed write routes back through the shared kernel.
-  setTimeout(() => { state.count++; }, 500);
+  setTimeout(() => {
+    state.count++;
+  }, 500);
+}
+
+/** Each side of await publishes without waiting for the whole handler to end. */
+export async function incrementInPhases(): Promise<void> {
+  state.count++;
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 500);
+  });
+
+  state.count++;
 }

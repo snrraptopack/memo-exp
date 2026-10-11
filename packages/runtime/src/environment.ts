@@ -16,11 +16,7 @@
 
 import type { HydrationController } from './hydration';
 
-export type RenderMode =
-  | 'client-create'
-  | 'server-dom'
-  | 'server-string'
-  | 'hydrate';
+export type RenderMode = 'client-create' | 'server-dom' | 'server-string' | 'hydrate';
 
 /**
  * Lifecycle capabilities. 'defer' is reserved for hydration (Phase 3):
@@ -73,6 +69,8 @@ export interface RenderEnvironment {
   schedule: ((fn: () => void) => void) | null;
   effects: Capability;
   refs: Capability;
+  /** Rendering adapters may release side effects only after host acceptance. */
+  effectBoundary?: (id: string, execute: () => void) => void;
   hydration?: HydrationController;
 }
 
@@ -108,9 +106,7 @@ export function clientEnvironment(): RenderEnvironment {
 }
 
 /** Merge partial overrides over the client default. */
-export function resolveEnvironment(
-  overrides?: Partial<RenderEnvironment>,
-): RenderEnvironment {
+export function resolveEnvironment(overrides?: Partial<RenderEnvironment>): RenderEnvironment {
   const base = clientEnvironment();
   if (overrides === undefined) return base;
   return {
@@ -121,10 +117,10 @@ export function resolveEnvironment(
     get document() {
       return overrides.document ?? base.document;
     },
-    schedule:
-      overrides.schedule === undefined ? base.schedule : overrides.schedule,
+    schedule: overrides.schedule === undefined ? base.schedule : overrides.schedule,
     effects: overrides.effects ?? base.effects,
     refs: overrides.refs ?? base.refs,
+    effectBoundary: overrides.effectBoundary,
     hydration: overrides.hydration,
   };
 }

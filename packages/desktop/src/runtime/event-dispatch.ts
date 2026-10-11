@@ -7,6 +7,7 @@ interface DispatcherHooks {
   invalidate(owner: Owner, sources: readonly string[] | null): void;
   flush(owner: Owner): Promise<void>;
   isClosed(): boolean;
+  reportAsync(error: unknown): void;
 }
 
 interface Position {
@@ -68,7 +69,13 @@ function elementSnapshot({ owner, node }: Position, extra?: unknown): ElementSna
 }
 
 /** Route platform events through lexical owners, then publish one family update. */
-export function createEventDispatcher({ find, invalidate, flush, isClosed }: DispatcherHooks) {
+export function createEventDispatcher({
+  find,
+  invalidate,
+  flush,
+  isClosed,
+  reportAsync,
+}: DispatcherHooks) {
   const canceledSpace = new WeakMap<Owner, Set<number>>();
 
   return async function dispatchEvent(native: NativeSceneEvent): Promise<boolean> {
@@ -130,7 +137,14 @@ export function createEventDispatcher({ find, invalidate, flush, isClosed }: Dis
             try {
               const result = Reflect.apply(handler.callback, undefined, [state.event]);
               if (result instanceof Promise) {
-                throw new Error('Asynchronous desktop callbacks are not supported yet');
+                // Cancellation belongs to this event turn. Continuations
+                // publish separately and retain their errors for app.flush().
+                void result
+                  .finally(() => {
+                    if (!position.owner.disposed && !isClosed())
+                      invalidate(position.owner, handler.sources);
+                  })
+                  .catch(reportAsync);
               }
             } catch (error) {
               errors.push(error);

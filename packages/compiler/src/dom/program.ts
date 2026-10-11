@@ -6,16 +6,11 @@
 
 import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
-import { cloneNode as cloneEstreeNode } from '../ast';
-import {
-  normalizeEstreeDialect,
-  normalizeJsxLiterals,
-  walkAst,
-  type BaseNode,
-} from '../ast';
+import { normalizeEstreeDialect, normalizeJsxLiterals, walkAst, type BaseNode } from '../ast';
 import { createCtx, type DomContext as Ctx, type InternalMemoDomOptions } from './context';
 import { freshWriteConst } from './constants';
 import { emitModuleComputeds } from '../emission/computeds';
+import { emitModuleControlFlow } from '../emission/control-flow';
 import { type MemoDomOptions } from '../context';
 import { generatedIdentifier, md, requireIdentifiers } from './identifiers';
 import { planAccessReaders } from '../analysis/access-table';
@@ -27,95 +22,19 @@ import { emittedRuntimeHelpers } from './runtime-requirements';
 import { emitInitialMount } from './initial-entry';
 import { planComponentListSites } from '../planning/list-sites';
 import { planComponentRendering, type ModuleRenderPlan } from '../planning/component-render';
-import {planComponentCallbacks} from '../planning/component-callbacks';
-import {planModuleCallbacks} from '../planning/module-callbacks';
-import {instrumentSharedCallback} from './handlers';
+import { planComponentCallbacks } from '../planning/component-callbacks';
+import { planModuleCallbacks } from '../planning/module-callbacks';
+import { instrumentSharedCallback } from './handlers';
 import { planExpressionSources } from '../planning/expression-sources';
 import { planComponentPulls } from '../planning/primitive-pull';
 import { planComponentPlacements } from '../planning/component-placement';
 import { planRegionReplays } from '../planning/region-replay';
-import {
-  rejectUnownedCleanup,
-} from './lifecycle';
-import {
-  rejectUnownedEffects,
-  rewriteModuleEffects,
-} from '../effects';
-import {
-  routeManifestStatements,
-  initialRoutePreparationStatements,
-} from './router';
+import { rejectUnownedCleanup } from './lifecycle';
+import { rejectUnownedEffects, rewriteModuleEffects } from '../effects';
+import { routeManifestStatements, initialRoutePreparationStatements } from './router';
 import { analyzeRoutedPreparations } from '../routed';
 import { rewriteTransparentDataReads } from './read-rewriting';
-import {
-  externalReactiveImportStatements,
-} from './external-reactivity';
-
-function rewriteModuleControlFlow(
-  ctx: Ctx,
-  program: t.Program,
-): void {
-  for (const flow of ctx.moduleControlFlow) {
-    const statementIndex = program.body.indexOf(flow.statement);
-    if (statementIndex === -1) continue;
-    const previous = new Map(
-      flow.bindings.map((binding) => [
-        binding,
-        generatedIdentifier(ctx, `${binding}Previous`),
-      ]),
-    );
-    const renderBody: t.Statement[] = [
-      astFactory.variableDeclaration(
-        'const',
-        flow.bindings.map((binding) =>
-          astFactory.variableDeclarator(
-            cloneEstreeNode(previous.get(binding)!),
-            astFactory.identifier(binding),
-          ),
-        ),
-      ),
-      cloneEstreeNode(flow.statement, true),
-      ...flow.bindings.map((binding) =>
-        astFactory.ifStatement(
-          astFactory.callExpression(md(ctx, 'computedChanged'), [
-            cloneEstreeNode(previous.get(binding)!),
-            astFactory.identifier(binding),
-          ]),
-          astFactory.blockStatement([
-            astFactory.expressionStatement(
-              astFactory.callExpression(md(ctx, 'commitWrites'), [
-                freshWriteConst(ctx, [binding]),
-              ]),
-            ),
-          ]),
-        ),
-      ),
-    ];
-    program.body.splice(
-      statementIndex + 1,
-      0,
-      astFactory.expressionStatement(
-        astFactory.callExpression(md(ctx, 'registerEntity'), [
-          astFactory.objectExpression([
-            astFactory.objectProperty(
-              astFactory.identifier('id'),
-              astFactory.stringLiteral(flow.entityId),
-            ),
-            astFactory.objectProperty(astFactory.identifier('parent'), astFactory.nullLiteral()),
-            astFactory.objectProperty(
-              astFactory.identifier('depth'),
-              astFactory.unaryExpression('-', astFactory.numericLiteral(1)),
-            ),
-            astFactory.objectProperty(
-              astFactory.identifier('render'),
-              astFactory.arrowFunctionExpression([], astFactory.blockStatement(renderBody)),
-            ),
-          ]),
-        ]),
-      ),
-    );
-  }
-}
+import { externalReactiveImportStatements } from './external-reactivity';
 
 interface ProgramDiagnostic {
   node: t.Program;
@@ -176,23 +95,25 @@ function rejectLeftoverJsx(ctx: Ctx, programPath: ProgramDiagnostic): void {
 
 export type { MemoDomOptions };
 
-function prepareProgram(
-  ctx: Ctx,
-  programPath: ProgramTransformPath,
-): ModuleRenderPlan {
+function prepareProgram(ctx: Ctx, programPath: ProgramTransformPath): ModuleRenderPlan {
   prepareProgramAnalysis(ctx, programPath);
   analyzeRoutedPreparations(ctx, programPath, true);
   rewriteTransparentDataReads(ctx);
-  ctx.moduleCallbacks=planModuleCallbacks(ctx,programPath);
-  for(const site of ctx.moduleCallbacks.retained)instrumentSharedCallback(ctx,site.target,site.executionAware);
+  ctx.moduleCallbacks = planModuleCallbacks(ctx, programPath);
+  for (const site of ctx.moduleCallbacks.retained)
+    instrumentSharedCallback(ctx, site.target, site.executionAware);
   return planComponentRendering(ctx.compPaths, {
-    callbacks:new Map([...ctx.compPaths].map(([name,path])=>[name,planComponentCallbacks(ctx,name,path)])),
+    callbacks: new Map(
+      [...ctx.compPaths].map(([name, path]) => [name, planComponentCallbacks(ctx, name, path)]),
+    ),
     expressionSources: planExpressionSources(ctx),
     pullPlans: planComponentPulls(ctx),
     placements: planComponentPlacements(ctx),
     regionReplays: planRegionReplays(ctx),
     listSites: planComponentListSites(ctx),
-    renderCallbackProps: new Map([...ctx.componentProps].map(([name, props]) => [name, [...props.renderCallbacks]])),
+    renderCallbackProps: new Map(
+      [...ctx.componentProps].map(([name, props]) => [name, [...props.renderCallbacks]]),
+    ),
   });
 }
 
@@ -207,21 +128,27 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
   rejectLeftoverJsx(ctx, programPath);
 
   const table = emitAccessTable(ctx, planAccessReaders(ctx));
-  if (ctx.computeds.size > 0) emitModuleComputeds(ctx, programPath.node, {
-    fresh: name => generatedIdentifier(ctx, name),
-    runtime: name => md(ctx, name),
-    writes: keys => freshWriteConst(ctx, keys),
-  });
+  if (ctx.computeds.size > 0)
+    emitModuleComputeds(ctx, programPath.node, {
+      fresh: (name) => generatedIdentifier(ctx, name),
+      runtime: (name) => md(ctx, name),
+      writes: (keys) => freshWriteConst(ctx, keys),
+    });
   if (ctx.moduleControlFlow.length > 0) {
-    rewriteModuleControlFlow(ctx, programPath.node);
+    emitModuleControlFlow(ctx, programPath.node, {
+      fresh: (name) => generatedIdentifier(ctx, name),
+      runtime: (name) => md(ctx, name),
+      writes: (keys) => freshWriteConst(ctx, keys),
+    });
   }
   if (table) ctx.emission.header.push(table);
 
   if (Object.keys(ctx.lazyRouteImports).length > 0) {
-    programPath.node.body = programPath.node.body.filter(statement => {
+    programPath.node.body = programPath.node.body.filter((statement) => {
       if (!astFactory.isImportDeclaration(statement)) return true;
-      statement.specifiers = statement.specifiers.filter(specifier =>
-        ctx.lazyRouteImports[specifier.local.name] === undefined);
+      statement.specifiers = statement.specifiers.filter(
+        (specifier) => ctx.lazyRouteImports[specifier.local.name] === undefined,
+      );
       return statement.specifiers.length > 0 || statement.importKind === 'type';
     });
   }
@@ -279,15 +206,39 @@ function finishProgram(ctx: Ctx, programPath: ProgramTransformPath): void {
       astFactory.callExpression(md(ctx, 'registerRootFactory'), [
         astFactory.identifier(ctx.rootComponent),
         astFactory.objectExpression([
-          astFactory.objectProperty(astFactory.identifier('id'), astFactory.stringLiteral(ctx.rootId)),
-          ...(ctx.initialDelivery === undefined ? [] : [astFactory.objectProperty(
-            astFactory.identifier('initialDelivery'), astFactory.objectExpression([
-              astFactory.objectProperty(astFactory.identifier('key'), astFactory.stringLiteral(ctx.initialDelivery.key)),
-              ...(ctx.initialDelivery.html===undefined ? [] : [astFactory.objectProperty(astFactory.identifier('html'), astFactory.stringLiteral(ctx.initialDelivery.html))]),
-              astFactory.objectProperty(astFactory.identifier('target'), astFactory.stringLiteral(ctx.initialDelivery.target)),
-              astFactory.objectProperty(astFactory.identifier('browser'), astFactory.stringLiteral(ctx.initialDelivery.browser)),
-            ]),
-          )]),
+          astFactory.objectProperty(
+            astFactory.identifier('id'),
+            astFactory.stringLiteral(ctx.rootId),
+          ),
+          ...(ctx.initialDelivery === undefined
+            ? []
+            : [
+                astFactory.objectProperty(
+                  astFactory.identifier('initialDelivery'),
+                  astFactory.objectExpression([
+                    astFactory.objectProperty(
+                      astFactory.identifier('key'),
+                      astFactory.stringLiteral(ctx.initialDelivery.key),
+                    ),
+                    ...(ctx.initialDelivery.html === undefined
+                      ? []
+                      : [
+                          astFactory.objectProperty(
+                            astFactory.identifier('html'),
+                            astFactory.stringLiteral(ctx.initialDelivery.html),
+                          ),
+                        ]),
+                    astFactory.objectProperty(
+                      astFactory.identifier('target'),
+                      astFactory.stringLiteral(ctx.initialDelivery.target),
+                    ),
+                    astFactory.objectProperty(
+                      astFactory.identifier('browser'),
+                      astFactory.stringLiteral(ctx.initialDelivery.browser),
+                    ),
+                  ]),
+                ),
+              ]),
           astFactory.objectProperty(
             astFactory.identifier('create'),
             astFactory.arrowFunctionExpression(
@@ -317,12 +268,19 @@ function transformProgramAst(
   const renderPlan = prepareProgram(ctx, programPath);
   emitDomComponents(ctx, renderPlan);
   finishProgram(ctx, programPath);
-  if (opts.initialMount) emitInitialMount(programPath.node,
-    opts.runtimePath ?? '@memoized-dom/runtime', opts.initialMount.payload);
+  if (opts.initialMount)
+    emitInitialMount(
+      programPath.node,
+      opts.runtimePath ?? '@memoized-dom/runtime',
+      opts.initialMount.payload,
+    );
   if (opts.onRuntimeHelpers) {
-    opts.onRuntimeHelpers(emittedRuntimeHelpers(
-      programPath.node as unknown as BaseNode, requireIdentifiers(ctx).runtimeId,
-    ));
+    opts.onRuntimeHelpers(
+      emittedRuntimeHelpers(
+        programPath.node as unknown as BaseNode,
+        requireIdentifiers(ctx).runtimeId,
+      ),
+    );
   }
 }
 

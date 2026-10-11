@@ -9,6 +9,7 @@ import {
 import { createProcessHost } from '@memoized-dom/desktop/host';
 import { buildDesktopEntry } from '@memoized-dom/desktop/dev';
 import { runTodoSmoke } from './testing/todo';
+import { runReactivitySmoke } from './testing/reactivity';
 
 const entry =
   process.argv.find((arg) => arg.startsWith('--entry='))?.slice(8) ??
@@ -24,11 +25,12 @@ const executable =
       : 'memoized-dom-desktop-window',
   );
 const todoSmoke = process.argv.includes('--todo-smoke');
+const reactivitySmoke = process.argv.includes('--reactivity-smoke');
 const compareBrowser = process.argv.includes('--compare-browser');
 const host = createProcessHost({
   executable,
   window: true,
-  args: process.argv.includes('--smoke') || todoSmoke ? ['--smoke'] : [],
+  args: process.argv.includes('--smoke') || todoSmoke || reactivitySmoke ? ['--smoke'] : [],
 });
 const templates = new Map<string, SceneTemplate>();
 const layoutSnapshots: SceneSnapshot[] = [];
@@ -102,7 +104,9 @@ try {
     () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`),
   );
   const root = roots.get('root')!;
-  if (todoSmoke) {
+  if (reactivitySmoke) {
+    smokeReport = await runReactivitySmoke({ host, waitForFrame, settleEvents: () => events });
+  } else if (todoSmoke) {
     smokeReport = await runTodoSmoke({
       host,
       waitForFrame,
@@ -474,8 +478,10 @@ if (smokeReport && compareBrowser) {
 }
 if (smokeReport)
   console.log(
-    todoSmoke
-      ? 'GPUI todo layout/interactions smoke test passed:'
-      : 'GPUI TSX/CSS/components/input window smoke test passed:',
+    reactivitySmoke
+      ? 'GPUI shared state/async/effects/refs smoke test passed:'
+      : todoSmoke
+        ? 'GPUI todo layout/interactions smoke test passed:'
+        : 'GPUI TSX/CSS/components/input window smoke test passed:',
     JSON.stringify({ ...smokeReport, shutdownMs: Math.round(shutdownMs) }),
   );

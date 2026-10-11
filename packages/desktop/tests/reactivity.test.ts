@@ -17,7 +17,9 @@ import {
 
 function deferred() {
   let resolve!: () => void;
-  const promise = new Promise<void>(accept => { resolve = accept; });
+  const promise = new Promise<void>((accept) => {
+    resolve = accept;
+  });
   return { promise, resolve };
 }
 
@@ -62,7 +64,9 @@ async function fixture(overrides: Record<string, string> = {}, native?: DesktopH
   const mounted = new Map<string, SceneHandle[]>();
   const values = new Map<number, Map<number, string>>();
   let rejectNext = false;
-  let gate: { entered: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> } | undefined;
+  let gate:
+    | { entered: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> }
+    | undefined;
   let committed = deferred();
   const app = createDesktopApplication({
     async install(template) {
@@ -88,9 +92,13 @@ async function fixture(overrides: Record<string, string> = {}, native?: DesktopH
           const handles = mounted.get(name) ?? [];
           handles.push(operation.handle);
           mounted.set(name, handles);
-          values.set(operation.handle.id, new Map(operation.values.map(value => [value.slot, value.value])));
+          values.set(
+            operation.handle.id,
+            new Map(operation.values.map((value) => [value.slot, value.value])),
+          );
         } else if (operation.kind === 'update') {
-          for (const value of operation.values) values.get(operation.handle.id)!.set(value.slot, value.value);
+          for (const value of operation.values)
+            values.get(operation.handle.id)!.set(value.slot, value.value);
         } else if (operation.kind === 'dispose') {
           values.delete(operation.handle.id);
         }
@@ -113,19 +121,36 @@ async function fixture(overrides: Record<string, string> = {}, native?: DesktopH
     });
     const handle = (name: string): SceneHandle => mounted.get(name)![0]!;
     return {
-      app, entry, code, transactions, templates, mounted, handle,
-      text(name: string, slot = 0) { return values.get(handle(name).id)!.get(slot); },
-      textAt(handle: SceneHandle, slot: number) { return values.get(handle.id)!.get(slot); },
-      nextCommit() { return committed.promise; },
-      reject() { rejectNext = true; },
+      app,
+      entry,
+      code,
+      transactions,
+      templates,
+      mounted,
+      handle,
+      text(name: string, slot = 0) {
+        return values.get(handle(name).id)!.get(slot);
+      },
+      textAt(handle: SceneHandle, slot: number) {
+        return values.get(handle.id)!.get(slot);
+      },
+      nextCommit() {
+        return committed.promise;
+      },
+      reject() {
+        rejectNext = true;
+      },
       block() {
         const blocked = { entered: deferred(), release: deferred() };
         gate = blocked;
         return blocked;
       },
       async close() {
-        try { await app.dispose(); }
-        finally { await rm(directory, { recursive: true, force: true }); }
+        try {
+          await app.dispose();
+        } finally {
+          await rm(directory, { recursive: true, force: true });
+        }
       },
     };
   } catch (error) {
@@ -139,7 +164,10 @@ it('routes canonical writes through helper and state re-exports to sibling reade
   let unrelatedReads = 0;
   Object.defineProperty(globalThis, 'desktopUnrelatedProbe', {
     configurable: true,
-    get() { unrelatedReads++; return 'untouched'; },
+    get() {
+      unrelatedReads++;
+      return 'untouched';
+    },
   });
   const f = await fixture();
   try {
@@ -152,28 +180,50 @@ it('routes canonical writes through helper and state re-exports to sibling reade
     expect(f.text('Second')).toBe('2');
     expect(unrelatedReads).toBe(1);
     const operations = f.transactions.at(-1)!.operations;
-    expect(operations.map(operation => operation.handle.id).sort()).toEqual([
-      f.handle('First').id, f.handle('Second').id,
-    ].sort());
+    expect(operations.map((operation) => operation.handle.id).sort()).toEqual(
+      [f.handle('First').id, f.handle('Second').id].sort(),
+    );
   } finally {
     await f.close();
     Reflect.deleteProperty(globalThis, 'desktopUnrelatedProbe');
   }
 });
 
-it.each([
-  `export async function increment() { count++; await Promise.resolve(); count++; }`,
-  `export function increment() { setTimeout(async () => { await Promise.resolve(); count++; }, 0); }`,
-  `export function* increment() { count++; yield count; count++; }`,
-])('diagnoses module writes requiring asynchronous or generator continuations: %s', async helper => {
-  await expect(fixture({
+it('diagnoses generator writes until iterator ownership is implemented', async () => {
+  await expect(
+    fixture({
+      'state.ts': `
+      export let count = 0;
+      export const doubled = count * 2;
+      export function* increment() { count++; yield count; count++; }
+      export function schedule() {}
+    `,
+    }),
+  ).rejects.toThrow('iterator lifecycle instrumentation');
+});
+
+it('publishes module writes across async helpers and retained async timer callbacks', async () => {
+  const f = await fixture({
     'state.ts': `
       export let count = 0;
       export const doubled = count * 2;
-      ${helper}
-      export function schedule() {}
+      export async function increment() { count++; await Promise.resolve(); return ++count; }
+      export function schedule() { setTimeout(async () => { await Promise.resolve(); count++; }, 0); }
     `,
-  })).rejects.toThrow('continuation instrumentation');
+  });
+  try {
+    expect(await f.app.dispatch(f.handle('Editor'), 0)).toBe(2);
+    expect(f.text('First')).toBe('2');
+    expect(f.text('Second')).toBe('4');
+    const timer = f.nextCommit();
+    f.app.run(() => f.entry.schedule());
+    await timer;
+    await f.app.flush();
+    expect(f.text('First')).toBe('3');
+    expect(f.text('Second')).toBe('6');
+  } finally {
+    await f.close();
+  }
 });
 
 it('automatically publishes programmatic and timer writes in the originating application scope', async () => {
@@ -190,14 +240,19 @@ it('automatically publishes programmatic and timer writes in the originating app
     await f.app.flush();
     expect(f.text('First')).toBe('2');
     expect(f.text('Second')).toBe('4');
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('keeps cross-module destinations accepted until a rejected transaction is explicitly retried', async () => {
   const f = await fixture();
   try {
     f.reject();
-    const error = await f.app.dispatch(f.handle('Editor'), 0).then(() => null, failure => failure);
+    const error = await f.app.dispatch(f.handle('Editor'), 0).then(
+      () => null,
+      (failure) => failure,
+    );
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('native rejection');
     expect(f.text('First')).toBe('0');
@@ -206,7 +261,9 @@ it('keeps cross-module destinations accepted until a rejected transaction is exp
     expect(f.text('First')).toBe('1');
     expect(f.text('Second')).toBe('2');
     expect(f.transactions.at(-1)!.sequence).toBe(2);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('keeps a later module write independent from an earlier in-flight rejection', async () => {
@@ -214,7 +271,10 @@ it('keeps a later module write independent from an earlier in-flight rejection',
   try {
     const gate = f.block();
     f.reject();
-    const first = f.app.dispatch(f.handle('Editor'), 0).then(() => null, error => error);
+    const first = f.app.dispatch(f.handle('Editor'), 0).then(
+      () => null,
+      (error) => error,
+    );
     await gate.entered.promise;
     const second = f.app.dispatch(f.handle('Editor'), 0);
     await Promise.resolve();
@@ -223,7 +283,9 @@ it('keeps a later module write independent from an earlier in-flight rejection',
     expect(await second).toBe(2);
     expect(f.text('First')).toBe('2');
     expect(f.text('Second')).toBe('4');
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('reports automatic publication rejection before allowing an explicit retry', async () => {
@@ -243,7 +305,9 @@ it('reports automatic publication rejection before allowing an explicit retry', 
     expect(f.text('First')).toBe('1');
     expect(f.text('Second')).toBe('2');
     expect(f.transactions.at(-1)!.sequence).toBe(2);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('routes direct inline module writes while preserving a shadowed component-local binding', async () => {
@@ -258,7 +322,9 @@ it('routes direct inline module writes while preserving a shadowed component-loc
     expect(f.text('Editor')).toBe('11');
     expect(f.text('First')).toBe('1');
     expect(f.text('Second')).toBe('2');
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('routes after authored finally blocks while preserving the helper return value', async () => {
@@ -269,7 +335,9 @@ it('routes after authored finally blocks while preserving the helper return valu
     expect(await f.app.dispatch(f.handle('Editor'), 0)).toBe(1);
     expect(f.text('First')).toBe('2');
     expect(f.text('Second')).toBe('4');
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('uses linked helper reads and parameter-write effects for mutable module stores', async () => {
@@ -290,7 +358,9 @@ it('uses linked helper reads and parameter-write effects for mutable module stor
     await f.app.dispatch(f.handle('Editor'), 0);
     expect(f.text('First')).toBe('Grace');
     expect(f.text('Second')).toBe('2');
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('keeps native row identity and local input state while shared module readers change and retire', async () => {
@@ -320,11 +390,11 @@ it('keeps native row identity and local input state while shared module readers 
     const b = f.mounted.get('Row')![1]!;
     await f.app.dispatch(a!, 0, { target: { value: 'A note' } });
     await f.app.dispatch(f.handle('App'), 0);
-    const order = f.transactions.at(-1)!.operations.find(operation => operation.kind === 'order');
+    const order = f.transactions.at(-1)!.operations.find((operation) => operation.kind === 'order');
     expect(order).toMatchObject({ children: [b, a] });
     expect(f.textAt(a!, 2)).toBe('A note');
     await f.app.dispatch(f.handle('App'), 3);
-    expect(f.transactions.at(-1)!.operations.map(operation => operation.handle)).toEqual([b, a]);
+    expect(f.transactions.at(-1)!.operations.map((operation) => operation.handle)).toEqual([b, a]);
     expect(f.textAt(a!, 1)).toBe('1');
     expect(f.textAt(b!, 1)).toBe('1');
     await f.app.dispatch(f.handle('App'), 1);
@@ -335,15 +405,21 @@ it('keeps native row identity and local input state while shared module readers 
     expect(f.textAt(c, 1)).toBe('2');
     expect(f.textAt(a!, 2)).toBe('A note');
     await expect(f.app.dispatch(b!, 0)).rejects.toThrow('retired');
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 it('activates module derivations only for the owning graph and isolates application registries', async () => {
   const first = await fixture();
   const second = await fixture();
   try {
-    const computedIds = (app: typeof first.app) => app.run(() =>
-      [...getActiveApplicationRuntime().state.registry.keys()].filter(id => id.includes('/$computed/')));
+    const computedIds = (app: typeof first.app) =>
+      app.run(() =>
+        [...getActiveApplicationRuntime().state.registry.keys()].filter((id) =>
+          id.includes('/$computed/'),
+        ),
+      );
     expect(computedIds(first.app)).toHaveLength(1);
     expect(computedIds(second.app)).toHaveLength(1);
     expect(computedIds(first.app)[0]).not.toBe(computedIds(second.app)[0]);
@@ -362,7 +438,9 @@ it('activates module derivations only for the owning graph and isolates applicat
 it('prepares derived readers during a conservative unknown write', async () => {
   Object.defineProperty(globalThis, 'desktopOpaqueMutation', {
     configurable: true,
-    value: (store: { count: number }) => { store.count++; },
+    value: (store: { count: number }) => {
+      store.count++;
+    },
   });
   const f = await fixture({
     'state.ts': `export const model={count:0};export const count=model.count;export const doubled=count*2;export function increment(){globalThis.desktopOpaqueMutation(model);return model.count;}export function schedule(){}`,
@@ -378,14 +456,23 @@ it('prepares derived readers during a conservative unknown write', async () => {
 });
 
 it('publishes linked module updates into the real Rust retained scene', async () => {
-  const host = createProcessHost({ executable: resolve(import.meta.dirname, '../rust/target/debug',
-    process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host') });
+  const host = createProcessHost({
+    executable: resolve(
+      import.meta.dirname,
+      '../rust/target/debug',
+      process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host',
+    ),
+  });
   const f = await fixture({}, host);
   try {
     await f.app.dispatch(f.handle('Editor'), 0);
     const snapshot = await host.inspect();
-    const first = snapshot.instances.find(instance => instance.handle.id === f.handle('First').id)!;
-    const second = snapshot.instances.find(instance => instance.handle.id === f.handle('Second').id)!;
+    const first = snapshot.instances.find(
+      (instance) => instance.handle.id === f.handle('First').id,
+    )!;
+    const second = snapshot.instances.find(
+      (instance) => instance.handle.id === f.handle('Second').id,
+    )!;
     expect(first.texts.join('')).toBe('1');
     expect(second.texts.join('')).toBe('2');
   } finally {
@@ -395,33 +482,53 @@ it('publishes linked module updates into the real Rust retained scene', async ()
 });
 
 it('runs the editable shared-state example through normal mount and the Rust host', async () => {
-  const host = createProcessHost({ executable: resolve(import.meta.dirname, '../rust/target/debug',
-    process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host') });
+  const host = createProcessHost({
+    executable: resolve(
+      import.meta.dirname,
+      '../rust/target/debug',
+      process.platform === 'win32' ? 'memoized-dom-desktop-host.exe' : 'memoized-dom-desktop-host',
+    ),
+  });
   const templates = new Map<string, SceneTemplate>();
   const app = createDesktopApplication({
     async install(template) {
       templates.set(template.id, template);
       await host.install(template);
     },
-    commit: transaction => host.commit(transaction),
+    commit: (transaction) => host.commit(transaction),
   });
   try {
-    const code = await buildDesktopEntry(resolve(import.meta.dirname, '../examples/shared-state/main.ts'), {
-      runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href,
-    });
-    await runDesktopEntry(app, () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`));
+    const code = await buildDesktopEntry(
+      resolve(import.meta.dirname, '../examples/shared-state/main.ts'),
+      {
+        runtimePath: pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href,
+      },
+    );
+    await runDesktopEntry(
+      app,
+      () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`),
+    );
     const initial = await host.inspect();
-    const controls = initial.instances.find(instance => instance.template.endsWith('#Controls'))!;
+    const controls = initial.instances.find((instance) => instance.template.endsWith('#Controls'))!;
     const events = templates.get(controls.template)!.events;
-    await app.dispatch(controls.handle, events.findIndex(event => event.type === 'click'));
-    await app.dispatch(controls.handle, events.findIndex(event => event.type === 'change'), {
-      currentTarget: { value: 'Shared native title' },
-    });
+    await app.dispatch(
+      controls.handle,
+      events.findIndex((event) => event.type === 'click'),
+    );
+    await app.dispatch(
+      controls.handle,
+      events.findIndex((event) => event.type === 'change'),
+      {
+        currentTarget: { value: 'Shared native title' },
+      },
+    );
     const snapshot = await host.inspect();
-    const readouts = snapshot.instances.filter(instance => instance.template.endsWith('#Readout'));
+    const readouts = snapshot.instances.filter((instance) =>
+      instance.template.endsWith('#Readout'),
+    );
     expect(readouts).toHaveLength(2);
     for (const readout of readouts) {
-      const text = readout.text_groups.map(group => group.text);
+      const text = readout.text_groups.map((group) => group.text);
       expect(text).toContain('Shared native title');
       expect(text).toContain('Count: 1');
       expect(text).toContain('Derived double: 2');

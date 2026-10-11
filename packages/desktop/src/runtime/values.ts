@@ -2,21 +2,41 @@ import { isSceneScope, sameSceneScope } from './scope';
 
 export type SceneProps = Readonly<Record<string, unknown>>;
 export type SceneCallback = (...args: unknown[]) => unknown;
-export function affected(dependencies: readonly string[] | null, sources: Set<string> | null): boolean {
-  return sources === null || dependencies === null || dependencies.some(source => sources.has(source));
+export function affected(
+  dependencies: readonly string[] | null,
+  sources: ReadonlySet<string> | null,
+): boolean {
+  return (
+    sources === null || dependencies === null || dependencies.some((source) => sources.has(source))
+  );
 }
 export function sameProps(a: SceneProps, b: SceneProps): boolean {
   const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every(key =>
-    Object.hasOwn(b, key) && (Object.is(a[key], b[key]) || sameSceneScope(a[key], b[key])));
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every(
+      (key) =>
+        Object.hasOwn(b, key) && (Object.is(a[key], b[key]) || sameSceneScope(a[key], b[key])),
+    )
+  );
 }
-export function propValues(value: SceneProps, bindCallback?: (callback: SceneCallback) => SceneCallback): SceneProps {
+export function propValues(
+  value: SceneProps,
+  bindCallback?: (callback: SceneCallback) => SceneCallback,
+): SceneProps {
   const props = Object.create(null) as Record<string, unknown>;
   for (const [key, item] of Object.entries(value)) {
     if (isSceneScope(item)) props[key] = item;
-    else if (typeof item === 'function' && bindCallback) props[key] = bindCallback(item as SceneCallback);
+    else if (typeof item === 'function' && bindCallback)
+      props[key] = bindCallback(item as SceneCallback);
     else {
-      if (item !== null && !['undefined', 'string', 'number', 'boolean', 'bigint'].includes(typeof item)) throw new TypeError('Desktop child props currently require primitive values or owned callbacks');
+      if (
+        item !== null &&
+        !['undefined', 'string', 'number', 'boolean', 'bigint'].includes(typeof item)
+      )
+        throw new TypeError(
+          'Desktop child props currently require primitive values or owned callbacks',
+        );
       props[key] = item;
     }
   }
@@ -24,6 +44,7 @@ export function propValues(value: SceneProps, bindCallback?: (callback: SceneCal
 }
 export function textValue(value: unknown): string {
   if (value == null || typeof value === 'boolean') return '';
-  if (!['string', 'number', 'bigint'].includes(typeof value)) throw new TypeError('Desktop text expressions currently require a primitive value');
+  if (!['string', 'number', 'bigint'].includes(typeof value))
+    throw new TypeError('Desktop text expressions currently require a primitive value');
   return String(value);
 }

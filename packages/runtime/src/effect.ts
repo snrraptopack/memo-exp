@@ -41,17 +41,23 @@ export function registerEffect(
     phase: 'effect',
     render() {
       if (!execute) return;
-      const previous = disposer;
-      disposer = undefined;
-      previous?.();
+      const run = () => {
+        if (!has(id)) return;
+        const previous = disposer;
+        disposer = undefined;
+        previous?.();
 
-      const next = callback();
-      if (next !== undefined && typeof next !== 'function') {
-        throw new TypeError(
-          `[memo-dom] effect '${id}' must return a cleanup function or undefined`,
-        );
-      }
-      disposer = typeof next === 'function' ? next : undefined;
+        const next = callback();
+        if (next !== undefined && typeof next !== 'function') {
+          throw new TypeError(
+            `[memo-dom] effect '${id}' must return a cleanup function or undefined`,
+          );
+        }
+        disposer = typeof next === 'function' ? next : undefined;
+      };
+      const boundary = getActiveEnvironment().effectBoundary;
+      if (boundary) boundary(id, run);
+      else run();
     },
   });
 
@@ -94,11 +100,17 @@ export function registerConditionalEffect(
     phase: 'effect',
     render() {
       if (!execute) return;
-      const next = Boolean(condition());
-      if (next === active) return;
-      active = next;
-      if (active) registerEffect(activeId, id, callback);
-      else unregisterSubtree(activeId);
+      const run = () => {
+        if (!has(id)) return;
+        const next = Boolean(condition());
+        if (next === active) return;
+        active = next;
+        if (active) registerEffect(activeId, id, callback);
+        else unregisterSubtree(activeId);
+      };
+      const boundary = getActiveEnvironment().effectBoundary;
+      if (boundary) boundary(id, run);
+      else run();
     },
   });
 

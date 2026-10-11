@@ -2,8 +2,13 @@ import { describe, expect, it } from 'bun:test';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { compileDesktop } from '@memoized-dom/compiler/desktop';
-import { createDesktopApplication, type DesktopHost, type SceneInstance, type SceneTemplate,
-  type SceneTransaction } from '../src';
+import {
+  createDesktopApplication,
+  type DesktopHost,
+  type SceneInstance,
+  type SceneTemplate,
+  type SceneTransaction,
+} from '../src';
 
 const runtimePath = pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href;
 async function load(source: string): Promise<{ Counter(): SceneInstance }> {
@@ -16,52 +21,115 @@ function recordingHost() {
   const templates: SceneTemplate[] = [];
   let rejectNext = false;
   const host: DesktopHost = {
-    async install(template) { templates.push(template); },
+    async install(template) {
+      templates.push(template);
+    },
     async commit(transaction) {
-      if (rejectNext) { rejectNext = false; throw new Error('publication rejected'); }
+      if (rejectNext) {
+        rejectNext = false;
+        throw new Error('publication rejected');
+      }
       transactions.push(transaction);
       return { sequence: transaction.sequence };
     },
   };
-  return { host, transactions, templates, reject() { rejectNext = true; } };
+  return {
+    host,
+    transactions,
+    templates,
+    reject() {
+      rejectNext = true;
+    },
+  };
 }
 
 describe('desktop compilation and publication', () => {
   it('updates primitive results of predicates and scalar conditionals without lowering them as structural regions', async () => {
-    const { Counter } = await load(`export function Counter(){let items=[1,2,3];return <main><button onClick={()=>items=[2,4,6]}>Replace</button><p>{items.filter(item=>item%2===0).length}</p><p>{items.length>2?'Several':'Few'}</p></main>;}`);
-    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(Counter); await root.ready;
-    expect(recording.transactions[0]!.operations[0]).toMatchObject({values:[{slot:0,value:'1'},{slot:1,value:'Several'}]});
+    const { Counter } = await load(
+      `export function Counter(){let items=[1,2,3];return <main><button onClick={()=>items=[2,4,6]}>Replace</button><p>{items.filter(item=>item%2===0).length}</p><p>{items.length>2?'Several':'Few'}</p></main>;}`,
+    );
+    const recording = recordingHost();
+    const app = createDesktopApplication(recording.host);
+    const root = app.mount(Counter);
+    await root.ready;
+    expect(recording.transactions[0]!.operations[0]).toMatchObject({
+      values: [
+        { slot: 0, value: '1' },
+        { slot: 1, value: 'Several' },
+      ],
+    });
     await root.dispatch(0);
-    expect(recording.transactions.at(-1)!.operations).toEqual([{kind:'update',handle:root.handle,values:[{slot:0,value:'3'}]}]);
+    expect(recording.transactions.at(-1)!.operations).toEqual([
+      { kind: 'update', handle: root.handle, values: [{ slot: 0, value: '3' }] },
+    ]);
     await app.dispose();
   });
   it('publishes native input values and dependent text from the authored change callback', async () => {
-    const { Counter } = await load(`export function Counter(){ let value = ''; return <div><input type="text" value={value} onChange={e => value = e.target.value}/><p>{value}</p></div>; }`);
-    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(Counter); await root.ready;
+    const { Counter } = await load(
+      `export function Counter(){ let value = ''; return <div><input type="text" value={value} onChange={e => value = e.target.value}/><p>{value}</p></div>; }`,
+    );
+    const recording = recordingHost();
+    const app = createDesktopApplication(recording.host);
+    const root = app.mount(Counter);
+    await root.ready;
     const template = recording.templates[0]!;
-    expect(template.slots.map(slot => slot.type)).toEqual(['value', 'text']);
+    expect(template.slots.map((slot) => slot.type)).toEqual(['value', 'text']);
     expect(template.events).toEqual([{ node: 1, type: 'change' }]);
     await root.dispatch(0, { target: { value: '静🙂café' }, currentTarget: { value: '静🙂café' } });
-    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({ kind: 'update', values: [{ slot: 0, value: '静🙂café' }, { slot: 1, value: '静🙂café' }] });
+    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({
+      kind: 'update',
+      values: [
+        { slot: 0, value: '静🙂café' },
+        { slot: 1, value: '静🙂café' },
+      ],
+    });
     await app.dispose();
   });
   it('keeps ordinary CSS imports and static style objects in native template definitions', async () => {
     const source = `import './app.css'; export function Counter(){ return <p id="title" className="label" aria-label="A title" style={{paddingTop: 12, lineHeight: 1.5, color: 'red'}}>Hi</p>; }`;
-    const output = compileDesktop(source, { moduleId: 'styles.tsx', runtimePath, readStylesheet: () => '.label { color: blue; }' });
-    const compiled = await import(`data:text/javascript;base64,${Buffer.from(output.code).toString('base64')}`) as { Counter(): SceneInstance };
-    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(compiled.Counter); await root.ready;
-    expect(recording.templates[0]!.nodes[0]).toMatchObject({ attributes: { id: 'title', class: 'label', 'aria-label': 'A title' }, style: [{ property: 'padding-top', value: '12px' }, { property: 'line-height', value: '1.5' }, { property: 'color', value: 'red' }] });
-    expect(recording.templates[0]!.stylesheets).toHaveLength(1); await app.dispose();
+    const output = compileDesktop(source, {
+      moduleId: 'styles.tsx',
+      runtimePath,
+      readStylesheet: () => '.label { color: blue; }',
+    });
+    const compiled = (await import(
+      `data:text/javascript;base64,${Buffer.from(output.code).toString('base64')}`
+    )) as { Counter(): SceneInstance };
+    const recording = recordingHost();
+    const app = createDesktopApplication(recording.host);
+    const root = app.mount(compiled.Counter);
+    await root.ready;
+    expect(recording.templates[0]!.nodes[0]).toMatchObject({
+      attributes: { id: 'title', class: 'label', 'aria-label': 'A title' },
+      style: [
+        { property: 'padding-top', value: '12px' },
+        { property: 'line-height', value: '1.5' },
+        { property: 'color', value: 'red' },
+      ],
+    });
+    expect(recording.templates[0]!.stylesheets).toHaveLength(1);
+    await app.dispose();
   });
 
   it('reuses scoped TSRX CSS processing and preserves scope selectors', async () => {
-    const output = compileDesktop(`export function Counter(){ return <div class="outer"><p class="inner">Hi</p><style>.outer .inner { color: red; }</style></div>; }`, { moduleId: 'scoped.tsrx', runtimePath });
-    const compiled = await import(`data:text/javascript;base64,${Buffer.from(output.code).toString('base64')}`) as { Counter(): SceneInstance };
-    const recording = recordingHost(); const app = createDesktopApplication(recording.host); const root = app.mount(compiled.Counter); await root.ready;
+    const output = compileDesktop(
+      `export function Counter(){ return <div class="outer"><p class="inner">Hi</p><style>.outer .inner { color: red; }</style></div>; }`,
+      { moduleId: 'scoped.tsrx', runtimePath },
+    );
+    const compiled = (await import(
+      `data:text/javascript;base64,${Buffer.from(output.code).toString('base64')}`
+    )) as { Counter(): SceneInstance };
+    const recording = recordingHost();
+    const app = createDesktopApplication(recording.host);
+    const root = app.mount(compiled.Counter);
+    await root.ready;
     const template = recording.templates[0]!;
-    expect(template.nodes[0]).toMatchObject({ attributes: { class: expect.stringContaining('tsrx-') } });
+    expect(template.nodes[0]).toMatchObject({
+      attributes: { class: expect.stringContaining('tsrx-') },
+    });
     expect(template.stylesheets![0]!.selectors[0]).toHaveLength(2);
-    expect(template.stylesheets![0]!.declarations[0]).toEqual({ property: 'color', value: 'red' }); await app.dispose();
+    expect(template.stylesheets![0]!.declarations[0]).toEqual({ property: 'color', value: 'red' });
+    await app.dispose();
   });
   it('compiles local state into one template and preserves scene identity across updates', async () => {
     const { Counter } = await load(`export function Counter() {
@@ -73,16 +141,29 @@ describe('desktop compilation and publication', () => {
     const counter = app.mount(Counter);
     await counter.ready;
     expect(recording.templates[0]!.nodes).toMatchObject([
-      { kind: 'element', tag: 'button' }, { kind: 'text' }, { kind: 'text' },
+      { kind: 'element', tag: 'button' },
+      { kind: 'text' },
+      { kind: 'text' },
     ]);
-    expect(recording.transactions[0]!.operations[0]).toMatchObject({ kind: 'mount', values: [{ slot: 0, value: '0' }] });
+    expect(recording.transactions[0]!.operations[0]).toMatchObject({
+      kind: 'mount',
+      values: [{ slot: 0, value: '0' }],
+    });
     expect(await counter.dispatch(0)).toBe(0); // Authored postfix return is preserved.
     await counter.dispatch(0);
-    expect(recording.transactions.at(-1)!.operations[0]).toEqual({ kind: 'update', handle: counter.handle, values: [{ slot: 0, value: '2' }] });
-    expect(recording.transactions.filter(transaction => transaction.operations[0]!.kind === 'mount')).toHaveLength(1);
+    expect(recording.transactions.at(-1)!.operations[0]).toEqual({
+      kind: 'update',
+      handle: counter.handle,
+      values: [{ slot: 0, value: '2' }],
+    });
+    expect(
+      recording.transactions.filter((transaction) => transaction.operations[0]!.kind === 'mount'),
+    ).toHaveLength(1);
     await counter.dispose();
     await counter.dispose();
-    expect(recording.transactions.filter(transaction => transaction.operations[0]!.kind === 'dispose')).toHaveLength(1);
+    expect(
+      recording.transactions.filter((transaction) => transaction.operations[0]!.kind === 'dispose'),
+    ).toHaveLength(1);
     await expect(counter.dispatch(0)).rejects.toThrow('disposed owner');
   });
 
@@ -104,7 +185,9 @@ describe('desktop compilation and publication', () => {
     await a.dispatch(0);
     expect(first.transactions.at(-1)!.operations[0]!.handle).toEqual(a.handle);
     expect(second.transactions).toHaveLength(1);
-    expect(first.transactions.filter(transaction => transaction.operations[0]!.kind === 'update')).toHaveLength(1);
+    expect(
+      first.transactions.filter((transaction) => transaction.operations[0]!.kind === 'update'),
+    ).toHaveLength(1);
     await app.dispose();
     await other.dispose();
     expect(() => Counter()).toThrow('application.mount');
@@ -122,7 +205,10 @@ describe('desktop compilation and publication', () => {
     await expect(counter.dispatch(0)).rejects.toThrow('publication rejected');
     expect(recording.transactions).toHaveLength(1);
     await counter.flush();
-    expect(recording.transactions[1]).toMatchObject({ sequence: 2, operations: [{ values: [{ slot: 0, value: '1' }] }] });
+    expect(recording.transactions[1]).toMatchObject({
+      sequence: 2,
+      operations: [{ values: [{ slot: 0, value: '1' }] }],
+    });
     await counter.dispose();
   });
 
@@ -143,7 +229,8 @@ describe('desktop compilation and publication', () => {
     expect(recording.transactions).toHaveLength(1);
     await app.dispose();
     expect(recording.transactions.at(-1)!.operations).toEqual([
-      { kind: 'dispose', handle: first.handle }, { kind: 'dispose', handle: second.handle },
+      { kind: 'dispose', handle: first.handle },
+      { kind: 'dispose', handle: second.handle },
     ]);
     await expect(first.dispatch(0)).rejects.toThrow('disposed owner');
   });
@@ -158,7 +245,9 @@ describe('desktop compilation and publication', () => {
     const counter = createDesktopApplication(recording.host).mount(Counter);
     await counter.ready;
     await counter.dispatch(0);
-    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({ values: [{ slot: 0, value: '1' }] });
+    expect(recording.transactions.at(-1)!.operations[0]).toMatchObject({
+      values: [{ slot: 0, value: '1' }],
+    });
     await counter.dispose();
   });
 
@@ -174,7 +263,12 @@ describe('desktop compilation and publication', () => {
     await expect(counter.dispatch(0)).rejects.toThrow('bad read');
     expect(recording.transactions).toHaveLength(1);
     await counter.dispatch(0);
-    expect(recording.transactions[1]!.operations[0]).toMatchObject({ values: [{ slot: 0, value: '2' }, { slot: 1, value: '2' }] });
+    expect(recording.transactions[1]!.operations[0]).toMatchObject({
+      values: [
+        { slot: 0, value: '2' },
+        { slot: 1, value: '2' },
+      ],
+    });
     await counter.dispose();
   });
 
@@ -188,7 +282,9 @@ describe('desktop compilation and publication', () => {
     const counter = createDesktopApplication(recording.host).mount(Counter);
     await counter.ready;
     await expect(counter.dispatch(0)).rejects.toThrow('authored failure');
-    expect(recording.transactions[1]!.operations[0]).toMatchObject({ values: [{ slot: 0, value: '1' }] });
+    expect(recording.transactions[1]!.operations[0]).toMatchObject({
+      values: [{ slot: 0, value: '1' }],
+    });
     await counter.dispose();
   });
 
@@ -202,18 +298,22 @@ describe('desktop compilation and publication', () => {
     const counter = createDesktopApplication(recording.host).mount(Counter);
     await counter.ready;
     await counter.dispatch(0);
-    expect(recording.transactions[1]!.operations[0]).toMatchObject({ values: [{ slot: 0, value: '1' }] });
+    expect(recording.transactions[1]!.operations[0]).toMatchObject({
+      values: [{ slot: 0, value: '1' }],
+    });
     await counter.dispatch(1);
-    expect(recording.transactions[2]!.operations[0]).toMatchObject({ values: [{ slot: 1, value: '1' }] });
+    expect(recording.transactions[2]!.operations[0]).toMatchObject({
+      values: [{ slot: 1, value: '1' }],
+    });
     await counter.dispose();
   });
 
   it.each([
     [`export function Counter(){ return <Missing />; }`, 'unresolved desktop component'],
-    [`export function Counter(){ let x=0; return <button onClick={async()=>x++}>{x}</button>; }`, 'asynchronous callbacks'],
-    [`export function Counter(){ let x=0; const y=x+1; return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
-    [`export function Counter(){ let x=0; function label(){return x+1;} const y=label(); return <button onClick={()=>x++}>{y}</button>; }`, 'reactive setup derivations'],
-    [`export function Counter(){ let color='red'; return <button style={{color}}>Hi</button>; }`, 'style objects currently require static values'],
+    [
+      `export function Counter(){ let color='red'; return <button style={{color}}>Hi</button>; }`,
+      'style objects currently require static values',
+    ],
   ])('rejects unsupported contracts with an authored diagnostic', (source, message) => {
     expect(() => compileDesktop(source, { moduleId: 'unsupported.tsx' })).toThrow(message);
   });

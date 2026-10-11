@@ -66,6 +66,7 @@ export interface DesktopScene {
   children: t.Expression[];
   regions: t.Expression[];
   lists: t.Expression[];
+  refs: t.Expression[];
   fragments: DesktopFragment[];
   componentNames: string[];
 }
@@ -84,6 +85,7 @@ export function lowerDesktopScene(
     fresh: (name: string) => t.Identifier;
     listSite: (call: MapCallExpression, parentRow?: ParentRow) => MapSite;
     routeWrites(plan: HandlerWritePlan): void;
+    refValue(expression: t.Expression): t.Expression;
     moduleCallback(expression: t.Expression): CallbackSourcePlan | null;
     fail: (message: string, at: t.Node) => never;
   },
@@ -98,6 +100,7 @@ export function lowerDesktopScene(
   const children: t.Expression[] = [];
   const regions: t.Expression[] = [];
   const lists: t.Expression[] = [];
+  const refs: t.Expression[] = [];
   const componentNames = new Set<string>();
   const fragments: DesktopFragment[] = [];
   const dependenciesFor = (expression: t.Expression): readonly string[] | null => {
@@ -123,13 +126,28 @@ export function lowerDesktopScene(
     const component = options.fresh('__desktopFragment');
     const scene = lowerDesktopScene(branch, { ...options, lexical: true, parentRow });
     fragments.push({ component, captures, scene });
-    const props = b.objectExpression(captures.length ? [
-      b.objectProperty(b.identifier('scope'), b.callExpression(options.scope, [...captures])),
-    ] : []);
+    const props = b.objectExpression(
+      captures.length
+        ? [b.objectProperty(b.identifier('scope'), b.callExpression(options.scope, [...captures]))]
+        : [],
+    );
     return { component, props, sources: null };
   };
   const addList = (call: MapCallExpression, parent: number | null): void => {
-    assertSynchronousCallback(call, fail);
+    assertNoGeneratorCallbacks(call, fail);
+
+    // Construct each row synchronously. Async event handlers inside the row
+    // remain valid; they are not part of constructing its scene.
+    const callback = call.arguments[0];
+    if (callback) {
+      const factory = unwrapTypeExpression(callback);
+      if (
+        (b.isArrowFunctionExpression(factory) || b.isFunctionExpression(factory)) &&
+        factory.async
+      ) {
+        fail('asynchronous callbacks cannot construct desktop list rows', factory);
+      }
+    }
     const plan = desktopListPlan(options.listSite(call, options.parentRow), {
       call: componentCall,
       inline: inlineCall,
@@ -191,7 +209,7 @@ export function lowerDesktopScene(
       fail('text/value expressions require primitive results', expression);
     // Call arguments may contain predicates and conditional scalar expressions.
     // The resulting value is still checked by the runtime's primitive slot contract.
-    assertSynchronousCallback(expression, fail);
+    assertNoGeneratorCallbacks(expression, fail);
     const slot = slots.length;
     slots.push({ node, type });
     const dependencies = dependenciesFor(expression);
@@ -270,6 +288,20 @@ export function lowerDesktopScene(
       const name = attribute.name.name === 'className' ? 'class' : attribute.name.name;
       if (seen.has(name)) fail(`duplicate ${name} attribute`, attribute);
       seen.add(name);
+      if (name === 'ref') {
+        if (!attribute.value || !b.isJSXExpressionContainer(attribute.value))
+          fail('ref requires a callback or assignable target', attribute);
+        refs.push(
+          b.objectExpression([
+            b.objectProperty(b.identifier('node'), b.numericLiteral(node)),
+            b.objectProperty(
+              b.identifier('value'),
+              options.refValue(unwrapTypeExpression(attribute.value.expression) as t.Expression),
+            ),
+          ]),
+        );
+        continue;
+      }
       if (!Object.hasOwn(desktopEventNames, name)) {
         if (
           !['class', 'id', 'style', 'title', 'aria-label'].includes(name) &&
@@ -341,10 +373,9 @@ export function lowerDesktopScene(
       const localCallback = callbacks.forEvent(expression);
       const moduleCallback = localCallback ? null : options.moduleCallback(expression);
       const callback = localCallback ?? moduleCallback;
-      if (!callback)
-        fail(`${name} requires an inline callback or a linked helper`, attribute);
-      assertSynchronousCallback(callback.target, fail);
-      for (const helper of callback.helpers) assertSynchronousCallback(helper.target, fail);
+      if (!callback) fail(`${name} requires an inline callback or a linked helper`, attribute);
+      assertNoGeneratorCallbacks(callback.target, fail);
+      for (const helper of callback.helpers) assertNoGeneratorCallbacks(helper.target, fail);
       const plan = callback.writesFor(undefined, true);
       options.routeWrites(plan);
       for (const helper of callback.helpers) options.routeWrites(helper.writesFor());
@@ -363,7 +394,9 @@ export function lowerDesktopScene(
       events.push({ node, type: eventType });
       handlers.push(
         b.callExpression(instrument, [
-          moduleCallback && b.isExpression(moduleCallback.target) ? moduleCallback.target : expression,
+          moduleCallback && b.isExpression(moduleCallback.target)
+            ? moduleCallback.target
+            : expression,
           valueExpression(conservative ? null : [...changed].sort()),
         ]),
       );
@@ -382,6 +415,7 @@ export function lowerDesktopScene(
     children,
     regions,
     lists,
+    refs,
     fragments,
     componentNames: [...componentNames],
   };
@@ -405,18 +439,17 @@ export function valueExpression(value: unknown): t.Expression {
   throw new TypeError('Invalid desktop template value');
 }
 
-function assertSynchronousCallback(
+function assertNoGeneratorCallbacks(
   node: t.Node,
   fail: (message: string, at: t.Node) => never,
 ): void {
   walkAst(node, {
     enter(current) {
       if (
-        current.type === 'AwaitExpression' ||
         current.type === 'YieldExpression' ||
-        ('async' in current && current.async === true)
+        ('generator' in current && current.generator === true)
       )
-        fail('asynchronous callbacks are not implemented yet', current);
+        fail('generator callbacks require iterator lifecycle instrumentation', current);
     },
   });
 }

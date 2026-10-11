@@ -1,15 +1,30 @@
 import type { SceneAttachment, SceneTemplate, TextWrite } from '../bridge/protocol';
-import type { SceneChildBinding, SceneHandler, SceneInstance, SceneRegionBinding, SceneListBinding, SceneRowKey, TextBinding } from './application';
+import type {
+  SceneChildBinding,
+  SceneHandler,
+  SceneInstance,
+  SceneRegionBinding,
+  SceneListBinding,
+  SceneRowKey,
+  TextBinding,
+} from './application';
 import type { SceneProps } from './values';
 
-export interface Child { binding?: SceneChildBinding; node: number; owner: Owner; props: SceneProps }
+export interface Child {
+  binding?: SceneChildBinding;
+  node: number;
+  owner: Owner;
+  props: SceneProps;
+}
 export interface Region {
   binding: SceneRegionBinding;
   branch: number;
   child?: Child;
   candidate?: { branch: number; child: Child };
 }
-export interface Row extends Child { key: SceneRowKey }
+export interface Row extends Child {
+  key: SceneRowKey;
+}
 export interface ListRegion {
   binding: SceneListBinding;
   rows: Row[];
@@ -37,6 +52,9 @@ export interface Owner {
   bindings: readonly TextBinding[];
   handlers: readonly SceneHandler[];
   receive?: (props: SceneProps) => void;
+  prepare?: (sources: ReadonlySet<string> | null) => void;
+  activate?: () => void;
+  effectInvalidations?: (sources: ReadonlySet<string> | null) => void;
   readProps(props: SceneProps): SceneProps;
   children: Child[];
   regions: Region[];
@@ -50,6 +68,21 @@ export interface Owner {
   disposal?: Promise<void>;
   stagedReady?: { promise: Promise<void>; resolve(): void; reject(error: Error): void };
 }
-export interface RegionChange { region: Region; branch: number; child?: Child }
-export interface ListChange { list: ListRegion; rows: Row[]; changed: boolean }
-export interface PreparedOwner { owner: Owner; sources: Set<string> | null; writes: TextWrite[]; props: [Child, SceneProps][]; regions: RegionChange[]; lists: ListChange[] }
+export interface RegionChange {
+  region: Region;
+  branch: number;
+  child?: Child;
+}
+export interface ListChange {
+  list: ListRegion;
+  rows: Row[];
+  changed: boolean;
+}
+export interface PreparedOwner {
+  owner: Owner;
+  sources: Set<string> | null;
+  writes: TextWrite[];
+  props: [Child, SceneProps][];
+  regions: RegionChange[];
+  lists: ListChange[];
+}
