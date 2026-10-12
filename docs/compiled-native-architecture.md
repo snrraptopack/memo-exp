@@ -809,5 +809,25 @@ internally. Native tests check initial ref focus,
 actual platform input delivery, transition order, stale/retired targets, unrelated
 blur, and ordinary TSX handlers with reactive focus/blur counters. Both methods
 return void; transport promises and preparation waits remain internal, so author
-code uses the same calls as the web target without imports or awaits. Native
-scroll capabilities and additional focusable source kinds remain future work.
+code uses the same calls as the web target without imports or awaits. General
+scroll methods and additional focusable source kinds remain future work.
+
+Ordinary focus now reveals its input/button in the root vertical scrollport.
+`focus({ preventScroll: true })` suppresses that move while preserving the same
+void authoring contract. The [HTML focus steps](https://html.spec.whatwg.org/multipage/interaction.html#dom-focus)
+use center alignment when scrolling is allowed. Rust derives the offset from
+the completed Taffy box and current scrollport, clamped to the content range;
+it does not introduce a layout approximation. Retained frame metadata records
+focus source, scroll offset and window viewport. Reveal waits for a frame with
+the focused source and matching accepted sequence/coordinate context, including
+focus-dependent CSS layout. Its second phase never reapplies focus: a newer user
+interaction cancels the pending reveal rather than being overwritten. Blur and
+prevented focus do not run that phase. Native checks exercise an offscreen input
+whose focused CSS height changes, default/repeated reveal, prevented moves,
+scroll-context changes and top-edge clamping without scene publication.
+
+Completed geometry snapshots alone do not implement synchronous browser geometry
+read timing. Those methods remain explicit gaps instead of exposing a cached old
+frame as current layout or inventing a promise-based authoring replacement.
+Keyboard navigation reveal, nested/horizontal scrollports, focus indication
+options and general scrolling methods remain separate adapter work.

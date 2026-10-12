@@ -77,7 +77,7 @@ export interface NativeSceneEvent {
 }
 export interface DesktopHost {
   /** Native focus changes do not publish scene state. */
-  setFocus?(handle: SceneHandle, node: number, focused: boolean): Promise<void>;
+  setFocus?(handle: SceneHandle, node: number, focused: boolean, preventScroll?: boolean): Promise<void>;
   measure?(handle: SceneHandle, node: number): Promise<SceneMeasurement>;
   /** Optional platform clock. Headless hosts leave conservative pulls disabled. */
   nextFrame?(): Promise<{ readonly visible: boolean }>;

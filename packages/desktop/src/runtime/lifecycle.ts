@@ -7,7 +7,7 @@ import { affected } from './values';
 import type { SceneHandle, SceneMeasurement } from '../bridge/protocol';
 
 type Measure = (handle: SceneHandle, node: number) => Promise<SceneMeasurement>;
-type SetFocus = (handle: SceneHandle, node: number, focused: boolean) => Promise<void>;
+type SetFocus = (handle: SceneHandle, node: number, focused: boolean, preventScroll: boolean) => Promise<void>;
 
 export function configureOwnerLifecycle(
   owner: Owner,
@@ -85,11 +85,11 @@ function elementHandle(
   const connected = (): void => {
     if (!owner.mounted || owner.disposed) throw new Error('Cannot use a disconnected desktop element');
   };
-  const changeFocus = (focused: boolean): void => {
+  const changeFocus = (focused: boolean, preventScroll = false): void => {
     // HTMLElement focus/blur return void and disconnected elements are inert.
     // Transport acknowledgment belongs to the adapter, never to author code.
     if (!owner.mounted || owner.disposed) return;
-    void setFocus(owner.instance.handle, index, focused).catch(reportAsync);
+    void setFocus(owner.instance.handle, index, focused, preventScroll).catch(reportAsync);
   };
   const element: SceneElement = Object.freeze({
     handle: owner.instance.handle,
@@ -97,8 +97,7 @@ function elementHandle(
     tagName: node.tag.toUpperCase(),
     ownerDocument: null,
     focus(options?: FocusOptions) {
-      if (options !== undefined) throw new Error('Native focus options are not implemented');
-      changeFocus(true);
+      changeFocus(true, Boolean(options?.preventScroll));
     },
     blur: () => changeFocus(false),
     async measure() {

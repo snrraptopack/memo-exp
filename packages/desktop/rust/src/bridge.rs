@@ -28,6 +28,8 @@ enum Command {
         handle: Handle,
         node: usize,
         focused: bool,
+        #[serde(default)]
+        prevent_scroll: bool,
     },
     Redraw,
     Frame,
@@ -61,6 +63,7 @@ pub struct FocusRequest {
     pub handle: Handle,
     pub node: usize,
     pub focused: bool,
+    pub prevent_scroll: bool,
 }
 
 pub fn process_line(scene: &mut Scene, line: &str) -> Outcome {
@@ -149,6 +152,7 @@ pub fn process_line_with_validation(
                         handle,
                         node,
                         focused,
+                        prevent_scroll,
                     } => {
                         if !scene.has_element(handle, node) {
                             Err("Focus requires a live element source".into())
@@ -157,6 +161,7 @@ pub fn process_line_with_validation(
                                 handle,
                                 node,
                                 focused,
+                                prevent_scroll,
                             });
                             Ok(Value::Null)
                         }
@@ -268,7 +273,9 @@ mod tests {
                     &request(1, node, focused),
                     |_| Ok(()),
                 );
-                assert_eq!(outcome.focus.unwrap().focused, focused);
+                let command = outcome.focus.unwrap();
+                assert_eq!(command.focused, focused);
+                assert!(!command.prevent_scroll);
                 assert!(!outcome.changed);
                 let outcome = process_line(&mut scene, &request(1, node, focused));
                 assert!(
@@ -295,6 +302,10 @@ mod tests {
             assert!(outcome.response["error"].is_string());
         }
         assert_eq!(scene.sequence(), 1);
+        let mut prevented: Value = serde_json::from_str(&request(1, 1, true)).unwrap();
+        prevented["prevent_scroll"] = json!(true);
+        let outcome = process_line_with_validation(&mut scene, &prevented.to_string(), |_| Ok(()));
+        assert!(outcome.focus.unwrap().prevent_scroll);
     }
     #[test]
     fn measurement_validates_sources_and_requires_a_window_adapter() {

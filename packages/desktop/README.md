@@ -204,10 +204,27 @@ reactive write or an application publication step.
 Only native inputs and buttons currently provide focusability. Nonfocusable
 elements and disconnected refs are inert, as on the web. Stale native protocol
 addresses reject internally. The optional adapter host capability is
-`DesktopHost.setFocus(handle, node, focused)`; headless hosts refuse it. Browser
-focus options reject explicitly. Arbitrary `tabIndex` targets and implicit scrolling are not
-implemented. **Focus input ref** and **Blur input ref** in the inline TSX example
-exercise these capabilities with ordinary input refs and reactive event counts.
+`DesktopHost.setFocus(handle, node, focused, preventScroll?)`; headless hosts refuse it.
+Ordinary `input.focus()` and `input.focus({})` center the control vertically in
+the root scrollport, clamped to the available content range. Native reveal waits
+for a completed frame with that control focused, so `:focus` layout changes are
+included. It rechecks accepted sequence, viewport size and painted scroll offset;
+stale coordinates cannot determine the new scroll position. A delayed reveal
+does not take focus back from a newer user interaction.
+
+`input.focus({ preventScroll: true })` focuses without requesting a scroll move.
+Ordinary layout/content changes can still clamp the scroll range. The [HTML focus
+contract](https://html.spec.whatwg.org/multipage/interaction.html#dom-focus)
+defines default center alignment and the option. These calls return `void` and
+need no helper imports or awaits. **Focus without scrolling** in the inline TSX
+example exercises the standard option alongside ordinary focus/blur and reactive
+event counts.
+
+This reveal path currently serves imperative ref focus in the root vertical
+scrollport. Keyboard navigation needs equivalent reveal coverage. Nested
+and horizontal scrollports, arbitrary `tabIndex` targets, `focusVisible` control
+and `:focus-visible` styling remain capability gaps. General `scrollIntoView()`
+and synchronous browser geometry methods remain unimplemented.
 
 The following browser capabilities are **not implemented on desktop refs**:
 

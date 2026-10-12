@@ -87,6 +87,9 @@ export function InlineBoxes() {
       <button id="ref-focus" onClick={() => focusEditor?.focus()}>
         Focus input ref
       </button>
+      <button id="ref-focus-preserve" onClick={() => focusEditor?.focus({ preventScroll: true })}>
+        Focus without scrolling
+      </button>
       <button id="ref-blur" onClick={() => focusEditor?.blur()}>
         Blur input ref
       </button>

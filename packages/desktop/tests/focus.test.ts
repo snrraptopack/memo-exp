@@ -32,9 +32,9 @@ it('uses accepted refs for focus and blur without creating scene transactions', 
       calls.push(transaction.sequence);
       return { sequence: transaction.sequence };
     },
-    async setFocus(handle, node, focused) {
-      calls.push({ handle, node, focused });
-      if (++focusCalls === 3) processed.resolve();
+    async setFocus(handle, node, focused, preventScroll) {
+      calls.push({ handle, node, focused, preventScroll });
+      if (++focusCalls === 5) processed.resolve();
     },
   });
   try {
@@ -46,19 +46,22 @@ it('uses accepted refs for focus and blur without creating scene transactions', 
     }));
     await owner.ready;
     expect(ref.focus()).toBeUndefined();
+    expect(ref.focus({ preventScroll: true })).toBeUndefined();
+    expect(ref.focus({})).toBeUndefined();
     expect(ref.blur()).toBeUndefined();
-    expect(() => ref.focus({ preventScroll: true })).toThrow('focus options');
     await processed.promise;
     expect(calls).toEqual([1,
-      { handle: owner.handle, node: 0, focused: true },
-      { handle: owner.handle, node: 0, focused: true },
-      { handle: owner.handle, node: 0, focused: false },
+      { handle: owner.handle, node: 0, focused: true, preventScroll: false },
+      { handle: owner.handle, node: 0, focused: true, preventScroll: false },
+      { handle: owner.handle, node: 0, focused: true, preventScroll: true },
+      { handle: owner.handle, node: 0, focused: true, preventScroll: false },
+      { handle: owner.handle, node: 0, focused: false, preventScroll: false },
     ]);
     await owner.dispose();
     expect(ref.focus()).toBeUndefined();
     expect(ref.blur()).toBeUndefined();
     await Bun.sleep(0);
-    expect(focusCalls).toBe(3);
+    expect(focusCalls).toBe(5);
   } finally {
     await app.dispose();
   }

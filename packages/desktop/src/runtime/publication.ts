@@ -63,12 +63,12 @@ export function createPublicationQueue(host: DesktopHost) {
   };
 
   return {
-    setFocus(handle: SceneHandle, node: number, focused: boolean): Promise<void> {
+    setFocus(handle: SceneHandle, node: number, focused: boolean, preventScroll = false): Promise<void> {
       seal();
       return serialize(async () => {
         if (failure) throw failure;
         if (!host.setFocus) throw new Error('Desktop host does not support element focus');
-        await host.setFocus(handle, node, focused);
+        await host.setFocus(handle, node, focused, preventScroll);
       });
     },
     measure(handle: SceneHandle, node: number): Promise<SceneMeasurement> {

@@ -143,7 +143,10 @@ impl Render for DesktopView {
             .block()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .child(self.renderer.element(&self.scene, sink, window, cx))
+            .child(
+                self.renderer
+                    .element(&self.scene, sink, self.scroll.clone(), window, cx),
+            )
     }
 }
 

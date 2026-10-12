@@ -25,6 +25,13 @@ use std::{
 
 #[derive(Default, Serialize)]
 pub struct Stats {
+    /// Coordinate context for completed source geometry; not an authoring API.
+    #[serde(skip)]
+    pub scroll_offset: Point<Pixels>,
+    #[serde(skip)]
+    pub viewport: Size<Pixels>,
+    #[serde(skip)]
+    pub focused: Option<TextSource>,
     pub frames: u64,
     pub sequence: u64,
     pub shaping: u64,
@@ -124,6 +131,7 @@ impl FrameInstance {
     }
 }
 pub struct SceneElement {
+    scroll: ScrollHandle,
     measurements: Rc<RefCell<Vec<PendingMeasurement>>>,
     sequence: u64,
     instances: Vec<FrameInstance>,
@@ -209,7 +217,6 @@ impl Renderer {
             }
         }
     }
-    #[cfg(debug_assertions)]
     pub fn focused(&self, window: &Window) -> Option<(Handle, usize)> {
         self.controls
             .iter()
@@ -317,6 +324,7 @@ impl Renderer {
         &mut self,
         scene: &Scene,
         click: EventSink,
+        scroll: ScrollHandle,
         window: &mut Window,
         cx: &mut App,
     ) -> SceneElement {
@@ -496,6 +504,7 @@ impl Renderer {
                 .is_some_and(|instance| instance.handle.generation == *generation)
         });
         SceneElement {
+            scroll,
             measurements: self.measurements.clone(),
             sequence: scene.sequence(),
             instances,
@@ -951,6 +960,16 @@ impl Element for SceneElement {
         let mut stats = self.stats.borrow_mut();
         stats.frames += 1;
         stats.sequence = self.sequence;
+        stats.scroll_offset = self.scroll.offset();
+        stats.viewport = window.viewport_size();
+        stats.focused = self.instances.iter().find_map(|instance| {
+            instance.focus.iter().find_map(|(node, focus)| {
+                focus.is_focused(window).then_some(TextSource {
+                    handle: instance.handle,
+                    node: *node,
+                })
+            })
+        });
         let now = Instant::now();
         stats.frame_ms = stats
             .render_started
