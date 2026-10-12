@@ -304,11 +304,13 @@ labeling, selection, and control semantics are not established by a tag name.
 ## JSX attributes and properties
 
 Rust owns the supported tag, attribute and event constraints in
-[rust/src/tags.rs](rust/src/tags.rs). The compiler and runtime consume its
-checked-in [capabilities projection](src/scene/capabilities.json). Regenerate it
-with `bun run --cwd packages/desktop capabilities:generate` after changing the
-Rust contract; the Rust suite checks for drift. Ordinary TypeScript builds need
-no Cargo toolchain.
+[rust/src/tags.rs](rust/src/tags.rs). Each consumer has a generated, checked-in
+projection: [compiler](../compiler/src/desktop/capabilities.json) and
+[desktop runtime](src/scene/capabilities.json). The compiler imports only its own
+projection, so its source build does not depend on the desktop source tree.
+Regenerate both with `bun run --cwd packages/desktop capabilities:generate` after
+changing the Rust contract; the Rust suite compares both artifacts with that
+single authority. Ordinary TypeScript builds need no Cargo toolchain.
 
 [attributes.ts](../compiler/src/desktop/attributes.ts) translates the shared
 ordered-attribute plan into static template fields or reactive property bindings.

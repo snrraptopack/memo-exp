@@ -353,12 +353,26 @@ pub fn capability_projection() -> serde_json::Value {
 mod capability_tests {
     #[test]
     fn checked_in_capabilities_match_native_contract() {
-        let committed: serde_json::Value =
-            serde_json::from_str(include_str!("../../src/scene/capabilities.json")).unwrap();
-        assert_eq!(
-            committed,
-            super::capability_projection(),
-            "Run desktop capabilities:generate after changing tags.rs"
-        );
+        // Keep build-time compiler validation and runtime validation independent
+        // of sibling source imports while deriving both from this native authority.
+        let projections = [
+            (
+                "desktop runtime",
+                include_str!("../../src/scene/capabilities.json"),
+            ),
+            (
+                "compiler",
+                include_str!("../../../compiler/src/desktop/capabilities.json"),
+            ),
+        ];
+
+        for (consumer, source) in projections {
+            let committed: serde_json::Value = serde_json::from_str(source).unwrap();
+            assert_eq!(
+                committed,
+                super::capability_projection(),
+                "{consumer} projection is stale; run desktop capabilities:generate"
+            );
+        }
     }
 }

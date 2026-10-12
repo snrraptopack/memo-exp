@@ -22,6 +22,47 @@ function sourceFiles(directory: string): string[] {
   );
 }
 
+it('compiler relative imports stay inside its own package', () => {
+  const packageRoot = resolve(sourceRoot, '..');
+  const violations: string[] = [];
+
+  for (const file of sourceFiles(sourceRoot)) {
+    const program = parseEstreeOrThrow(readFileSync(file, 'utf8'), { filename: file }).program;
+
+    walkAst(program, {
+      enter(node) {
+        if (
+          ![
+            'ImportDeclaration',
+            'ImportExpression',
+            'ExportNamedDeclaration',
+            'ExportAllDeclaration',
+          ].includes(node.type)
+        ) {
+          return;
+        }
+
+        const source = stringValue(childNode(node, 'source'));
+
+        if (!source?.startsWith('.')) {
+          return;
+        }
+
+        const target = resolve(dirname(file), source);
+        const withinPackage = relative(packageRoot, target).replaceAll('\\', '/');
+
+        // Bare imports can declare package dependencies. Relative imports must
+        // never rely on an unpublished sibling package's source files.
+        if (/^\.\.(\/|$)/.test(withinPackage)) {
+          violations.push(`${relative(packageRoot, file)} -> ${source}`);
+        }
+      },
+    });
+  }
+
+  expect(violations).toEqual([]);
+});
+
 it('shared analysis, planning and context cannot import DOM lowering or runtime types', () => {
   const files = [
     'analysis',

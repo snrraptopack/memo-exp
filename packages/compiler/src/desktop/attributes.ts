@@ -4,7 +4,7 @@ import * as b from '../ast/factory';
 import { unwrapTypeExpression } from '../ast/normalize';
 import { normalizeCssPropertyName } from '@tsrx/core';
 import { desktopInlineDeclarations, type DesktopDeclaration } from './css';
-import capabilities from '../../../desktop/src/scene/capabilities.json';
+import capabilities from './capabilities.json';
 import { planOrderedAttributes } from '../jsx/attributes';
 import { emitOrderedAttributes } from '../emission/ordered-attributes';
 import type { ComponentCallbacks, CallbackSourcePlan } from '../planning/component-callbacks';

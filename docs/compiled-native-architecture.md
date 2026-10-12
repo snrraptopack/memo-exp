@@ -214,7 +214,7 @@ Reuse the same semantic analysis and ownership contracts across targets. Separat
 
 ## Native tag translation
 
-`packages/desktop/rust/src/tags.rs` is the authoritative translation registry. The compiler emits element records containing the original tag string, parent index, text leaves, typed slots, and event sites. It checks the supported source syntax and callback contracts. Rust resolves each tag, validates content and event placement, and prepares a native presentation plan before installing the template. Unsupported tags therefore fail at native installation today, rather than at compilation. Error messages identify the template, node, and tag. Future build-time validation should consume the same native definitions instead of maintaining a second semantic registry in TypeScript.
+`packages/desktop/rust/src/tags.rs` is the authoritative translation registry. The compiler emits element records containing the original tag string, parent index, text leaves, typed slots, and event sites. It checks supported source syntax, callback contracts, and static tag/attribute/event constraints using a generated projection of the Rust definitions. Rust resolves each tag, validates content and event placement, and prepares a native presentation plan before installing the template. Unsupported static tags fail during compilation; dynamic properties and native presentation constraints are validated before acceptance. The desktop README records the implemented contracts and remaining gaps.
 
 The supported tag catalogue and property contracts live in the
 [desktop package README](../packages/desktop/README.md). Keep that capability
@@ -582,10 +582,14 @@ all selectors on every keystroke. JavaScript advances accepted properties,
 handlers and ref identities only after acknowledgment; explicit refusal leaves
 those capabilities attached to the previous accepted state until a retry.
 
-Rust `tags.rs` owns attribute and event constraints alongside tag semantics. A
-checked-in JSON projection supplies the compiler and desktop runtime, and a
-native drift test compares it with the Rust definitions. TypeScript contributors
-do not need Rust installed to consume the projection. Unsupported runtime spread
+Rust `tags.rs` owns attribute and event constraints alongside tag semantics. Its
+generator writes a checked-in JSON projection inside each consuming package.
+The compiler reads `packages/compiler/src/desktop/capabilities.json`; the desktop
+runtime reads its own `src/scene/capabilities.json`. Neither TypeScript package
+reaches into its sibling's source tree. A native drift test compares both
+generated artifacts with the same Rust definitions, and a compiler boundary test
+rejects relative imports outside its package. TypeScript contributors do not need
+Rust installed to consume these projections. Unsupported runtime spread
 keys fail before native publication; unsupported input/CSS semantics still fail
 native validation. The desktop README contains the supported capability forms.
 

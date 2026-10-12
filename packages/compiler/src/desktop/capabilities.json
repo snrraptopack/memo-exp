@@ -1,0 +1,863 @@
+{
+  "tags": {
+    "abbr": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "address": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "article": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "aside": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "b": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "blockquote": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "br": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "button": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label",
+        "type"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "cite": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "code": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "container": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "data": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "dd": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "del": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "dfn": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "div": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "dl": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "dt": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "em": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "figcaption": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "figure": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "footer": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "form": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur",
+        "submit"
+      ]
+    },
+    "h1": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "h2": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "h3": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "h4": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "h5": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "h6": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "header": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "hr": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "i": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "input": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label",
+        "type",
+        "value",
+        "placeholder"
+      ],
+      "events": [
+        "click",
+        "change",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "ins": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "kbd": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "li": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "main": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "mark": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "nav": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "ol": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "p": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "pre": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "s": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "samp": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "section": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "span": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "strong": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "text": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "time": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "u": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    },
+    "ul": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "keydown",
+        "keyup",
+        "pointerdown",
+        "pointerup",
+        "focus",
+        "blur"
+      ]
+    },
+    "var": {
+      "attributes": [
+        "class",
+        "id",
+        "style",
+        "title",
+        "aria-label"
+      ],
+      "events": [
+        "click",
+        "pointerdown",
+        "pointerup"
+      ]
+    }
+  },
+  "version": 1
+}
