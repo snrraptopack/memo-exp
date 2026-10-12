@@ -777,8 +777,17 @@ The native command validates the accepted owner generation and element index.
 A read against an unpainted accepted sequence waits in the GPUI adapter and
 resolves after every root paints, with another live-source check. It never uses
 GPUI's pre-draw frame callback as evidence of completed geometry. A read of an
-already painted sequence returns that completed frame, preserving window-relative
-logical coordinates and unclipped wrapped fragments. Empty sources return no
+already painted sequence can reuse that frame only when its scroll offset,
+viewport size, and focused source still match the current GPUI window. These
+presentation changes do not require a scene transaction. A mismatched context
+uses the same completed-paint queue rather than translating old rectangles or
+calculating layout separately. The adapter preserves window-relative logical
+coordinates and unclipped wrapped fragments. Native checks request measurements
+immediately after wheel input and focus/blur style changes, without a frame wait
+in the driver. A resize check polls the measurement until the OS has applied the
+requested viewport, without an inspector or forced-redraw barrier. This does not
+promise a future hover frame or an OS resize that
+has not yet been applied. Empty sources return no
 rectangles and null union bounds. Headless hosts explicitly reject the capability.
 JavaScript also checks connection state before and after the asynchronous read,
 so retirement cannot publish a usable result through a captured stale ref.

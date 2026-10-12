@@ -180,6 +180,8 @@ impl Renderer {
         scene: &Scene,
         handle: Handle,
         node: usize,
+        window: &Window,
+        scroll: &ScrollHandle,
         complete: impl FnOnce(Result<serde_json::Value, String>) + 'static,
     ) {
         if !scene.has_element(handle, node) {
@@ -187,9 +189,21 @@ impl Renderer {
             return;
         }
         let stats = self.stats.borrow();
-        if stats.frames > 0 && stats.sequence == scene.sequence() {
+        let focused = self
+            .focused(window)
+            .map(|(handle, node)| TextSource { handle, node });
+
+        if measurement::can_read(
+            &stats,
+            scene.sequence(),
+            scroll.offset(),
+            window.viewport_size(),
+            focused,
+        ) {
             complete(measurement::read(&stats, handle, node));
         } else {
+            // The existing completed-paint queue also serves window changes.
+            // Do not adjust stale rectangles by hand or run another layout.
             self.measurements.borrow_mut().push(PendingMeasurement {
                 handle,
                 node,

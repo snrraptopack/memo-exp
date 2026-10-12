@@ -149,6 +149,18 @@ export async function runFocusSmoke({ app, host, settleEvents }: {
     assert(blurred.sequence === initial.sequence, 'Imperative focus published an application transaction');
 
     offscreen.focus({ preventScroll: true });
+    // No painted-frame wait: focus can change geometry without a publication.
+    const focusedGeometry = await offscreen.measure();
+    assert(Math.abs(focusedGeometry.bounds!.height - 100) < 0.5,
+      'Immediate measurement reused the layout from before focus styling');
+
+    offscreen.blur();
+    const blurredGeometry = await offscreen.measure();
+    assert(blurredGeometry.bounds!.height < 100 && blurredGeometry.frame > focusedGeometry.frame,
+      'Immediate measurement reused focused geometry after blur');
+
+    offscreen.focus({ preventScroll: true });
+    await offscreen.measure();
     const held = await waitFor(snapshot => focused(snapshot, 7)
       && snapshot.renderer!.boxes.some(box => box.handle.id === owner.handle.id
         && box.source === 7 && Math.abs(box.height - 100) < 0.5));
@@ -185,6 +197,16 @@ export async function runFocusSmoke({ app, host, settleEvents }: {
     await owner.dispose();
   }
   assert(input.focus() === undefined, 'A retired ref exposed a transport operation');
-  return { nativeRefFocus: true, nativeRefBlur: true, focusEvents: events.length, initialRefFocus: true,
-    voidFocusContract: true, preventScroll: true, focusedLayoutReveal: true, scrollContextRechecked: true };
+  return {
+    nativeRefFocus: true,
+    nativeRefBlur: true,
+    focusEvents: events.length,
+    initialRefFocus: true,
+    voidFocusContract: true,
+    preventScroll: true,
+    focusedLayoutReveal: true,
+    scrollContextRechecked: true,
+    measurementAfterFocus: true,
+    measurementAfterBlur: true,
+  };
 }

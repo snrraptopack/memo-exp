@@ -425,6 +425,36 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     'Ref measurement diverged from actual shaped glyph geometry');
     assert(measured.rects[0]!.y < 0 && measured.bounds!.height > measured.rects[0]!.height,
       'Native measurement cropped offscreen fragments or lost their union');
+
+    // Request directly after a wheel command, with no inspector/frame barrier.
+    // The scene sequence is unchanged, but window-relative rectangles are not.
+    const previousOffset = snapshot.renderer!.scroll!.offset;
+    await host.testWindow({ action: 'scroll', delta: -17 });
+    const afterScroll = await wrappedRef.measure();
+    const current = await host.inspect();
+    const movement = current.renderer!.scroll!.offset - previousOffset;
+    assert(movement < -0.5, 'The measurement scroll fixture did not move');
+    assert(afterScroll.frame > measured.frame && afterScroll.sequence === measured.sequence,
+      'Measurement reused the pre-scroll frame at the same scene sequence');
+    assert(afterScroll.rects.length === measured.rects.length && afterScroll.rects.every((rect, index) => {
+      const previous = measured.rects[index]!;
+      return Math.abs(rect.y - previous.y - movement) < 0.5
+        && rect.x === previous.x && rect.width === previous.width && rect.height === previous.height;
+    }), 'Immediate measurement did not include the actual GPUI scroll offset');
+
+    // The OS applies resizing asynchronously. Poll the measurement itself until
+    // that size arrives, without using an inspector or forced-redraw barrier.
+    await host.testWindow({ action: 'resize', width: 640, height: 640 });
+    const resizeDeadline = Date.now() + 20_000;
+    let afterResize = await boxRef.measure();
+    while (Math.abs(afterResize.bounds!.width - 640) > 0.5 && Date.now() < resizeDeadline) {
+      await Bun.sleep(15);
+      afterResize = await boxRef.measure();
+    }
+    assert(Math.abs(afterResize.bounds!.width - 640) < 0.5
+      && afterResize.frame > boxGeometry.frame && afterResize.sequence === boxGeometry.sequence,
+    'Measurement did not use the applied GPUI viewport at the same scene sequence');
+
     assert(snapshot.sequence === normal.sequence && fixtureEvents === 0,
       'Handlerless hover or scrolling published an application event or write');
   } finally {
@@ -434,5 +464,14 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
   let retiredRejected = false;
   try { await wrappedRef.measure(); } catch { retiredRejected = true; }
   assert(retiredRejected, 'Retired native refs retained measurement capability');
-  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true, handlerlessCursor: true, visibleWrappedTarget: true, nativeRefMeasurement: true };
+  return {
+    ...report,
+    handlerlessSceneHover: true,
+    clippedHoverCleared: true,
+    handlerlessCursor: true,
+    visibleWrappedTarget: true,
+    nativeRefMeasurement: true,
+    measurementAfterScroll: true,
+    measurementAfterResize: true,
+  };
 }

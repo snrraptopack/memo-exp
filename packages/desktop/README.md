@@ -163,9 +163,14 @@ produce negative coordinates. An empty or unpainted source in a completed scene
 has no rectangles and `bounds: null`.
 
 Measurement runs after publications already requested on the application
-connection. It waits for paint if that accepted scene has not painted yet;
-otherwise it reads the last completed frame. It does not implicitly flush local
-state writes or promise a future resize/hover frame. Call `await app.flush()`
+connection. It reuses completed geometry only when the accepted sequence, current
+scroll offset, viewport size, and focused source match that painted frame.
+Scrolling, an applied resize, or a focus/blur transition can therefore require a
+new completed frame even when no scene transaction occurred. The existing paint
+queue supplies those coordinates; measurement does not recalculate layout or
+shift old rectangles. It does not implicitly flush local state writes, wait for
+a future OS resize that has not been applied, or promise a future hover frame.
+Call `await app.flush()`
 before measuring when you need pending application changes accepted. A ref
 retiring during the request rejects the read. Hosts supply the optional
 `DesktopHost.measure` capability; the headless process explicitly refuses it.

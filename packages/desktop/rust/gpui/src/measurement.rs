@@ -1,6 +1,8 @@
 //! Read the adapter's completed geometry; never run a second layout calculation.
 use crate::renderer::Stats;
+use gpui::{Pixels, Point, Size};
 use memoized_dom_desktop_host::Handle;
+use memoized_dom_desktop_host::presentation::TextSource;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -16,6 +18,22 @@ pub struct PendingMeasurement {
     pub handle: Handle,
     pub node: usize,
     pub complete: Box<dyn FnOnce(Result<Value, String>)>,
+}
+
+/// A scene sequence alone cannot establish fresh window-relative coordinates.
+/// Scrolling, resizing and focus styling can change layout without publication.
+pub fn can_read(
+    stats: &Stats,
+    sequence: u64,
+    offset: Point<Pixels>,
+    viewport: Size<Pixels>,
+    focused: Option<TextSource>,
+) -> bool {
+    stats.frames > 0
+        && stats.sequence == sequence
+        && stats.scroll_offset == offset
+        && stats.viewport == viewport
+        && stats.focused == focused
 }
 
 pub fn read(stats: &Stats, handle: Handle, node: usize) -> Result<Value, String> {
@@ -82,6 +100,70 @@ mod tests {
     use crate::renderer::LayoutBox;
     use gpui::{Bounds, point, px, size};
     use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn completed_geometry_requires_the_current_scene_and_coordinate_context() {
+        let source = TextSource {
+            handle: Handle {
+                id: 1,
+                generation: 2,
+            },
+            node: 3,
+        };
+        let offset = point(px(0.), px(-200.));
+        let viewport = size(px(800.), px(600.));
+        let mut stats = Stats::default();
+        stats.frames = 4;
+        stats.sequence = 7;
+        stats.scroll_offset = offset;
+        stats.viewport = viewport;
+        stats.focused = Some(source);
+
+        assert!(can_read(&stats, 7, offset, viewport, Some(source)));
+        assert!(!can_read(&stats, 8, offset, viewport, Some(source)));
+        assert!(!can_read(
+            &stats,
+            7,
+            point(px(0.), px(-300.)),
+            viewport,
+            Some(source)
+        ));
+        assert!(!can_read(
+            &stats,
+            7,
+            point(px(-10.), px(-200.)),
+            viewport,
+            Some(source)
+        ));
+        assert!(!can_read(
+            &stats,
+            7,
+            offset,
+            size(px(600.), px(600.)),
+            Some(source)
+        ));
+        assert!(!can_read(
+            &stats,
+            7,
+            offset,
+            size(px(800.), px(400.)),
+            Some(source)
+        ));
+        assert!(!can_read(&stats, 7, offset, viewport, None));
+
+        // A reused node number in a new owner generation has a different focus
+        // identity, even if its tag and visible position happen to match.
+        let replacement = TextSource {
+            handle: Handle {
+                generation: 3,
+                ..source.handle
+            },
+            ..source
+        };
+        assert!(!can_read(&stats, 7, offset, viewport, Some(replacement)));
+        stats.frames = 0;
+        assert!(!can_read(&stats, 7, offset, viewport, Some(source)));
+    }
 
     #[test]
     fn native_box_takes_precedence_over_descendant_glyph_ancestry() {
