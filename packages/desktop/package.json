@@ -1,0 +1,12 @@
+{
+  "name": "@memoized-dom/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Native presentation host for the shared memoized-dom compiler and runtime",
+  "scripts": {
+    "native:check": "cargo +1.96.0 check --manifest-path rust/Cargo.toml --locked --jobs 2",
+    "native:test": "cargo +1.96.0 test --manifest-path rust/Cargo.toml --locked --jobs 2 -- --test-threads=1",
+    "native:fmt": "cargo +1.96.0 fmt --manifest-path rust/Cargo.toml --check"
+  }
+}

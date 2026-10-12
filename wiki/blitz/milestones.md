@@ -13,13 +13,13 @@ Update the status table when the corresponding completion gates pass.
 | --- | --- | --- |
 | M0 — Architecture and plan | Completed | Initial documentation batch below |
 | M1 — Shared semantic/compiler boundary | Completed | Runtime/core, shared pass order and project/manifest adaptation; unchanged fixture products, source-only contracts, builds/checks and 2,558 root tests pass |
-| M2 — Native document/transactions | Not started | No Blitz native crate exists yet |
+| M2 — Native document/transactions | In progress | Pinned native document, source identities and ranges; 17 Rust contracts pass; process sequencing and mixed atomic batches remain |
 | M3 — Ordinary native counter | Not started | No desktop compiler/mount integration exists yet |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
 | M5 — Modules and structural parity | Not started | Core implementations available; native adapter not built |
-| M6 — CSS/browser parity | Not started | No Blitz application fixture measured |
+| M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Capability plan only |
-| M8 — Dev workflow and evidence | Not started | No Blitz build/startup/input timings recorded |
+| M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
 
 ## M0: research and implementation contract
 
@@ -375,3 +375,110 @@ foundation. Begin with template/node ownership, source-to-versioned-node identit
 comment-anchored ranges and validated mutations. Keep structural acceptance distinct
 from completed layout/paint; do not add a separate cascade, paragraph tree or
 reactivity engine. The mounted counter and reusable window workflow follow in M3.
+
+## M2.1: pinned native document, identities and owned ranges
+
+Completed batch: 2026-10-12.
+Parent commit: `253a9b7b8351d4f688b25e4044055558d318b458`.
+Full M2 remains in progress; this is the in-process document foundation.
+
+### Scope and communication before editing
+
+Communicated that the batch would add only the native crate under
+`packages/desktop/rust`, its package README and updates to the existing wiki.
+No compiler/runtime changes were needed. Before touching the existing `bun.lock`,
+communicated the need for a valid Bun workspace and the constraint that its existing
+dependency records must remain unchanged. The actual lock diff adds only the desktop
+workspace and its workspace package identity, six lines in total.
+
+### Implementation and reuse
+
+- Added one `memoized-dom-desktop` library crate, pinning Blitz to
+  `45496d9288b063719ebeae4e0761273f7881b3d7` and committing Cargo's resolved lockfile.
+  Verified the fetched checkout's exact Git SHA. Default features are disabled;
+  the current headless document enables system fonts. No GPUI, application wrapper,
+  JavaScript engine, painter or window binary was added to this foundation.
+- Added focused document modules for identities, validated templates, instances,
+  mounting, writes, lifetime and failures. Source templates preserve qualified
+  names/attributes and explicit parent indices. Mutable engine state is Blitz's
+  tree; the host keeps source IDs and lifetime records, not a second rendered tree.
+- Instances own start/end comment ranges, including empty and multi-root fragments.
+  Element and region destinations remain tied to their source owner/generation.
+  Reordering preserves native IDs and nested ranges within the same destination.
+- Whole text/attribute write sets validate first. Missing generations, indices or
+  node kinds refuse before opening a mutator, so earlier candidate changes and
+  redraw requests remain unapplied. CSS stays ordinary engine input.
+- Retirement calls Blitz's destruction API and clears descendant source records.
+  Review caught an avoidable whole-registry scan; a reverse boundary index now
+  clears only owners whose native boundaries were destroyed. Engine sibling-range
+  lookup/removal costs remain separate and have not been benchmarked at scale.
+- Live application and layout unwinds mark the document terminal; the next operation
+  fails explicitly. A contract mutates native text then injects a failure, proving
+  the host does not report that partial application as rollback.
+- Added a private Bun workspace manifest with real native check/test/format scripts.
+  Added the desktop README documenting actual record shapes, accepted operations,
+  generation lifetime, native checks and the remaining boundaries. It exposes no
+  new JavaScript application API.
+
+The compiler, runtime, optimized DOM lists and unrelated fullstack edit remain
+untouched. No application reactivity, access resolver or subscription mechanism
+was reimplemented in Rust.
+
+### Decisions and discovered engine behavior
+
+| Decision | Reason |
+| --- | --- |
+| Use versioned Blitz IDs behind source owner/generation/index references | Reject stale source packets without exposing allocator slots as source identity |
+| Use comment-delimited instance ranges | Preserve empty/multi-root fragments and region ownership without layout wrappers |
+| Keep node kinds/names/topology validation ahead of live mutation | A later invalid write must not partially publish earlier candidate changes |
+| Destroy on retirement and index owner boundaries | Release native allocations and nested lifetimes while avoiding an unrelated registry scan |
+| Preserve generation marks until document disposal | Retired generations remain invalid when IDs or native slots are reused |
+| Keep style/layout resolution explicit | Structural acceptance is distinct from a completed native frame |
+| Keep headless contracts in one integration test target | Avoid an extra native test executable for each small ownership contract |
+| Record cold dependency compilation separately from cached tests | Neither is a measurement of the planned application startup/refresh path |
+
+The first test-target check caught string attribute lookups that need Blitz's
+typed local names; those test lookups were corrected. The first native run had
+one failing contract: it expected an input editor before layout construction.
+Inspection of the pinned construction code showed that the editor is initialized
+from the value attribute during resolution. The corrected contract retains its
+editor assertion and verifies both pre-layout initialization and later editor
+updates. No separate input editor or eager custom control initialization was added.
+Dirty/default value distinctions, composition and revision ordering remain M4 gates.
+
+### Verification and measurements
+
+- Initial `cargo +1.96.0 check --manifest-path packages/desktop/rust/Cargo.toml
+  --jobs 2` passed against the pinned library. Cold dependency check: **17m 08s**.
+- Initial test-code compilation: **16m 10s**. That run passed the terminal-failure
+  unit and 15 integration cases, with the pre-layout editor assumption failing.
+  The corrected focused input test passed; its changed-target rebuild took 18.54s.
+- Final `bun run --cwd packages/desktop native:test`: **17 native contracts passed,
+  0 failed**, exit code 0. Cached build 2.30s; unit 0.04s and integration suite 0.50s.
+  Verified templates, namespaces, stale generations, write-set refusal, input values,
+  ordering, empty/nested range retirement and failure behavior.
+- Headless layout contract passed on the real engine: CSS variable width 140px,
+  second flex item at 150px; class update width 200px and second item at 210px;
+  stylesheet text update gives the second item width 120px. Source IDs persist.
+  This is native evidence, not a Chromium comparison or a visible window test.
+- `cargo +1.96.0 clippy --manifest-path packages/desktop/rust/Cargo.toml --locked
+  --all-targets --jobs 2 -- -D warnings` passed. Package `native:check` and
+  `native:fmt` passed; the final cached native check took 6.58s.
+- Bun frozen installation passed. The existing shared compiler/project/backend
+  contracts passed: **17 tests, 0 failed**. No heavy native linking ran alongside
+  the full JavaScript suite; no JavaScript production source changed in this batch.
+- Whitespace checks passed. The completion message reports the batch commit and
+  exact remote SHA; source history is under `packages/desktop/rust/src/document`.
+
+### Next batch and remaining gates
+
+M2.2 adds versioned packet decoding, ordered sequence acceptance and a prepared
+transaction combining mount, write, move and retirement. Validate the complete
+candidate ownership/topology before touching the live document, control outward
+provider work and terminate the connection after ambiguous application failure.
+Keep validation bookkeeping minimal and reuse these source/range operations;
+do not serialize application expressions or build another reactive engine.
+
+M2 is not complete until those gates pass. The normal TSX counter/window remains
+M3, and synchronous cancellation/input revision ordering remains M4. There is no
+Blitz app startup, first visible frame, JS/CSS refresh or event latency measurement.

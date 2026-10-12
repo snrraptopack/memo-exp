@@ -247,11 +247,34 @@ Package component compilation and exported metadata resolution are distinct from
 bundling inert third-party code. No library is required to adopt a new reactive
 engine or desktop-specific authoring API.
 
-No Blitz integration, startup, rebuild or event-latency measurements have been
-completed in this branch. GPUI's development build cost is prior experience;
-it is not evidence that Blitz will compile or start faster. The plan separates
-cold native compilation, incremental native compilation, JS/CSS refresh, process
-startup and time to first visible frame so these claims can be tested.
+### Implemented native document boundary
+
+M2.1 now drives the pinned `BaseDocument` through `packages/desktop/rust`.
+Validated source templates instantiate qualified elements, text and comments.
+Owner/generation/source references map to live versioned engine IDs; instance
+boundaries preserve fragment ordering without element wrappers. Whole text/attribute
+write sets validate before application. Native destruction clears affected owner
+records through a boundary index, while generation marks reject retired identities.
+Unexpected live failure leaves a terminal document rather than claiming rollback.
+
+The native tests exercise actual CSS variables, class changes and stylesheet text
+updates through headless engine layout. They do not establish browser box parity,
+window painting or JavaScript ref/event behavior. The process protocol, mixed
+structural transaction batches and controlled resource providers remain M2 work.
+
+Input editors are initialized during Blitz layout construction. The native contract
+checks values written before first layout and subsequent editor updates. The future
+input adapter must read live editor state and implement the planned revision/default
+contracts; an attribute table alone is not browser input parity.
+[Pinned editor construction](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/layout/construct.rs).
+
+The first dependency check took 17m 08s; the first test-code compilation took
+16m 10s on this machine. The cached final test build took 2.30s and the 17 native
+tests passed. These are check/test compilation measurements, not app startup,
+window rebuild or event-latency measurements. GPUI's development build cost is
+prior experience, not evidence that Blitz starts or compiles faster. The planned
+JS/CSS refresh path must reuse the native host; no refresh/startup comparison has
+been measured yet.
 
 ## Architecture decision
 

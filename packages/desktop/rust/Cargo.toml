@@ -1,0 +1,18 @@
+[package]
+name = "memoized-dom-desktop"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+[dependencies]
+blitz-dom = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7", default-features = false, features = ["system-fonts"] }
+blitz-traits = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7" }
+
+# Keep host symbols useful without emitting full dependency debug information.
+# The development and test profiles use the same dependency compilation cache.
+[profile.dev]
+debug = 1
+
+[profile.dev.package."*"]
+debug = 0
