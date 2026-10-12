@@ -1,4 +1,4 @@
-import { mountScene, type DesktopApplication, type SceneSnapshot, type SceneTemplate } from '@memoized-dom/desktop';
+import { measureElement, mountScene, type DesktopApplication, type SceneElement, type SceneMeasurement, type SceneSnapshot, type SceneTemplate } from '@memoized-dom/desktop';
 import type { DesktopProcessHost } from '@memoized-dom/desktop/host';
 
 /** Verify placement, sizing and hit tests through actual GPUI platform events. */
@@ -286,6 +286,11 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     stalePointerRejected: true,
   };
 
+  await pointer('measure-inline', 'click');
+  await waitFor(snapshot => snapshot.instances.some(instance =>
+    instance.texts.some(text => text.startsWith('Measured width: ') && !text.includes('Measured width: 0'))
+      || instance.text_groups.some(group => group.text.startsWith('Measured width: ') && !group.text.includes('Measured width: 0'))));
+
   // Retire the authored example first, so no mounted template supplies native
   // event interests. This fixture isolates presentation-only hover and clipping.
   await unmountExample();
@@ -319,6 +324,7 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       { kind: 'text', parent: 1, text: ' ' },
       { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'plain-source' } },
       { kind: 'text', parent: 12, text: 'Plain text' },
+      { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'empty-source' } },
     ],
     slots: [],
     events: [],
@@ -343,13 +349,35 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       declarations: [{ property: 'cursor', value: 'pointer' }],
     }],
   };
-  const owner = app.mount(() => mountScene(template, [], []));
+  let wrappedRef!: SceneElement;
+  let boxRef!: SceneElement;
+  let emptyRef!: SceneElement;
+  let initialMeasurement!: Promise<SceneMeasurement>;
+  const owner = app.mount(() => mountScene(template, [], [], {
+    refs: [{ node: 0, value(element) { boxRef = element; } },
+    { node: 14, value(element) { emptyRef = element; } },
+    { node: 5, value(element) {
+      wrappedRef = element;
+      // Request immediately on acceptance, without an inspector/frame wait.
+      initialMeasurement = measureElement(element);
+    } }],
+  }));
   let fixtureEvents = 0;
   const unsubscribe = host.onEvent(event => {
     if (event.handle.id === owner.handle.id) fixtureEvents++;
   });
   try {
     await owner.ready;
+    const initialGeometry = await initialMeasurement;
+    assert(initialGeometry.sequence >= snapshot.sequence && initialGeometry.frame > 0,
+      'Initial ref measurement resolved before its accepted scene painted');
+    assert(initialGeometry.rects.length > 1, 'Native ref measurement lost wrapped fragments');
+    const emptyGeometry = await emptyRef.measure();
+    assert(emptyGeometry.rects.length === 0 && emptyGeometry.bounds === null,
+      'An empty inline source acquired fabricated geometry');
+    const boxGeometry = await boxRef.measure();
+    assert(boxGeometry.rects.length === 1 && boxGeometry.bounds!.height > 1600,
+      'A native layout ref did not report its actual layout box');
     await waitFor(snapshot => snapshot.renderer!.inline_ranges!.some(range => range.id === 'handlerless'));
     const normal = snapshot;
     const normalWidth = box('handlerless').width;
@@ -392,11 +420,24 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     await waitFor(snapshot => cursorMatches(snapshot, 'wrapped-target', 'PointingHand'));
     assert(box('wrapped-target').y + box('wrapped-target').height < 0,
       'Pointer targeting scrolled a visible later fragment back to its first line');
+    const measured = await wrappedRef.measure();
+    const expected = snapshot.renderer!.inline_ranges!.filter(range => range.id === 'wrapped-target');
+    assert(measured.sequence === snapshot.sequence && measured.frame >= snapshot.renderer!.frames,
+      'Measurement did not report its completed native frame');
+    assert(measured.rects.length === expected.length && measured.rects.every((rect, index) =>
+      rect.x === expected[index]!.x && rect.y === expected[index]!.y
+        && rect.width === expected[index]!.width && rect.height === expected[index]!.height),
+    'Ref measurement diverged from actual shaped glyph geometry');
+    assert(measured.rects[0]!.y < 0 && measured.bounds!.height > measured.rects[0]!.height,
+      'Native measurement cropped offscreen fragments or lost their union');
     assert(snapshot.sequence === normal.sequence && fixtureEvents === 0,
       'Handlerless hover or scrolling published an application event or write');
   } finally {
     unsubscribe();
     await owner.dispose();
   }
-  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true, handlerlessCursor: true, visibleWrappedTarget: true };
+  let retiredRejected = false;
+  try { await wrappedRef.measure(); } catch { retiredRejected = true; }
+  assert(retiredRejected, 'Retired native refs retained measurement capability');
+  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true, handlerlessCursor: true, visibleWrappedTarget: true, nativeRefMeasurement: true };
 }

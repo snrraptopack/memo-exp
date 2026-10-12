@@ -1,5 +1,6 @@
 mod events;
 mod input;
+mod measurement;
 mod output;
 mod renderer;
 mod styles;
@@ -295,7 +296,32 @@ fn main() {
                                         ));
                                 }
                             }
-                            if let Err(error) = view.output.send(&outcome.response) {
+                            let deferred_measurement = if let Some((handle, node)) = outcome.measure
+                            {
+                                let output = view.output.clone();
+                                let id = outcome.response["id"].clone();
+                                view.renderer
+                                    .measure(&view.scene, handle, node, move |result| {
+                                        let response = match result {
+                                            Ok(value) => json!({"id": id, "result": value}),
+                                            Err(error) => json!({"id": id, "error": error}),
+                                        };
+                                        if let Err(error) = output.send(&response) {
+                                            eprintln!("Desktop measurement bridge failed: {error}");
+                                        }
+                                    });
+                                // Initial mounts and accepted updates need a completed
+                                // paint. on_next_frame runs before drawing in GPUI.
+                                if view.renderer.measurement_pending() {
+                                    cx.notify();
+                                }
+                                true
+                            } else {
+                                false
+                            };
+                            if !deferred_measurement
+                                && let Err(error) = view.output.send(&outcome.response)
+                            {
                                 eprintln!("Desktop response bridge failed: {error}");
                                 return true;
                             }

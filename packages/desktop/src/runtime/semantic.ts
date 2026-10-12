@@ -249,12 +249,24 @@ export function createSceneSemanticRuntime(host: Pick<DesktopHost, 'nextFrame'> 
           job.observed = true;
           failed.delete(job);
         }
+        // A family flush can overlap another family's native work, including
+        // work queued by an async ref read. The completion condition below is
+        // application-wide, so wait for those jobs instead of spinning through
+        // the cascade limit while their process replies are still in flight.
+        // Their failures remain owned by their callers / a later app.flush().
+        const background = family
+          ? [...new Set([...pending.values(), ...running.values()])].filter(
+              job => !jobs.has(job),
+            )
+          : [];
         startPublication();
-        const results = await Promise.allSettled([...jobs].map((job) => job.promise));
+        const results = await Promise.allSettled([...jobs, ...background].map((job) => job.promise));
         releaseLifecycle();
         const errors = new Set([
           ...drainFailures.splice(0),
-          ...results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : [])),
+          ...results.slice(0, jobs.size).flatMap(
+            result => result.status === 'rejected' ? [result.reason] : [],
+          ),
         ]);
         if (errors.size === 1) throw [...errors][0];
         if (errors.size) throw new AggregateError(errors, 'Desktop semantic publication failed');

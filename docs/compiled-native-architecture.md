@@ -162,7 +162,7 @@ Setup derivations and eligible if/switch calculations consume the shared source-
 
 `desktop/tests/runtime-parity.test.ts` verifies same-loaded-module isolation, setup replay, local and module control flow, async segments and rejection, retained local timers, native async event acknowledgment, effect gating and feedback, derived-value effect guards, module effect isolation, rejected candidate cancellation, ref accepted values, reverse cleanup, and teardown failures. Shared ref-value compilation, prelude ordering, module control flow, and execution-site instrumentation live outside the DOM emitter. The optimized DOM list implementation remains intact.
 
-Native refs provide retained handle and node identity, tagName, connection state, accepted attributes, and accepted input value. They do not implement HTMLElement's full browser document, focus, measurement, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
+Native refs provide retained handle and node identity, tagName, connection state, accepted attributes, accepted input value, and explicit asynchronous measurement. They do not implement HTMLElement's full browser document, synchronous geometry, focus, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
 
 ## Package and compiler boundaries
 
@@ -759,3 +759,28 @@ and generation. The inline smoke forces a stale
 click rejection and verifies unchanged counters, then targets a wrapped source
 with its first line above the viewport. This changes debugging/testing admission,
 not application event routing or the DOM list implementation.
+
+Native ref measurement consumes these existing box and glyph rectangles through
+the ordered publication connection. `measureElement(ref)` accepts the framework's
+ordinary JSX authoring type; registered native objects also expose `measure()`.
+The native command validates the accepted owner generation and element index.
+A read against an unpainted accepted sequence waits in the GPUI adapter and
+resolves after every root paints, with another live-source check. It never uses
+GPUI's pre-draw frame callback as evidence of completed geometry. A read of an
+already painted sequence returns that completed frame, preserving window-relative
+logical coordinates and unclipped wrapped fragments. Empty sources return no
+rectangles and null union bounds. Headless hosts explicitly reject the capability.
+JavaScript also checks connection state before and after the asynchronous read,
+so retirement cannot publish a usable result through a captured stale ref.
+No layout engine, reactive scheduler or subscription bridge is added. The native
+inline smoke measures a ref immediately on acceptance, compares scrolled wrapped
+rectangles with GPUI's geometry, and exercises an ordinary TSX async measurement
+button. Pending application state requires the existing explicit flush boundary.
+
+The measurement example also exposed a desktop drain wait gap. Family-specific
+flushes required application-wide quiescence but awaited only their selected
+jobs. Another family's pending native reply could therefore consume the cascade
+limit without new reactive writes. Desktop now waits for overlapping publication
+jobs while leaving unrelated failures assigned to their own callers and the
+later application flush. This changes only the asynchronous native publication
+adapter; core scheduling and DOM list behavior remain unchanged.

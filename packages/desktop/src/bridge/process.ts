@@ -2,6 +2,7 @@ import type {
   DesktopHost,
   NativeSceneEvent,
   SceneAcknowledgment,
+  SceneMeasurement,
   SceneSnapshot,
   SceneTemplate,
   SceneTransaction,
@@ -293,6 +294,9 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     },
     async inspect() {
       return (await request({ kind: 'inspect' })) as SceneSnapshot;
+    },
+    async measure(handle, node) {
+      return (await request({ kind: 'measure', handle, node })) as SceneMeasurement;
     },
     async redraw() {
       await request({ kind: 'redraw' });

@@ -114,7 +114,7 @@ and authored `id` attributes identify different things.
 
 ### Ref handle properties
 
-The internal `SceneElement` contract is defined in
+The exported `SceneElement` contract is defined in
 [runtime/application.ts](src/runtime/application.ts) and created in
 [runtime/lifecycle.ts](src/runtime/lifecycle.ts):
 
@@ -128,6 +128,7 @@ The internal `SceneElement` contract is defined in
 | `id` | Accepted `id`, or `''` |
 | `value` | Latest acknowledged value slot, otherwise static `value`, otherwise `''` |
 | `getAttribute(name)` | Accepted attribute value, or `null`; use normalized names such as `'class'` |
+| `measure()` | Asynchronously reads the source's rectangles and their union from a completed native frame |
 
 The object is frozen, and its properties are read-only. `value` is a live read of
 the **accepted JavaScript publication**. Native editing may be ahead of that
@@ -139,6 +140,43 @@ canceled candidate scenes never bind refs. Shared ref cleanup clears assignment
 refs and runs callback ref disposers when their owners retire. A previously
 captured handle can remain in user code, but `isConnected` then becomes false.
 It provides no native mutation methods.
+
+Use `measureElement(ref)` from `@memoized-dom/desktop` when an authored JSX ref
+has its ordinary `HTMLElement` type. Both entry points use the same registered
+native ref capability; foreign objects and disconnected refs are rejected.
+
+```tsx
+import { measureElement } from '@memoized-dom/desktop';
+
+let label: HTMLElement | undefined;
+
+async function readLabel() {
+  if (!label) return;
+  const measurement = await measureElement(label);
+  console.log(measurement.rects, measurement.bounds);
+}
+
+return <span ref={label}>Wrapped native text</span>;
+```
+
+`SceneMeasurement` includes the owning `handle`, source `node`, accepted
+`sequence`, completed `frame`, `rects`, and nullable union `bounds`. Coordinates
+are window-relative logical pixels. Independent elements report their native
+layout boxes; unboxed inline sources report shaped glyph fragments, including
+each wrapped line. Geometry is not clipped to the viewport, so scrolling can
+produce negative coordinates. An empty or unpainted source in a completed scene
+has no rectangles and `bounds: null`.
+
+Measurement runs after publications already requested on the application
+connection. It waits for paint if that accepted scene has not painted yet;
+otherwise it reads the last completed frame. It does not implicitly flush local
+state writes or promise a future resize/hover frame. Call `await app.flush()`
+before measuring when you need pending application changes accepted. A ref
+retiring during the request rejects the read. Hosts supply the optional
+`DesktopHost.measure` capability; the headless process explicitly refuses it.
+This asynchronous API does not implement synchronous browser geometry methods.
+The inline example's **Measure wrapped text** button exercises an ordinary TSX
+ref, native geometry and async reactive result publication.
 
 The following browser capabilities are **not implemented on desktop refs**:
 
@@ -657,7 +695,9 @@ When extending desktop, update the relevant contract and this README together:
 
 `DesktopProcessHost` snapshots and native test commands expose geometry, focus,
 editing, style, and timing information for debugging. They are host/testing APIs,
-not methods available on application element refs.
+not imperative control methods available on application element refs. Geometry
+reads use the explicit `measureElement(ref)` / `SceneElement.measure()` capability
+described above.
 Pointer test commands accept an optional `frame` from `renderer.frames`. Native
 admission rejects a stale frame or an accepted scene awaiting paint before any
 input is dispatched. The test driver can safely reinspect that rejection without

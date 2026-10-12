@@ -2,6 +2,7 @@
 use crate::{
     events::{self, Emission},
     input::{InputOptions, TextInput},
+    measurement::{self, PendingMeasurement},
     styles::{self, CachedStyles, NativeStyles, StyleCache},
     text::{InlineCursor, InlineInput, InlineRun, InlineSource, InlineStyle, Paragraph, TextCache},
 };
@@ -99,6 +100,7 @@ type Identity = (u64, u64, usize);
 pub use crate::events::EventSink;
 #[derive(Default)]
 pub struct Renderer {
+    measurements: Rc<RefCell<Vec<PendingMeasurement>>>,
     text: BTreeMap<TextIdentity, Rc<RefCell<TextCache>>>,
     controls: BTreeMap<Identity, FocusHandle>,
     inputs: BTreeMap<Identity, Entity<TextInput>>,
@@ -122,6 +124,7 @@ impl FrameInstance {
     }
 }
 pub struct SceneElement {
+    measurements: Rc<RefCell<Vec<PendingMeasurement>>>,
     sequence: u64,
     instances: Vec<FrameInstance>,
     flow: SceneFlow,
@@ -133,6 +136,32 @@ pub struct SceneElement {
 }
 
 impl Renderer {
+    pub fn measurement_pending(&self) -> bool {
+        !self.measurements.borrow().is_empty()
+    }
+
+    pub fn measure(
+        &self,
+        scene: &Scene,
+        handle: Handle,
+        node: usize,
+        complete: impl FnOnce(Result<serde_json::Value, String>) + 'static,
+    ) {
+        if !scene.has_element(handle, node) {
+            complete(Err("Measurement requires a live element source".into()));
+            return;
+        }
+        let stats = self.stats.borrow();
+        if stats.frames > 0 && stats.sequence == scene.sequence() {
+            complete(measurement::read(&stats, handle, node));
+        } else {
+            self.measurements.borrow_mut().push(PendingMeasurement {
+                handle,
+                node,
+                complete: Box::new(complete),
+            });
+        }
+    }
     pub fn navigate(
         &self,
         handle: Handle,
@@ -440,6 +469,7 @@ impl Renderer {
                 .is_some_and(|instance| instance.handle.generation == *generation)
         });
         SceneElement {
+            measurements: self.measurements.clone(),
             sequence: scene.sequence(),
             instances,
             flow: scene.flow().clone(),
@@ -905,6 +935,19 @@ impl Element for SceneElement {
                 .take()
                 .map(|start| now.duration_since(start).as_secs_f64() * 1000.);
         }
+        measurement::finish(
+            &mut self.measurements.borrow_mut(),
+            &stats,
+            |handle, node| {
+                self.instances.iter().any(|instance| {
+                    instance.handle == handle
+                        && matches!(
+                            instance.template.source.nodes.get(node),
+                            Some(Node::Element { .. })
+                        )
+                })
+            },
+        );
     }
 }
 

@@ -1,4 +1,4 @@
-import type { DesktopHost, SceneOperation, SceneTemplate } from '../bridge/protocol';
+import type { DesktopHost, SceneHandle, SceneMeasurement, SceneOperation, SceneTemplate } from '../bridge/protocol';
 
 /** Prepared changes advance owner caches only after the whole batch is accepted. */
 export interface PreparedPublication {
@@ -24,9 +24,9 @@ export function createPublicationQueue(host: DesktopHost) {
     if (error instanceof Error && 'acceptance' in error && error.acceptance === 'unknown') failure = error;
   };
 
-  const serialize = (task: () => Promise<void>): Promise<void> => {
+  const serialize = <T>(task: () => Promise<T>): Promise<T> => {
     const result = tail.then(task);
-    tail = result.catch(() => {});
+    tail = result.then(() => {}, () => {});
     return result;
   };
   const seal = (): void => {
@@ -63,6 +63,16 @@ export function createPublicationQueue(host: DesktopHost) {
   };
 
   return {
+    measure(handle: SceneHandle, node: number): Promise<SceneMeasurement> {
+      // Read accepted geometry after any publications already requested. Do not
+      // flush the caller's owner here: this can run inside its active handler.
+      seal();
+      return serialize(async () => {
+        if (failure) throw failure;
+        if (!host.measure) throw new Error('Desktop host does not support element measurement');
+        return host.measure(handle, node);
+      });
+    },
     install(template: SceneTemplate): Promise<void> {
       // A new installation cannot overtake a batch already requested.
       seal();

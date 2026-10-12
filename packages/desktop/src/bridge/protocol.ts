@@ -10,6 +10,22 @@ export interface SceneAttachment {
   readonly handle: SceneHandle;
   readonly node: number;
 }
+/** Window-relative logical pixels, before viewport clipping. */
+export interface SceneRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+/** Geometry from one completed GPUI frame. Empty sources have no bounds. */
+export interface SceneMeasurement {
+  readonly handle: SceneHandle;
+  readonly node: number;
+  readonly sequence: number;
+  readonly frame: number;
+  readonly rects: readonly SceneRect[];
+  readonly bounds: SceneRect | null;
+}
 export interface TextWrite {
   readonly slot: number;
   readonly value: string;
@@ -60,6 +76,7 @@ export interface NativeSceneEvent {
   readonly edit?: number;
 }
 export interface DesktopHost {
+  measure?(handle: SceneHandle, node: number): Promise<SceneMeasurement>;
   /** Optional platform clock. Headless hosts leave conservative pulls disabled. */
   nextFrame?(): Promise<{ readonly visible: boolean }>;
   /** Reject only for explicit refusal; ambiguous failures must use DesktopConnectionError. */

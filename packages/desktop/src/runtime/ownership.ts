@@ -551,7 +551,7 @@ export function createOwnerForest(
         },
         options.volatile,
       );
-      configureOwnerLifecycle(owner, options);
+      configureOwnerLifecycle(owner, options, publication.measure);
       if (!staging) group.installs.push(install(template));
       const regions = new Set<number>();
       try {

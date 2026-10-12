@@ -141,6 +141,16 @@ impl Instance {
 }
 
 impl Scene {
+    /// Capabilities address accepted element sources, including unboxed inline tags.
+    pub fn has_element(&self, handle: Handle, node: usize) -> bool {
+        self.instances.get(&handle.id).is_some_and(|instance| {
+            instance.handle == handle
+                && matches!(
+                    instance.template.source.nodes.get(node),
+                    Some(Node::Element { .. })
+                )
+        })
+    }
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
         self.instances.values()
     }

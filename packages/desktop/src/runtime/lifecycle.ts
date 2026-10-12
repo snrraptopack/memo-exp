@@ -4,8 +4,12 @@ import type { Owner } from './ownership-model';
 import type { SceneElement, SceneMountOptions } from './application';
 import type { PreparedProperties } from './properties';
 import { affected } from './values';
+import type { SceneHandle, SceneMeasurement } from '../bridge/protocol';
+import { registerMeasurement } from './measurement';
 
-export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions): void {
+type Measure = (handle: SceneHandle, node: number) => Promise<SceneMeasurement>;
+
+export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions, measure: Measure): void {
   for (const disposer of options.cleanups ?? []) cleanup(owner.entityId, disposer);
   const effects = (options.effects ?? []).map((binding) => ({ binding, values: binding.read() }));
   owner.effectInvalidations = (sources) => {
@@ -38,7 +42,7 @@ export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions
       entry.value = prepared.ref;
       if (owner.mounted && !owner.disposed) {
         entry.dispose = mountRef(
-          elementHandle(owner, index),
+          elementHandle(owner, index, measure),
           prepared.ref as RefValue<SceneElement>,
         );
       }
@@ -54,7 +58,7 @@ export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions
     for (const ref of options.refs ?? []) {
       const node = owner.template.nodes[ref.node];
       if (!node || node.kind !== 'element') throw new Error('Desktop ref requires an element');
-      const element = elementHandle(owner, ref.node);
+      const element = elementHandle(owner, ref.node, measure);
       cleanup(owner.entityId, mountRef(element, ref.value));
     }
     activated = true;
@@ -63,14 +67,22 @@ export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions
   };
 }
 
-function elementHandle(owner: Owner, index: number): SceneElement {
+function elementHandle(owner: Owner, index: number, measure: Measure): SceneElement {
   const node = owner.template.nodes[index];
   if (!node || node.kind !== 'element') throw new Error('Desktop ref requires an element');
-  return Object.freeze({
+  const element: SceneElement = Object.freeze({
     handle: owner.instance.handle,
     node: index,
     tagName: node.tag.toUpperCase(),
     ownerDocument: null,
+    async measure() {
+      const connected = () => owner.mounted && !owner.disposed;
+      if (!connected()) throw new Error('Cannot measure a disconnected desktop element');
+      const result = await measure(owner.instance.handle, index);
+      // Retirement can race with a read already sent to the native process.
+      if (!connected()) throw new Error('Cannot measure a disconnected desktop element');
+      return result;
+    },
     get isConnected() {
       return owner.mounted && !owner.disposed;
     },
@@ -91,4 +103,6 @@ function elementHandle(owner: Owner, index: number): SceneElement {
       );
     },
   });
+  registerMeasurement(element);
+  return element;
 }

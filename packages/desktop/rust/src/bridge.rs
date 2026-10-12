@@ -20,6 +20,10 @@ enum Command {
         transaction: Transaction,
     },
     Inspect,
+    Measure {
+        handle: Handle,
+        node: usize,
+    },
     Redraw,
     Frame,
     Acknowledge {
@@ -43,6 +47,7 @@ pub struct Outcome {
     pub input_ack: Option<(Handle, usize, u64)>,
     pub event_result: Option<(u64, bool)>,
     pub frame: bool,
+    pub measure: Option<(Handle, usize)>,
 }
 
 pub fn process_line(scene: &mut Scene, line: &str) -> Outcome {
@@ -54,10 +59,18 @@ pub fn process_line_with_prepare(
     line: &str,
     mut prepare: impl FnMut(&crate::template::PreparedTemplate) -> Result<(), String>,
 ) -> Outcome {
-    process_line_with_validation(scene, line, |candidate| match candidate {
+    let mut outcome = process_line_with_validation(scene, line, |candidate| match candidate {
         Preparation::Template(template) => prepare(template),
         Preparation::Instances { .. } => Ok(()),
-    })
+    });
+    // The headless adapter owns semantic state but has no laid-out geometry.
+    if outcome.measure.take().is_some() {
+        outcome.response = json!({
+            "id": outcome.response["id"],
+            "error": "Element measurement requires a native window host"
+        });
+    }
+    outcome
 }
 
 pub enum Preparation<'a> {
@@ -80,6 +93,7 @@ pub fn process_line_with_validation(
     let mut input_ack = None;
     let mut event_result = None;
     let mut frame = false;
+    let mut measure = None;
     let response = match serde_json::from_str::<Request>(line) {
         Ok(request) => {
             let result = if request.version != 1 {
@@ -102,6 +116,14 @@ pub fn process_line_with_validation(
                     Command::Inspect => {
                         inspect = true;
                         serde_json::to_value(scene.snapshot()).map_err(|error| error.to_string())
+                    }
+                    Command::Measure { handle, node } => {
+                        if !scene.has_element(handle, node) {
+                            Err("Measurement requires a live element source".into())
+                        } else {
+                            measure = Some((handle, node));
+                            Ok(Value::Null)
+                        }
                     }
                     Command::Redraw => {
                         changed = true;
@@ -161,12 +183,73 @@ pub fn process_line_with_validation(
         input_ack,
         event_result,
         frame,
+        measure,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn measurement_validates_sources_and_requires_a_window_adapter() {
+        let mut scene = Scene::default();
+        scene
+            .install(
+                serde_json::from_value(json!({
+                    "id":"measured", "nodes":[
+                        {"kind":"element","tag":"p","parent":null,"text":""},
+                        {"kind":"text","parent":0,"text":"hello"}
+                    ], "slots":[], "events":[]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        scene
+            .commit(
+                serde_json::from_value(json!({
+                    "sequence":1, "operations":[{
+                        "kind":"mount","handle":{"id":1,"generation":1},
+                        "template":"measured","values":[]
+                    }]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        let request = |generation, node| {
+            json!({
+                "id":9,"version":1,"kind":"measure",
+                "handle":{"id":1,"generation":generation},"node":node
+            })
+            .to_string()
+        };
+        let valid = process_line_with_validation(&mut scene, &request(1, 0), |_| Ok(()));
+        assert_eq!(
+            valid.measure,
+            Some((
+                Handle {
+                    id: 1,
+                    generation: 1
+                },
+                0
+            ))
+        );
+        assert!(!valid.changed);
+        for (generation, node) in [(2, 0), (1, 1), (1, 99)] {
+            let rejected =
+                process_line_with_validation(&mut scene, &request(generation, node), |_| Ok(()));
+            assert!(rejected.measure.is_none());
+            assert!(rejected.response["error"].is_string());
+        }
+        let headless = process_line(&mut scene, &request(1, 0));
+        assert!(headless.measure.is_none());
+        assert!(
+            headless.response["error"]
+                .as_str()
+                .unwrap()
+                .contains("window host")
+        );
+        assert_eq!(scene.sequence(), 1);
+    }
     #[test]
     fn rejected_protocol_requests_do_not_close_or_dirty_the_scene() {
         let mut scene = Scene::default();

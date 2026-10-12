@@ -72,6 +72,7 @@ export interface SceneElement {
   readonly id: string;
   readonly value: string;
   getAttribute(name: string): string | null;
+  measure(): Promise<import('../bridge/protocol').SceneMeasurement>;
 }
 
 export type SceneRowKey = string | number;
