@@ -90,6 +90,7 @@ fn convert_cascade(
                             | "font-family"
                             | "text-decoration"
                             | "text-decoration-color"
+                            | "cursor"
                     ) {
                         return Err(format!(
                             "CSS {property} on inline <{tag}> requires an independent native box; paragraph inline box/size support is not implemented"
@@ -734,5 +735,33 @@ mod tests {
         // The same inline tag at an independent placement retains the existing
         // full box-style contract; restrictions apply to paragraph runs only.
         assert!(prepare_cascade(&template, &template.styles, &BTreeSet::from([1])).is_ok());
+    }
+
+    #[test]
+    fn paragraph_cursor_converts_normal_and_hover_without_text_or_box_styles() {
+        let mut template = paragraph_template();
+        for state in &mut template.styles[1].states {
+            state.insert("cursor".into(), "pointer".into());
+        }
+        for state in [1, 3] {
+            template.styles[1].states[state].insert("cursor".into(), "text".into());
+        }
+        let prepared = prepare(&template).unwrap();
+        assert_eq!(
+            prepared.nodes[1][0].mouse_cursor,
+            Some(CursorStyle::PointingHand)
+        );
+        assert_eq!(prepared.nodes[1][1].mouse_cursor, Some(CursorStyle::IBeam));
+        assert_eq!(prepared.nodes[1][0].text, TextStyleRefinement::default());
+        assert_eq!(prepared.nodes[1][1].text, TextStyleRefinement::default());
+        assert!(prepared.nodes[1][0].display.is_none());
+
+        template.styles[1].states[1].insert("cursor".into(), "unsupported-cursor".into());
+        assert!(
+            prepare(&template)
+                .err()
+                .unwrap()
+                .contains("Unsupported cursor")
+        );
     }
 }

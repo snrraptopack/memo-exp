@@ -88,3 +88,11 @@ button {
   color: #166534;
   font-weight: 900;
 }
+
+/* Cursor declarations follow the same glyph ancestry, including children
+   forwarded through a component. They do not change text shaping or layout. */
+#cursor-paragraph { cursor: text; }
+.cursor-parent { cursor: pointer; }
+#cursor-text { cursor: text; }
+#cursor-default, #cursor-hover { cursor: default; }
+#cursor-hover:hover { cursor: text; }

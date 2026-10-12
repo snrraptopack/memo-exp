@@ -332,6 +332,9 @@ shaping and translated during prepaint, so an unchanged redraw reuses it.
 `inline_hovered` lists the source ancestry whose hover refinements were used by
 the painted frame. These inspection fields do not add browser geometry methods
 to native ref handles.
+`inline_cursor` records the measured source and cursor request submitted to GPUI,
+or `null` when the enclosing native box supplies the cursor. It reports GPUI
+requests (`Arrow`, `IBeam`, `PointingHand`), not the operating system's cursor.
 Hit tests treat a shaped glyph cluster as one unit, matching GPUI's byte-index
 model; character-level hit divisions inside a ligature are not exposed.
 
@@ -382,7 +385,15 @@ GPUI. Leaving the source restores its normal refinements. Scrolling, resizing,
 and accepted text changes recheck the source under the stationary pointer.
 Prepaint retires hover on fully clipped paragraphs; deferred native notification
 requests the frame that restores normal text after a draw-time hover change.
-Paragraph-run box sizing, per-run font sizes, cursor styles, and `:focus` styling
+Paragraph sources also support `cursor: pointer`, `text`, `default`, and `auto`
+(the latter two map to GPUI's arrow), including target `:hover` overrides. The
+nearest explicit inline declaration wins across component owners. An explicit
+default cancels an ancestor's hand/text cursor; an omitted declaration inherits
+from inline ancestry, then falls through to the enclosing native box. Cursor
+requests apply only over the source's measured glyphs. Cursor-only source changes
+request a native paint while reusing text shaping and glyph geometry; no event
+handler or application write is required.
+Paragraph-run box sizing, per-run font sizes, and `:focus` styling
 require further implementation. An inline element with its own native box supports the
 ordinary box properties above, including padding, dimensions, font size, and
 hover styling. Its placement determines this capability; a tag name alone does

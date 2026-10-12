@@ -31,6 +31,12 @@ function Caption({ children }: { children: JSX.Element }) {
   </span>;
 }
 
+function CursorLabel({ children }: { children: JSX.Child }) {
+  // This component contributes an inline source, not a layout wrapper. Its
+  // cursor declaration is inherited by glyphs forwarded from the caller.
+  return <span id="cursor-parent" class="cursor-parent">{children}</span>;
+}
+
 export function InlineBoxes() {
   let width = 220;
   let parentClicks = 0;
@@ -69,6 +75,15 @@ export function InlineBoxes() {
       </p>
       <p id="hover-only-paragraph" class="paragraph-flow">
         Plain text <span id="hover-only">hover without a handler</span> stays in one paragraph.
+      </p>
+      <p id="cursor-paragraph" class="paragraph-flow">
+        <CursorLabel>
+          <span id="cursor-inherited">Inherited hand</span>{' '}
+          <span id="cursor-text">Text cursor</span>{' '}
+          <span id="cursor-default">Default cursor</span>
+        </CursorLabel>{' '}
+        <span id="cursor-hover">Hover cursor</span>{' '}
+        <span id="cursor-plain">Enclosing cursor</span>
       </p>
       <form onSubmit={event => { event.preventDefault(); submissions++; }}>
         <button id="save" type="submit"><span id="save-label">A button's inline label</span></button>

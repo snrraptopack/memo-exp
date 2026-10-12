@@ -132,6 +132,11 @@ export interface SceneSnapshot {
       readonly handle: SceneHandle;
       readonly node: number;
     }[];
+    /** Measured-source cursor request submitted to GPUI, not an OS cursor query. */
+    readonly inline_cursor?: {
+      readonly source: { readonly handle: SceneHandle; readonly node: number };
+      readonly style: 'Arrow' | 'IBeam' | 'PointingHand';
+    } | null;
   };
   readonly instances: readonly {
     readonly handle: SceneHandle;

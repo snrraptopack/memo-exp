@@ -42,7 +42,11 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       snapshot = await waitForFrame(snapshot.sequence, snapshot.renderer!.frames);
       target = box(id);
     }
-    await host.testWindow({ action, handle: target.handle, node: target.source });
+    try {
+      await host.testWindow({ action, handle: target.handle, node: target.source });
+    } catch (error) {
+      throw new Error(`Native ${action} failed for ${id} at ${JSON.stringify(target)}`, { cause: error });
+    }
     await settleEvents();
   };
 
@@ -122,6 +126,14 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       && hovered.node === source.source,
     ) ?? false;
   };
+  const cursorMatches = (snapshot: SceneSnapshot, provider: string, style: 'Arrow' | 'IBeam' | 'PointingHand') => {
+    const range = snapshot.renderer!.inline_ranges!.find(range => range.id === provider)!;
+    const request = snapshot.renderer!.inline_cursor;
+    return request?.style === style
+      && request.source.handle.id === range.handle.id
+      && request.source.handle.generation === range.handle.generation
+      && request.source.node === range.source;
+  };
 
   // The child changes weight while the component root supplies inherited paint.
   // Native hover paints both ancestors without publishing an application write.
@@ -169,6 +181,28 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
   await pointer('title', 'hover');
   await waitFor((snapshot) => !hovered(snapshot, 'hover-only'));
 
+  // These cursor rules have no text refinements. Cross-owner inheritance,
+  // explicit defaults and hover overrides must reuse glyph preparation.
+  const beforeCursor = snapshot;
+  for (const [target, provider, style] of [
+    ['cursor-inherited', 'cursor-parent', 'PointingHand'],
+    ['cursor-text', 'cursor-text', 'IBeam'],
+    ['cursor-default', 'cursor-default', 'Arrow'],
+    ['cursor-hover', 'cursor-hover', 'IBeam'],
+  ] as const) {
+    await pointer(target, 'hover');
+    await waitFor(snapshot => cursorMatches(snapshot, provider, style));
+  }
+  await pointer('cursor-plain', 'hover');
+  await waitFor(snapshot => snapshot.renderer!.inline_cursor === null);
+  assert(snapshot.sequence === beforeCursor.sequence, 'Cursor CSS published application state');
+  assert(snapshot.renderer!.shaping === beforeCursor.renderer!.shaping,
+    'Cursor-only source changes reshaped text');
+  assert(snapshot.renderer!.inline_geometry === beforeCursor.renderer!.inline_geometry,
+    'Cursor-only source changes rebuilt glyph regions');
+  assert(!snapshot.renderer!.boxes.some(box => box.id?.startsWith('cursor-') && box.id !== 'cursor-paragraph'),
+    'Inline cursor rules introduced independent layout boxes');
+
   await pointer('caption-text', 'click');
   await waitFor((snapshot) => snapshot.instances.some((instance) =>
     instance.handle.id === captionHandle.id && instance.text_groups.some((group) => group.text.endsWith('(1)')),
@@ -209,6 +243,7 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     inlineHover: true,
     hoverWithoutHandler: true,
     inlineLabelSubmissions: 1,
+    inlineCursors: 4,
   };
 
   // Retire the authored example first, so no mounted template supplies native
@@ -225,13 +260,22 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
           { property: 'font-size', value: '16px' },
         ],
       },
-      { kind: 'element', tag: 'p', parent: 0, text: '' },
+      {
+        kind: 'element', tag: 'p', parent: 0, text: '',
+        style: [{ property: 'cursor', value: 'text' }],
+      },
       { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'handlerless' } },
       { kind: 'text', parent: 2, text: 'Hover only' },
       {
         kind: 'element', tag: 'div', parent: 0, text: '',
         style: [{ property: 'height', value: '1600px' }],
       },
+      { kind: 'text', parent: 1, text: ' ' },
+      { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'cursor-only' } },
+      { kind: 'text', parent: 6, text: 'Cursor only' },
+      { kind: 'text', parent: 1, text: ' ' },
+      { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'plain-source' } },
+      { kind: 'text', parent: 9, text: 'Plain text' },
     ],
     slots: [],
     events: [],
@@ -243,7 +287,14 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       declarations: [
         { property: 'color', value: '#166534' },
         { property: 'font-weight', value: '900' },
+        { property: 'cursor', value: 'pointer' },
       ],
+    }, {
+      selectors: [[{
+        combinator: null,
+        selectors: [{ type: 'id', name: 'cursor-only' }, { type: 'state', name: 'hover' }],
+      }]],
+      declarations: [{ property: 'cursor', value: 'default' }],
     }],
   };
   const owner = app.mount(() => mountScene(template, [], []));
@@ -256,19 +307,29 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     await waitFor(snapshot => snapshot.renderer!.inline_ranges!.some(range => range.id === 'handlerless'));
     const normal = snapshot;
     const normalWidth = box('handlerless').width;
+    await pointer('cursor-only', 'hover');
+    await waitFor(snapshot => cursorMatches(snapshot, 'cursor-only', 'Arrow'));
+    await pointer('plain-source', 'hover');
+    await waitFor(snapshot => snapshot.renderer!.inline_cursor === null);
+    assert(snapshot.renderer!.shaping === normal.renderer!.shaping,
+      'Handlerless cursor-only CSS changed text shaping');
+    assert(snapshot.renderer!.inline_geometry === normal.renderer!.inline_geometry,
+      'Handlerless cursor-only CSS rebuilt measured source geometry');
     await pointer('handlerless', 'hover');
-    await waitFor(snapshot => hovered(snapshot, 'handlerless'));
+    await waitFor(snapshot => hovered(snapshot, 'handlerless')
+      && cursorMatches(snapshot, 'handlerless', 'PointingHand'));
     assert(Math.abs(box('handlerless').width - normalWidth) > 0.5,
       'A scene without event sites did not apply inline hover weight');
     await host.testWindow({ action: 'scroll', delta: -180 });
     await waitFor(snapshot => snapshot.renderer!.scroll!.offset < -100
-      && !hovered(snapshot, 'handlerless'));
+      && !hovered(snapshot, 'handlerless') && snapshot.renderer!.inline_cursor === null);
     assert(box('handlerless').y + box('handlerless').height < 0,
       'The handlerless hover check did not fully clip the paragraph');
     assert(Math.abs(box('handlerless').width - normalWidth) < 0.5,
       'Clipping retained the hovered glyph weight after its ancestry cleared');
     await host.testWindow({ action: 'scroll', delta: 180 });
-    await waitFor(snapshot => hovered(snapshot, 'handlerless'));
+    await waitFor(snapshot => hovered(snapshot, 'handlerless')
+      && cursorMatches(snapshot, 'handlerless', 'PointingHand'));
     assert(Math.abs(box('handlerless').width - normalWidth) > 0.5,
       'Scrolling back under a stationary pointer did not reapply hover weight');
     assert(snapshot.sequence === normal.sequence && fixtureEvents === 0,
@@ -277,5 +338,5 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     unsubscribe();
     await owner.dispose();
   }
-  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true };
+  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true, handlerlessCursor: true };
 }

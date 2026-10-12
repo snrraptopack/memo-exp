@@ -3,7 +3,7 @@ use crate::{
     events::{self, Emission},
     input::{InputOptions, TextInput},
     styles::{self, CachedStyles, NativeStyles, StyleCache},
-    text::{InlineInput, InlineRun, InlineStyle, Paragraph, TextCache},
+    text::{InlineCursor, InlineInput, InlineRun, InlineSource, InlineStyle, Paragraph, TextCache},
 };
 use gpui::{prelude::*, *};
 use memoized_dom_desktop_host::{
@@ -35,6 +35,8 @@ pub struct Stats {
     pub inline_geometry: u64,
     /// Source ancestry whose hover refinements were used by the painted frame.
     pub inline_hovered: Vec<TextSource>,
+    /// Cursor request submitted to GPUI for the measured source under the pointer.
+    pub inline_cursor: Option<InlineCursor>,
     pub event_to_commit_ms: Option<f64>,
     pub event_to_paint_ms: Option<f64>,
     pub commit_to_paint_ms: Option<f64>,
@@ -609,7 +611,12 @@ impl Element for SceneElement {
                             paragraph
                                 .inline_sources
                                 .entry((source.handle.id, source.handle.generation, source.node))
-                                .or_insert_with(|| (tag.clone(), attributes.get("id").cloned()));
+                                .or_insert_with(|| InlineSource {
+                                    tag: tag.clone(),
+                                    id: attributes.get("id").cloned(),
+                                    cursor: owners[&source.handle.id].styles.nodes[source.node][1]
+                                        .mouse_cursor,
+                                });
                         }
                     }
                 }
@@ -862,6 +869,7 @@ impl Element for SceneElement {
             stats.boxes.clear();
             stats.inline_ranges.clear();
             stats.inline_hovered.clear();
+            stats.inline_cursor = None;
             stats.layout_ms = stats
                 .render_started
                 .map_or(0., |start| start.elapsed().as_secs_f64() * 1000.);

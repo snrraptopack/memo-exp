@@ -24,7 +24,7 @@ pub struct Pressed {
     event: MouseDownEvent,
 }
 
-fn hit(
+pub(super) fn hit(
     cache: &TextCache,
     runs: &[InlineRun],
     bounds: Bounds<Pixels>,

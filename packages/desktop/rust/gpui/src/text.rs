@@ -1,4 +1,5 @@
 //! Paragraph shaping belongs to persistent native state, not transient elements.
+mod cursor;
 mod geometry;
 mod interaction;
 pub use geometry::InlineRun;
@@ -6,12 +7,27 @@ pub use interaction::InlineInput;
 
 use crate::renderer::{LayoutBox, Stats};
 use gpui::{
-    App, AvailableSpace, Bounds, Element, ElementId, GlobalElementId, Hitbox, HitboxBehavior,
-    InspectorElementId, IntoElement, LayoutId, Pixels, SharedString, Size, TextRun, TextStyle,
-    TextStyleRefinement, WhiteSpace, Window, WrappedLine, px,
+    App, AvailableSpace, Bounds, CursorStyle, Element, ElementId, GlobalElementId, Hitbox,
+    HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels, SharedString, Size, TextRun,
+    TextStyle, TextStyleRefinement, WhiteSpace, Window, WrappedLine, px,
 };
 use memoized_dom_desktop_host::presentation::TextSource;
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
+
+/// Metadata for an authored inline source, shared by geometry and interaction.
+pub struct InlineSource {
+    pub tag: String,
+    pub id: Option<String>,
+    /// All ancestors of the hit glyph are hovered. The accepted hover cascade
+    /// already includes the normal cursor declaration when it has no override.
+    pub cursor: Option<CursorStyle>,
+}
+
+#[derive(serde::Serialize)]
+pub struct InlineCursor {
+    pub source: TextSource,
+    pub style: CursorStyle,
+}
 
 #[derive(PartialEq)]
 struct Key {
@@ -77,7 +93,7 @@ pub struct Paragraph {
     pub stats: Rc<RefCell<Stats>>,
     pub fragments: Vec<(usize, Vec<InlineStyle>)>,
     pub inline_runs: Vec<InlineRun>,
-    pub inline_sources: BTreeMap<(u64, u64, usize), (String, Option<String>)>,
+    pub inline_sources: BTreeMap<(u64, u64, usize), InlineSource>,
     pub input: Option<InlineInput>,
     hover: bool,
     painted_hover: Arc<[TextSource]>,
@@ -140,11 +156,15 @@ impl Element for Paragraph {
         let cache = self.cache.clone();
         let stats = self.stats.clone();
         let style = window.text_style();
-        self.hover = self.fragments.iter().any(|(_, chain)| {
-            chain
-                .iter()
-                .any(|refinement| refinement.normal != refinement.hover)
-        });
+        self.hover = self
+            .inline_sources
+            .values()
+            .any(|source| source.cursor.is_some())
+            || self.fragments.iter().any(|(_, chain)| {
+                chain
+                    .iter()
+                    .any(|refinement| refinement.normal != refinement.hover)
+            });
         if !self.hover {
             // Accepted restyling can remove the final hover rule while the text
             // group survives. Retire presentation state with that capability.
@@ -296,12 +316,12 @@ impl Element for Paragraph {
         let mut stats = self.stats.borrow_mut();
         for range in &shaped.regions.as_ref().unwrap().bounds {
             let TextSource { handle, node } = range.source;
-            let (tag, id) = &self.inline_sources[&(handle.id, handle.generation, node)];
+            let source = &self.inline_sources[&(handle.id, handle.generation, node)];
             stats.inline_ranges.push(LayoutBox::new(
                 handle,
                 node,
-                tag.clone(),
-                id.clone(),
+                source.tag.clone(),
+                source.id.clone(),
                 Bounds::new(bounds.origin + range.bounds.origin, range.bounds.size),
             ));
         }
@@ -348,6 +368,15 @@ impl Element for Paragraph {
                 self.stats.borrow_mut().error = Some(error.to_string());
             }
             origin.y += line.size(shaped.key.line_height).height;
+        }
+        if let Some(hitbox) = hitbox.as_ref()
+            && hitbox.is_hovered(window)
+            && let Some(run) =
+                interaction::hit(&cache, &self.inline_runs, bounds, window.mouse_position())
+            && let Some(request) = cursor::resolve(&run.sources, &self.inline_sources)
+        {
+            window.set_cursor_style(request.style, hitbox);
+            self.stats.borrow_mut().inline_cursor = Some(request);
         }
         drop(cache);
         if self.hover

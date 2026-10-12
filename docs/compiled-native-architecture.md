@@ -411,7 +411,7 @@ Define supported primitive and style semantics explicitly. Authored JSX uses the
 
 ## First implementation and validation
 
-The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing, cursor and focus styling, and native hover/focus regrouping remain presentation gaps. Measured paragraph source ancestry supports target hover text refinements. Measured paragraph glyph regions support inline click and pointer routing. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
+The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing and focus styling, and native hover/focus regrouping remain presentation gaps. Measured source ancestry also supports native inline cursor requests. Measured paragraph source ancestry supports target hover text refinements. Measured paragraph glyph regions support inline click and pointer routing. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
@@ -704,7 +704,7 @@ control's focus, and the existing desktop event dispatcher selects its nearest
 button for the submit default. Tests cover nested/cross-owner wrapped sources,
 UTF-8 and RTL geometry, alignment, blank-space exclusion, unchanged geometry
 reuse, and inline label focus/submission through the real GPUI window. Paragraph
-inline sizing, cursor styling, and focus styling remain explicit limits.
+inline sizing and focus styling remain explicit limits.
 
 Paragraph target hover uses the same retained glyph hit regions. Each fragment
 keeps normal/hover text refinements from its accepted source owners; shaping
@@ -728,3 +728,21 @@ inline window check exercises cross-owner/nested hover, font-weight measurement,
 restoration on leaving, a scene with no event sites, fully clipped paragraphs,
 unchanged scene sequence, and cache reuse. Native interaction styling is presentation state, not another reactive
 engine or subscription bridge.
+
+Paragraph cursor styling uses that same measured source ancestry. Accepted
+source metadata retains the tag, authored ID, and native hover-state cursor
+declaration alongside its glyph regions. Every ancestor of the hit glyph is
+hovered; its accepted hover cascade already includes normal declarations when
+there is no override. `text/cursor.rs` resolves the nearest explicit inline
+cursor without changing the paragraph's shaping input. An explicit arrow cursor
+cancels an ancestor's hand/text cursor; a missing declaration falls through to
+the enclosing GPUI box. The paragraph submits a hitbox-scoped cursor request
+during paint, and native hover observation requests another paint when the hit
+source changes. Plain glyphs do not inherit a previous inline request.
+
+The CSS adapter accepts its existing `pointer`, `text`, `default`, and `auto`
+values on paragraph runs, including target hover overrides. Inspection exposes
+`renderer.inline_cursor` as the source and GPUI request, not an OS cursor query.
+Tests cover source-generation identity, nearest-ancestor inheritance and resets,
+cross-owner forwarded children, cursor-only hover with no event sites, clipping
+and reentry under a stationary pointer, and unchanged shaping/geometry counts.
