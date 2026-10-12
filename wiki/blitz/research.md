@@ -259,8 +259,17 @@ Unexpected live failure leaves a terminal document rather than claiming rollback
 
 The native tests exercise actual CSS variables, class changes and stylesheet text
 updates through headless engine layout. They do not establish browser box parity,
-window painting or JavaScript ref/event behavior. The process protocol, mixed
-structural transaction batches and controlled resource providers remain M2 work.
+window painting or JavaScript ref/event behavior.
+
+M2.2a adds a strict versioned JSON write-set decoder and one owning publication
+session. It reuses the document validator and mutator rather than adding another
+source resolver. Sequence advancement happens after complete live application;
+ordinary refusal permits a corrected sequence, while ambiguous application failure
+closes the session. Packet/operation limits and JavaScript-safe identity counters
+bound this wire surface. Tests verify refusal without redraw, duplicate/gap
+rejection, qualified attributes and closed-session replay refusal. The process
+reader/writer, mixed structural transactions and controlled resource providers
+remain M2 work; the native session is not a running process integration.
 
 Input editors are initialized during Blitz layout construction. The native contract
 checks values written before first layout and subsequent editor updates. The future

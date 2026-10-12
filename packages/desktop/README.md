@@ -4,7 +4,8 @@ The desktop target uses the existing compiler analysis and JavaScript semantic
 runtime with a retained Blitz document in Rust. Application authoring remains
 ordinary TSX, CSS, events, refs and `mount()` from the framework runtime.
 
-This branch currently implements the Rust document foundation. The desktop emitter,
+This branch currently implements the Rust document foundation and ordered wire
+acceptance for text/attribute publications. The desktop emitter,
 JavaScript publication adapter and window command are subsequent milestones. There
 is no mounted application example to run yet. This package's scripts exercise the
 native foundation; they do not change web mounting or select a desktop renderer.
@@ -71,16 +72,65 @@ remain for the lifetime of this native document.
 
 Unexpected failure after entering live application is terminal. Rust reports
 unknown acceptance, retains the failed state and rejects subsequent work; it does
-not claim rollback. The future process connection must terminate pending work in
-that state. Structural acceptance and completed layout/paint remain separate:
+not claim rollback. The publication session closes in that state; a future process
+driver must fail pending jobs and terminate the transport. Structural acceptance
+and completed layout/paint remain separate:
 `resolve()` runs Blitz's style/text/layout work explicitly.
+
+## Ordered wire publication
+
+`PublicationSession` owns the native document for one connection. It accepts a
+complete JSON packet through `publish(bytes)`, validates decoding and sequencing,
+then calls the existing whole-write-set document validator. It exposes the
+document for immutable inspection, with no mutable escape hatch.
+
+The first packet family is deliberately text/attributes only:
+
+```json
+{
+  "version": 1,
+  "sequence": 1,
+  "writes": [
+    {
+      "op": "text",
+      "target": { "owner": { "id": "App", "generation": 1 }, "source": 1 },
+      "value": "Count: 1"
+    }
+  ]
+}
+```
+
+`setAttribute` carries the same target, a qualified `name` with `namespace`,
+`local` and optional `prefix`, and a string `value`. `removeAttribute` carries
+the target/name without a value. Removal is an explicit operation; a missing or
+null set value is refused rather than treated as removal. Names and node kinds
+are checked by the existing document layer. Namespace strings reach Blitz intact.
+
+Successful application returns the serializable acknowledgment
+`{"version":1,"sequence":1,"status":"accepted"}`. Sequences begin at 1 and
+advance only after complete application. Refusal leaves the expected sequence
+available for correction; duplicate and future sequences refuse without applying
+work. Empty publications advance ordering without a redraw. The acknowledgment
+establishes structural acceptance, not completed layout or paint.
+
+Unknown fields/operations, duplicate fields, missing required fields and invalid
+JSON refuse. Limits are 1 MiB of UTF-8 packet bytes, 4,096 writes and 256 UTF-8
+bytes per owner ID. Sequence/generation counters must be positive JavaScript safe
+integers, and source indices must fit unsigned 32-bit integers. The last safe
+sequence accepts once; further publication requires a new connection/document.
+
+An ambiguous live failure closes the session and returns `AcceptanceUnknown`;
+subsequent packets refuse. A process driver must also call `close()` after a lost
+acknowledgment rather than replaying possibly applied work. This batch implements
+the codec/session contract, not an OS process or pending-job queue. Stream framing
+must enforce the packet byte limit before buffering; that reader is still pending.
 
 ## Current boundary
 
-The in-process document API and headless native contracts are the current scope.
-It is not yet a versioned process protocol or an atomic batch combining mount,
-move, write and retirement. Wire decoding, sequence acceptance, resource-provider
-control and connection failure propagation remain M2 work. Window painting and
+The in-process document API, wire write-set codec/session and headless native
+contracts are the current scope. Atomic batches combining mount, move, write and
+retirement, process framing/transport, controlled resource providers and transport
+failure propagation remain M2 work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
 
 Blitz creates a text input's editor during layout construction. Tests verify both

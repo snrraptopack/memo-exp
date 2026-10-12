@@ -482,3 +482,81 @@ do not serialize application expressions or build another reactive engine.
 M2 is not complete until those gates pass. The normal TSX counter/window remains
 M3, and synchronous cancellation/input revision ordering remains M4. There is no
 Blitz app startup, first visible frame, JS/CSS refresh or event latency measurement.
+
+## M2.2a — Ordered wire write-set acceptance
+
+Completed implementation/checks: 2026-10-12. M2 remains in progress.
+
+### Scope communicated before editing
+
+Communicated the exact boundary: new protocol modules and contracts inside the
+desktop Rust crate, its dependencies and the existing desktop/wiki documentation.
+The batch adds versioned text/attribute packets, ordering and acknowledgments,
+reusing the existing whole-write-set validator. Compiler, shared runtime, DOM
+lists and the unrelated fullstack edit are untouched. Mixed structural publication
+was explicitly left as a separate gate rather than claimed complete.
+
+### Implementation and decisions
+
+- Added separate wire, session and error modules. The decoder accepts only known
+  versioned JSON fields and text/setAttribute/removeAttribute operations. It
+  preserves qualified names and passes source references to the existing document
+  validator; it does not implement another access resolver or scene tree.
+- Limits are 1 MiB packet bytes, 4,096 writes and 256 UTF-8 bytes per owner ID.
+  Sequence/generation counters use the JavaScript safe-integer range. Source
+  indices use the existing unsigned 32-bit source identity. Explicit attribute
+  removal avoids interpreting a missing/null set value as deletion.
+- One `PublicationSession` owns its document without a mutable escape hatch.
+  Sequences begin at 1 and advance only after complete native application. Empty
+  accepted sets advance ordering without redraw; duplicates and gaps do not
+  apply. An ordinary refusal leaves the sequence available for correction.
+- Acknowledgments serialize version/sequence/status and establish structural
+  acceptance only. They do not claim a resolved layout or painted frame.
+- Ambiguous application failure closes the session, returns unknown acceptance
+  and prevents replay. The unit contract performs a real native text write before
+  injecting an application failure and verifies the changed text remains while
+  the sequence does not advance. The existing document unwind contract separately
+  verifies terminal behavior after an actual panic during live application.
+- Explicit close prevents replay after a lost acknowledgment. The future process
+  driver still must fail its pending jobs and terminate/drop the connection;
+  this batch does not fabricate an OS transport or pending-job queue.
+- Protocol integration tests share the existing real engine fixtures through a
+  separate test module in the same integration executable. Existing document
+  contracts remain intact.
+
+The first offline dependency resolution unintentionally downgraded existing
+Serde/pkg-config records. That was corrected before final verification: existing
+locked package versions remain unchanged. Cargo's locked/offline check accepted
+the final graph; its diff adds the direct dependency edges and only two package
+records, serde_json and zmij. No existing dependencies were upgraded/downgraded.
+
+### Verification
+
+- Final `bun run --cwd packages/desktop native:test`: **28 passed, 0 failed**,
+  exit 0 (3 unit and 25 integration contracts). The changed crate/test rebuild
+  took 37.55s; unit execution 0.11s and integration execution 1.98s. These are
+  test-build/execution measurements, not application startup measurements.
+- New wire coverage verifies full application before acknowledgment, retained
+  native IDs, one redraw per nonempty accepted set, empty-set ordering,
+  duplicate/gap rejection, late-reference refusal without earlier writes/redraw,
+  correction/retry, wrong node kinds, stale owners, invalid attributes, strict
+  decoding, byte/write limits, safe integers, namespace preservation, final
+  sequence exhaustion and terminal-session replay refusal.
+- `cargo +1.96.0 clippy --manifest-path packages/desktop/rust/Cargo.toml
+  --offline --locked --all-targets --jobs 2 -- -D warnings`: passed.
+- Package `native:fmt` and `native:check`: passed. Final native check 2.72s.
+- No JavaScript production files changed; no full JavaScript suite was repeated
+  alongside native linking. Existing real engine ownership/layout/input contracts
+  all pass in the native suite.
+
+### Remaining gates and next batch
+
+M2.2b needs a complete prepared transaction across mount/write/move/retire, with
+minimal staged affected ownership/topology records checked before any live
+mutation. Process framing must bound buffering before decoding, provider control
+must prevent candidate side effects, and the driver must propagate fatal/lost-ack
+failure to pending work. None of those gates is marked complete by this codec.
+
+The ordinary mounted TSX counter and visible window remain M3. Compiler/runtime
+authoring and the web target did not change. Commit/remote status is reported
+after the batch's checks and source-history publication.

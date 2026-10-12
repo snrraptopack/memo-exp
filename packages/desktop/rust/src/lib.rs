@@ -4,3 +4,4 @@
 //! expressions, own reactive cells, or implement a second dependency graph.
 
 pub mod document;
+pub mod protocol;
