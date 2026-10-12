@@ -1,6 +1,6 @@
 # Compiled native desktop architecture
 
-Date: 2026-10-11. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, structural publication, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Desktop uses the shared semantic analysis coordinator, semantic kernel and access resolver, application-owned state cells, component render plans, setup replay, module calculations, guarded callback publications, external subscriptions, visible-frame opaque pulls, and core effects, refs, and cleanup behind native acceptance. Additional controls, browser capability equivalents, provider integration, and native incremental geometry remain future work.
+Date: 2026-10-12. Architecture for Memoized DOM's desktop target. This is the single research document for the desktop architecture. The compiler, retained scene, structural publication, GPUI window adapter, static CSS, native buttons and text inputs, and persistent paragraph shaping are implemented. Desktop uses the shared semantic analysis coordinator, semantic kernel and access resolver, application-owned state cells, component render plans, setup replay, module calculations, guarded callback publications, external subscriptions, visible-frame opaque pulls, and core effects, refs, and cleanup behind native acceptance. Additional controls, browser capability equivalents, provider integration, and native incremental geometry remain future work.
 
 ## The technique we aim to use
 
@@ -63,6 +63,187 @@ The shared queue records operations such as element creation, text/style changes
 Rust retains element identity and topology, shared immutable styles, and revision information. The GPUIX view builds ephemeral GPUI elements from that retained tree when rendering is requested. Virtual lists defer offscreen subtree construction until layout requests it. This is already a retained mutation architecture; JavaScript does not need to rebuild a complete tree continuously while idle. [Pinned retained tree](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/src/retained_tree.rs), [pinned renderer](https://github.com/remorses/gpuix/blob/1a007487ac4c1f0be2ec4e090281ae01e25ec17c/packages/native/src/renderer.rs).
 
 Solid already targets reactive updates directly. Our architectural hypothesis therefore concerns compiler-defined templates and slot destinations, explicit publication contracts, and retained native layout and paint work. GPUIX provides a useful comparison; our scene model and compiler interface should stand independently of its adapters and GPUI element lifecycle.
+
+## Blitz evaluation before further renderer expansion
+
+Inspected on 2026-10-12. The source snapshot is Blitz commit
+`45496d9288b063719ebeae4e0761273f7881b3d7`, whose workspace version is
+`0.3.0-beta.2`. Published `blitz-dom` documentation currently describes `0.2.4`.
+Those APIs differ: this source uses versioned `NodeId` handles, and its event
+handler receives a document rather than the older mutator argument. An experiment
+must pin one revision rather than mix examples from these versions.
+[Pinned workspace](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/Cargo.toml),
+[published document API](https://docs.rs/blitz-dom/0.2.4/blitz_dom/).
+
+**Research conclusion:** Blitz is a credible alternative presentation backend
+for our existing compiler and shared runtime. Its HTML/CSS document model is
+closer to our web authoring contract than translating every supported behavior
+into GPUI elements ourselves. This is an architectural assessment, not a measured
+performance result or an adopted backend. The next investigation should be an
+isolated integration experiment before additional GPUI-specific feature work.
+The implemented GPUI path remains available for comparison.
+
+### What Blitz actually supplies
+
+Blitz separates document behavior from its shell and drawing implementation:
+
+| Layer | Responsibility | Relevance to our target |
+| --- | --- | --- |
+| `blitz-dom` | Retained nodes, computed styles, layout, input and document interaction | Receives our compiled structure and direct updates |
+| Stylo | CSS parsing, selectors, cascade, computed values and restyling | Replaces the backend's restricted CSS interpretation |
+| Taffy and `stylo_taffy` | Box layout and conversion from computed CSS | Reuses an existing layout implementation |
+| Parley | Text shaping, inline layout and editable text support | Supplies paragraph/control presentation work we currently maintain |
+| `blitz-paint` | Document-to-AnyRender drawing | Supplies the native paint path |
+| `blitz-shell` | Winit windows/input and optional platform services | Can host the document and chosen renderer |
+
+HTML parsing, resource fetching, and application wrappers are separate modules.
+Our compiler can create nodes directly, so parsing a new HTML string after every
+update is unnecessary. We need the document, presentation and platform layers;
+we do not need another application state system.
+[Core API](https://docs.rs/blitz-dom/0.2.4/blitz_dom/),
+[pinned shell](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-shell/src/window.rs),
+[pinned paint crate](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-paint/Cargo.toml).
+
+The current source also contains a separate Boa-based JavaScript execution crate,
+enabled by an optional browser-app feature. That is not a ready Bun binding and
+is not required to drive `BaseDocument`. Our authored JavaScript should continue
+executing in the existing runtime. Claims that Blitz has no JavaScript execution
+at all are therefore too broad for this snapshot.
+[Optional script crate](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-vibey-script/Cargo.toml),
+[browser feature selection](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/apps/browser/Cargo.toml).
+
+### How our compiled architecture would connect
+
+```text
+Ordinary TypeScript / JSX / CSS
+          |
+Existing shared semantic analysis and desktop ownership/slot emission
+          |
+Existing core runtime: access tables, state cells, effects, refs, subscriptions
+          |
+Ordered native publication and event acknowledgments
+          |
+Blitz adapter: owner/source identities and document mutations
+          |
+Retained Blitz document -> Stylo -> Taffy/Parley -> native drawing
+```
+
+The adapter would map `(owner ID, owner generation, source node)` to Blitz node
+identities. Elements and text nodes come from immutable templates. Regions use
+non-layout anchors and ranges of owned roots, so a component or fragment does not
+introduce a CSS wrapper. Slot writes update the mapped text node or control value;
+property writes update attributes/styles; keyed order operations move the
+existing roots; retirement removes their nodes and mappings. This preserves the
+framework's ownership and keyed state independently of the renderer.
+
+`DocumentMutator` exposes creation, attribute/text changes, insertion around
+anchors, movement and removal. Its flush handles deferred document work; dropping
+it requests a redraw when mutations occurred. The current `NodeId` includes a
+storage generation, which complements rather than replaces our owner generation.
+These APIs establish a plausible mapping; the proposed adapter is not yet built.
+[Pinned mutator](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/mutator.rs),
+[versioned node identity](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-traits/src/node_id.rs).
+
+### Integration boundaries we must resolve
+
+**CSS transport.** Our current compiler's `desktop/css.ts` lowers CSS into a
+restricted selector/declaration schema and rejects at-rules and other syntax
+before Rust receives it. `SceneTemplate.stylesheets` carries that restricted
+schema; its singular `stylesheet` field identifies a source, rather than carrying
+raw stylesheet text. A renderer swap alone would preserve these restrictions.
+A Blitz experiment needs an explicit transport for ordinary built/scoped CSS
+text, source identity and resource URLs. Stylo should interpret the resulting
+CSS. Libraries that generate CSS require no special authoring rules; compatibility
+depends on their emitted CSS and resources. We must test the actual output,
+including variables, layers, media queries and selector escaping.
+
+**Native preparation.** The existing Rust `Scene` is not wholly independent of
+GPUI presentation: template preparation, the tag registry, flow grouping and
+the accepted custom cascade already encode that target's capabilities. Reuse
+transaction sequencing, topology/owner validation and acceptance contracts, but
+give the alternative backend its own preparation boundary. It should not first
+run our GPUI cascade/paragraph grouping and then ask Blitz to repeat them.
+Shared compiler analysis and the semantic runtime remain unchanged.
+
+**Atomic acceptance.** A mutator changes its live document and can initiate
+resource/platform work before its final flush. It is batching, not our
+validate-and-accept transaction contract, and does not establish rollback.
+The adapter needs complete operation/reference validation and a defined staging
+or recovery strategy before applying a candidate. A failure after live mutation
+cannot be acknowledged as an ordinary refusal with the previous scene intact.
+Ambiguous acceptance must retain the existing connection-failure policy.
+
+**Event cancellation and input ordering.** The stock `EventDriver` invokes a
+synchronous Rust handler, then performs the default if it was not canceled.
+Sending an event to Bun and returning immediately would allow defaults before
+JavaScript can prevent them. The adapter must retain relevant events/defaults
+until the existing acknowledgment arrives, then resume native behavior exactly
+once after checking live identity. `BaseDocument.handle_dom_event` is a public
+default-action entry point worth testing; generated and compatibility events
+still need correct routing. Blocking the native UI thread while JavaScript waits
+for a publication reply can deadlock this protocol. Delayed controlled-input
+writes must also preserve newer typing and composition, as our current GPUI
+adapter does.
+[Pinned driver](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/events/driver.rs),
+[document/default-action API](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/document.rs).
+
+**Ordinary refs and libraries.** Blitz provides Rust-side focus, selection,
+geometry and document queries, including fragment rectangles for inline sources.
+Those methods do not automatically turn our JavaScript ref into an `HTMLElement`
+or make synchronous geometry available across the current asynchronous bridge.
+Keep ordinary authoring calls and implement their real capabilities deliberately.
+Third-party libraries using ordinary JavaScript or our existing subscription
+metadata keep the shared core path; browser-dependent libraries still require
+the corresponding ref/document/platform operations. An engine's HTML support is
+not a promise of arbitrary browser-library compatibility.
+
+### Retention and performance evidence
+
+Blitz already has incremental native work. In this snapshot, incremental layout
+defaults to enabled. Resolution performs style traversal, damage propagation,
+formatting-context construction, layout, transforms and paint-tree preparation;
+damage tracking skips unaffected subtrees and invalidates relevant layout caches.
+Text mutation marks the text and its parent damaged, so a precise compiler slot
+write can still require paragraph or ancestor work. We should reuse and measure
+that pipeline rather than introduce another layout cache or assume direct writes
+make rendering constant-time.
+[Pinned resolution](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/resolve.rs),
+[damage tracking](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/layout/damage.rs),
+[configuration](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/config.rs).
+
+The official project still describes beta maturity. Its published feature tables
+list gaps such as `overflow:auto`, selects and observer APIs, and table layout is
+emulated using grid. These are upstream reports, not results from our fixtures;
+some tables also lag newer source features. At this inspected revision, the
+official CSS WPT dashboard reports a 54.28% interop score. That is an upstream CSS
+test metric, not an application compatibility percentage or a speed comparison.
+[CSS status](https://blitz.is/status/css),
+[element status](https://blitz.is/status/elements),
+[event status](https://blitz.is/status/events),
+[revision-linked WPT results](https://blitz.is/status/wpt/css).
+
+### The next concrete experiment and decision gates
+
+Source inspection is complete for the integration surfaces above. No Blitz
+application has been compiled, linked, run or benchmarked in this investigation.
+We should now build an isolated Rust document adapter at the pinned revision,
+driven by our existing JS runtime and transaction protocol, before committing
+to replacement or expanding more GPUI presentation code.
+
+The first fixture should exercise the existing counter and keyed Todo behavior,
+cross-module state, forwarded inline content, ordinary CSS, and retained input
+state. Compare with Chromium and the existing GPUI path on the same authored
+behavior. Verify browser layout boxes and line fragments separately from font
+rasterization. Record event-to-paint latency, typing bursts, native style/layout
+work, startup and idle behavior under equivalent conditions. A Rust-only static
+HTML screenshot does not validate our event/publication integration.
+
+Acceptance requires unchanged application source and shared semantic behavior,
+correct canceled defaults and IME/edit reconciliation, keyed focus/selection
+survival, coherent refusal/retirement, and useful CSS fidelity without maintaining
+a second cascade or paragraph engine. Only those results can justify choosing
+Blitz, retaining GPUI, or narrowing the supported native contract. Ordinary Bun
+authoring and our optimized DOM list path are outside the replacement scope.
 
 ## What the existing framework contributes
 
@@ -462,7 +643,7 @@ Compile fixtures for a counter, child prop update, branch replacement, keyed row
 
 Instrument update functions, bridge calls, touched scene records, layout visits, text shaping, and paint regeneration. The resulting traces must show that unrelated instances remain untouched where dependency proofs permit it. Measure input-to-presentation latency, frame work, idle CPU activity, and repeated mount/disposal behavior.
 
-Use GPUI/Taffy for the current layout, text and presentation path. Evaluate native geometry reuse, bridge encoding, and thread arrangement with those fixtures. Comparisons with GPUIX must match visible behavior and lifecycle guarantees. Performance claims follow those measurements; the core commitment is compiled structure, direct native slot updates, persistent host records, and coherent publication.
+GPUI/Taffy remains the implemented layout, text and presentation path. Before expanding that adapter further, run the Blitz integration experiment described above against the existing fixtures. Evaluate native geometry reuse, bridge encoding, and thread arrangement with equivalent behavior. Comparisons with either Blitz or GPUIX must match visible behavior and lifecycle guarantees. Performance claims follow those measurements; the core commitment is compiled structure, direct native slot updates, persistent host records, and coherent publication.
 
 ## Stability priorities after native text input
 
