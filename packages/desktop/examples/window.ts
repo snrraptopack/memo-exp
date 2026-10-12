@@ -11,6 +11,7 @@ import { buildDesktopEntry } from '@memoized-dom/desktop/dev';
 import { runTodoSmoke } from './testing/todo';
 import { runReactivitySmoke } from './testing/reactivity';
 import { runInlineBoxSmoke } from './testing/inline-boxes';
+import { runAuthoredFocusSmoke, runFocusSmoke } from './testing/focus';
 
 const entry =
   process.argv.find((arg) => arg.startsWith('--entry='))?.slice(8) ??
@@ -28,11 +29,12 @@ const executable =
 const todoSmoke = process.argv.includes('--todo-smoke');
 const reactivitySmoke = process.argv.includes('--reactivity-smoke');
 const inlineSmoke = process.argv.includes('--inline-smoke');
+const focusSmoke = process.argv.includes('--focus-smoke');
 const compareBrowser = process.argv.includes('--compare-browser');
 const host = createProcessHost({
   executable,
   window: true,
-  args: process.argv.includes('--smoke') || todoSmoke || reactivitySmoke || inlineSmoke ? ['--smoke'] : [],
+  args: process.argv.includes('--smoke') || todoSmoke || reactivitySmoke || inlineSmoke || focusSmoke ? ['--smoke'] : [],
 });
 const templates = new Map<string, SceneTemplate>();
 const layoutSnapshots: SceneSnapshot[] = [];
@@ -102,7 +104,7 @@ async function waitForInput(source: number, value: string): Promise<SceneSnapsho
 const failures: unknown[] = [];
 try {
   await host.ready;
-  if (process.argv.includes('--smoke') || todoSmoke || reactivitySmoke || inlineSmoke) {
+  if (process.argv.includes('--smoke') || todoSmoke || reactivitySmoke || inlineSmoke || focusSmoke) {
     // Exercise the real GPUI clock before scene publication. Clock admission
     // alone must not resolve this promise; the native frame callback must run.
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -123,7 +125,12 @@ try {
     () => import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`),
   );
   const root = roots.get('root')!;
-  if (inlineSmoke) {
+  if (focusSmoke) {
+    await runAuthoredFocusSmoke(host, () => events);
+    await root.unmount();
+    smokeReport = await runFocusSmoke({ app, host, settleEvents: () => events });
+    smokeReport.standardAuthoring = true;
+  } else if (inlineSmoke) {
     smokeReport = await runInlineBoxSmoke({
       app, host, waitForFrame,
       unmountExample: () => root.unmount(),
@@ -525,7 +532,9 @@ if (smokeReport && compareBrowser) {
 }
 if (smokeReport)
   console.log(
-    inlineSmoke
+    focusSmoke
+      ? 'GPUI ordinary ref focus/blur smoke test passed:'
+      : inlineSmoke
       ? 'GPUI inline sizing/hover/pointer smoke test passed:'
       : reactivitySmoke
       ? 'GPUI shared state/async/effects/refs smoke test passed:'

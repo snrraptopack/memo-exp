@@ -72,7 +72,10 @@ export interface SceneElement {
   readonly id: string;
   readonly value: string;
   getAttribute(name: string): string | null;
+  /** Native diagnostic read; synchronous browser geometry is not implemented yet. */
   measure(): Promise<import('../bridge/protocol').SceneMeasurement>;
+  focus(options?: FocusOptions): void;
+  blur(): void;
 }
 
 export type SceneRowKey = string | number;

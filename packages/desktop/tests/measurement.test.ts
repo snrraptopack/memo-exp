@@ -1,7 +1,6 @@
 import { expect, it } from 'bun:test';
 import {
   createDesktopApplication,
-  measureElement,
   mountScene,
   type DesktopHost,
   type SceneElement,
@@ -67,20 +66,19 @@ it('keeps an unrelated publication failure for its caller and a later applicatio
   semantic.dispose();
 });
 
-it('measures an ordinary compiled assignment ref inside an async reactive handler', async () => {
+it('measures an internal native ref inside an async reactive handler', async () => {
   const runtimePath = pathToFileURL(resolve(import.meta.dirname, '../src/index.ts')).href;
   const graph = compileDesktopGraph(`
-    import { measureElement } from ${JSON.stringify(runtimePath)};
     function Caption({children}) { return <span>{children}</span>; }
     export function App() {
-      let label: HTMLElement | undefined;
+      let label;
       let width = 0;
       let fragments = 0;
       return <main>
         <p><Caption><strong ref={label}>Wrapped text</strong></Caption></p>
         <button onClick={async () => {
           if (!label) return;
-          const measurement = await measureElement(label);
+          const measurement = await label.measure();
           width = Math.round(measurement.bounds?.width ?? 0);
           fragments = measurement.rects.length;
         }}>Measure</button>
@@ -136,7 +134,7 @@ function geometry(element: Pick<SceneElement, 'handle' | 'node'>): SceneMeasurem
   return { handle: element.handle, node: element.node, sequence: 1, frame: 2, rects: [], bounds: null };
 }
 
-it('measures accepted callback refs through the same capability and rejects foreign objects', async () => {
+it('measures accepted callback refs through the retained native capability', async () => {
   let element!: SceneElement;
   let reading!: Promise<SceneMeasurement>;
   const calls: string[] = [];
@@ -153,13 +151,12 @@ it('measures accepted callback refs through the same capability and rejects fore
   });
   try {
     const owner = app.mount(() => mountScene(template, [], [], {
-      refs: [{ node: 0, value(ref) { element = ref; reading = measureElement(ref); } }],
+      refs: [{ node: 0, value(ref) { element = ref; reading = ref.measure(); } }],
     }));
     await owner.ready;
     expect(await reading).toEqual(geometry(element));
     expect(calls).toEqual(['accept', 'measure']);
-    expect(await element.measure()).toEqual(await measureElement(element));
-    await expect(measureElement({ ...element })).rejects.toThrow('native desktop element ref');
+    expect(await element.measure()).toEqual(geometry(element));
     await owner.dispose();
     await expect(element.measure()).rejects.toThrow('disconnected');
   } finally {

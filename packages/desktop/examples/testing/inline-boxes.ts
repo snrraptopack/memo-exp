@@ -1,4 +1,4 @@
-import { measureElement, mountScene, type DesktopApplication, type SceneElement, type SceneMeasurement, type SceneSnapshot, type SceneTemplate } from '@memoized-dom/desktop';
+import { mountScene, type DesktopApplication, type SceneElement, type SceneMeasurement, type SceneSnapshot, type SceneTemplate } from '@memoized-dom/desktop';
 import type { DesktopProcessHost } from '@memoized-dom/desktop/host';
 
 /** Verify placement, sizing and hit tests through actual GPUI platform events. */
@@ -286,11 +286,6 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     stalePointerRejected: true,
   };
 
-  await pointer('measure-inline', 'click');
-  await waitFor(snapshot => snapshot.instances.some(instance =>
-    instance.texts.some(text => text.startsWith('Measured width: ') && !text.includes('Measured width: 0'))
-      || instance.text_groups.some(group => group.text.startsWith('Measured width: ') && !group.text.includes('Measured width: 0'))));
-
   // Retire the authored example first, so no mounted template supplies native
   // event interests. This fixture isolates presentation-only hover and clipping.
   await unmountExample();
@@ -359,7 +354,7 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     { node: 5, value(element) {
       wrappedRef = element;
       // Request immediately on acceptance, without an inspector/frame wait.
-      initialMeasurement = measureElement(element);
+      initialMeasurement = element.measure();
     } }],
   }));
   let fixtureEvents = 0;

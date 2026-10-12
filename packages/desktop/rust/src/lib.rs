@@ -141,6 +141,18 @@ impl Instance {
 }
 
 impl Scene {
+    pub fn has_focus_control(&self, handle: Handle, node: usize) -> bool {
+        self.instances.get(&handle.id).is_some_and(|instance| {
+            instance.handle == handle
+                && instance.template.presentation.items.iter().any(|item| {
+                    item.source == node
+                        && matches!(
+                            item.kind,
+                            presentation::ItemKind::Button | presentation::ItemKind::Input
+                        )
+                })
+        })
+    }
     /// Capabilities address accepted element sources, including unboxed inline tags.
     pub fn has_element(&self, handle: Handle, node: usize) -> bool {
         self.instances.get(&handle.id).is_some_and(|instance| {

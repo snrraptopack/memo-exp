@@ -136,6 +136,33 @@ pub struct SceneElement {
 }
 
 impl Renderer {
+    /// False means the accepted control has not been prepared by a frame yet.
+    pub fn set_focus(
+        &self,
+        scene: &Scene,
+        command: memoized_dom_desktop_host::bridge::FocusRequest,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<bool, String> {
+        if !scene.has_element(command.handle, command.node) {
+            return Err("Focus requires a live element source".into());
+        }
+        if !scene.has_focus_control(command.handle, command.node) {
+            // Like HTMLElement.focus(), an element without focusability is inert.
+            return Ok(true);
+        }
+        let key = (command.handle.id, command.handle.generation, command.node);
+        let Some(control) = self.controls.get(&key) else {
+            return Ok(!command.focused);
+        };
+        if command.focused {
+            window.focus(control, cx);
+        } else if control.is_focused(window) {
+            // Blurring another ref must never clear the currently focused input.
+            window.blur(cx);
+        }
+        Ok(true)
+    }
     pub fn measurement_pending(&self) -> bool {
         !self.measurements.borrow().is_empty()
     }

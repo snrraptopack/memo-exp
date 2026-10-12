@@ -24,6 +24,11 @@ enum Command {
         handle: Handle,
         node: usize,
     },
+    Focus {
+        handle: Handle,
+        node: usize,
+        focused: bool,
+    },
     Redraw,
     Frame,
     Acknowledge {
@@ -40,6 +45,7 @@ enum Command {
 }
 
 pub struct Outcome {
+    pub focus: Option<FocusRequest>,
     pub response: Value,
     pub changed: bool,
     pub inspect: bool,
@@ -48,6 +54,13 @@ pub struct Outcome {
     pub event_result: Option<(u64, bool)>,
     pub frame: bool,
     pub measure: Option<(Handle, usize)>,
+}
+
+#[derive(Clone, Copy)]
+pub struct FocusRequest {
+    pub handle: Handle,
+    pub node: usize,
+    pub focused: bool,
 }
 
 pub fn process_line(scene: &mut Scene, line: &str) -> Outcome {
@@ -68,6 +81,12 @@ pub fn process_line_with_prepare(
         outcome.response = json!({
             "id": outcome.response["id"],
             "error": "Element measurement requires a native window host"
+        });
+    }
+    if outcome.focus.take().is_some() {
+        outcome.response = json!({
+            "id": outcome.response["id"],
+            "error": "Element focus requires a native window host"
         });
     }
     outcome
@@ -94,6 +113,7 @@ pub fn process_line_with_validation(
     let mut event_result = None;
     let mut frame = false;
     let mut measure = None;
+    let mut focus = None;
     let response = match serde_json::from_str::<Request>(line) {
         Ok(request) => {
             let result = if request.version != 1 {
@@ -122,6 +142,22 @@ pub fn process_line_with_validation(
                             Err("Measurement requires a live element source".into())
                         } else {
                             measure = Some((handle, node));
+                            Ok(Value::Null)
+                        }
+                    }
+                    Command::Focus {
+                        handle,
+                        node,
+                        focused,
+                    } => {
+                        if !scene.has_element(handle, node) {
+                            Err("Focus requires a live element source".into())
+                        } else {
+                            focus = Some(FocusRequest {
+                                handle,
+                                node,
+                                focused,
+                            });
                             Ok(Value::Null)
                         }
                     }
@@ -176,6 +212,7 @@ pub fn process_line_with_validation(
         }
     };
     Outcome {
+        focus,
         response,
         changed,
         inspect,
@@ -190,6 +227,75 @@ pub fn process_line_with_validation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn focus_commands_require_live_controls_and_refuse_headless_execution() {
+        let mut scene = Scene::default();
+        scene
+            .install(
+                serde_json::from_value(json!({
+                    "id":"controls", "nodes":[
+                        {"kind":"element","tag":"main","parent":null,"text":""},
+                        {"kind":"element","tag":"button","parent":0,"text":""},
+                        {"kind":"element","tag":"input","parent":0,"text":""},
+                        {"kind":"text","parent":1,"text":"Button"}
+                    ], "slots":[], "events":[]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        scene
+            .commit(
+                serde_json::from_value(json!({
+                    "sequence":1,"operations":[{
+                        "kind":"mount","handle":{"id":1,"generation":1},
+                        "template":"controls","values":[]
+                    }]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        let request = |generation, node, focused| {
+            json!({
+                "id":5,"version":1,"kind":"focus",
+                "handle":{"id":1,"generation":generation},"node":node,"focused":focused
+            })
+            .to_string()
+        };
+        for node in [1, 2] {
+            for focused in [true, false] {
+                let outcome = process_line_with_validation(
+                    &mut scene,
+                    &request(1, node, focused),
+                    |_| Ok(()),
+                );
+                assert_eq!(outcome.focus.unwrap().focused, focused);
+                assert!(!outcome.changed);
+                let outcome = process_line(&mut scene, &request(1, node, focused));
+                assert!(
+                    outcome.response["error"]
+                        .as_str()
+                        .unwrap()
+                        .contains("window host")
+                );
+            }
+        }
+        assert!(!scene.has_focus_control(
+            Handle {
+                id: 1,
+                generation: 1
+            },
+            0
+        ));
+        for (generation, node) in [(2, 1), (1, 3), (1, 99)] {
+            let outcome =
+                process_line_with_validation(&mut scene, &request(generation, node, true), |_| {
+                    Ok(())
+                });
+            assert!(outcome.focus.is_none());
+            assert!(outcome.response["error"].is_string());
+        }
+        assert_eq!(scene.sequence(), 1);
+    }
     #[test]
     fn measurement_validates_sources_and_requires_a_window_adapter() {
         let mut scene = Scene::default();

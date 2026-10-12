@@ -1,4 +1,5 @@
 mod events;
+mod focus;
 mod input;
 mod measurement;
 mod output;
@@ -319,7 +320,20 @@ fn main() {
                             } else {
                                 false
                             };
+                            let deferred_focus = if let Some(command) = outcome.focus {
+                                focus::request(
+                                    view,
+                                    window,
+                                    cx,
+                                    command,
+                                    outcome.response["id"].clone(),
+                                );
+                                true
+                            } else {
+                                false
+                            };
                             if !deferred_measurement
+                                && !deferred_focus
                                 && let Err(error) = view.output.send(&outcome.response)
                             {
                                 eprintln!("Desktop response bridge failed: {error}");

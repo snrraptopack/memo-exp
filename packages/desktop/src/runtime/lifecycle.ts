@@ -5,11 +5,17 @@ import type { SceneElement, SceneMountOptions } from './application';
 import type { PreparedProperties } from './properties';
 import { affected } from './values';
 import type { SceneHandle, SceneMeasurement } from '../bridge/protocol';
-import { registerMeasurement } from './measurement';
 
 type Measure = (handle: SceneHandle, node: number) => Promise<SceneMeasurement>;
+type SetFocus = (handle: SceneHandle, node: number, focused: boolean) => Promise<void>;
 
-export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions, measure: Measure): void {
+export function configureOwnerLifecycle(
+  owner: Owner,
+  options: SceneMountOptions,
+  measure: Measure,
+  setFocus: SetFocus,
+  reportAsync: (error: unknown) => void,
+): void {
   for (const disposer of options.cleanups ?? []) cleanup(owner.entityId, disposer);
   const effects = (options.effects ?? []).map((binding) => ({ binding, values: binding.read() }));
   owner.effectInvalidations = (sources) => {
@@ -42,7 +48,7 @@ export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions
       entry.value = prepared.ref;
       if (owner.mounted && !owner.disposed) {
         entry.dispose = mountRef(
-          elementHandle(owner, index, measure),
+          elementHandle(owner, index, measure, setFocus, reportAsync),
           prepared.ref as RefValue<SceneElement>,
         );
       }
@@ -58,7 +64,7 @@ export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions
     for (const ref of options.refs ?? []) {
       const node = owner.template.nodes[ref.node];
       if (!node || node.kind !== 'element') throw new Error('Desktop ref requires an element');
-      const element = elementHandle(owner, ref.node, measure);
+      const element = elementHandle(owner, ref.node, measure, setFocus, reportAsync);
       cleanup(owner.entityId, mountRef(element, ref.value));
     }
     activated = true;
@@ -67,20 +73,39 @@ export function configureOwnerLifecycle(owner: Owner, options: SceneMountOptions
   };
 }
 
-function elementHandle(owner: Owner, index: number, measure: Measure): SceneElement {
+function elementHandle(
+  owner: Owner,
+  index: number,
+  measure: Measure,
+  setFocus: SetFocus,
+  reportAsync: (error: unknown) => void,
+): SceneElement {
   const node = owner.template.nodes[index];
   if (!node || node.kind !== 'element') throw new Error('Desktop ref requires an element');
+  const connected = (): void => {
+    if (!owner.mounted || owner.disposed) throw new Error('Cannot use a disconnected desktop element');
+  };
+  const changeFocus = (focused: boolean): void => {
+    // HTMLElement focus/blur return void and disconnected elements are inert.
+    // Transport acknowledgment belongs to the adapter, never to author code.
+    if (!owner.mounted || owner.disposed) return;
+    void setFocus(owner.instance.handle, index, focused).catch(reportAsync);
+  };
   const element: SceneElement = Object.freeze({
     handle: owner.instance.handle,
     node: index,
     tagName: node.tag.toUpperCase(),
     ownerDocument: null,
+    focus(options?: FocusOptions) {
+      if (options !== undefined) throw new Error('Native focus options are not implemented');
+      changeFocus(true);
+    },
+    blur: () => changeFocus(false),
     async measure() {
-      const connected = () => owner.mounted && !owner.disposed;
-      if (!connected()) throw new Error('Cannot measure a disconnected desktop element');
+      connected();
       const result = await measure(owner.instance.handle, index);
       // Retirement can race with a read already sent to the native process.
-      if (!connected()) throw new Error('Cannot measure a disconnected desktop element');
+      connected();
       return result;
     },
     get isConnected() {
@@ -103,6 +128,5 @@ function elementHandle(owner: Owner, index: number, measure: Measure): SceneElem
       );
     },
   });
-  registerMeasurement(element);
   return element;
 }

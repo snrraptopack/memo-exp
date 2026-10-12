@@ -34,6 +34,12 @@ Shared analysis: state, reads, writes, structure, ownership
 Native input --> live handler --> authored state change --> next transaction
 ```
 
+Application authoring is defined by the core web framework. Desktop implements
+supported operations as a host adapter, preserving ordinary ref method names,
+return types and source calls. Native transport and preparation waits stay
+internal. Browser capability gaps need implementations in that adapter rather
+than alternate application APIs or added awaits in shared source.
+
 ## GPUIX as an architectural reference
 
 The reference snapshot is GPUIX commit `1a007487ac4c1f0be2ec4e090281ae01e25ec17c`, inspected on 2026-10-08. The following describes that implementation, independently of our proposal.
@@ -162,7 +168,7 @@ Setup derivations and eligible if/switch calculations consume the shared source-
 
 `desktop/tests/runtime-parity.test.ts` verifies same-loaded-module isolation, setup replay, local and module control flow, async segments and rejection, retained local timers, native async event acknowledgment, effect gating and feedback, derived-value effect guards, module effect isolation, rejected candidate cancellation, ref accepted values, reverse cleanup, and teardown failures. Shared ref-value compilation, prelude ordering, module control flow, and execution-site instrumentation live outside the DOM emitter. The optimized DOM list implementation remains intact.
 
-Native refs provide retained handle and node identity, tagName, connection state, accepted attributes, accepted input value, and explicit asynchronous measurement. They do not implement HTMLElement's full browser document, synchronous geometry, focus, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
+Native refs provide retained handle and node identity, tagName, connection state, accepted attributes, accepted input value, ordinary input/button focus and blur, and internal asynchronous measurement. They do not implement HTMLElement's full browser document, synchronous geometry, or scrolling API. JSX keeps the framework's ordinary authoring types; unsupported native capabilities must be implemented deliberately. The [desktop package README](../packages/desktop/README.md) records the exact scene, ref, event, tag, attribute, CSS, and lifecycle contracts, including the current gap between browser authoring types and native capabilities. Generator mutation callbacks still receive an iterator-lifecycle diagnostic. Provider replay, package component imports outside the linked relative graph, and direct re-export-from syntax remain explicit integration boundaries. Module cell defaults follow the shared compiler's supported scalar/literal-store initialization rules. Uncompiled consumers of raw ESM bindings do not receive application-cell live reads.
 
 ## Package and compiler boundaries
 
@@ -761,8 +767,8 @@ with its first line above the viewport. This changes debugging/testing admission
 not application event routing or the DOM list implementation.
 
 Native ref measurement consumes these existing box and glyph rectangles through
-the ordered publication connection. `measureElement(ref)` accepts the framework's
-ordinary JSX authoring type; registered native objects also expose `measure()`.
+the ordered publication connection. `SceneElement.measure()` is currently an
+adapter/test capability; synchronous browser geometry remains unimplemented.
 The native command validates the accepted owner generation and element index.
 A read against an unpainted accepted sequence waits in the GPUI adapter and
 resolves after every root paints, with another live-source check. It never uses
@@ -773,9 +779,11 @@ rectangles and null union bounds. Headless hosts explicitly reject the capabilit
 JavaScript also checks connection state before and after the asynchronous read,
 so retirement cannot publish a usable result through a captured stale ref.
 No layout engine, reactive scheduler or subscription bridge is added. The native
-inline smoke measures a ref immediately on acceptance, compares scrolled wrapped
-rectangles with GPUI's geometry, and exercises an ordinary TSX async measurement
-button. Pending application state requires the existing explicit flush boundary.
+inline smoke measures a native ref immediately on acceptance and compares scrolled
+wrapped rectangles with GPUI's geometry. Pending application state requires the
+existing explicit flush boundary. Desktop helper imports were removed from the
+public authoring API; standard synchronous geometry needs native frame snapshots
+available to JavaScript, rather than a promise returned by a browser method.
 
 The measurement example also exposed a desktop drain wait gap. Family-specific
 flushes required application-wide quiescence but awaited only their selected
@@ -784,3 +792,22 @@ limit without new reactive writes. Desktop now waits for overlapping publication
 jobs while leaving unrelated failures assigned to their own callers and the
 later application flush. This changes only the asynchronous native publication
 adapter; core scheduling and DOM list behavior remain unchanged.
+
+Native focus capabilities use the retained GPUI control handles and existing
+focus-in/focus-out subscriptions. Ordinary authored refs call `ref.focus()` and
+`ref.blur()` directly, without desktop helper imports. JavaScript serializes
+commands behind already requested publications;
+Rust validates accepted source generation and presentation kind. A focus request
+from an initial callback ref retries on the native frame clock until the control
+has been prepared, revalidating the source before each attempt. It does not
+create another input entity, dispatch synthetic browser events, or publish scene
+transactions. GPUI supplies the focus transitions through the ordinary event
+bridge. Repeated focus is idempotent; blur only clears its own focused control.
+The current contract focuses inputs and buttons; nonfocusable elements and
+disconnected refs are inert. Headless hosts and stale native addresses refuse
+internally. Native tests check initial ref focus,
+actual platform input delivery, transition order, stale/retired targets, unrelated
+blur, and ordinary TSX handlers with reactive focus/blur counters. Both methods
+return void; transport promises and preparation waits remain internal, so author
+code uses the same calls as the web target without imports or awaits. Native
+scroll capabilities and additional focusable source kinds remain future work.

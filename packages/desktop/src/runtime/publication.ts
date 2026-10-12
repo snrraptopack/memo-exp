@@ -63,6 +63,14 @@ export function createPublicationQueue(host: DesktopHost) {
   };
 
   return {
+    setFocus(handle: SceneHandle, node: number, focused: boolean): Promise<void> {
+      seal();
+      return serialize(async () => {
+        if (failure) throw failure;
+        if (!host.setFocus) throw new Error('Desktop host does not support element focus');
+        await host.setFocus(handle, node, focused);
+      });
+    },
     measure(handle: SceneHandle, node: number): Promise<SceneMeasurement> {
       // Read accepted geometry after any publications already requested. Do not
       // flush the caller's owner here: this can run inside its active handler.

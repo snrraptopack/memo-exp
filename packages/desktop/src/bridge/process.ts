@@ -298,6 +298,9 @@ export function createProcessHost(options: DesktopProcessOptions): DesktopProces
     async measure(handle, node) {
       return (await request({ kind: 'measure', handle, node })) as SceneMeasurement;
     },
+    async setFocus(handle, node, focused) {
+      await request({ kind: 'focus', handle, node, focused });
+    },
     async redraw() {
       await request({ kind: 'redraw' });
     },

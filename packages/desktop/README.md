@@ -5,6 +5,12 @@ to a retained Rust scene rendered by GPUI. Applications use TSX, ordinary CSS,
 and the normal `mount` API. Rust owns tag semantics, text preparation, native
 controls, layout, and painting.
 
+Application authoring follows the core web framework. Desktop implements those
+contracts inside its host adapter, including ordinary ref method names and return
+types. Unsupported browser capabilities remain implementation gaps to close in
+the adapter; shared application code should not gain native helper imports or
+additional awaits to use an existing web operation.
+
 This README describes the **currently implemented desktop contract**. A tag,
 property, or method appearing in browser JSX types does not establish desktop
 support. Use the tables below when deciding what an application can depend on.
@@ -128,7 +134,9 @@ The exported `SceneElement` contract is defined in
 | `id` | Accepted `id`, or `''` |
 | `value` | Latest acknowledged value slot, otherwise static `value`, otherwise `''` |
 | `getAttribute(name)` | Accepted attribute value, or `null`; use normalized names such as `'class'` |
-| `measure()` | Asynchronously reads the source's rectangles and their union from a completed native frame |
+| `measure()` | Internal adapter/test read of completed native geometry; not a browser authoring API |
+| `focus()` | Requests focus on a retained native input/button and returns `void` |
+| `blur()` | Requests blur of this ref's focused control and returns `void` |
 
 The object is frozen, and its properties are read-only. `value` is a live read of
 the **accepted JavaScript publication**. Native editing may be ahead of that
@@ -139,25 +147,12 @@ Refs bind after native acceptance and before component effects. Rejected or
 canceled candidate scenes never bind refs. Shared ref cleanup clears assignment
 refs and runs callback ref disposers when their owners retire. A previously
 captured handle can remain in user code, but `isConnected` then becomes false.
-It provides no native mutation methods.
 
-Use `measureElement(ref)` from `@memoized-dom/desktop` when an authored JSX ref
-has its ordinary `HTMLElement` type. Both entry points use the same registered
-native ref capability; foreign objects and disconnected refs are rejected.
-
-```tsx
-import { measureElement } from '@memoized-dom/desktop';
-
-let label: HTMLElement | undefined;
-
-async function readLabel() {
-  if (!label) return;
-  const measurement = await measureElement(label);
-  console.log(measurement.rects, measurement.bounds);
-}
-
-return <span ref={label}>Wrapped native text</span>;
-```
+Application refs use the ordinary methods, such as `input.focus()` and
+`input.blur()`. There are no desktop helper imports for these operations.
+Synchronous browser geometry methods remain a capability gap. The native
+measurement transport and `SceneElement.measure()` currently serve adapter and
+native contract tests, rather than a separate application authoring pattern.
 
 `SceneMeasurement` includes the owning `handle`, source `node`, accepted
 `sequence`, completed `frame`, `rects`, and nullable union `bounds`. Coordinates
@@ -175,21 +170,57 @@ before measuring when you need pending application changes accepted. A ref
 retiring during the request rejects the read. Hosts supply the optional
 `DesktopHost.measure` capability; the headless process explicitly refuses it.
 This asynchronous API does not implement synchronous browser geometry methods.
-The inline example's **Measure wrapped text** button exercises an ordinary TSX
-ref, native geometry and async reactive result publication.
+`input.focus()` and `input.blur()` use the retained GPUI focus
+handles, input entities, and focus/blur subscriptions as pointer and keyboard
+interaction. Repeated focus is idempotent; blurring an unfocused ref leaves the
+currently focused control alone.
+
+```tsx
+let input: HTMLInputElement | undefined;
+
+function focusInput() {
+  input?.focus();
+}
+
+return <input ref={input} />;
+```
+
+Both methods return `void`, matching the browser authoring contract. Native
+transport acknowledgment and control preparation belong to the adapter. Author
+code adds no awaits, imports or native ref types. Native transport failures use
+the existing asynchronous application error boundary. The native operation is
+delivered through the process connection; synchronous browser document queries
+such as `document.activeElement` remain outside the implemented desktop surface.
+
+Focus commands run after publications already requested on the connection.
+Initial callback refs can request focus immediately on acceptance: the native
+adapter waits for the control to be prepared, rechecking its live generation
+before applying focus. The internal acknowledgment confirms the native focus operation;
+the resulting events, reactive writes and focus styling settle through the usual
+event/publication/paint path. The command itself does not advance the scene
+sequence. Focus and blur are control operations; they do not introduce a new
+reactive write or an application publication step.
+
+Only native inputs and buttons currently provide focusability. Nonfocusable
+elements and disconnected refs are inert, as on the web. Stale native protocol
+addresses reject internally. The optional adapter host capability is
+`DesktopHost.setFocus(handle, node, focused)`; headless hosts refuse it. Browser
+focus options reject explicitly. Arbitrary `tabIndex` targets and implicit scrolling are not
+implemented. **Focus input ref** and **Blur input ref** in the inline TSX example
+exercise these capabilities with ordinary input refs and reactive event counts.
 
 The following browser capabilities are **not implemented on desktop refs**:
 
 - Tree traversal: `parentNode`, `children`, `childNodes`, `contains`, or selectors.
 - DOM mutation: `appendChild`, `remove`, `textContent`, `innerHTML`, or attribute setters.
 - Mutable property collections: `style`, `classList`, and `dataset`.
-- Imperative control APIs: `focus()`, `blur()`, `click()`, and `scrollIntoView()`.
+- Imperative control APIs beyond the input/button focus contract: `click()` and `scrollIntoView()`.
 - Geometry APIs such as `getBoundingClientRect()` and element scroll properties.
 - Listener registration through `addEventListener()` or `removeEventListener()`.
 - A browser `Document`, DOM constructor identity, or `instanceof HTMLElement`.
 
-Native input focus, scrolling, and event handling exist in the renderer. Their
-existence does not imply an equivalent imperative ref API.
+Input/button ref focus uses the contract above. Scrolling and event handling in
+the renderer do not yet establish other imperative browser ref methods.
 
 ### Event target snapshots
 
@@ -676,7 +707,7 @@ that a DOM library receives a browser element.
 
 Applications use the framework's ordinary JSX and DOM event authoring types.
 **Those types currently describe a broader browser surface than desktop supplies.**
-For example, a ref typed `HTMLInputElement` can offer `focus()` in the editor even
+For example, a ref typed `HTMLElement` can offer `scrollIntoView()` in the editor even
 though the actual desktop ref object has no such method. This is a known typing
 gap, not a supported native API. Compiler diagnostics, native validation, and the
 capabilities listed here determine current behavior. Target capability checking
@@ -696,8 +727,8 @@ When extending desktop, update the relevant contract and this README together:
 `DesktopProcessHost` snapshots and native test commands expose geometry, focus,
 editing, style, and timing information for debugging. They are host/testing APIs,
 not imperative control methods available on application element refs. Geometry
-reads use the explicit `measureElement(ref)` / `SceneElement.measure()` capability
-described above.
+reads currently use the adapter/test `SceneElement.measure()` capability;
+synchronous browser geometry remains unimplemented.
 Pointer test commands accept an optional `frame` from `renderer.frames`. Native
 admission rejects a stale frame or an accepted scene awaiting paint before any
 input is dispatched. The test driver can safely reinspect that rejection without

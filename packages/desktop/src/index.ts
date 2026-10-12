@@ -23,7 +23,6 @@ export { sceneScope } from './runtime/scope';
 export { defineSceneModule } from './runtime/modules';
 export { affected as sceneSourcesChanged } from './runtime/values';
 export { DesktopConnectionError } from './bridge/protocol';
-export { measureElement } from './runtime/measurement';
 export type {
   DesktopHost,
   SceneTemplate,

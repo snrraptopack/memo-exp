@@ -1,5 +1,4 @@
 import type {} from '@memoized-dom/compiler/jsx';
-import { measureElement } from '@memoized-dom/desktop';
 import './app.css';
 
 function Chip({ width }: { width: number }) {
@@ -43,11 +42,10 @@ export function InlineBoxes() {
   let parentClicks = 0;
   let resizeReleases = 0;
   let submissions = 0;
-  // JSX assignment refs are populated by the compiler's accepted ref lifecycle.
   // oxlint-disable-next-line no-unassigned-vars
-  let measuredSource: HTMLElement | undefined;
-  let measuredWidth = 0;
-  let measuredFragments = 0;
+  let focusEditor: HTMLInputElement | undefined;
+  let focusEvents = 0;
+  let blurEvents = 0;
 
   return (
     <main id="inline-page">
@@ -77,20 +75,22 @@ export function InlineBoxes() {
       </div>
       <p>Text inside a normal paragraph still shares one shaped text group.</p>
       <p id="inline-paragraph" class="paragraph-flow">
-        Before <Caption><strong id="caption-text" ref={measuredSource}>wrapped 🙂 glyphs follow component roots across lines</strong></Caption> after.
+        Before <Caption><strong id="caption-text">wrapped 🙂 glyphs follow component roots across lines</strong></Caption> after.
       </p>
-      <button
-        id="measure-inline"
-        onClick={async () => {
-          if (!measuredSource) return;
-          const measurement = await measureElement(measuredSource);
-          measuredWidth = Math.round(measurement.bounds?.width ?? 0);
-          measuredFragments = measurement.rects.length;
-        }}
-      >
-        Measure wrapped text
+      <input
+        id="ref-focus-editor"
+        ref={focusEditor}
+        placeholder="Focus this input through its ref"
+        onFocus={() => focusEvents++}
+        onBlur={() => blurEvents++}
+      />
+      <button id="ref-focus" onClick={() => focusEditor?.focus()}>
+        Focus input ref
       </button>
-      <p>Measured width: {measuredWidth}; fragments: {measuredFragments}</p>
+      <button id="ref-blur" onClick={() => focusEditor?.blur()}>
+        Blur input ref
+      </button>
+      <p>Ref focus events: {focusEvents}; blur events: {blurEvents}</p>
       <p id="hover-only-paragraph" class="paragraph-flow">
         Plain text <span id="hover-only">hover without a handler</span> stays in one paragraph.
       </p>
