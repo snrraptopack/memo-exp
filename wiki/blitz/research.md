@@ -42,7 +42,7 @@ presentation engine or all of its shared changes indiscriminately.
 
 At the main baseline, the exact analysis order lived in `dom/analyze.ts`, and
 `dom/prepare.ts` mixed source work with DOM lowering. Manifest discovery also
-imports DOM preparation. Therefore a second emitter cannot safely reproduce a
+imported DOM preparation. Therefore a second emitter cannot safely reproduce a
 shortened list of passes or pretend the whole compiler is already host-neutral.
 The selected approach is one shared coordinator with explicit target preparation
 hooks, extracted with unchanged DOM output. The previous desktop branch provides
@@ -54,7 +54,21 @@ validation through its profile. Module/instance state, ref exclusion, opacity,
 computeds, control flow, effects, reads, cycle checks and list ownership analysis
 run in the shared order. Cycle and list source checks are not optional target
 finishing hooks. A non-DOM profile can produce source facts without a DOM allocator.
-Project/manifest discovery still needs its explicit target adapter in M1.3.
+
+M1.3 adds `linking/project.ts` for source parsing, identity bootstrap, ordinary
+mount resolution and the fixed-point importer worklist. Manifest serialization
+uses the same source context through a `ManifestAnalysisAdapter`; it no longer
+loads DOM preparation or allocates a DOM context itself. `dom/project.ts` supplies
+the existing intrinsic installation, preparation, row resource classification
+and routed-preparation hooks. Source-only contracts verify canonical state/helper
+facts and access readers through reordered modules and barrels without an emitter.
+
+Bootstrap keeps main's component-only alias seeding on every target. It does not
+adopt the older GPUI branch's broader seeding or cycle diagnostics silently.
+State/helper aliases are refined by the existing worklist. Native emission will
+consume this coordinator through its own preparation adapter, rather than copying
+the resolver or the serializer. The public project option types still describe
+browser initial-content selection; type-only references do not load that backend.
 
 Module cells, access tables and instrumented writes must be present in desktop
 output. Native node creation does not replace them. Rust receives presentation
@@ -108,7 +122,7 @@ shared module and remain exported from the existing setters path.
 
 This establishes the semantic runtime surface, not a running desktop app or an
 implemented Blitz publication adapter. M1.2 adds shared compiler coordination;
-project/manifest adaptation remains next. The original capture contains all 15
+M1.3 adds project/manifest adaptation. The original capture contains all 15
 checked-in compiler fixtures twice, recording 18 emitted results and 12 diagnostics.
 Its `initialContent` labels did not change single-module compilation: that option
 belongs to project compilation. M1.2 verified those historical records and added
@@ -138,6 +152,15 @@ comment nodes, updates attributes/text/styles, moves children and removes nodes.
 This fits compiler-generated templates and direct slot updates without generating
 an HTML string for every render. Application ownership still belongs to our core.
 [Document mutations](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/mutator.rs).
+
+The pinned mutator distinguishes detaching a node from destroying it.
+`remove_node` retains its allocation, while `remove_and_drop_node_with` reports
+each destroyed descendant. Native retirement must use the destruction path and
+clear every corresponding source mapping; a keyed move must retain those nodes.
+The mutator's drop path flushes work and requests redraw, so validation must happen
+before constructing a mutator for live application. These are integration
+requirements for M2, not completed native capabilities.
+[Pinned removal and flush paths](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-dom/src/mutator.rs).
 
 Its current `NodeId` includes a slot version to reject stale storage identities.
 We still need our mapping from owner generation and source node to that ID;

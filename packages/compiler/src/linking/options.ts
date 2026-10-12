@@ -1,10 +1,10 @@
-import type { InternalMemoDomOptions } from '../dom/context';
+import type { AnalysisOptions } from '../context/model';
 import type { CompileModulesOptions } from './model';
 
 export function compilerOptions(
   options: CompileModulesOptions,
   rootId = 'App',
-): InternalMemoDomOptions {
+): AnalysisOptions {
   return {
     ...(options.runtimePath === undefined ? {} : { runtimePath: options.runtimePath }),
     ...(options.hotRuntimePath === undefined ? {} : { hotRuntimePath: options.hotRuntimePath }),

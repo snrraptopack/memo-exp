@@ -12,7 +12,7 @@ Update the status table when the corresponding completion gates pass.
 | Milestone | Status | Evidence |
 | --- | --- | --- |
 | M0 — Architecture and plan | Completed | Initial documentation batch below |
-| M1 — Shared semantic/compiler boundary | In progress | Runtime/core and shared pass coordinator completed; project/manifest target adapter remains |
+| M1 — Shared semantic/compiler boundary | Completed | Runtime/core, shared pass order and project/manifest adaptation; unchanged fixture products, source-only contracts, builds/checks and 2,558 root tests pass |
 | M2 — Native document/transactions | Not started | No Blitz native crate exists yet |
 | M3 — Ordinary native counter | Not started | No desktop compiler/mount integration exists yet |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
@@ -276,3 +276,102 @@ commit, concrete changes, decisions and rationale, reused code, prior communicat
 of existing-code changes, actual checks/results, remaining limits and commit/push
 verification. Link relevant source and commands. Preserve failures honestly and
 do not mark an entire milestone complete based on one partial batch.
+
+## M1.3: shared project discovery and manifest adaptation
+
+Completed batch: 2026-10-12.
+Parent commit: `e1d618e5985e4fc2369ae3ea1c51143f5930c242`.
+M1.2 publication resumed successfully in this run; its exact commit was verified
+against `origin/codex/blitz-renderer` before this implementation began.
+
+### Changes and communication before editing
+
+Communicated the `linker.ts` bootstrap/worklist extraction into
+`linking/project.ts` and the target preparation boundary in manifest discovery
+before changing them. Stated that DOM preparation order and re-export rules would
+remain unchanged, with compiler product parity, linking contracts and root tests
+as the verification gates.
+
+- `linking/project.ts` now owns parsing, canonical entry IDs, duplicate detection,
+  import-then-export identity bootstrap, ordinary mount resolution, reverse importer
+  dependencies and the bounded fixed-point worklist. These are the implementations
+  extracted from current main's linker, not a second graph resolver.
+- `linking/discovery.ts` now serializes the existing source context supplied by a
+  typed `ManifestAnalysisAdapter`. It no longer executes a DOM allocator or imports
+  DOM preparation. Component shapes, state keys, helper summaries, access readers,
+  prop usages and forwarded identities still use their existing planners.
+- `dom/project.ts` supplies the existing DOM intrinsic installation, full preparation,
+  row resource classification and routed-preparation behavior. The browser linker
+  invokes the shared project functions through this adapter.
+- `linking/options.ts` returns shared `AnalysisOptions`, without changing option
+  values. The public `CompiledApplicationRoot` remains an interface and extends
+  the shared source graph root shape.
+- Removed obsolete serializer callback indentation and unreachable optional
+  manifest wrappers. Serialized expressions and their evaluation order are unchanged.
+- Added six project-sharing contracts: reordered barrels/state/helpers/mounts through
+  source-only and DOM adapters; host resolution and Windows IDs; comments/CSS and
+  parse preparation; root uniqueness; bounded nonconvergence; transitive executable
+  dependency refusal for DOM/emission/runtime modules.
+
+No core runtime, optimized DOM list or user application files changed. The existing
+fullstack edit remains outside this batch. No Rust crate or renderer is claimed by
+source-only analysis tests.
+
+### Decisions and corrections
+
+| Decision | Reason |
+| --- | --- |
+| Preserve component-only bootstrap seeding across targets | This batch extracts main's behavior; broader alias seeding from GPUI would be a separate semantic change |
+| Keep target row resource and route preparation facts explicit | A native adapter must not accidentally publish DOM lifetime optimizations or fabricate DOM ABI state |
+| Reuse the exact worklist ordering and convergence guard | Preserve source ordering, helper propagation and current diagnostics |
+| Preserve comments, CSS and original module IDs during collection | A host-neutral graph must retain the frontend product and bundler output identity |
+| Compare the full compiler product against a pre-extraction bundle | Metadata and source maps matter alongside generated code |
+| Check executable dependency edges separately from public option types | Browser initial-content option types remain public compatibility surface, while shared graph execution must not load a DOM backend |
+
+The initial host-resolution fixture expected an access reader for an unwritten
+state binding. It was corrected to exercise a real imported state writer and its
+reader; no compiler change was made to satisfy that mistaken expectation. The
+test frontend was given its required name, and the dependency walker uses the
+existing generic AST node type. Final targeted contracts and Bun checking pass.
+
+### Verification and evidence
+
+- Six new project contracts and the existing semantic/backend contracts:
+  **17 passed, 0 failed**. Source-only contexts have no DOM emission or reason allocator.
+- Captured the pre-change compiler at the parent commit before editing. All **34
+  project products match**, across both initial-content settings, all 15 tracked
+  fixtures and the two valid linked state/barrel/mount/keyed graphs.
+- All 30 historical single-module records still match main (15 distinct cases,
+  including diagnostic captures; see the M1.2 baseline correction).
+- Compiler package build passed. Compiler Bun checking passed in 236 files;
+  checking the new tests/helper passed in 238 files. Oxlint and diff whitespace
+  checks passed.
+- The first full root run returned exit code 1: **2,557 passed, 1 timed out**,
+  across 254 files. The unchanged Chromium markup test timed out after its ten
+  assertions; the isolated original test reproduced that timeout. A temporary
+  ignored diagnostic copy confirmed all assertions finished before waiting in
+  `browser.close()`. That diagnostic run closed normally and passed in 55.76s,
+  with browser process exit code 0. No browser assertion or timeout was changed,
+  and no unrelated browser process was terminated. The subsequent one-worker
+  root rerun resolved the final gate under reduced test load.
+- `bun test --parallel=1 ./tests`: **2,558 passed, 0 failed**, exit code 0,
+  across 254 files, 28 snapshots and 30,435 expectation calls, in 595.69s.
+  This includes the unchanged Chromium contract as well as module linking,
+  hydration, SSR, keyed rows, effects and core lifetime contracts. The earlier
+  timeout remains recorded above; no test was skipped or weakened.
+- The final package rebuild retains the public root interface in its emitted
+  declarations. Bun checking and lint passed after that interface adjustment.
+  No native build was run alongside the JavaScript suite.
+- M1 is complete: the runtime core entry, shared semantic pass order and shared
+  project coordinator have their plan gates. This does not mark any native document,
+  window, event bridge or ref transport capability complete.
+- The batch completion message reports its commit and exact verified remote SHA;
+  source history is available with `git log -- packages/compiler/src/linking/project.ts`.
+
+### Next batch
+
+M2.1 will establish the pinned Blitz native document
+foundation. Begin with template/node ownership, source-to-versioned-node identities,
+comment-anchored ranges and validated mutations. Keep structural acceptance distinct
+from completed layout/paint; do not add a separate cascade, paragraph tree or
+reactivity engine. The mounted counter and reusable window workflow follow in M3.
