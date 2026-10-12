@@ -1,0 +1,312 @@
+# Blitz implementation plan
+
+Updated: 2026-10-12. Branch: `codex/blitz-renderer`.
+
+This is the implementation plan for the architecture described in
+[research.md](research.md). Completed batches and decisions belong in
+[milestones.md](milestones.md). The following architecture is selected; milestones
+are execution gates, not an unresolved design questionnaire.
+
+## Product contract
+
+Applications use the framework's ordinary TypeScript, TSX, CSS imports, component
+composition, event callbacks, refs and mount calls. Selecting a desktop build is
+a host/build configuration choice. Source code does not require desktop event
+types, another state model, another CSS syntax, helper imports for ordinary ref
+methods, or awaits on methods that return void on the web.
+
+The compiler owns dependency analysis and presentation destinations. The shared
+JavaScript core owns application state, access routing, reactive execution,
+subscriptions, effects and cleanup. Rust owns the retained native document,
+native editing/selection, platform input, resources, style/layout and painting.
+Blitz owns HTML/CSS presentation semantics inside that Rust host.
+
+## Change control and reuse rules
+
+1. Start from main `f3e1a794d5652d91bab27590519d6fb04f7a99cc`. Preserve unrelated
+   working edits, including `examples/fullstack/src/Main.tsx`.
+2. Add desktop-specific code in its own modules. Reuse existing semantic modules
+   through their real interfaces. Do not implement another kernel, access
+   resolver, state-cell store, external-source bridge or effect system.
+3. Before changing an existing compiler/runtime/build module, communicate the
+   concrete files or boundary, why the change is needed, its behavioral impact,
+   and the checks that will preserve web behavior. Record that communication in
+   the completed milestone. This applies to cherry-picked/refactored old desktop
+   work too. Communication is required before implementation, not after a diff.
+4. Changes needed for sharing must be narrow, preserve default web behavior, and
+   have compiler-output or runtime parity evidence. Do not merge the entire
+   `codex/desktop-renderer` branch into this branch.
+5. Preserve the optimized DOM list implementation. Native lists consume shared
+   source/key plans and manipulate native ranges; they do not force a rewrite of
+   browser reconciliation or introduce a generic slow path into the web target.
+6. Keep code spaced and readable, with comments explaining ownership, ordering,
+   failure states and non-obvious invariants. Avoid unexplained compressed code.
+7. Run Bun JS tests/checking and `cargo +1.96.0` native checks. Complete one coherent
+   tested batch, update the milestone log, commit and push the branch, then verify
+   its remote commit. Do not run a heavy native link beside the full JS suite.
+
+## Architecture
+
+```text
+Application TSX / modules / ordinary CSS
+                       |
+Shared compiler source graph, analysis, access and render plans
+                       |
+Desktop emitter: immutable templates, destinations, closures and access tables
+                       |
+Shared core: cells -> guarded writes -> dirty entities -> direct update work
+                       |
+Desktop host adapter: ordered publication and accepted lifecycle
+                       |
+Rust host: validated document operations and owner/source -> Blitz node map
+                       |
+Blitz document -> Stylo CSS -> Taffy/Parley layout -> native paint/window
+
+Native input -> event packet -> synchronous JS dispatch -> cancellation reply
+            -> native default / edit report -> ordinary reactive publication
+```
+
+### Code placement and dependency direction
+
+The planned source layout is:
+
+```text
+wiki/blitz/
+  research.md                         inspected architecture and rationale
+  plan.md                             selected architecture and ordered gates
+  milestones.md                       completion evidence and decision history
+
+packages/compiler/src/
+  analysis/                           existing source facts; shared coordinator
+  linking/                            shared project discovery and identity
+  planning/ jsx/ lists/ handlers/      existing target-independent plans
+  dom/                                existing browser target
+  desktop/                            native template/destination emission
+
+packages/runtime/src/
+  core.ts                             additive entry for existing semantic primitives
+  kernel.ts access.ts state-cells.ts   existing implementations, not copies
+  environment.ts refs.ts effect.ts    narrow host hooks where required
+  list*.ts markup.ts setters.ts       existing browser implementation
+
+packages/desktop/
+  src/host/                           template, packet, transport and acceptance types
+  src/runtime/                        core-to-native preparation/publication adapter
+  src/dev/                            entry resolution, Bun build/watch and host launch
+  examples/                           ordinary TSX entry and CSS fixtures
+  tests/                              JS host/compiler/lifecycle contracts
+  rust/Cargo.toml                      one native host crate, library and window binary
+  rust/src/protocol/                  packet decoding and topology validation
+  rust/src/document/                  templates, native identities and mutations
+  rust/src/events/                    routing, pending defaults and acknowledgments
+  rust/src/controls/                  accepted-value/edit-revision reconciliation
+  rust/src/resources/                 asset bases and resource lifetime
+  rust/src/window/                    Blitz shell, paint and inspection hooks
+  rust/tests/                         native contract/integration checks
+```
+
+Paths denote responsibilities, not a requirement to create empty directories
+before they have implementations. Application names remain `desktop`; Blitz is
+the selected native engine dependency rather than a new framework authoring API.
+The compiler imports neither desktop package source nor Rust source. Protocol
+consumers use explicit types and generated package-local capability artifacts
+when build diagnostics need them. Rust is the single authority for native host
+capabilities; generated copies are checked for drift.
+
+The native crate pins Blitz revision
+`45496d9288b063719ebeae4e0761273f7881b3d7` and commits its lockfile. The initial
+window path uses `blitz-shell`, `blitz-paint`, and AnyRender's Vello renderer. Use
+explicit feature selection for actual controls, fonts, accessibility and resources.
+Do not enable the optional Boa application engine or upstream application wrappers.
+
+### Shared compiler integration
+
+Extract one source-analysis coordinator from current DOM coordination, with
+explicit preparation/lowering hooks. DOM keeps its existing hook implementation
+and pass order. The desktop hook uses the same module state, components, helper
+summaries, render callbacks, ref exclusion, volatility, computed/control-flow
+analysis, read collection and graph checks. Manifest discovery and whole-project
+linking use that same coordinator, not a second discovery walk.
+
+The desktop emitter consumes shared component, attribute, child, branch and list
+plans. It emits immutable template records and direct slot/property/structure
+updates alongside the existing core access table and cell ABI. JSX evaluation
+order, thrown exceptions and callback writes remain authored JavaScript semantics.
+
+Reuse the previous desktop branch's shared extraction work only after comparing
+it against current main and its web output. Reuse its template/lifecycle concepts
+where they meet this plan. Its GPUI-specific tag catalogue, cascade, paragraph
+grouping, style conversion and native rendering code do not become Blitz layers.
+
+### Templates and native identities
+
+A template contains a stable module/template key, source nodes, text/value
+destinations, event registrations, structural-region descriptors and stylesheet
+references. Nodes retain authored tag/namespace, parent index, attributes and text.
+Stylesheet payloads contain built CSS text, source identity and resource base URL.
+Styles and class updates follow ordinary CSS semantics, including attribute/style
+replacement and removal.
+
+Instances have an owner ID and generation. Rust maps each instance source index
+to a versioned Blitz node ID. It also records owned root ranges and region anchors.
+Blitz's document tree is the presentation tree; no second cascade, paragraph tree
+or shadow browser DOM is maintained in JavaScript.
+
+Structural regions have non-layout comment boundaries. Component fragments and
+forwarded children insert their roots at these boundaries with no artificial
+element wrapper. Keyed moves retain node identity, focus, selection and native
+editing state. Retirement removes native ranges and source mappings only after
+acceptance. Events from retired generations are ignored.
+
+### Native publication and failure states
+
+The initial transport is a persistent Bun-to-Rust process connection with versioned
+packets and ordered scene sequences. It is replaceable behind the host interface;
+it does not define application authoring. Keep mutation batches small and do not
+rebuild/send the entire document on each update.
+
+| State | Required behavior |
+| --- | --- |
+| Collected | JS has computed candidate updates; accepted caches and lifecycle remain unchanged |
+| Validated | Rust has checked all references, operations and final topology against staged affected records |
+| Applied | Rust applies the complete prepared operation batch with no concurrent paint/input dispatch between its mutations |
+| Accepted | Rust acknowledges the sequence; JS advances caches, activates refs/effects and retires accepted old owners |
+| Painted | Blitz resolves and paints accepted state; native frame/geometry metadata advances separately |
+| Refused before application | Accepted state remains unchanged; caller receives an explicit diagnostic and can correct/retry |
+| Failed after application or lost acknowledgment | Acceptance is unknown; retire the connection and fail pending jobs rather than retry the sequence |
+
+Validate a minimal staged ownership/topology model before touching the Blitz
+document. It is protocol bookkeeping, not another rendered scene. Prepare the
+operation list and allocations before live application where practical. Keep
+resource requests and redraw notifications on a controlled host provider so
+unaccepted candidate work cannot leak effects. CSS parsing follows browser rules;
+ignored declarations are not fabricated host refusals.
+
+No blanket rollback claim is made for `DocumentMutator`. Unexpected failures
+after mutation use the fatal connection state. Ordinary explicit validation
+refusal preserves the accepted document and JS lifetime contract.
+
+### Event routing and cancellation
+
+Each native event packet carries dispatch ID, type, native timestamp, live source
+identity, composed source path, cancelability and necessary input/pointer payload.
+The JS adapter creates ordinary target/currentTarget snapshots and dispatches
+through the framework's existing callback/write machinery. It routes once through
+the path; native bubbling must not repeat the same JS ancestor dispatch.
+
+Cancellation freezes at the end of synchronous JS dispatch, including synchronous
+prefixes of async handlers. Send the result immediately. Async handler completion
+continues through the existing application scope and error path; it must not
+delay a key's default or make `preventDefault()` after an await take effect.
+
+For a cancelable native default, intercept upstream default execution and retain
+the operation under its dispatch ID. On acknowledgment, recheck source generation
+and applicable control state; apply the uncanceled default exactly once. Generated
+native events reenter routing with their own identity and cannot repeat the
+original default. Reject duplicate/unknown acknowledgments. Bound pending queues;
+overflow or lost dispatch acknowledgment fails the connection rather than silently
+dropping user input or choosing an arbitrary cancellation result.
+
+The Rust UI thread never blocks waiting for JavaScript. Publication, pointer,
+wheel, redraw and native editing reports remain independently serviceable.
+Order dependent keyboard defaults per control. Native input reports carry edit
+revisions; skip stale controlled-value writes while a newer edit/composition exists.
+IME preedit stays local, and committed edits notify JS without waiting for a full
+scene repaint. Reuse the previous input reconciliation contracts where applicable;
+Blitz owns the actual editor instead of creating another editor beside it.
+
+### Core runtime, lifecycle and refs
+
+Expose the existing semantic modules through `@memoized-dom/runtime/core`.
+The native build selects the desktop mount/presentation implementation for the
+ordinary framework mount import. Web and server builds retain their existing
+selection. Application source and general JSX event/ref types do not change.
+
+Add only the host lifecycle capabilities required by accepted native publication:
+ref activation and effects after acceptance, native visibility/frame scheduling,
+and host operations separate from source invalidation. Keep the current web
+defaults and ordering. Ref cleanup, reverse teardown, subscriptions and staged
+candidate disposal remain the existing core contracts.
+
+Native refs expose implemented ordinary methods directly. `focus()` and `blur()`
+return void, with internal transport/error reporting. Do not export desktop focus
+helpers or awaited versions of browser geometry methods. Initial ref acceptance,
+focus preparation, disconnected handles and owner retirement have explicit checks.
+The initial bridge does not claim synchronous layout reads or a full `Document`.
+Compiler diagnostics cover provable unsupported uses; unresolved dynamic uses
+receive explicit adapter errors. Expand real capabilities before claiming a
+browser-dependent library works.
+
+### CSS, assets and external libraries
+
+Reuse existing TSX CSS extraction/scoping and normal CSS build output. Transport
+that output to Stylo without translating it into an alternate property language.
+Resolve stylesheet URLs against their module/asset base; retain source identity
+for updates and diagnostics. Relative fonts/images are build assets. Initial
+resource handling uses package/build resources and opt-in network access; resource
+completion schedules Blitz's normal document work.
+
+Ordinary library functions and existing external subscription metadata stay on
+the core path. Uncompiled singleton state remains ordinary library state, not
+automatically application-isolated cells. Package component source integration
+uses explicit package exports and the shared project resolver; do not compile
+every dependency or demand libraries rebuild with our compiler. Native document
+capabilities are a separate compatibility requirement.
+
+### Development workflow and measurement
+
+Provide three separate operations: native dependency/build setup, application
+development/watch, and production packaging. The dev command starts a previously
+built native host and rebuilds only changed JS/CSS. It invokes incremental Cargo
+only for native source/dependency changes or a missing host binary. Application
+refresh disposes and remounts through a coherent accepted generation; failed builds
+leave the prior accepted application visible. State-preserving HMR is outside the
+initial refresh contract.
+
+Record cold native compilation, incremental native compilation, JS/CSS build and
+refresh, process-ready time and first visible frame separately. Repeated desktop
+tests reuse the binary. A single command that rebuilds every package and relinks
+native dependencies for every TSX edit is not the planned dev workflow.
+
+## Ordered milestones
+
+Each milestone can contain multiple reviewable commits. Update the log after
+each completed batch; completing one batch does not mark the whole milestone
+complete unless every gate below passed.
+
+| ID | Deliverable | Completion evidence |
+| --- | --- | --- |
+| M0 | Architecture research, plan and milestone records | Main baseline verified; real compiler/runtime and pinned Blitz surfaces inspected; documents and links checked; no production changes |
+| M1 | Shared semantic/compiler boundary | One analysis/project coordinator and core entry; no duplicated engine; unchanged DOM output on all compiler fixtures; targeted shared tests, root tests, package builds/checks pass |
+| M2 | Native document/transaction foundation | Pinned Blitz library builds; template/identity/range mapping; mount/text/property/order/dispose contracts; explicit refusal leaves document intact; ambiguous application failure terminates connection; Rust tests and headless layout checks pass |
+| M3 | Ordinary counter through native mount | Desktop emission uses shared plans and access tables; normal TSX mount and CSS show in a window; counter update/ref disposal verified; native host is reusable between runs |
+| M4 | Event defaults and native text input | Synchronous cancellation timing, async continuations, acknowledged defaults, bursts, native editing, composition and stale-value reconciliation pass JS/Rust and real platform tests |
+| M5 | Cross-module and structural parity | Cells/helpers through imports and barrels; branches/fragments/forwarded content/render callbacks; keyed Todo insert/move/remove preserves row state/focus/selection; atomic refusal/cleanup tests pass |
+| M6 | CSS and browser layout parity | Raw scoped/built CSS, variables/media/layers/selectors/resources; wide/narrow Todo and inline fixtures compared with Chromium boxes/fragments; unsupported cases diagnosed; no custom cascade or paragraph engine |
+| M7 | Refs, lifecycle and library contracts | Ordinary void focus/blur, ref retirement and lifecycle acceptance; core subscriptions and opaque pulls; real packaged dependency fixture; capabilities documented without claiming a full browser DOM |
+| M8 | Reliable dev workflow and comparative evidence | TSX/CSS edit refresh avoids Cargo; native edit uses incremental Cargo; process failure/close is bounded; compiler/web regression gates pass; startup/update/input traces recorded with reproducible commands |
+
+M4 follows the first window but precedes broad structural/features work so the
+process/event architecture is validated early. M5 must verify core state and
+lifetime before adding broad CSS/resource coverage. M7 extends capabilities from
+real library/ref fixtures rather than speculative browser API copying.
+
+## Verification and records
+
+Before M1, capture main's DOM compiler output for the fixture corpus. Every shared
+extraction compares output to that baseline and explains any intentional change
+before implementation. Runtime parity fixtures exercise the same source behavior
+through web and native hosts, including rejected staged subtrees and disposal.
+
+Native checks distinguish structural acceptance from completed layout/paint and
+match full owner generations. Browser comparisons use the same authored CSS/content
+and document their UA/font normalization. Event tests compare cancellation timing,
+focus, edits and selection, not merely a successful screenshot.
+
+For every completed batch, record files changed, actual decisions, reuse, prior
+change communication, commands and results, limitations, commit and remote status.
+Only record completed evidence as completed. A missing toolchain, failed build or
+contract mismatch is a real blocker/failure entry, not an implementation milestone.
+
+No production renderer switch, wholesale branch merge, or alteration of existing
+web semantics is implied by completing this documentation milestone.
