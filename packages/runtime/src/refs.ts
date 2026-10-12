@@ -19,10 +19,16 @@
 
 import { getActiveApplicationRuntime, getActiveEnvironment } from './kernel';
 
-export type RefCallback<T extends Node = Node> = (
+/** Minimal lifecycle shape; rendering hosts need no fabricated DOM document. */
+export interface RefTarget {
+  readonly isConnected: boolean;
+  readonly ownerDocument?: Document | null;
+}
+
+export type RefCallback<T extends RefTarget = Node> = (
   node: T,
 ) => void | (() => void);
-export type RefValue<T extends Node = Node> =
+export type RefValue<T extends RefTarget = Node> =
   | RefCallback<T>
   | readonly RefValue<T>[]
   | null
@@ -36,7 +42,7 @@ const REF_ASSIGN = Symbol('memo-dom.refAssign');
  * Mark a compiler-emitted adapter that only assigns its node to a source
  * target. Assignment needs no connected document, so it stays synchronous.
  */
-export function refAssign<T extends Node>(
+export function refAssign<T extends RefTarget>(
   assign: RefCallback<T>,
 ): RefCallback<T> {
   (assign as RefCallback<T> & { [REF_ASSIGN]?: true })[REF_ASSIGN] = true;
@@ -44,7 +50,7 @@ export function refAssign<T extends Node>(
 }
 
 /** Mount refs left-to-right and return one idempotent reverse-order disposer. */
-export function mountRef<T extends Node>(
+export function mountRef<T extends RefTarget>(
   node: T,
   value: RefValue<T>,
 ): () => void {
@@ -121,12 +127,12 @@ export function mountRef<T extends Node>(
 }
 
 /** A live node: connected to a document that has finished loading. */
-function isLive(node: Node): boolean {
+function isLive(node: RefTarget): boolean {
   return node.isConnected && documentSettled(node.ownerDocument);
 }
 
-function documentSettled(document_: Document | null): boolean {
-  return document_ === null || document_.readyState === 'complete';
+function documentSettled(document_: Document | null | undefined): boolean {
+  return document_ == null || document_.readyState === 'complete';
 }
 
 /**
@@ -135,8 +141,8 @@ function documentSettled(document_: Document | null): boolean {
  * load; during initial load the browser re-processes focus when the
  * document completes, so callbacks wait for `window.load` first.
  */
-function scheduleLive(node: Node, run: () => void): void {
-  const document_ = node.ownerDocument as Document | null;
+function scheduleLive(node: RefTarget, run: () => void): void {
+  const document_ = node.ownerDocument;
   const flush = (): void => {
     if (node.isConnected) {
       run();
@@ -170,7 +176,7 @@ function scheduleLive(node: Node, run: () => void): void {
   }
 }
 
-function splitRefs<T extends Node>(
+function splitRefs<T extends RefTarget>(
   value: RefValue<T>,
   eager: RefValue<T>[],
   deferred: RefValue<T>[],
@@ -190,7 +196,7 @@ function splitRefs<T extends Node>(
   }
 }
 
-function mountValue<T extends Node>(
+function mountValue<T extends RefTarget>(
   node: T,
   value: RefValue<T>,
   disposers: Array<() => void>,

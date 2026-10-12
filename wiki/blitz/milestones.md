@@ -12,7 +12,7 @@ Update the status table when the corresponding completion gates pass.
 | Milestone | Status | Evidence |
 | --- | --- | --- |
 | M0 — Architecture and plan | Completed | Initial documentation batch below |
-| M1 — Shared semantic/compiler boundary | Not started | No main compiler/runtime changes in this branch |
+| M1 — Shared semantic/compiler boundary | In progress | Runtime/core boundary completed; shared compiler coordinator and output comparison remain |
 | M2 — Native document/transactions | Not started | No Blitz native crate exists yet |
 | M3 — Ordinary native counter | Not started | No desktop compiler/mount integration exists yet |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
@@ -83,6 +83,88 @@ M1: communicate the shared analysis/core entry changes before editing them, capt
 DOM compiler output baseline, and extract the smallest reviewed shared boundary.
 Do not start by importing the previous GPUI renderer or creating another reactive
 runtime.
+
+## M1.1: shared runtime entry and host acceptance capabilities
+
+Completed batch: 2026-10-12. Parent commit: `b850ece9d1ff226f59278ba003f1db78f71fbe1b`.
+The full M1 milestone remains in progress.
+
+### Changes and reused code
+
+- Added `packages/runtime/src/core.ts` and the package `/core` export/build entry.
+  It reexports the existing kernel, access resolver, cells, write routing, effects,
+  refs and cleanup. No second runtime or subscription bridge was introduced.
+- Moved computed/effect assignment comparisons unchanged from DOM setters to
+  `src/comparison.ts`, with an existing-path reexport for web consumers.
+- Made environment document access lazy. A core application can initialize and
+  execute without a browser document; browser-only document use still rejects.
+- Added optional native visibility and effect acceptance hooks, including scoped
+  inheritance and explicit hook removal. Web defaults keep their current behavior.
+- Deferred effects capture their originating application and exact registration.
+  Retired effects and replaced conditional controllers cannot run after acceptance
+  is delayed, even when the same entity ID is reused.
+- Generalized only the shared internal ref lifecycle target. It can omit
+  `ownerDocument`; browser node types remain the default and ref teardown uses
+  the same implementation and reverse ordering.
+- Added `tests/native-core-runtime.test.ts` for actual no-document execution,
+  entry dependency boundaries, application cells/access routing, native opaque
+  pulls, host-held effects, retired registration safety, refs and scoped hooks.
+
+The existing-code changes were communicated before editing: core exports and
+package wiring; lazy document resolution; visibility and effect-acceptance hooks;
+native ref lifecycle targets; and moving comparisons out of DOM setters. Their
+necessity and browser/SSR/ref/effect/list verification were stated. Application
+authoring APIs, compiler files and the optimized DOM list files were not changed.
+
+### Verification and evidence
+
+- `bun test --isolate ./tests/native-core-runtime.test.ts`: 8 passed initially;
+  all eight, including the strengthened retired-controller check, also passed in
+  the full root run.
+- `bun test --parallel=2 ./tests`: **2,547 passed, 0 failed**, exit code 0,
+  across 252 files. Includes compiler behavior, browser/SSR lifetime, list/ref
+  regressions, package dependency boundaries and a real Chromium DOM check.
+- Runtime and compiler package builds passed. The compiler was rebuilt from this
+  branch rather than testing against distribution files left by the GPUI branch.
+- `bun check -p packages/runtime/tsconfig.build.json`: no errors in 57 files.
+- Oxlint on changed runtime sources and the new test passed; `git diff --check`
+  passed. The packaged `@memoized-dom/runtime/core` import resolves.
+- Captured a local, ignored compiler output baseline at
+  `.cache/blitz/compiler-baseline-f3e1a79.json`: all 15 Git-tracked fixture files,
+  30 initial-content cases, 18 emitted outputs and 12 diagnostics. Source hashes
+  accompany each case; the capture excludes generated test files. SHA-256:
+  `f8c512893411efc2ae17a77485f9817691f213b37947d947ccd7e85e48aa7f3e`.
+  This is evidence for the next extraction, not an output comparison already run.
+
+### Decisions and limits
+
+| Decision | Reason |
+| --- | --- |
+| Expose existing primitives instead of copying runtime code | Keep one semantic implementation and preserve application isolation |
+| Leave native publication queue implementation to the desktop adapter | Acceptance is a host boundary, separate from the core dirty-work scheduler |
+| Guard queued effects by registration identity rather than ID alone | A replacement owner can reuse an ID while old work is still queued |
+| Restore the originating application when an effect is released | Native acknowledgments can arrive outside the original synchronous scope |
+| Make `ownerDocument` optional internally | Native refs need connection/lifetime behavior without a fabricated browser document |
+| Add hooks with unchanged default web behavior | Preserve the core web framework while enabling native acceptance |
+| Keep compiler coordination for the next batch | Avoid claiming full M1 completion before source analysis and project discovery are shared |
+
+No native crate/window has been added yet, and no Blitz startup or latency claim
+is made. The ordinary mount-and-run example remains M3's deliverable. The user
+requested continued work while away: an ACTIVE hourly heartbeat named
+**Blitz renderer batches**, ID `blitz-renderer-batches`, now follows this wiki and
+branch. The former desktop heartbeat was unavailable; it was not updated or
+silently left targeting GPUI.
+
+The batch commit and exact remote verification are reported in its completion
+message and discoverable with `git log -- packages/runtime/src/core.ts`.
+The unrelated fullstack edit remains untouched.
+
+### Next batch
+
+M1.2: communicate the shared compiler coordinator/project boundaries, reuse the
+previous reviewed extraction where it matches current main, compare every captured
+compiler fixture output/diagnostic, and rerun the relevant compiler/shared tests.
+Do not mark M1 complete until its full plan gates pass.
 
 ## Required format for later completed batches
 

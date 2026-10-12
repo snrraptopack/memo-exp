@@ -71,8 +71,12 @@ export interface RenderEnvironment {
    * entirely (servers render synchronously; nothing keeps ticking).
    */
   schedule: ((fn: () => void) => void) | null;
+  /** Native hosts supply visibility without a browser document. */
+  visible?: () => boolean;
   effects: Capability;
   refs: Capability;
+  /** Hold effect execution until the rendering host accepts its updates. */
+  effectBoundary?: (id: string, execute: () => void) => void;
   hydration?: HydrationController;
 }
 
@@ -115,11 +119,17 @@ export function resolveEnvironment(
   if (overrides === undefined) return base;
   return {
     mode: overrides.mode ?? base.mode,
-    document: overrides.document ?? base.document,
+    // Core hosts do not need document operations. Resolve this capability only
+    // when a rendering feature requests it, just like the browser default.
+    get document() {
+      return overrides.document ?? base.document;
+    },
     schedule:
       overrides.schedule === undefined ? base.schedule : overrides.schedule,
     effects: overrides.effects ?? base.effects,
     refs: overrides.refs ?? base.refs,
+    visible: overrides.visible,
+    effectBoundary: overrides.effectBoundary,
     hydration: overrides.hydration,
   };
 }

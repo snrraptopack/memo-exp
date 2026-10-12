@@ -33,7 +33,8 @@ function scheduleVolatileFrame(runtime: ApplicationRuntime): void {
   schedule(() => runInApplicationRuntime(runtime, () => {
     state.scheduled = false;
     try {
-      if (k.environment.document.hidden !== true) {
+      const visible = k.environment.visible?.() ?? k.environment.document.hidden !== true;
+      if (visible) {
         for (const id of state.ids) markDirty(id, -1);
       }
     } finally {

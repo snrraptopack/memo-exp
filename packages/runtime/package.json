@@ -11,6 +11,11 @@
     "dist"
   ],
   "exports": {
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "default": "./dist/core.js"
+    },
     ".": {
       "browser": {
         "types": "./dist/index.d.ts",

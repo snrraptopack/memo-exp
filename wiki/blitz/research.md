@@ -82,6 +82,28 @@ activation with core cleanup and invalidation. Reuse that analyzed metadata and
 subscription contract in the native emitter; there is no separate generic runtime
 subscription engine to copy or replace.
 
+### Implemented runtime boundary on the Blitz branch
+
+The first M1 batch now exports those existing primitives through
+`@memoized-dom/runtime/core`. It does not import browser mounting, hydration,
+DOM lists/setters, or server storage initialization. Document resolution is lazy;
+actually requesting an absent browser document still fails explicitly.
+
+`RenderEnvironment.visible` supplies native visibility to the existing opaque
+pull policy, and `effectBoundary` lets a host hold effect execution for acceptance.
+Omitted hooks retain web behavior. Delayed execution captures its originating
+application and exact entity registration, so an old queued effect cannot run
+against a replacement with the same ID. Shared refs accept a minimal native
+connection target without requiring `ownerDocument`; ordinary authoring types
+still default to browser nodes. Computed comparisons moved unchanged into a
+shared module and remain exported from the existing setters path.
+
+This establishes the semantic runtime surface, not a running desktop app or an
+implemented Blitz publication adapter. Shared compiler coordination remains the
+next M1 batch. Its output baseline includes all 15 checked-in compiler fixture
+files with both initial-content settings: 30 cases, recording 18 emitted results
+and 12 diagnostics for source forms that do not compile in that configuration.
+
 ## What Blitz supplies
 
 Source inspected: `45496d9288b063719ebeae4e0761273f7881b3d7`, workspace version

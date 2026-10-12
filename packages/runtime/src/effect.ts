@@ -8,11 +8,15 @@
 
 import { cleanup, type CleanupDisposer } from './cleanup';
 import {
+  getActiveApplicationRuntime,
   getActiveEnvironment,
+  getEntity,
   has,
   invalidateEntity,
   registerEntity,
   unregisterSubtree,
+  runWithApplicationRuntime,
+  type Entity,
   type EntityId,
 } from './kernel';
 
@@ -34,26 +38,36 @@ export function registerEffect(
   // hydration adoption (Phase 3); until then it behaves as disabled.
   const effects = getActiveEnvironment().effects;
   const execute = effects === 'run';
+  const runtime = getActiveApplicationRuntime();
 
-  registerEntity({
+  const entity: Entity = {
     id,
     parent,
     phase: 'effect',
     render() {
       if (!execute) return;
-      const previous = disposer;
-      disposer = undefined;
-      previous?.();
+      const run = () => runWithApplicationRuntime(runtime, () => {
+        // A queued host activation can outlive its owner after refusal/disposal.
+        if (getEntity(id) !== entity) return;
+        const previous = disposer;
+        disposer = undefined;
+        previous?.();
 
-      const next = callback();
-      if (next !== undefined && typeof next !== 'function') {
-        throw new TypeError(
-          `[memo-dom] effect '${id}' must return a cleanup function or undefined`,
-        );
-      }
-      disposer = typeof next === 'function' ? next : undefined;
+        const next = callback();
+        if (next !== undefined && typeof next !== 'function') {
+          throw new TypeError(
+            `[memo-dom] effect '${id}' must return a cleanup function or undefined`,
+          );
+        }
+        disposer = typeof next === 'function' ? next : undefined;
+      });
+
+      const boundary = getActiveEnvironment().effectBoundary;
+      if (boundary) boundary(id, run);
+      else run();
     },
-  });
+  };
+  registerEntity(entity);
 
   if (!execute) return;
 
@@ -87,20 +101,29 @@ export function registerConditionalEffect(
 
   const effects = getActiveEnvironment().effects;
   const execute = effects === 'run';
+  const runtime = getActiveApplicationRuntime();
 
-  registerEntity({
+  const entity: Entity = {
     id,
     parent,
     phase: 'effect',
     render() {
       if (!execute) return;
-      const next = Boolean(condition());
-      if (next === active) return;
-      active = next;
-      if (active) registerEffect(activeId, id, callback);
-      else unregisterSubtree(activeId);
+      const run = () => runWithApplicationRuntime(runtime, () => {
+        if (getEntity(id) !== entity) return;
+        const next = Boolean(condition());
+        if (next === active) return;
+        active = next;
+        if (active) registerEffect(activeId, id, callback);
+        else unregisterSubtree(activeId);
+      });
+
+      const boundary = getActiveEnvironment().effectBoundary;
+      if (boundary) boundary(id, run);
+      else run();
     },
-  });
+  };
+  registerEntity(entity);
 
   if (!execute) return;
 

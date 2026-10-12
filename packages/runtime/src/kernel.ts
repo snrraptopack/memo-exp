@@ -327,10 +327,17 @@ export function runWithRenderEnvironment<T>(
   const previous = state.environment;
   state.environment = {
     mode: overrides.mode ?? previous.mode,
-    document: overrides.document ?? previous.document,
+    get document() {
+      return overrides.document ?? previous.document;
+    },
     schedule: overrides.schedule !== undefined ? overrides.schedule : previous.schedule,
     effects: overrides.effects ?? previous.effects,
     refs: overrides.refs ?? previous.refs,
+    // Explicit undefined removes a host hook for this scope; omission inherits.
+    visible: 'visible' in overrides ? overrides.visible : previous.visible,
+    effectBoundary: 'effectBoundary' in overrides
+      ? overrides.effectBoundary
+      : previous.effectBoundary,
     // An explicit `hydration: undefined` leaves adoption, e.g. for a region
     // that recovers from a mismatch by rendering on the client.
     hydration: 'hydration' in overrides ? overrides.hydration : previous.hydration,
