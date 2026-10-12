@@ -40,13 +40,21 @@ presentation engine or all of its shared changes indiscriminately.
 | `linking/`, `linker.ts`, `component-linker.ts` | Module collection, canonical imports/exports and fixed-point summaries | Preserve reactivity through relative application modules |
 | `analysis/external-reactivity.ts` | Subscription metadata for external values | Keep the existing external-source integration |
 
-The exact analysis order currently lives in `dom/analyze.ts`; preparation in
-`dom/prepare.ts` mixes source work with DOM lowering. Manifest discovery also
+At the main baseline, the exact analysis order lived in `dom/analyze.ts`, and
+`dom/prepare.ts` mixed source work with DOM lowering. Manifest discovery also
 imports DOM preparation. Therefore a second emitter cannot safely reproduce a
 shortened list of passes or pretend the whole compiler is already host-neutral.
 The selected approach is one shared coordinator with explicit target preparation
 hooks, extracted with unchanged DOM output. The previous desktop branch provides
 an implementation reference for this extraction.
+
+The M1.2 batch now implements that coordinator in `analysis/pipeline.ts`.
+DOM supplies normalization, presentation-parameter allocation and placement
+validation through its profile. Module/instance state, ref exclusion, opacity,
+computeds, control flow, effects, reads, cycle checks and list ownership analysis
+run in the shared order. Cycle and list source checks are not optional target
+finishing hooks. A non-DOM profile can produce source facts without a DOM allocator.
+Project/manifest discovery still needs its explicit target adapter in M1.3.
 
 Module cells, access tables and instrumented writes must be present in desktop
 output. Native node creation does not replace them. Rust receives presentation
@@ -99,10 +107,13 @@ still default to browser nodes. Computed comparisons moved unchanged into a
 shared module and remain exported from the existing setters path.
 
 This establishes the semantic runtime surface, not a running desktop app or an
-implemented Blitz publication adapter. Shared compiler coordination remains the
-next M1 batch. Its output baseline includes all 15 checked-in compiler fixture
-files with both initial-content settings: 30 cases, recording 18 emitted results
-and 12 diagnostics for source forms that do not compile in that configuration.
+implemented Blitz publication adapter. M1.2 adds shared compiler coordination;
+project/manifest adaptation remains next. The original capture contains all 15
+checked-in compiler fixtures twice, recording 18 emitted results and 12 diagnostics.
+Its `initialContent` labels did not change single-module compilation: that option
+belongs to project compilation. M1.2 verified those historical records and added
+a proper project comparison against the pre-change compiler: both initial-content
+settings across those fixtures and two linked-module graphs, 34 matching products.
 
 ## What Blitz supplies
 
