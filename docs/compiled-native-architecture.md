@@ -746,3 +746,16 @@ values on paragraph runs, including target hover overrides. Inspection exposes
 Tests cover source-generation identity, nearest-ancestor inheritance and resets,
 cross-owner forwarded children, cursor-only hover with no event sites, clipping
 and reentry under a stationary pointer, and unchanged shaping/geometry counts.
+
+Debug pointer admission is checked against the painted frame before dispatch.
+An optional expected `renderer.frames` value also requires the painted sequence
+to match the accepted scene. A stale-geometry rejection emits no mouse event and
+can be reinspected safely; other failures remain failures. Native targeting
+selects the center of a positive viewport intersection among actual boxes or
+glyph fragments. Wrapped sources can therefore use a visible later line when
+their first line is fully clipped. Fully offscreen, empty, or missing targets do
+not acquire invented hit positions. Source matching includes both the handle ID
+and generation. The inline smoke forces a stale
+click rejection and verifies unchanged counters, then targets a wrapped source
+with its first line above the viewport. This changes debugging/testing admission,
+not application event routing or the DOM list implementation.

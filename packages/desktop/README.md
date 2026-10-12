@@ -658,6 +658,13 @@ When extending desktop, update the relevant contract and this README together:
 `DesktopProcessHost` snapshots and native test commands expose geometry, focus,
 editing, style, and timing information for debugging. They are host/testing APIs,
 not methods available on application element refs.
+Pointer test commands accept an optional `frame` from `renderer.frames`. Native
+admission rejects a stale frame or an accepted scene awaiting paint before any
+input is dispatched. The test driver can safely reinspect that rejection without
+duplicating a click. Targets use a positive viewport intersection of an actual
+painted box or glyph fragment; a wrapped source's first line need not be visible.
+Fully offscreen, empty, and missing targets still reject. Matching uses both the
+painted source's handle ID and generation.
 
 Run the desktop suite with `bun run test:desktop`. The native window smoke commands
 are `bun run desktop:test:window` and `bun run desktop:test:todo` from the root.

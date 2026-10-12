@@ -1,4 +1,5 @@
 //! Debug-only platform event injection; uses the real hit tests and scroll handler.
+mod target;
 use crate::DesktopView;
 use gpui::{
     App, Entity, KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
@@ -17,6 +18,7 @@ pub struct WindowRequest {
     action: String,
     handle: Option<Handle>,
     node: Option<usize>,
+    frame: Option<u64>,
     delta: Option<f32>,
     width: Option<f32>,
     height: Option<f32>,
@@ -111,20 +113,15 @@ impl WindowRequest {
                 let position = {
                     let view = view.read(cx);
                     let stats = view.renderer.stats.borrow();
-                    let bounds = stats
-                        .boxes
-                        .iter()
-                        .chain(&stats.inline_ranges)
-                        .find(|bounds| bounds.handle == handle && bounds.source == node)
-                        .ok_or("Target was not painted")?;
-                    point(
-                        px(bounds.x + bounds.width / 2.),
-                        px(bounds.y + bounds.height / 2.),
-                    )
+                    target::position(
+                        &stats,
+                        handle,
+                        node,
+                        view.scroll.bounds(),
+                        self.frame,
+                        view.scene.sequence(),
+                    )?
                 };
-                if !view.read(cx).scroll.bounds().contains(&position) {
-                    return Err("Test pointer target is outside the viewport".into());
-                }
                 if self.action == "hover" {
                     window.dispatch_event(
                         PlatformInput::MouseMove(MouseMoveEvent {

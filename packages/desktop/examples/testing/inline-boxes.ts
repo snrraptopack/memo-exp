@@ -35,20 +35,59 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
   const hasText = (snapshot: SceneSnapshot, text: string) =>
     snapshot.flow!.text_groups.some((group) => group.text === text);
   const pointer = async (id: string, action: 'click' | 'hover' | 'pointerdown' | 'pointerup') => {
-    let target = box(id);
-    const viewport = snapshot.renderer!.scroll!.viewport;
-    if (target.y < 0 || target.y + target.height > viewport) {
-      await host.testWindow({ action: 'scroll', delta: viewport / 2 - target.y - target.height / 2 });
-      snapshot = await waitForFrame(snapshot.sequence, snapshot.renderer!.frames);
-      target = box(id);
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      await waitFor(() => true);
+      const target = box(id);
+      const renderer = snapshot.renderer!;
+      const viewport = renderer.scroll!.viewport;
+      const fragments = [...renderer.boxes, ...(renderer.inline_ranges ?? [])].filter(fragment =>
+        fragment.handle.id === target.handle.id
+        && fragment.handle.generation === target.handle.generation
+        && fragment.source === target.source,
+      );
+      const visible = fragments.some(fragment => fragment.width > 0 && fragment.height > 0
+        && fragment.x < renderer.width && fragment.x + fragment.width > 0
+        && fragment.y < viewport && fragment.y + fragment.height > 0);
+      if (!visible) {
+        await host.testWindow({ action: 'scroll', delta: viewport / 2 - target.y - target.height / 2 });
+        snapshot = await waitForFrame(snapshot.sequence, renderer.frames);
+        continue;
+      }
+      try {
+        await host.testWindow({ action, handle: target.handle, node: target.source, frame: renderer.frames });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Test pointer geometry is stale') {
+          // Native admission rejected before dispatch. Reinspect instead of
+          // repeating an input whose acceptance might otherwise be unknown.
+          continue;
+        }
+        throw new Error(`Native ${action} failed for ${id} at ${JSON.stringify(target)}`, { cause: error });
+      }
+      await settleEvents();
+      return;
     }
-    try {
-      await host.testWindow({ action, handle: target.handle, node: target.source });
-    } catch (error) {
-      throw new Error(`Native ${action} failed for ${id} at ${JSON.stringify(target)}`, { cause: error });
-    }
-    await settleEvents();
+    throw new Error(`Native ${action} could not acquire painted viewport geometry for ${id}`);
   };
+
+  // A stale command must reject without delivering any part of a click. Force
+  // a new painted frame rather than relying on platform scheduling to race it.
+  const oldFrame = snapshot.renderer!.frames;
+  const untouched = box('chip');
+  await host.redraw();
+  snapshot = await waitForFrame(snapshot.sequence, oldFrame);
+  let staleRejected = false;
+  try {
+    await host.testWindow({ action: 'click', handle: untouched.handle, node: untouched.source, frame: oldFrame });
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Test pointer geometry is stale') throw error;
+    staleRejected = true;
+  }
+  assert(staleRejected, 'A stale pointer command did not reject');
+  await settleEvents();
+  await waitFor(() => true);
+  assert(hasText(snapshot, 'Clicks: 0\nDown: 0\nUp: 0') && hasText(snapshot, 'Parent clicks: 0'),
+    'A rejected stale pointer command emitted an input event');
 
   const initial = box('chip');
   assert(Math.abs(initial.width - 220) < 1, 'The span width did not reach Taffy');
@@ -244,6 +283,7 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
     hoverWithoutHandler: true,
     inlineLabelSubmissions: 1,
     inlineCursors: 4,
+    stalePointerRejected: true,
   };
 
   // Retire the authored example first, so no mounted template supplies native
@@ -267,15 +307,18 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'handlerless' } },
       { kind: 'text', parent: 2, text: 'Hover only' },
       {
-        kind: 'element', tag: 'div', parent: 0, text: '',
-        style: [{ property: 'height', value: '1600px' }],
+        kind: 'element', tag: 'p', parent: 0, text: '',
+        style: [{ property: 'width', value: '120px' }],
       },
+      { kind: 'element', tag: 'span', parent: 4, text: '', attributes: { id: 'wrapped-target' } },
+      { kind: 'text', parent: 5, text: 'Wrapped glyphs follow several native lines' },
+      { kind: 'element', tag: 'div', parent: 0, text: '', style: [{ property: 'height', value: '1600px' }] },
       { kind: 'text', parent: 1, text: ' ' },
       { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'cursor-only' } },
-      { kind: 'text', parent: 6, text: 'Cursor only' },
+      { kind: 'text', parent: 9, text: 'Cursor only' },
       { kind: 'text', parent: 1, text: ' ' },
       { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'plain-source' } },
-      { kind: 'text', parent: 9, text: 'Plain text' },
+      { kind: 'text', parent: 12, text: 'Plain text' },
     ],
     slots: [],
     events: [],
@@ -295,6 +338,9 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
         selectors: [{ type: 'id', name: 'cursor-only' }, { type: 'state', name: 'hover' }],
       }]],
       declarations: [{ property: 'cursor', value: 'default' }],
+    }, {
+      selectors: [[{ combinator: null, selectors: [{ type: 'id', name: 'wrapped-target' }] }]],
+      declarations: [{ property: 'cursor', value: 'pointer' }],
     }],
   };
   const owner = app.mount(() => mountScene(template, [], []));
@@ -320,23 +366,37 @@ export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFram
       && cursorMatches(snapshot, 'handlerless', 'PointingHand'));
     assert(Math.abs(box('handlerless').width - normalWidth) > 0.5,
       'A scene without event sites did not apply inline hover weight');
-    await host.testWindow({ action: 'scroll', delta: -180 });
+    // Clip both paragraph fixtures so the stationary pointer is over plain
+    // content during the hover-retirement check, rather than another source.
+    await host.testWindow({ action: 'scroll', delta: -360 });
     await waitFor(snapshot => snapshot.renderer!.scroll!.offset < -100
       && !hovered(snapshot, 'handlerless') && snapshot.renderer!.inline_cursor === null);
     assert(box('handlerless').y + box('handlerless').height < 0,
       'The handlerless hover check did not fully clip the paragraph');
     assert(Math.abs(box('handlerless').width - normalWidth) < 0.5,
       'Clipping retained the hovered glyph weight after its ancestry cleared');
-    await host.testWindow({ action: 'scroll', delta: 180 });
+    await host.testWindow({ action: 'scroll', delta: 360 });
     await waitFor(snapshot => hovered(snapshot, 'handlerless')
       && cursorMatches(snapshot, 'handlerless', 'PointingHand'));
     assert(Math.abs(box('handlerless').width - normalWidth) > 0.5,
       'Scrolling back under a stationary pointer did not reapply hover weight');
+    const firstWrapped = box('wrapped-target');
+    const wrappedFragments = snapshot.renderer!.inline_ranges!.filter(range => range.id === 'wrapped-target');
+    assert(wrappedFragments.length > 1, 'The wrapped pointer fixture did not wrap');
+    await host.testWindow({ action: 'scroll', delta: -firstWrapped.y - firstWrapped.height - 1 });
+    await waitFor(snapshot => {
+      const fragments = snapshot.renderer!.inline_ranges!.filter(range => range.id === 'wrapped-target');
+      return fragments[0]!.y + fragments[0]!.height < 0 && fragments.some(fragment => fragment.y >= 0);
+    });
+    await pointer('wrapped-target', 'hover');
+    await waitFor(snapshot => cursorMatches(snapshot, 'wrapped-target', 'PointingHand'));
+    assert(box('wrapped-target').y + box('wrapped-target').height < 0,
+      'Pointer targeting scrolled a visible later fragment back to its first line');
     assert(snapshot.sequence === normal.sequence && fixtureEvents === 0,
       'Handlerless hover or scrolling published an application event or write');
   } finally {
     unsubscribe();
     await owner.dispose();
   }
-  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true, handlerlessCursor: true };
+  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true, handlerlessCursor: true, visibleWrappedTarget: true };
 }
