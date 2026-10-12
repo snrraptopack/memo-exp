@@ -163,9 +163,19 @@ impl WindowRequest {
                     .delta
                     .filter(|delta| delta.is_finite())
                     .ok_or("Missing finite scroll delta")?;
+                let viewport = view.read(cx).scroll.bounds();
+                let pointer = window.mouse_position();
+                // A wheel event carries the actual pointer location. Preserve
+                // it inside the viewport so scroll tests also cover stationary
+                // hover; use the center only before a valid pointer is placed.
+                let position = if viewport.contains(&pointer) {
+                    pointer
+                } else {
+                    viewport.center()
+                };
                 window.dispatch_event(
                     PlatformInput::ScrollWheel(ScrollWheelEvent {
-                        position: view.read(cx).scroll.bounds().center(),
+                        position,
                         delta: ScrollDelta::Pixels(point(px(0.), px(delta))),
                         ..Default::default()
                     }),

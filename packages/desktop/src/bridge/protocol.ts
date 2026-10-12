@@ -127,6 +127,11 @@ export interface SceneSnapshot {
       readonly height: number;
     }[];
     readonly inline_geometry?: number;
+    /** Source ancestry whose hover refinements were used by the painted frame. */
+    readonly inline_hovered?: readonly {
+      readonly handle: SceneHandle;
+      readonly node: number;
+    }[];
   };
   readonly instances: readonly {
     readonly handle: SceneHandle;

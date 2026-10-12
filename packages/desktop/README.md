@@ -329,6 +329,9 @@ inline element becomes the pointer target.
 wrapped elements can have several. They are text regions, not independent layout
 boxes. `inline_geometry` counts region preparation. Geometry is retained with
 shaping and translated during prepaint, so an unchanged redraw reuses it.
+`inline_hovered` lists the source ancestry whose hover refinements were used by
+the painted frame. These inspection fields do not add browser geometry methods
+to native ref handles.
 Hit tests treat a shaped glyph cluster as one unit, matching GPUI's byte-index
 model; character-level hit divisions inside a ligature are not exposed.
 
@@ -371,8 +374,16 @@ Lengths generally support `px`, `rem`, percentages, zero, and `auto` where the
 property permits them. Property-specific checks further restrict these values.
 Inline text inside a paragraph supports a smaller refinement set: color,
 background color, font family/weight/style, and supported text decorations.
-Paragraph-run box sizing, per-run font sizes, and interaction styles require
-further implementation. An inline element with its own native box supports the
+Target `:hover` applies that same refinement set to measured paragraph sources,
+including nested inline ancestry across component owners. Hover stays in native
+presentation state and works without a JavaScript event handler. Moving within
+one source reuses its shaped text; changing font weight or family reshapes through
+GPUI. Leaving the source restores its normal refinements. Scrolling, resizing,
+and accepted text changes recheck the source under the stationary pointer.
+Prepaint retires hover on fully clipped paragraphs; deferred native notification
+requests the frame that restores normal text after a draw-time hover change.
+Paragraph-run box sizing, per-run font sizes, cursor styles, and `:focus` styling
+require further implementation. An inline element with its own native box supports the
 ordinary box properties above, including padding, dimensions, font size, and
 hover styling. Its placement determines this capability; a tag name alone does
 not. A boxed span with `display: flex` or `display: grid` also lays out its own
@@ -509,7 +520,7 @@ native box or flex/grid gap. The plan records independently boxed inline nodes
 for native CSS and event validation. Installation validates CSS syntax; mounting
 validates placement-dependent capabilities. When regrouping changes those
 capabilities, the adapter rechecks untouched children before replacing any style
-cache. Unsupported sizing or interaction styles on flattened paragraph runs reject the
+cache. Unsupported sizing or focus styles on flattened paragraph runs reject the
 transaction; the previous layout, values, and native caches remain accepted.
 Hover/focus CSS that changes between block and flex/grid rejects explicitly;
 regrouping in response to native interaction states is still unimplemented.

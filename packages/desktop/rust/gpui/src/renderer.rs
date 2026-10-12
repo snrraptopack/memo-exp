@@ -3,7 +3,7 @@ use crate::{
     events::{self, Emission},
     input::{InputOptions, TextInput},
     styles::{self, CachedStyles, NativeStyles, StyleCache},
-    text::{InlineInput, InlineRun, Paragraph, TextCache},
+    text::{InlineInput, InlineRun, InlineStyle, Paragraph, TextCache},
 };
 use gpui::{prelude::*, *};
 use memoized_dom_desktop_host::{
@@ -33,6 +33,8 @@ pub struct Stats {
     pub boxes: Vec<LayoutBox>,
     pub inline_ranges: Vec<LayoutBox>,
     pub inline_geometry: u64,
+    /// Source ancestry whose hover refinements were used by the painted frame.
+    pub inline_hovered: Vec<TextSource>,
     pub event_to_commit_ms: Option<f64>,
     pub event_to_paint_ms: Option<f64>,
     pub commit_to_paint_ms: Option<f64>,
@@ -547,7 +549,11 @@ impl Element for SceneElement {
                             .map(|source| {
                                 let owner = owners[&source.handle.id];
                                 debug_assert_eq!(owner.handle, source.handle);
-                                owner.styles.nodes[source.node][0].text.clone()
+                                InlineStyle {
+                                    source: *source,
+                                    normal: owner.styles.nodes[source.node][0].text.clone(),
+                                    hover: owner.styles.nodes[source.node][1].text.clone(),
+                                }
                             })
                             .collect();
                         paragraph.fragments.push((range.len, chain));
@@ -571,11 +577,16 @@ impl Element for SceneElement {
                         if let Node::Element { tag, .. } = &instance.template.source.nodes[node]
                             && tags::resolve(tag).is_ok_and(|tag| tag.layout == Layout::Inline)
                         {
-                            chain.push(instance.styles.nodes[node][0].text.clone());
-                            sources.push(TextSource {
+                            let inline_source = TextSource {
                                 handle: instance.handle,
                                 node,
+                            };
+                            chain.push(InlineStyle {
+                                source: inline_source,
+                                normal: instance.styles.nodes[node][0].text.clone(),
+                                hover: instance.styles.nodes[node][1].text.clone(),
                             });
+                            sources.push(inline_source);
                         }
                         current = instance.template.source.nodes[node].parent();
                     }
@@ -850,6 +861,7 @@ impl Element for SceneElement {
             stats.height = bounds.size.height.as_f32();
             stats.boxes.clear();
             stats.inline_ranges.clear();
+            stats.inline_hovered.clear();
             stats.layout_ms = stats
                 .render_started
                 .map_or(0., |start| start.elapsed().as_secs_f64() * 1000.);

@@ -124,7 +124,11 @@ try {
   );
   const root = roots.get('root')!;
   if (inlineSmoke) {
-    smokeReport = await runInlineBoxSmoke({ host, waitForFrame, settleEvents: () => events });
+    smokeReport = await runInlineBoxSmoke({
+      app, host, waitForFrame,
+      unmountExample: () => root.unmount(),
+      settleEvents: () => events,
+    });
   } else if (reactivitySmoke) {
     smokeReport = await runReactivitySmoke({ host, waitForFrame, settleEvents: () => events });
   } else if (todoSmoke) {

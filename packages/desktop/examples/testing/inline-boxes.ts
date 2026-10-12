@@ -1,9 +1,11 @@
-import type { SceneSnapshot } from '@memoized-dom/desktop';
+import { mountScene, type DesktopApplication, type SceneSnapshot, type SceneTemplate } from '@memoized-dom/desktop';
 import type { DesktopProcessHost } from '@memoized-dom/desktop/host';
 
 /** Verify placement, sizing and hit tests through actual GPUI platform events. */
-export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
+export async function runInlineBoxSmoke({ app, host, unmountExample, waitForFrame, settleEvents }: {
+  app: DesktopApplication;
   host: DesktopProcessHost;
+  unmountExample(): Promise<void>;
   waitForFrame(sequence: number, afterFrame?: number): Promise<SceneSnapshot>;
   settleEvents(): Promise<void>;
 }) {
@@ -112,6 +114,61 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
   assert(!snapshot.renderer!.boxes.some((box) => box.id === 'caption' || box.id === 'caption-text'),
     'Measured inline sources acquired unwanted layout boxes');
   const captionHandle = box('caption').handle;
+  const hovered = (snapshot: SceneSnapshot, id: string) => {
+    const source = snapshot.renderer!.inline_ranges!.find((range) => range.id === id)!;
+    return snapshot.renderer!.inline_hovered?.some((hovered) =>
+      hovered.handle.id === source.handle.id
+      && hovered.handle.generation === source.handle.generation
+      && hovered.node === source.source,
+    ) ?? false;
+  };
+
+  // The child changes weight while the component root supplies inherited paint.
+  // Native hover paints both ancestors without publishing an application write.
+  const beforeHover = snapshot;
+  const normalWidths = nested.map((range) => range.width);
+  await pointer('caption-text', 'hover');
+  await waitFor((snapshot) => hovered(snapshot, 'caption') && hovered(snapshot, 'caption-text'));
+  assert(snapshot.sequence === beforeHover.sequence, 'Inline hover published application state');
+  const hoverWidths = snapshot.renderer!.inline_ranges!
+    .filter((range) => range.id === 'caption-text').map((range) => range.width);
+  assert(hoverWidths.length !== normalWidths.length
+    || hoverWidths.some((width, index) => Math.abs(width - normalWidths[index]!) > 0.5),
+  'The inline font-weight hover did not change GPUI glyph measurement');
+
+  // Repeated hover on the same run must reuse shaping and glyph projection.
+  const hoveredFrame = snapshot;
+  await pointer('caption-text', 'hover');
+  await host.redraw();
+  snapshot = await waitForFrame(snapshot.sequence, hoveredFrame.renderer!.frames);
+  assert(snapshot.renderer!.shaping === hoveredFrame.renderer!.shaping,
+    'Moving within a hovered inline source reshaped unchanged text');
+  assert(snapshot.renderer!.inline_geometry === hoveredFrame.renderer!.inline_geometry,
+    'Moving within a hovered inline source rebuilt glyph regions');
+
+  await pointer('title', 'hover');
+  await waitFor((snapshot) => !hovered(snapshot, 'caption') && !hovered(snapshot, 'caption-text'));
+  const restoredWidths = snapshot.renderer!.inline_ranges!
+    .filter((range) => range.id === 'caption-text').map((range) => range.width);
+  assert(restoredWidths.length === normalWidths.length
+    && restoredWidths.every((width, index) => Math.abs(width - normalWidths[index]!) < 0.5),
+  'Leaving the paragraph did not restore its normal glyph measurement');
+
+  await pointer('hover-only', 'hover');
+  await waitFor((snapshot) => hovered(snapshot, 'hover-only'));
+  const hoverScroll = snapshot.renderer!.scroll!;
+  const beforeScrollFrame = snapshot.renderer!.frames;
+  await host.testWindow({
+    action: 'scroll',
+    delta: hoverScroll.max + hoverScroll.offset >= 80 ? -80 : 80,
+  });
+  await waitFor((snapshot) => snapshot.renderer!.frames > beforeScrollFrame
+    && !hovered(snapshot, 'hover-only'));
+  assert(Math.abs(snapshot.renderer!.scroll!.offset - hoverScroll.offset) > 1,
+    'The inline hover scroll check did not move the paragraph');
+  await pointer('title', 'hover');
+  await waitFor((snapshot) => !hovered(snapshot, 'hover-only'));
+
   await pointer('caption-text', 'click');
   await waitFor((snapshot) => snapshot.instances.some((instance) =>
     instance.handle.id === captionHandle.id && instance.text_groups.some((group) => group.text.endsWith('(1)')),
@@ -139,7 +196,7 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
     'An unchanged inline box reshaped its text');
   assert(snapshot.renderer!.inline_geometry === painted.renderer!.inline_geometry,
     'An unchanged frame rebuilt inline glyph regions');
-  return {
+  const report = {
     chipWidth: box('chip').width,
     clicks: 2,
     pointerDowns: 2,
@@ -149,6 +206,76 @@ export async function runInlineBoxSmoke({ host, waitForFrame, settleEvents }: {
     shaping: snapshot.renderer!.shaping,
     inlineRegions: ranges.length,
     inlineClicks: 1,
+    inlineHover: true,
+    hoverWithoutHandler: true,
     inlineLabelSubmissions: 1,
   };
+
+  // Retire the authored example first, so no mounted template supplies native
+  // event interests. This fixture isolates presentation-only hover and clipping.
+  await unmountExample();
+  const template: SceneTemplate = {
+    id: 'handlerless-inline-hover',
+    nodes: [
+      {
+        kind: 'element', tag: 'main', parent: null, text: '',
+        style: [
+          { property: 'padding', value: '32px' },
+          { property: 'font-family', value: '"Segoe UI"' },
+          { property: 'font-size', value: '16px' },
+        ],
+      },
+      { kind: 'element', tag: 'p', parent: 0, text: '' },
+      { kind: 'element', tag: 'span', parent: 1, text: '', attributes: { id: 'handlerless' } },
+      { kind: 'text', parent: 2, text: 'Hover only' },
+      {
+        kind: 'element', tag: 'div', parent: 0, text: '',
+        style: [{ property: 'height', value: '1600px' }],
+      },
+    ],
+    slots: [],
+    events: [],
+    stylesheets: [{
+      selectors: [[{
+        combinator: null,
+        selectors: [{ type: 'id', name: 'handlerless' }, { type: 'state', name: 'hover' }],
+      }]],
+      declarations: [
+        { property: 'color', value: '#166534' },
+        { property: 'font-weight', value: '900' },
+      ],
+    }],
+  };
+  const owner = app.mount(() => mountScene(template, [], []));
+  let fixtureEvents = 0;
+  const unsubscribe = host.onEvent(event => {
+    if (event.handle.id === owner.handle.id) fixtureEvents++;
+  });
+  try {
+    await owner.ready;
+    await waitFor(snapshot => snapshot.renderer!.inline_ranges!.some(range => range.id === 'handlerless'));
+    const normal = snapshot;
+    const normalWidth = box('handlerless').width;
+    await pointer('handlerless', 'hover');
+    await waitFor(snapshot => hovered(snapshot, 'handlerless'));
+    assert(Math.abs(box('handlerless').width - normalWidth) > 0.5,
+      'A scene without event sites did not apply inline hover weight');
+    await host.testWindow({ action: 'scroll', delta: -180 });
+    await waitFor(snapshot => snapshot.renderer!.scroll!.offset < -100
+      && !hovered(snapshot, 'handlerless'));
+    assert(box('handlerless').y + box('handlerless').height < 0,
+      'The handlerless hover check did not fully clip the paragraph');
+    assert(Math.abs(box('handlerless').width - normalWidth) < 0.5,
+      'Clipping retained the hovered glyph weight after its ancestry cleared');
+    await host.testWindow({ action: 'scroll', delta: 180 });
+    await waitFor(snapshot => hovered(snapshot, 'handlerless'));
+    assert(Math.abs(box('handlerless').width - normalWidth) > 0.5,
+      'Scrolling back under a stationary pointer did not reapply hover weight');
+    assert(snapshot.sequence === normal.sequence && fixtureEvents === 0,
+      'Handlerless hover or scrolling published an application event or write');
+  } finally {
+    unsubscribe();
+    await owner.dispose();
+  }
+  return { ...report, handlerlessSceneHover: true, clippedHoverCleared: true };
 }

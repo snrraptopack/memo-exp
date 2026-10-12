@@ -74,3 +74,17 @@ button {
 }
 
 .caption { color: #9a3412; }
+
+/* These remain text runs. Hover refines their shared shaping input rather than
+   introducing boxes around the wrapped spans or component boundaries. */
+.caption:hover {
+  color: #1d4ed8;
+  background-color: #dbeafe;
+}
+
+#caption-text:hover { font-weight: 400; }
+
+#hover-only:hover {
+  color: #166534;
+  font-weight: 900;
+}

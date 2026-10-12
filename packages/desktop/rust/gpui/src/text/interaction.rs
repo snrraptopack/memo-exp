@@ -1,4 +1,4 @@
-//! Pointer routing for measured inline text. Application bubbling stays in Bun.
+//! Measured inline hover and pointer routing. Application bubbling stays in Bun.
 use super::{
     TextCache,
     geometry::{self, InlineRun},
@@ -6,7 +6,7 @@ use super::{
 use crate::events::{self, Emission, EventSink};
 use gpui::{
     App, Bounds, ClickEvent, DispatchPhase, FocusHandle, Hitbox, MouseButton, MouseClickEvent,
-    MouseDownEvent, MouseUpEvent, Pixels, Window,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Window,
 };
 use memoized_dom_desktop_host::{presentation::TextSource, template::EventKind};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -34,11 +34,75 @@ fn hit(
     geometry::hit_source(
         shaped.cells.as_deref()?,
         runs,
-        bounds,
+        // A clipped paragraph can retain a listener from its last painted frame.
+        // Its current prepaint bounds still retire or route that listener safely.
+        cache.bounds.unwrap_or(bounds),
         shaped.key.style.text_align,
         position,
     )
     .cloned()
+}
+
+/// Paint may be skipped outside the content mask. Prepaint still knows the
+/// actual placed bounds, so an offscreen source cannot keep stale hover styling.
+pub fn retire_displaced_hover(
+    cache: &mut TextCache,
+    runs: &[InlineRun],
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if cache.hovered.is_empty() {
+        return;
+    }
+    let position = window.mouse_position();
+    let under_pointer = cache.bounds.and_then(|bounds| {
+        window
+            .content_mask()
+            .bounds
+            .contains(&position)
+            .then(|| hit(cache, runs, bounds, position))
+            .flatten()
+    });
+    if under_pointer.as_ref().map(|run| run.sources.as_ref()) != Some(cache.hovered.as_ref()) {
+        cache.hovered = Arc::from([]);
+        let current_view = window.current_view();
+        // GPUI records invalidation during drawing without requesting a frame.
+        // Notify after the draw effect cycle so the normal text gets painted.
+        cx.defer(move |cx| cx.notify(current_view));
+    }
+}
+
+/// Observe every move in capture so leaving a paragraph clears its state even
+/// when another element consumes the bubbling event. This never emits a Bun event.
+pub fn install_hover(
+    cache: Rc<RefCell<TextCache>>,
+    runs: Vec<InlineRun>,
+    bounds: Bounds<Pixels>,
+    hitbox: Hitbox,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let current_view = window.current_view();
+    let update = move |position, window: &Window, cx: &mut App| {
+        let mut cache = cache.borrow_mut();
+        let sources = if hitbox.is_hovered(window) {
+            hit(&cache, &runs, bounds, position).map_or_else(|| Arc::from([]), |run| run.sources)
+        } else {
+            Arc::from([])
+        };
+        if cache.hovered != sources {
+            cache.hovered = sources;
+            cx.defer(move |cx| cx.notify(current_view));
+        }
+    };
+    // Revalidate on paint as well: scrolling, resizing, and accepted text edits
+    // can move glyphs under a stationary pointer without a mouse-move event.
+    update(window.mouse_position(), window, cx);
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+        if phase == DispatchPhase::Capture {
+            update(event.position, window, cx);
+        }
+    });
 }
 
 pub fn install(

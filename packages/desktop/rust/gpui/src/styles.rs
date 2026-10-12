@@ -96,9 +96,9 @@ fn convert_cascade(
                         ));
                     }
                 }
-                if state > 0 && cascade[index].states[state] != cascade[index].states[0] {
+                if state >= 2 && cascade[index].states[state] != cascade[index].states[state & 1] {
                     return Err(format!(
-                        "CSS interaction styles on inline <{tag}> require inline hitboxes"
+                        "CSS focus styles on paragraph inline <{tag}> require native focus support"
                     ));
                 }
             } else {
@@ -666,5 +666,73 @@ mod tests {
         assert!(inline.background.is_none());
         assert!(inline.text.background_color.is_some());
         assert!(inline.display.is_none());
+    }
+
+    fn paragraph_template() -> PreparedTemplate {
+        let template: memoized_dom_desktop_host::Template = serde_json::from_value(json!({
+            "id": "inline-hover",
+            "nodes": [
+                { "kind": "element", "tag": "p", "parent": null, "text": "" },
+                { "kind": "element", "tag": "span", "parent": 0, "text": "" },
+                { "kind": "text", "parent": 1, "text": "Wrapped text" }
+            ],
+            "slots": [],
+            "events": []
+        }))
+        .unwrap();
+        template.prepare().unwrap()
+    }
+
+    #[test]
+    fn paragraph_hover_converts_text_paint_and_shaping_without_a_box() {
+        let mut template = paragraph_template();
+        let hover: Properties = [
+            ("color", "#225588"),
+            ("background-color", "yellow"),
+            ("font-weight", "900"),
+            ("text-decoration", "underline"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.into(), value.into()))
+        .collect();
+        template.styles[1].states[1] = hover.clone();
+        template.styles[1].states[3] = hover;
+
+        let prepared = prepare(&template).unwrap();
+        let inline = &prepared.nodes[1][1];
+        assert_eq!(inline.text.color, Some(rgb(0x225588).into()));
+        assert_eq!(inline.text.font_weight, Some(FontWeight(900.)));
+        assert!(inline.text.background_color.is_some());
+        assert!(inline.text.underline.is_some());
+        assert!(inline.background.is_none());
+        assert!(inline.display.is_none());
+    }
+
+    #[test]
+    fn paragraph_hover_does_not_silently_enable_sizing_or_focus() {
+        let mut template = paragraph_template();
+        template.styles[1].states[1].insert("font-size".into(), "20px".into());
+        template.styles[1].states[3] = template.styles[1].states[1].clone();
+        assert!(
+            prepare(&template)
+                .err()
+                .unwrap()
+                .contains("independent native box")
+        );
+
+        template.styles[1].states[1].clear();
+        template.styles[1].states[3].clear();
+        template.styles[1].states[2].insert("color".into(), "red".into());
+        template.styles[1].states[3] = template.styles[1].states[2].clone();
+        assert!(
+            prepare(&template)
+                .err()
+                .unwrap()
+                .contains("native focus support")
+        );
+
+        // The same inline tag at an independent placement retains the existing
+        // full box-style contract; restrictions apply to paragraph runs only.
+        assert!(prepare_cascade(&template, &template.styles, &BTreeSet::from([1])).is_ok());
     }
 }

@@ -46,6 +46,27 @@ pub struct TextCache {
     shaped: Vec<Shaped>,
     active: Option<usize>,
     pressed: Option<Rc<RefCell<Option<interaction::Pressed>>>>,
+    /// Presentation state follows measured source ancestry, not application state.
+    hovered: Arc<[TextSource]>,
+    bounds: Option<Bounds<Pixels>>,
+}
+
+/// Both variants come from the accepted CSS cascade. Source identity decides
+/// which refinement participates in the existing outer-to-inner text chain.
+pub struct InlineStyle {
+    pub source: TextSource,
+    pub normal: TextStyleRefinement,
+    pub hover: TextStyleRefinement,
+}
+
+impl InlineStyle {
+    fn effective(&self, hovered: &[TextSource]) -> &TextStyleRefinement {
+        if hovered.contains(&self.source) {
+            &self.hover
+        } else {
+            &self.normal
+        }
+    }
 }
 
 pub struct Paragraph {
@@ -54,10 +75,12 @@ pub struct Paragraph {
     pub revision: u64,
     pub cache: Rc<RefCell<TextCache>>,
     pub stats: Rc<RefCell<Stats>>,
-    pub fragments: Vec<(usize, Vec<TextStyleRefinement>)>,
+    pub fragments: Vec<(usize, Vec<InlineStyle>)>,
     pub inline_runs: Vec<InlineRun>,
     pub inline_sources: BTreeMap<(u64, u64, usize), (String, Option<String>)>,
     pub input: Option<InlineInput>,
+    hover: bool,
+    painted_hover: Arc<[TextSource]>,
     bounds: Option<Bounds<Pixels>>,
 }
 impl Paragraph {
@@ -78,6 +101,8 @@ impl Paragraph {
             inline_runs: Vec::new(),
             inline_sources: BTreeMap::new(),
             input: None,
+            hover: false,
+            painted_hover: Arc::from([]),
             bounds: None,
         }
     }
@@ -115,13 +140,25 @@ impl Element for Paragraph {
         let cache = self.cache.clone();
         let stats = self.stats.clone();
         let style = window.text_style();
+        self.hover = self.fragments.iter().any(|(_, chain)| {
+            chain
+                .iter()
+                .any(|refinement| refinement.normal != refinement.hover)
+        });
+        if !self.hover {
+            // Accepted restyling can remove the final hover rule while the text
+            // group survives. Retire presentation state with that capability.
+            self.cache.borrow_mut().hovered = Arc::from([]);
+        }
+        let hovered = self.cache.borrow().hovered.clone();
+        self.painted_hover = hovered.clone();
         let runs: Vec<TextRun> = self
             .fragments
             .iter()
             .map(|(len, refinements)| {
                 let mut effective = style.clone();
                 for refinement in refinements {
-                    crate::styles::apply_text(&mut effective, refinement);
+                    crate::styles::apply_text(&mut effective, refinement.effective(&hovered));
                 }
                 effective.to_run(*len)
             })
@@ -211,13 +248,14 @@ impl Element for Paragraph {
         bounds: Bounds<Pixels>,
         _: &mut (),
         window: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) -> Self::PrepaintState {
         self.bounds = Some(bounds);
         if self.inline_runs.is_empty() {
             return None;
         }
         let mut cache = self.cache.borrow_mut();
+        cache.bounds = Some(bounds);
         let Some(index) = cache.active else {
             return None;
         };
@@ -267,9 +305,12 @@ impl Element for Paragraph {
                 Bounds::new(bounds.origin + range.bounds.origin, range.bounds.size),
             ));
         }
-        self.input
-            .as_ref()
-            .map(|_| window.insert_hitbox(bounds, HitboxBehavior::Normal))
+        drop(stats);
+        if self.hover {
+            interaction::retire_displaced_hover(&mut cache, &self.inline_runs, window, cx);
+        }
+        (self.hover || self.input.is_some())
+            .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal))
     }
     fn paint(
         &mut self,
@@ -288,6 +329,12 @@ impl Element for Paragraph {
         let Some(shaped) = cache.active.and_then(|index| cache.shaped.get(index)) else {
             return;
         };
+        if self.hover {
+            self.stats
+                .borrow_mut()
+                .inline_hovered
+                .extend(self.painted_hover.iter().copied());
+        }
         let mut origin = bounds.origin;
         for line in &shaped.lines {
             if let Err(error) = line.paint(
@@ -303,6 +350,18 @@ impl Element for Paragraph {
             origin.y += line.size(shaped.key.line_height).height;
         }
         drop(cache);
+        if self.hover
+            && let Some(hitbox) = hitbox.clone()
+        {
+            interaction::install_hover(
+                self.cache.clone(),
+                self.inline_runs.clone(),
+                bounds,
+                hitbox,
+                window,
+                cx,
+            );
+        }
         if let Some(hitbox) = hitbox.clone()
             && let Some(input) = self.input.take()
         {
@@ -315,5 +374,90 @@ impl Element for Paragraph {
                 window,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{FontWeight, rgb};
+    use memoized_dom_desktop_host::Handle;
+
+    fn source(node: usize) -> TextSource {
+        TextSource {
+            handle: Handle {
+                id: 7,
+                generation: 2,
+            },
+            node,
+        }
+    }
+
+    #[test]
+    fn nested_hover_refinements_keep_authored_inheritance_and_normal_overrides() {
+        let parent = InlineStyle {
+            source: source(1),
+            normal: TextStyleRefinement {
+                color: Some(rgb(0x111111).into()),
+                font_weight: Some(FontWeight(400.)),
+                ..Default::default()
+            },
+            hover: TextStyleRefinement {
+                color: Some(rgb(0x225588).into()),
+                font_weight: Some(FontWeight(900.)),
+                ..Default::default()
+            },
+        };
+        let child = InlineStyle {
+            source: source(2),
+            normal: TextStyleRefinement {
+                font_weight: Some(FontWeight(700.)),
+                ..Default::default()
+            },
+            hover: TextStyleRefinement {
+                font_weight: Some(FontWeight(400.)),
+                ..Default::default()
+            },
+        };
+        let resolve = |hovered: &[TextSource]| {
+            let mut effective = TextStyle::default();
+            for inline in [&parent, &child] {
+                crate::styles::apply_text(&mut effective, inline.effective(hovered));
+            }
+            effective
+        };
+        let normal = resolve(&[]);
+        assert_eq!(normal.color, rgb(0x111111).into());
+        assert_eq!(normal.font_weight, FontWeight(700.));
+
+        let nested = resolve(&[parent.source, child.source]);
+        assert_eq!(nested.color, rgb(0x225588).into());
+        assert_eq!(nested.font_weight, FontWeight(400.));
+
+        let parent_only = resolve(&[parent.source]);
+        assert_eq!(parent_only.color, nested.color);
+        assert_eq!(parent_only.font_weight, normal.font_weight);
+        assert_eq!(resolve(&[]), normal);
+    }
+
+    #[test]
+    fn hover_does_not_follow_a_reused_owner_id_with_a_new_generation() {
+        let inline = InlineStyle {
+            source: source(1),
+            normal: TextStyleRefinement::default(),
+            hover: TextStyleRefinement {
+                font_weight: Some(FontWeight(900.)),
+                ..Default::default()
+            },
+        };
+        let retired = TextSource {
+            handle: Handle {
+                id: 7,
+                generation: 1,
+            },
+            node: 1,
+        };
+        assert_eq!(inline.effective(&[retired]), &inline.normal);
+        assert_eq!(inline.effective(&[inline.source]), &inline.hover);
     }
 }

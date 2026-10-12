@@ -67,6 +67,9 @@ export function InlineBoxes() {
       <p id="inline-paragraph" class="paragraph-flow">
         Before <Caption><strong id="caption-text">wrapped 🙂 glyphs follow component roots across lines</strong></Caption> after.
       </p>
+      <p id="hover-only-paragraph" class="paragraph-flow">
+        Plain text <span id="hover-only">hover without a handler</span> stays in one paragraph.
+      </p>
       <form onSubmit={event => { event.preventDefault(); submissions++; }}>
         <button id="save" type="submit"><span id="save-label">A button's inline label</span></button>
         <p>Submissions: {submissions}</p>

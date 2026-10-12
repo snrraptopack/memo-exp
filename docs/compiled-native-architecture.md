@@ -411,7 +411,7 @@ Define supported primitive and style semantics explicitly. Authored JSX uses the
 
 ## First implementation and validation
 
-The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing and interaction styles, and native hover/focus regrouping remain presentation gaps. Measured paragraph glyph regions support inline click and pointer routing. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
+The implementation compiles fixed and conditional component regions, finite dynamic intrinsic/component tags, inline conditional subtrees in flow containers, keyed named-component and inline list rows, ordered attribute and component-prop spreads, reactive CSS properties, primitive text/value expressions, owned callback props, and component-local control handlers. Shared analysis supplies reactive derivations and execution-aware publication for synchronous and asynchronous callbacks. Scalar expressions may use synchronous predicates, such as filtered task counts; their evaluated slot values remain primitive. Rust translates the explicit flow/text/control registry above. The compiler reuses core parsing, CSS processing, declaration normalization, component export and prop-shape discovery, lexical state discovery, callback write analysis, conditional branch normalization, list source/callback/key normalization, and expression-source planning. Ordinary object/array props retain JavaScript identities. Forwarded component children, named JSX content props, and synchronous keyed render callbacks use deferred retained factories with explicit declaring ownership. Named delegated row helpers and row-callback preludes beyond supported const derivations remain compiler gaps. Structural regions inside paragraphs, button labels, and other phrasing containers compose supported inline roots into one accepted text group. Blocks and controls in those placements reject atomically. Mixed block/inline component roots now use the accepted scene-level flow plan. Paragraph-run box sizing, cursor and focus styling, and native hover/focus regrouping remain presentation gaps. Measured paragraph source ancestry supports target hover text refinements. Measured paragraph glyph regions support inline click and pointer routing. Independently boxed inline roots and flex/grid items support ordinary sizing, hover styling, click, and pointer events.
 
 `packages/desktop` contains a Bun runtime and a Rust process host. The host installs immutable templates, retains scene instances, validates text slots and generations, and stages affected instances before accepting a transaction. Runtime value caches advance after host acceptance. The initial JSON-line bridge is inspectable and establishes operation semantics; it is not a transport performance result.
 
@@ -704,4 +704,27 @@ control's focus, and the existing desktop event dispatcher selects its nearest
 button for the submit default. Tests cover nested/cross-owner wrapped sources,
 UTF-8 and RTL geometry, alignment, blank-space exclusion, unchanged geometry
 reuse, and inline label focus/submission through the real GPUI window. Paragraph
-inline sizing and interaction styles remain explicit limits.
+inline sizing, cursor styling, and focus styling remain explicit limits.
+
+Paragraph target hover uses the same retained glyph hit regions. Each fragment
+keeps normal/hover text refinements from its accepted source owners; shaping
+selects them from the paragraph's native hovered ancestry. Nested sources
+inherit ancestor paint and retain their own authored overrides. A mouse-move
+observer clears hover during capture even when a different element consumes
+the bubbling event. Prepaint retires displaced hover using current placed bounds,
+including paragraphs clipped outside the viewport; paint revalidates the current
+pointer after scrolling, resizing, or accepted text changes. Draw-time hover
+changes defer notification until after GPUI's draw effect cycle, when view
+invalidation can request the next frame. Only a changed source ancestry notifies
+GPUI; no application event or reactive write crosses the Bun bridge.
+
+Color, text background, font family/weight/style, and supported decorations use
+the existing GPUI text-run contract. Changes to shaping input use the existing
+bounded text cache; repeated moves within one source and unchanged redraws reuse
+shaping and glyph projections. Paragraph CSS validation permits target hover
+refinements while retaining explicit rejection of focus and box/size properties.
+Inspection exposes the painted ancestry in `renderer.inline_hovered`. The real
+inline window check exercises cross-owner/nested hover, font-weight measurement,
+restoration on leaving, a scene with no event sites, fully clipped paragraphs,
+unchanged scene sequence, and cache reuse. Native interaction styling is presentation state, not another reactive
+engine or subscription bridge.
