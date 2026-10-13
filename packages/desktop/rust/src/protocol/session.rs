@@ -1,7 +1,9 @@
 use serde::Serialize;
+use std::collections::HashMap;
 
-use crate::document::{DocumentError, Mutation, NativeDocument};
+use crate::document::{DocumentError, NativeDocument};
 
+use super::templates::TemplateRegistry;
 use super::wire::{DecodedPacket, MAX_SAFE_INTEGER};
 use super::{PROTOCOL_VERSION, ProtocolError};
 
@@ -30,6 +32,7 @@ impl Acceptance {
 /// operation that advances this connection's accepted scene sequence.
 pub struct PublicationSession {
     document: NativeDocument,
+    templates: TemplateRegistry,
     next_sequence: Option<u64>,
     closed: bool,
 }
@@ -39,6 +42,7 @@ impl PublicationSession {
         let closed = document.is_failed();
         Self {
             document,
+            templates: HashMap::new(),
             next_sequence: Some(1),
             closed,
         }
@@ -52,10 +56,16 @@ impl PublicationSession {
         self.closed
     }
 
+    pub fn template_count(&self) -> usize {
+        self.templates.len()
+    }
+
     /// Deliver complete framed JSON bytes. Decode/reference refusals leave the
     /// sequence available for correction; duplicates and gaps never reapply work.
     pub fn publish(&mut self, bytes: &[u8]) -> Result<Acceptance, ProtocolError> {
-        self.publish_with(bytes, NativeDocument::update)
+        self.publish_with(bytes, |document, templates, packet| {
+            packet.apply_to(document, templates)
+        })
     }
 
     /// A transport that loses an acknowledgment must close rather than replay it.
@@ -68,7 +78,11 @@ impl PublicationSession {
     fn publish_with(
         &mut self,
         bytes: &[u8],
-        apply: impl FnOnce(&mut NativeDocument, &[Mutation]) -> Result<(), DocumentError>,
+        apply: impl FnOnce(
+            &mut NativeDocument,
+            &mut TemplateRegistry,
+            DecodedPacket,
+        ) -> Result<(), ProtocolError>,
     ) -> Result<Acceptance, ProtocolError> {
         if self.closed {
             return Err(ProtocolError::Closed);
@@ -82,17 +96,19 @@ impl PublicationSession {
             });
         }
 
-        // update() validates the entire write set before opening a live mutator.
-        // The exclusive borrow keeps input/paint from interleaving its application.
-        if let Err(error) = apply(&mut self.document, &packet.writes) {
+        // Templates/references/topology all validate before live work. The
+        // exclusive borrow keeps input/paint from interleaving its application.
+        if let Err(error) = apply(&mut self.document, &mut self.templates, packet) {
             if matches!(
                 error,
-                DocumentError::ApplicationFailed | DocumentError::FailedDocument
+                ProtocolError::Refused(
+                    DocumentError::ApplicationFailed | DocumentError::FailedDocument
+                )
             ) {
                 self.close();
                 return Err(ProtocolError::AcceptanceUnknown);
             }
-            return Err(ProtocolError::Refused(error));
+            return Err(error);
         }
 
         self.next_sequence = (expected < MAX_SAFE_INTEGER).then_some(expected + 1);
@@ -132,11 +148,11 @@ mod tests {
         let node = document.node_id(&owner.node(0)).unwrap();
         let mut session = PublicationSession::new(document);
         let packet = br#"{"version":1,"sequence":1,"writes":[{"op":"text","target":{"owner":{"id":"App","generation":1},"source":0},"value":"applied"}]}"#;
-        let result = session.publish_with(packet, |document, writes| {
+        let result = session.publish_with(packet, |document, templates, packet| {
             // Simulate a failure after a real engine write. The protocol must
             // never return an ordinary refusal or pretend the write rolled back.
-            document.update(writes)?;
-            Err(DocumentError::ApplicationFailed)
+            packet.apply_to(document, templates)?;
+            Err(ProtocolError::Refused(DocumentError::ApplicationFailed))
         });
 
         assert_eq!(result, Err(ProtocolError::AcceptanceUnknown));

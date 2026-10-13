@@ -613,3 +613,56 @@ native transaction validator to versioned structural packets and acceptance.
 Process framing/failure propagation remains subsequent M2 work. There is no
 window or ordinary mounted application yet. Commit/remote status is reported
 after publishing this tested batch; continuation proceeds without a go-ahead.
+
+## M2.2c — Structural wire publication and immutable template acceptance
+
+Completed implementation/checks: 2026-10-13. M2 remains in progress.
+
+### Prior boundary communication and decisions
+
+After publishing M2.2b, communicated continuation into the desktop protocol only:
+structural packets use the native transaction validator, and immutable template
+declarations become accepted only with their successful complete batch. No shared
+compiler/runtime/list or application-authoring change was required.
+
+- Split operation conversion, immutable templates and wire identities into focused
+  modules. Decoding remains bounded/versioned; native template and transaction
+  validators remain the authorities for source and ownership/topology checks.
+- `operations` accepts text/attribute, mount, move-before, move-to-end and retire.
+  The initial `writes` spelling remains an alias; both spellings together refuse.
+- Optional template declarations carry source records keyed by immutable identity.
+  Later instances reference accepted keys without resending nodes. Existing keys
+  cannot be overwritten, and duplicate candidate keys refuse. Changed source must
+  have a new key. This is a presentation-template registry, not application access
+  routing or a second state system.
+- Candidate declarations validate before application. Accepted registry capacity
+  is reserved before live work; entries advance only after the complete native
+  batch succeeds. Ordinary refusal advances neither declarations nor sequence.
+  Templates live until session disposal; reload/cache lifetime remains an M8 gate.
+- An actual injected shell failure during a wire mount proves unknown acceptance,
+  terminal document/session state, no accepted declarations and no retry. The
+  partially applied engine text remains visible to inspection; no rollback claim.
+
+### Verification and corrected failure
+
+- First run: 3 unit passed, 44 integration passed, 1 integration failed. The new
+  strict destination test found Serde ignored extra fields on an internally tagged
+  unit variant despite `deny_unknown_fields`. Replaced the body destination with an
+  empty struct variant and retained the strict rejection contract.
+- Corrected final `bun run --cwd packages/desktop native:test`: **48 passed,
+  0 failed**, exit 0 (3 unit, 45 integration). Rebuild 20.72s; execution 0.09s
+  unit and 1.69s integration. Existing write-set, ownership and real layout/input
+  contracts still pass.
+- New structural wire evidence covers accepted template reuse, retained native IDs
+  during keyed order changes, all-or-nothing refusal before native publication,
+  template immutability/topology, new element/region destinations, nested retirement,
+  strict fields/alias duplication, safe generations, replacement refusal/correction
+  and closure after actual partial native application.
+- All-target locked/offline Clippy with warnings denied, package format/native
+  checks and whitespace verification are completion gates. No dependencies or JS
+  production files changed. The unrelated fullstack edit remains unstaged.
+
+M2 still needs bounded process framing, controlled shell/resource providers and
+transport fatal/lost-ack failure propagation. The codec/session remains in process,
+with no mounted TSX/window claimed. Source publication is reported with exact
+remote verification; autonomous continuation proceeds into the remaining boundary.

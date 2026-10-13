@@ -5,7 +5,7 @@ runtime with a retained Blitz document in Rust. Application authoring remains
 ordinary TSX, CSS, events, refs and `mount()` from the framework runtime.
 
 This branch currently implements the Rust document foundation and ordered wire
-acceptance for text/attribute publications. The desktop emitter,
+acceptance for complete mount/write/move/retire publications. The desktop emitter,
 JavaScript publication adapter and window command are subsequent milestones. There
 is no mounted application example to run yet. This package's scripts exercise the
 native foundation; they do not change web mounting or select a desktop renderer.
@@ -81,16 +81,16 @@ and completed layout/paint remain separate:
 
 `PublicationSession` owns the native document for one connection. It accepts a
 complete JSON packet through `publish(bytes)`, validates decoding and sequencing,
-then calls the existing whole-write-set document validator. It exposes the
+then calls the combined native transaction validator. It exposes the
 document for immutable inspection, with no mutable escape hatch.
 
-The first packet family is deliberately text/attributes only:
+The operation array supports text/attributes and structural publication:
 
 ```json
 {
   "version": 1,
   "sequence": 1,
-  "writes": [
+  "operations": [
     {
       "op": "text",
       "target": { "owner": { "id": "App", "generation": 1 }, "source": 1 },
@@ -106,6 +106,38 @@ the target/name without a value. Removal is an explicit operation; a missing or
 null set value is refused rather than treated as removal. Names and node kinds
 are checked by the existing document layer. Namespace strings reach Blitz intact.
 
+`mount` carries `owner`, an immutable `template` key and a `target` destination.
+Destinations are `{"kind":"body"}`, or `{"kind":"element","source":...}` /
+`{"kind":"region","source":...}` using the same source reference shape.
+`moveBefore` carries `owner`/`before`; `moveToEnd` and `retire` carry `owner`.
+The entire operation order validates against live and candidate ownership before
+the first native mutation. Version 1's original `writes` array spelling remains
+an alias; specifying both array names refuses as a duplicate field.
+
+Optional `templates` declares immutable source templates in the same packet:
+
+```json
+{
+  "key": "counter:label",
+  "nodes": [
+    { "parent": null, "node": { "kind": "text", "value": "Count: 0" } }
+  ]
+}
+```
+
+Source nodes use `kind` element/text/comment. Elements contain a qualified `name`
+and an `attributes` array of qualified name/string value pairs; text/comments
+contain a string `value`. The existing native template validator checks topology,
+names and duplicate attributes. Mount operations can reference declarations in
+their own packet or accepted declarations from earlier sequences.
+
+The session stores accepted templates by key, so additional instances mount without
+resending source payloads. Declaring an existing or duplicate candidate key refuses;
+changed compiled content needs a new template key. Refusal publishes neither scene
+changes nor template declarations. Accepted templates live until session disposal,
+including after all of their instances retire. Reload/cache lifetime remains a
+dev-workflow gate; no unbounded-refresh performance result is claimed.
+
 Successful application returns the serializable acknowledgment
 `{"version":1,"sequence":1,"status":"accepted"}`. Sequences begin at 1 and
 advance only after complete application. Refusal leaves the expected sequence
@@ -114,7 +146,7 @@ work. Empty publications advance ordering without a redraw. The acknowledgment
 establishes structural acceptance, not completed layout or paint.
 
 Unknown fields/operations, duplicate fields, missing required fields and invalid
-JSON refuse. Limits are 1 MiB of UTF-8 packet bytes, 4,096 writes and 256 UTF-8
+JSON refuse. Limits are 1 MiB of UTF-8 packet bytes, 4,096 operations and 256 UTF-8
 bytes per owner ID. Sequence/generation counters must be positive JavaScript safe
 integers, and source indices must fit unsigned 32-bit integers. The last safe
 sequence accepts once; further publication requires a new connection/document.
@@ -150,14 +182,13 @@ refusal outside a prepared batch; no partial application is reported as rollback
 Structural operations currently use their established individual mutators. Redraw
 requests and resource-provider work still need the controlled provider boundary;
 this API is not proof of coalesced outward work for a mixed batch. The wire session
-still accepts text/attributes only; the next batch connects this validated native
-transaction path to structural packet decoding.
+uses this same transaction path, with no second topology validator.
 
 ## Current boundary
 
 The in-process document API, wire write-set codec/session and headless native
 contracts are the current scope. Combined native transaction validation/application
-is implemented in process. Structural wire packets, process framing/transport,
+and structural wire publication are implemented in process. Process framing/transport,
 controlled resource providers and transport
 failure propagation remain M2 work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.

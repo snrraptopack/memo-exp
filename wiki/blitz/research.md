@@ -277,8 +277,16 @@ accepted source kinds and descendant boundaries come from Blitz. The whole autho
 sequence validates before live work, and adjacent writes reuse one mutator. Native
 contracts cover candidate targets, nested retirement, retained IDs, replacement
 generations and late refusal without earlier effects. The existing mutators still
-perform individual structural flushes: controlled provider work and structural wire
-integration remain gates, and no process/window is claimed by this in-process API.
+perform individual structural flushes: controlled provider work remains a gate.
+
+M2.2c connects structural packets to the same native transaction validator. The
+session accepts immutable template declarations by key only after their complete
+batch applies; later instances reference accepted keys without resending source
+nodes. Qualified names/attributes and source topology use the native template
+validator. There is no second topology walk in the protocol or another application
+access resolver. Ordinary refusal advances neither the sequence nor declarations;
+actual partial native failure closes the session. Process transport/provider control
+and window integration remain gates; this in-process codec is not a running app.
 
 Input editors are initialized during Blitz layout construction. The native contract
 checks values written before first layout and subsequent editor updates. The future

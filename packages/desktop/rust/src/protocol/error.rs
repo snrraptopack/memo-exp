@@ -8,6 +8,8 @@ pub enum ProtocolError {
     Decode(String),
     UnsupportedVersion { received: u32 },
     TooManyWrites,
+    DuplicateTemplate(String),
+    UnknownTemplate(String),
     InvalidSequence,
     InvalidIdentity,
     OutOfOrder { expected: u64, received: u64 },
@@ -25,7 +27,15 @@ impl fmt::Display for ProtocolError {
             Self::UnsupportedVersion { received } => {
                 write!(output, "unsupported desktop protocol version {received}")
             }
-            Self::TooManyWrites => write!(output, "desktop publication exceeds the write limit"),
+            Self::TooManyWrites => {
+                write!(output, "desktop publication exceeds the operation limit")
+            }
+            Self::DuplicateTemplate(key) => {
+                write!(output, "desktop template {key:?} is already declared")
+            }
+            Self::UnknownTemplate(key) => {
+                write!(output, "desktop template {key:?} is not declared")
+            }
             Self::InvalidSequence => {
                 write!(output, "desktop sequence must be a positive safe integer")
             }

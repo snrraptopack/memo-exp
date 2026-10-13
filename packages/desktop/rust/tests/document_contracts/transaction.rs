@@ -465,8 +465,8 @@ fn retire_then_write_to_nested_live_region_owner_is_a_safe_refusal() {
 }
 
 #[derive(Default)]
-struct FailingShell {
-    countdown: AtomicUsize,
+pub(super) struct FailingShell {
+    pub(super) countdown: AtomicUsize,
 }
 
 impl ShellProvider for FailingShell {
