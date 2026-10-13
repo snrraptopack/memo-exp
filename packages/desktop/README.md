@@ -125,11 +125,40 @@ acknowledgment rather than replaying possibly applied work. This batch implement
 the codec/session contract, not an OS process or pending-job queue. Stream framing
 must enforce the packet byte limit before buffering; that reader is still pending.
 
+## Combined native transactions
+
+`NativeDocument::transact` accepts an authored sequence of `Operation` records:
+mount, write, move-before, move-to-end and retire. It validates the entire sequence
+before applying the first operation. A new mount may supply element/comment
+destinations and text/attribute sources to later operations in the same batch.
+
+Validation stages only new/retired owners, changed generation marks and candidate
+mount containment edges. Existing sources and descendant boundaries are read from
+the actual Blitz tree. It does not clone the accepted registry or maintain another
+rendered tree. Same-destination moves preserve containment; cross-destination moves
+refuse. Retirement invalidates existing and candidate descendants, including empty
+and comment-anchored fragments. A replacement generation mounted outside a retired
+parent survives that parent's retirement.
+
+An invalid later operation leaves every earlier candidate mount/write/move/retire
+unapplied, without consuming generations or requesting redraw. After validation,
+the batch reuses the existing native operations under exclusive document ownership.
+Adjacent writes share one mutator and retain authored order. An unexpected error
+during application is terminal, including an inner error that would be an ordinary
+refusal outside a prepared batch; no partial application is reported as rollback.
+
+Structural operations currently use their established individual mutators. Redraw
+requests and resource-provider work still need the controlled provider boundary;
+this API is not proof of coalesced outward work for a mixed batch. The wire session
+still accepts text/attributes only; the next batch connects this validated native
+transaction path to structural packet decoding.
+
 ## Current boundary
 
 The in-process document API, wire write-set codec/session and headless native
-contracts are the current scope. Atomic batches combining mount, move, write and
-retirement, process framing/transport, controlled resource providers and transport
+contracts are the current scope. Combined native transaction validation/application
+is implemented in process. Structural wire packets, process framing/transport,
+controlled resource providers and transport
 failure propagation remain M2 work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
 

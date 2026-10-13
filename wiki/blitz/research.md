@@ -268,8 +268,17 @@ ordinary refusal permits a corrected sequence, while ambiguous application failu
 closes the session. Packet/operation limits and JavaScript-safe identity counters
 bound this wire surface. Tests verify refusal without redraw, duplicate/gap
 rejection, qualified attributes and closed-session replay refusal. The process
-reader/writer, mixed structural transactions and controlled resource providers
+reader/writer, structural wire transactions and controlled resource providers
 remain M2 work; the native session is not a running process integration.
+
+M2.2b adds combined native transaction validation/application. Its temporary
+overlay stages affected ownership/generation facts and candidate containment edges;
+accepted source kinds and descendant boundaries come from Blitz. The whole authored
+sequence validates before live work, and adjacent writes reuse one mutator. Native
+contracts cover candidate targets, nested retirement, retained IDs, replacement
+generations and late refusal without earlier effects. The existing mutators still
+perform individual structural flushes: controlled provider work and structural wire
+integration remain gates, and no process/window is claimed by this in-process API.
 
 Input editors are initialized during Blitz layout construction. The native contract
 checks values written before first layout and subsequent editor updates. The future

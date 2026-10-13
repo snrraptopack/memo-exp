@@ -9,6 +9,8 @@ use memoized_dom_desktop::document::{
 };
 #[path = "document_contracts/protocol.rs"]
 mod protocol;
+#[path = "document_contracts/transaction.rs"]
+mod transaction;
 
 #[derive(Default)]
 struct RecordingShell {

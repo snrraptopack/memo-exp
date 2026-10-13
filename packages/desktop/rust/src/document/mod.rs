@@ -7,6 +7,7 @@ mod lifetime;
 mod mount;
 mod mutations;
 mod template;
+mod transaction;
 
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -17,6 +18,7 @@ pub use error::DocumentError;
 pub use identity::{MountTarget, NodeRef, Owner};
 pub use mutations::Mutation;
 pub use template::{SourceNode, Template, TemplateNode, ValidatedTemplate};
+pub use transaction::Operation;
 
 use instance::Instance;
 
@@ -103,13 +105,15 @@ impl NativeDocument {
     /// Validation happens before this boundary. An unwind cannot be reported as
     /// an atomic refusal: live mutations or provider work may already have run.
     fn apply<T>(&mut self, operation: impl FnOnce(&mut Self) -> T) -> Result<T, DocumentError> {
-        self.failed = true;
+        // A prepared transaction reuses inner operation guards. Preserve a
+        // failure recorded by an inner guard when the outer closure returns;
+        // exclusive document ownership prevents concurrent access during work.
         match catch_unwind(AssertUnwindSafe(|| operation(self))) {
-            Ok(result) => {
-                self.failed = false;
-                Ok(result)
+            Ok(result) => Ok(result),
+            Err(_) => {
+                self.failed = true;
+                Err(DocumentError::ApplicationFailed)
             }
-            Err(_) => Err(DocumentError::ApplicationFailed),
         }
     }
 }

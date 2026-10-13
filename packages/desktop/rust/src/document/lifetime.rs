@@ -69,7 +69,7 @@ impl NativeDocument {
         })
     }
 
-    fn instance_range(&self, owner: &Owner) -> Result<Vec<NodeId>, DocumentError> {
+    pub(super) fn instance_range(&self, owner: &Owner) -> Result<Vec<NodeId>, DocumentError> {
         let instance = self
             .instances
             .get(owner)

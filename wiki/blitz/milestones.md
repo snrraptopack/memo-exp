@@ -560,3 +560,56 @@ failure to pending work. None of those gates is marked complete by this codec.
 The ordinary mounted TSX counter and visible window remain M3. Compiler/runtime
 authoring and the web target did not change. Commit/remote status is reported
 after the batch's checks and source-history publication.
+
+## M2.2b — Complete native candidate topology validation
+
+Completed implementation/checks: 2026-10-13. M2 remains in progress.
+
+### Prior boundary communication and implementation
+
+Communicated before editing that only the desktop native document layer would
+change: shared node-kind checks, a temporary affected-owner overlay and the live
+application guard. Existing compiler/runtime/web/list behavior is untouched.
+Communicated adjacent-write grouping before adding its shared iterator path.
+
+- Added `Operation` and `NativeDocument::transact`. The complete authored order
+  validates before any live mount/write/move/retire. Newly mounted sources can
+  supply later write and element/comment-region destinations in the same batch.
+- Candidate bookkeeping contains only new/retired owners, changed generation
+  marks and new mount containment edges. Live source kinds/ranges come from the
+  engine. Retirement traverses only the affected native range through the existing
+  reverse boundary index; it does not scan or clone the whole owner registry.
+- Same-destination moves retain containment and native identity. Parent retirement
+  invalidates live and candidate descendants, including empty/region instances.
+  A newer generation mounted outside a retired parent survives that retirement.
+- Name/kind validation is shared with ordinary writes. Adjacent transaction writes
+  prepare through the existing mutation path without copying values and flush one
+  mutator in authored order.
+- Application reuses the established native operations. The unwind guard preserves
+  an inner failure rather than clearing it on an outer return. Any unexpected
+  error after complete validation makes the document terminal; a real injected
+  shell failure leaves a partially applied text write and refuses all later work.
+
+### Evidence and remaining boundaries
+
+- First native run: **39 passed, 0 failed**. After adjacent-write grouping, final
+  `bun run --cwd packages/desktop native:test`: **40 passed, 0 failed**, exit 0
+  (3 unit, 37 integration). Changed-target rebuild 17.29s; execution 0.09s unit
+  and 1.55s integration. Existing real engine/layout/input/wire contracts pass.
+- New contracts verify whole-batch refusal with no allocation publication,
+  generation consumption or redraw; same-batch destinations/writes; mixed moves
+  and retirement; live/candidate descendant invalidation; old-generation rejection;
+  outside replacement survival; invalid/self-containment destinations; one mutator
+  for adjacent writes; and terminal failure during actual native application.
+- All-target locked/offline Clippy with `-D warnings` passed. Format/native checks
+  and source whitespace checks are included in the completion verification.
+- No JavaScript production changes, dependency changes or full JS-suite repeat.
+  The unrelated fullstack edit remains unstaged.
+
+Structural operations still use individual established mutators. Controlled
+redraw/resource providers are a remaining M2 gate; this batch does not claim one
+flush or fully contained outward work for every mixed batch. M2.2c connects the
+native transaction validator to versioned structural packets and acceptance.
+Process framing/failure propagation remains subsequent M2 work. There is no
+window or ordinary mounted application yet. Commit/remote status is reported
+after publishing this tested batch; continuation proceeds without a go-ahead.
