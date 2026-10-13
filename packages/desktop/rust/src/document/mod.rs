@@ -11,6 +11,7 @@ mod transaction;
 
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId, QualName, ns};
 
@@ -20,6 +21,7 @@ pub use mutations::Mutation;
 pub use template::{SourceNode, Template, TemplateNode, ValidatedTemplate};
 pub use transaction::Operation;
 
+use crate::providers::PublicationProviders;
 use instance::Instance;
 
 /// The engine document is retained between accepted presentation updates.
@@ -31,10 +33,12 @@ pub struct NativeDocument {
     owner_boundaries: HashMap<NodeId, Owner>,
     generations: HashMap<String, u64>,
     failed: bool,
+    providers: Arc<PublicationProviders>,
 }
 
 impl NativeDocument {
-    pub fn new(config: DocumentConfig) -> Self {
+    pub fn new(mut config: DocumentConfig) -> Self {
+        let providers = PublicationProviders::install(&mut config);
         let mut document = BaseDocument::new(config);
         let root = document.root_node().id;
         let body;
@@ -53,6 +57,7 @@ impl NativeDocument {
             owner_boundaries: HashMap::new(),
             generations: HashMap::new(),
             failed: false,
+            providers,
         }
     }
 
@@ -108,13 +113,33 @@ impl NativeDocument {
         // A prepared transaction reuses inner operation guards. Preserve a
         // failure recorded by an inner guard when the outer closure returns;
         // exclusive document ownership prevents concurrent access during work.
-        match catch_unwind(AssertUnwindSafe(|| operation(self))) {
-            Ok(result) => Ok(result),
+        match catch_unwind(AssertUnwindSafe(|| {
+            self.providers.begin();
+            let result = operation(self);
+            if self.failed {
+                self.providers.fail();
+                return Err(DocumentError::ApplicationFailed);
+            }
+            self.providers.finish();
+            Ok(result)
+        })) {
+            Ok(result) => result,
             Err(_) => {
                 self.failed = true;
+                self.providers.fail();
                 Err(DocumentError::ApplicationFailed)
             }
         }
+    }
+
+    pub(crate) fn cancel_provider_work(&self) {
+        self.providers.fail();
+    }
+}
+
+impl Drop for NativeDocument {
+    fn drop(&mut self) {
+        self.providers.fail();
     }
 }
 
@@ -125,6 +150,87 @@ pub fn html_name(name: &str) -> QualName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blitz_dom::Attribute;
+    use blitz_traits::net::{NetHandler, NetProvider, Request};
+    use blitz_traits::shell::ShellProvider;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct ProviderProbe {
+        fetches: AtomicUsize,
+        redraws: AtomicUsize,
+        titles: AtomicUsize,
+    }
+
+    impl NetProvider for ProviderProbe {
+        fn fetch(&self, _: usize, _: Request, _: Box<dyn NetHandler>) {
+            self.fetches.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl ShellProvider for ProviderProbe {
+        fn request_redraw(&self) {
+            self.redraws.fetch_add(1, Ordering::SeqCst);
+        }
+        fn set_window_title(&self, _: String) {
+            self.titles.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn unwind_after_real_nested_mount_discards_all_candidate_provider_work() {
+        let probe = Arc::new(ProviderProbe::default());
+        let mut host = NativeDocument::new(DocumentConfig {
+            net_provider: Some(probe.clone()),
+            shell_provider: Some(probe.clone()),
+            base_url: Some("https://assets.example/".to_string()),
+            ..DocumentConfig::default()
+        });
+        probe.redraws.store(0, Ordering::SeqCst);
+        let template = ValidatedTemplate::new(Template {
+            key: "failed-resources".to_string(),
+            nodes: vec![
+                TemplateNode {
+                    parent: None,
+                    node: SourceNode::Element {
+                        name: html_name("title"),
+                        attributes: vec![],
+                    },
+                },
+                TemplateNode {
+                    parent: Some(0),
+                    node: SourceNode::Text("candidate".to_string()),
+                },
+                TemplateNode {
+                    parent: None,
+                    node: SourceNode::Element {
+                        name: html_name("img"),
+                        attributes: vec![Attribute {
+                            name: QualName::new(None, ns!(), "src".into()),
+                            value: "candidate.png".to_string(),
+                        }],
+                    },
+                },
+            ],
+        })
+        .unwrap();
+        let result = host.apply(|host| {
+            host.mount(Owner::new("candidate", 1), &template, MountTarget::Body)
+                .unwrap();
+            assert_eq!(probe.fetches.load(Ordering::SeqCst), 0);
+            assert_eq!(probe.redraws.load(Ordering::SeqCst), 0);
+            panic!("unexpected failure after a candidate mount");
+        });
+        assert_eq!(result, Err(DocumentError::ApplicationFailed));
+        assert!(host.is_failed());
+        assert_eq!(
+            host.engine().get_node(host.body()).unwrap().text_content(),
+            "candidate"
+        );
+        assert_eq!(probe.fetches.load(Ordering::SeqCst), 0);
+        assert_eq!(probe.titles.load(Ordering::SeqCst), 0);
+        assert_eq!(probe.redraws.load(Ordering::SeqCst), 0);
+    }
 
     #[test]
     fn unexpected_live_failure_is_terminal_and_does_not_claim_rollback() {

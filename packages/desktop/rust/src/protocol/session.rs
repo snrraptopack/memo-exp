@@ -95,6 +95,7 @@ impl PublicationSession {
     /// this flag prevents any further application while shutdown is in progress.
     pub fn close(&mut self) {
         self.closed = true;
+        self.document.cancel_provider_work();
     }
 
     fn publish_with(

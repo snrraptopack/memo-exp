@@ -703,3 +703,67 @@ whitespace verification are completion gates. No full JS suite was repeated,
 and the unrelated fullstack edit remains unstaged. Commit/push and exact remote
 status are reported after verification. M2 still needs controlled providers and
 the actual process/UI transport driver before being marked complete.
+
+## M2.2e — Native provider containment and shutdown
+
+Completed implementation/checks: 2026-10-13. M2 remains in progress.
+
+### Inspection and prior boundary communication
+
+Inspected the pinned shell/net traits and actual mutator flush/resource calls,
+including redraw, title, image/stylesheet fetch and focus/blur IME changes.
+Communicated the desktop-only boundary before edits: provider wrappers, the
+existing native application guard and session shutdown. Communicated the direct
+already-locked cursor type dependency required to forward the full shell trait.
+Compiler, runtime, optimized DOM lists and application authoring are unchanged.
+
+### Implementation and decisions
+
+- Added focused provider gate, net and shell modules. Each document has its own
+  Idle/Held/Failed state. Nested operation guards release only at the successful
+  outer boundary; there is no application state, access routing or CSS parser here.
+- Resource requests and redraw/title/cursor/IME changes are held during protected
+  application. Final settings release with one redraw. Provider callbacks run
+  outside the mutex; synchronous imports/redraw callbacks remain contained.
+- A total 4,096-request budget covers queued and reentrant work in one application.
+  Overflow is terminal rather than dropped or looped indefinitely. Failure discards
+  queued handlers outside the mutex and recovers poison before late callbacks.
+- The complete shell trait forwards capabilities outside publication. Unexpected
+  synchronous interactive work during scene application fails explicitly; accepted
+  input/default handling still needs its M4 boundary. No clipboard/dialog stand-in
+  was invented for a live integration.
+- Net `is_noop` behavior is forwarded to preserve critical-resource accounting.
+  Aborted queued requests do not start. Default document-owned abort signals are
+  signaled on failure/close/disposal. Supplied signals remain caller-owned; the
+  document does not abort another scope's shared controller.
+- Unexpected prepared-operation errors mark failure inside the guard before any
+  provider release. Session closure also cancels provider work. Native disposal
+  suppresses late callbacks. Already dispatched work cannot be rolled back;
+  cancellation depends on the backend honoring abort signals.
+- The existing platform-failure contract now verifies failure at final release:
+  both the write and retirement finished before redraw failed. Its node is gone
+  and acceptance remains unknown/terminal. The separate real nested-mount unwind
+  test verifies a partially applied native tree with zero escaped provider work.
+
+Cargo adds only a direct `cursor-icon` dependency edge at the existing locked
+1.2.0 version; no package record or dependency version changed. No Bun lock change.
+
+### Evidence and remaining gates
+
+- Final `bun run --cwd packages/desktop native:test`: **69 passed, 0 failed**,
+  exit 0 (11 unit, 58 integration). Changed-target build 24.12s; execution 0.21s
+  unit and 2.09s integration. These are test measurements, not app startup.
+- New evidence covers nested containment, real image/title flushes, one redraw,
+  final title, late refusal without platform/resource work, actual live-mount
+  unwind, shutdown abortion/caller ownership, cursor/IME/live query forwarding,
+  no-op identity, reentrant dispatch without deadlock, total budget failure and
+  poisoned-lock recovery. Existing real layout/input/wire/frame contracts pass.
+- All-target locked/offline Clippy with warnings denied, package format/native
+  checks and staged whitespace verification are completion gates. No full JS suite
+  was repeated or run beside native linking; no JS production source changed.
+
+The native provider gate is complete for this protected publication surface.
+Real process launch, bounded UI/worker queues, refusal responses and pending-job
+teardown remain M2 work. Asset loading, native input/defaults and a mounted TSX
+window are not claimed by these tests. Preserve the unrelated fullstack edit.
+Commit/push and exact remote verification follow this tested batch.

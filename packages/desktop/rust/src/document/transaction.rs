@@ -61,51 +61,59 @@ impl NativeDocument {
         // A failure in an already validated batch is ambiguous, even if an inner
         // operation returns what would otherwise be an ordinary validation error.
         let applied = self.apply(|document| {
-            let mut index = 0;
-            while let Some(operation) = operations.get(index) {
-                match operation {
-                    Operation::Mount {
-                        owner,
-                        template,
-                        target,
-                    } => {
-                        document.mount(owner.clone(), template, target.clone())?;
-                    }
-                    Operation::Write(_) => {
-                        let count = operations[index..]
-                            .iter()
-                            .take_while(|operation| matches!(operation, Operation::Write(_)))
-                            .count();
-                        let writes =
-                            operations[index..index + count]
-                                .iter()
-                                .filter_map(|operation| {
-                                    if let Operation::Write(write) = operation {
-                                        Some(write)
-                                    } else {
-                                        None
-                                    }
-                                });
-                        document.update_iter(writes)?;
-                        index += count;
-                        continue;
-                    }
-                    Operation::MoveBefore { owner, before } => {
-                        document.move_before(owner, before)?
-                    }
-                    Operation::MoveToEnd { owner } => document.move_to_end(owner)?,
-                    Operation::Retire { owner } => document.retire(owner)?,
-                }
-                index += 1;
+            let result = document.apply_operations(operations);
+            if result.is_err() {
+                // Do not release provider work for an unexpected prepared error.
+                document.failed = true;
             }
-            Ok::<(), DocumentError>(())
+            result
         })?;
 
         if applied.is_err() {
             self.failed = true;
+            self.providers.fail();
             return Err(DocumentError::ApplicationFailed);
         }
         Ok(())
+    }
+
+    fn apply_operations(&mut self, operations: &[Operation<'_>]) -> Result<(), DocumentError> {
+        let document = self;
+        let mut index = 0;
+        while let Some(operation) = operations.get(index) {
+            match operation {
+                Operation::Mount {
+                    owner,
+                    template,
+                    target,
+                } => {
+                    document.mount(owner.clone(), template, target.clone())?;
+                }
+                Operation::Write(_) => {
+                    let count = operations[index..]
+                        .iter()
+                        .take_while(|operation| matches!(operation, Operation::Write(_)))
+                        .count();
+                    let writes = operations[index..index + count]
+                        .iter()
+                        .filter_map(|operation| {
+                            if let Operation::Write(write) = operation {
+                                Some(write)
+                            } else {
+                                None
+                            }
+                        });
+                    document.update_iter(writes)?;
+                    index += count;
+                    continue;
+                }
+                Operation::MoveBefore { owner, before } => document.move_before(owner, before)?,
+                Operation::MoveToEnd { owner } => document.move_to_end(owner)?,
+                Operation::Retire { owner } => document.retire(owner)?,
+            }
+            index += 1;
+        }
+        Ok::<(), DocumentError>(())
     }
 }
 

@@ -11,6 +11,8 @@ use memoized_dom_desktop::document::{
 mod framing;
 #[path = "document_contracts/protocol.rs"]
 mod protocol;
+#[path = "document_contracts/providers.rs"]
+mod providers;
 #[path = "document_contracts/structural_wire.rs"]
 mod structural_wire;
 #[path = "document_contracts/transaction.rs"]

@@ -480,7 +480,7 @@ impl ShellProvider for FailingShell {
 }
 
 #[test]
-fn unexpected_platform_failure_during_mixed_application_is_terminal() {
+fn platform_failure_releasing_complete_mixed_application_is_terminal() {
     let shell = Arc::new(FailingShell::default());
     let mut document = NativeDocument::new(DocumentConfig {
         shell_provider: Some(shell.clone()),
@@ -502,12 +502,11 @@ fn unexpected_platform_failure_during_mixed_application_is_terminal() {
         ]),
         Err(DocumentError::ApplicationFailed)
     );
-    assert_eq!(
-        document.engine().get_node(node).unwrap().text_content(),
-        "partially applied"
-    );
+    // Redraw is now released after both writes and retirement finish. The whole
+    // native batch applied, but platform failure still makes acceptance unknown.
+    assert!(document.engine().get_node(node).is_none());
     assert!(document.is_failed());
-    assert_eq!(document.owner_count(), 1);
+    assert_eq!(document.owner_count(), 0);
     assert_eq!(document.transact(&[]), Err(DocumentError::FailedDocument));
     assert_eq!(document.retire(&owner), Err(DocumentError::FailedDocument));
 }

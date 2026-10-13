@@ -205,18 +205,47 @@ Adjacent writes share one mutator and retain authored order. An unexpected error
 during application is terminal, including an inner error that would be an ordinary
 refusal outside a prepared batch; no partial application is reported as rollback.
 
-Structural operations currently use their established individual mutators. Redraw
-requests and resource-provider work still need the controlled provider boundary;
-this API is not proof of coalesced outward work for a mixed batch. The wire session
-uses this same transaction path, with no second topology validator.
+Structural operations use their established individual mutators. A per-document
+provider boundary now contains their outward requests until complete application;
+adjacent writes still share one mutator. The wire session uses this same transaction
+path, with no second topology validator.
+
+## Controlled native providers
+
+The document installs wrappers around its configured Blitz shell/net providers.
+Protected application holds resource requests, redraw, title, cursor and IME
+changes across nested native operations. Successful outer application dispatches
+queued resources, releases the final platform settings and requests one redraw.
+Synchronous resource callbacks may enqueue further requests or redraw without
+calling a backend under the gate's mutex.
+
+Unexpected failure discards queued work, suppresses late provider calls and keeps
+the document terminal. Failure while releasing already applied work is still
+unknown acceptance; requests already dispatched cannot be rolled back. The gate
+has a total resource budget of 4,096 requests per protected application, including
+synchronous reentrant requests; overflow is a fatal application failure.
+
+The net wrapper preserves `is_noop()`, so Blitz's critical-resource accounting
+keeps the configured backend's meaning. Aborted queued requests do not start.
+When no abort signal was supplied, the document owns one and signals it on
+failure, session close and disposal. A supplied signal retains its identity and
+caller ownership; closing the document does not abort an unrelated shared signal.
+Cancellation depends on the backend honoring those signals.
+
+The complete shell trait forwards real capabilities outside publication.
+Synchronous clipboard/dialog/window queries cannot be deferred into a scene
+batch: an unexpected call there fails explicitly. Native event/default processing
+needs its separate accepted interaction boundary in M4. Resource backends used
+by the UI driver must enqueue work without blocking the UI thread; provider
+containment alone is not a process/event-loop integration or asset loader.
 
 ## Current boundary
 
 The in-process document API, wire write-set codec/session and headless native
 contracts are the current scope. Combined native transaction validation/application
 and structural wire publication are implemented in process, with bounded framing
-and acceptance-send failure handling. Process launch/UI queues, controlled resource
-providers and full transport
+and acceptance-send failure handling. Shell/resource work is contained across
+complete application. Process launch/UI queues and full transport
 failure propagation remain M2 work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
 

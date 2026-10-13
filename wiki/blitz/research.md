@@ -297,6 +297,16 @@ work. The stream adapters are blocking transport/headless primitives, not a UI
 event loop or actual process launch. Worker queues, pending-job teardown and
 controlled native providers remain gates before a mounted window is claimed.
 
+M2.2e implements per-document provider containment using Blitz's real shell/net
+traits. Nested operations hold requests until complete application; the final
+title/cursor/IME settings and one redraw release with successful work. A real
+nested engine mount followed by unwind verifies queued resources/platform changes
+do not escape, while native nodes remain partially applied and terminal. Reentrant
+callbacks run outside the mutex with a bounded total resource budget. Backend
+no-op identity and caller abort ownership are preserved; default document-owned
+signals abort on shutdown. Already dispatched work cannot be rolled back, and the
+actual UI driver still needs nonblocking workers, queues and asset handling.
+
 Input editors are initialized during Blitz layout construction. The native contract
 checks values written before first layout and subsequent editor updates. The future
 input adapter must read live editor state and implement the planned revision/default
