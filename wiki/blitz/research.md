@@ -169,7 +169,12 @@ Blitz identity does not encode our component or keyed-row lifetime.
 
 The source includes an optional Boa-based JavaScript module for its browser app.
 That is separate from driving a Rust document and is not our chosen execution
-model. We retain Bun and the existing JavaScript runtime.
+model. We retain the existing JavaScript semantic runtime, with Bun as the default
+execution backend and development tool. Execution is selectable: Node uses the
+same Node-compatible host adapter; custom engines supply a module implementing the
+portable publication transport. The bundler selects one adapter without rewriting
+application TSX or duplicating state/access routing. QuickJS/Hermes remain custom
+engine candidates, not promises of an already included adapter or full Node APIs.
 [Optional scripting crate](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-vibey-script/Cargo.toml).
 
 ## Retention and rendering
@@ -333,6 +338,16 @@ JS/CSS refresh path must reuse the native host; no refresh/startup comparison ha
 been measured yet.
 
 ## Architecture decision
+
+M2.2g adds the engine-neutral JavaScript publication client and execution selection.
+The client snapshots bounded candidate batches, admits one active send/reply and
+advances ordering only on matching native acceptance plus complete write. Refusal
+rejects queued dependent work without replay and leaves the sequence correctable.
+Fatal/malformed/out-of-order replies, process loss and per-job deadlines close the
+connection and fail pending jobs. Bun and Node use one process adapter; a custom
+adapter and CommonJS bundle verify real build-time selection against the same
+native host. Compiler/lifecycle integration and ordinary TSX mounting remain M3
+gates. No new reactive engine, access resolver or external-source bridge is added.
 
 Build a Blitz-backed native document adapter using our shared compiler analysis
 and JavaScript application runtime. Establish transaction and event contracts

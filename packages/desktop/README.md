@@ -6,8 +6,9 @@ ordinary TSX, CSS, events, refs and `mount()` from the framework runtime.
 
 This branch currently implements the Rust document foundation and ordered wire
 acceptance for complete mount/write/move/retire publications, with bounded worker
-queues and a private headless process for transport contracts. The desktop emitter,
-JavaScript publication adapter and window command are subsequent milestones. There
+queues and a private headless process for transport contracts. A
+portable JavaScript publication client and selectable execution bundler are also
+implemented. The desktop emitter and window command are subsequent milestones. There
 is no mounted application example to run yet. This package's scripts exercise the
 native foundation; they do not change web mounting or select a desktop renderer.
 
@@ -19,6 +20,12 @@ Run from the repository root with the installed Rust 1.96.0 toolchain:
 bun run --cwd packages/desktop native:check
 bun run --cwd packages/desktop native:test
 bun run --cwd packages/desktop native:fmt
+bun run --cwd packages/desktop test
+bun run --cwd packages/desktop typecheck
+
+# Build the host once, then test JS engines against the cached executable.
+cargo +1.96.0 build --manifest-path packages/desktop/rust/Cargo.toml --locked --jobs 2
+bun run --cwd packages/desktop test:process
 ```
 
 The crate pins Blitz revision `45496d9288b063719ebeae4e0761273f7881b3d7` and keeps
@@ -26,6 +33,69 @@ its dependency graph in `rust/Cargo.lock`. Check and test builds reuse the same
 `rust/target` cache. The initial feature selection enables system fonts for text;
 windowing, painting and resource features will be selected when those integrations
 exist. Cold dependency compilation is not app startup or a TSX refresh measurement.
+
+## JavaScript execution backends
+
+Bun is the default execution engine and remains the development bundler/test tool.
+Node uses the same Node-compatible process adapter. Engine choice does not change
+TSX, CSS, event/ref authoring, compiler semantics or the shared reactive runtime.
+The selected adapter is resolved at build time; other adapters do not enter the
+emitted application.
+
+`src/dev/bundle.ts` exports `bundleExecutionEntry({ entry, outfile, runtime })`.
+This currently bundles an already emitted JavaScript entry; normal TSX compilation
+and mount/window selection are M3 work. Its `runtime` defaults to `'bun'` and
+can be `'node'` or a custom backend record:
+
+```ts
+runtime: {
+  name: 'quickjs',
+  command: ['qjs', '--module'],
+  moduleFormat: 'esm',
+  hostAdapter: './build/quickjs-host.ts',
+  external: ['std', 'os'],
+}
+```
+
+A custom backend declares an executable/argument vector, module format and adapter
+file. Optional `bundleTarget` chooses `'node'` or `'browser'` resolution;
+custom backends default to browser-style JavaScript. Optional `external` lists
+modules actually provided by that engine. Commands execute without shell
+interpolation. A name by itself does not invent missing engine APIs.
+
+The adapter exports `connectNativeHost(NativeProcessOptions)`, returning the
+`PublicationTransport` contract from `src/host/transport.ts`: send a complete
+JSON packet with bounded UTF-8 framing, attach reply/failure observers, schedule a
+cancelable deadline, and idempotently dispose the owned host. The client imports
+no Bun/Node APIs, TextEncoder or browser globals. The Node-compatible adapter owns
+process APIs, framing and deadlines and runs under both Bun and Node.
+
+QuickJS/Hermes/custom engines can implement that same adapter without copying the
+publication client or shared runtime. A ready-made QuickJS adapter is not included;
+the example requires the supplied file. Runtime selection and bundling do not
+promise Node API/npm compatibility for another engine. Bun and Node, plus a
+separately selected custom CommonJS adapter, have real native process contracts.
+
+## JavaScript publication ownership
+
+`PublicationClient` snapshots candidate packets before enqueueing and sends one
+at a time. At most eight publications are admitted by default, with an explicit
+local pressure error. Byte/operation bounds are checked before I/O. Acceptance
+requires the matching native reply and completion of that packet's stream write.
+Only acceptance advances sequence order; it still does not mean layout/paint.
+
+Refusal leaves the sequence correctable and rejects queued dependent work, which
+may reference the refused mount/template. The semantic adapter must recompute
+that candidate; the client never reconstructs reactive state or replays it.
+Malformed/out-of-order/fatal replies, write failure, native exit or a missing
+acknowledgment deadline fail all pending jobs and dispose the connection. The
+default deadline is five seconds and belongs to the outstanding job, not a frame
+scheduler. There are no retry or polling timers. Close is idempotent.
+
+The streaming reply decoder checks the prefix before allocation, retains one
+bounded frame and handles split/adjacent UTF-8 packets. Partial EOF, invalid UTF-8
+and malformed JSON are terminal. Process stderr drains continuously with only a
+bounded diagnostic tail; native subprocesses use hidden Windows console startup.
 
 ## Retained document and source identities
 
@@ -74,7 +144,7 @@ remain for the lifetime of this native document.
 Unexpected failure after entering live application is terminal. Rust reports
 unknown acceptance, retains the failed state and rejects subsequent work; it does
 not claim rollback. The publication session and native driver close in that state;
-the future JavaScript client must fail pending jobs and terminate the transport.
+the JavaScript client fails pending jobs and terminates the transport.
 Structural acceptance
 and completed layout/paint remain separate:
 `resolve()` runs Blitz's style/text/layout work explicitly.
@@ -155,8 +225,9 @@ sequence accepts once; further publication requires a new connection/document.
 
 An ambiguous live failure closes the session and returns `AcceptanceUnknown`;
 subsequent packets refuse. The native process driver also closes the session after
-a lost acknowledgment rather than replaying possibly applied work. A JavaScript
-pending-job queue and its failure handling remain integration gates.
+a lost acknowledgment rather than replaying possibly applied work. The JavaScript
+client implements bounded pending-job ownership and failure handling; compiler
+acceptance/lifecycle integration remains a gate.
 
 ## Process stream framing
 
@@ -182,7 +253,7 @@ described below sends explicit refusal/fatal replies through its outbound queue.
 These blocking `Read`/`Write` adapters serve transport workers or a headless host.
 No blocking pipe wait belongs on the UI thread. `ProcessDriver` provides bounded
 queues and worker-failure propagation; native window/event-loop integration and
-JavaScript process lifetime/pending-job teardown remain implementation gates.
+accepted compiler/lifecycle integration remain implementation gates.
 
 ## Native worker driver
 
@@ -281,8 +352,9 @@ containment alone is not a process/event-loop integration or asset loader.
 The document API, wire session, native worker driver and headless process contracts
 are the current scope. Combined native transaction validation/application and
 structural wire publication use bounded framing and reply-capacity admission.
-Shell/resource work is contained across complete application. The Bun client,
-pending-job teardown and native event-loop wiring remain integration work. Window painting and
+Shell/resource work is contained across complete application. The portable client
+and selected execution adapter implement process/pending-job teardown. Compiler
+acceptance/lifecycle integration and native event-loop wiring remain work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
 
 Blitz creates a text input's editor during layout construction. Tests verify both

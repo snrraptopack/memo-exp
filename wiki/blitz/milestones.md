@@ -831,3 +831,82 @@ window. Native event-loop wiring, visible painting, input cancellation/revisions
 asset loading and dev refresh remain unclaimed. README/research reflect this
 boundary; preserve the unrelated fullstack edit. Commit/push and exact remote
 verification follow the tested batch.
+
+## M2.2g — Portable publication client and selectable execution backend
+
+Completed implementation/checks: 2026-10-13. Compiler/window integration remains.
+
+### Authorization and boundary communicated first
+
+The user selected Bun as the default and requested switchable execution engines.
+Communicated the desktop JavaScript client, build/launch selection and adapter
+boundary before implementation. Compiler semantics, runtime/core and optimized
+DOM lists are unchanged. Bun/Node process APIs stay outside the portable client.
+
+The original repository checkout was on `codex/jsx-type-coverage` with substantial
+staged user work. Created an isolated Git worktree on `codex/blitz-renderer` at
+`C:/Users/babyface/Documents/Codex/2026-10-13/continue-with-the-bu-n-like/memoized-dom`.
+The app worktree helper could not operate from the projectless chat directory;
+ordinary Git created the checkout without switching or altering the user's files.
+
+### Implementation and decisions
+
+- Added explicit presentation protocol types, strict reply validation, portable
+  candidate serialization and a bounded publication client. These records carry
+  scene operations only; no state-cell store, access resolver or subscription
+  bridge was added. Rust remains the topology/identity validation authority.
+- Snapshot candidate payloads before enqueue; default capacity is eight including
+  the active job. Operation/UTF-8 bounds refuse before I/O. One active publication
+  owns its sequence until matching acceptance and write completion both arrive.
+  An early reply cannot hide a later write failure.
+- Refusal rejects dependent queued candidates without advancing the expected
+  slot. A corrected publication can reuse it. The semantic adapter recomputes
+  candidate work; this client never retries or rebuilds application state.
+- Fatal/malformed/out-of-order replies, connection loss and per-job deadlines
+  reject pending jobs and dispose the owned host. Deadline identity guards against
+  a failed custom cancellation closing a later job. Synchronous adapter failure
+  cannot send after close; cleanup exceptions cannot strand pending promises.
+- Bun and Node share one Node-compatible process adapter. Framing retains one
+  bounded reply payload, validates prefixes before allocation and treats partial
+  EOF/UTF-8/JSON failure as terminal. Stderr retains a bounded tail. Native process
+  spawn uses hidden Windows console startup; transport close destroys streams and
+  requests native termination without blocking JavaScript.
+- Execution configuration defaults to Bun or accepts Node/custom backend records.
+  Custom backends declare executable arguments, ESM/CommonJS format and a host
+  adapter module, with explicit bundler target/externals where needed. Commands
+  use argument vectors without shell interpolation.
+- The execution bundler resolves the selected private host import to that module.
+  It does not inject other backends or transform compiler semantics. A separate
+  custom adapter/CommonJS fixture proves selection is used during real execution.
+  Bun remains the development bundler/test tool regardless of execution engine.
+- QuickJS and other engines can supply the same transport adapter. A ready-made
+  QuickJS adapter is not included or claimed tested. Selecting a name cannot
+  invent Node APIs; unsupported custom strings refuse with an actionable error.
+  Normal mount authoring remains the product contract, with M3 integration next.
+
+### Actual evidence
+
+- Frozen Bun installation succeeded without dependency/lock changes.
+- Native host built locked/offline with `cargo +1.96.0`, jobs 2, in **7m17s** in
+  this fresh checkout. No full JS suite ran beside native linking. Subsequent
+  process tests reused that executable and did not invoke Cargo.
+- Final portable JS contracts: **25 passed, 0 failed**, exit 0, 203ms.
+- Final real process contracts: **6 passed, 0 failed**, exit 0, 1.77s. Bun and Node
+  execute the same entry against the same native host; the separately selected
+  custom CommonJS adapter records its actual invocation. Refusal/correction,
+  accepted sequence order, missing executable, native exit and direct-write
+  timing/framing contracts pass.
+- The direct-write check caught Bun's synchronous small-write completion versus
+  Node's potentially pending callback. The final test verifies both permitted
+  outcomes against real native accepted frames instead of assuming callback timing.
+- Package Bun checking passes all 15 checked source/test files. Focused Oxlint
+  passes. Native formatting and staged whitespace are final batch checks.
+- A browser-target bundle of the portable client contains no Bun/Node platform
+  imports. Existing compiler/runtime/Rust source and Cargo/Bun locks are unchanged;
+  the full root/native suites were not repeated for this desktop-only JS batch.
+
+Updated the single canonical research, concrete plan and desktop README.
+Next is desktop compiler emission, accepted core lifecycle and normal TSX/CSS
+mounting in the native window. No visible window, QuickJS compatibility, production
+packaging size or startup/event-latency benchmark is claimed by these contracts.
+Commit/push and exact remote verification follow the tested batch.

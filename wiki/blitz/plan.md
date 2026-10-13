@@ -1,6 +1,6 @@
 # Blitz implementation plan
 
-Updated: 2026-10-12. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-13. Branch: `codex/blitz-renderer`.
 
 This is the implementation plan for the architecture described in
 [research.md](research.md). Completed batches and decisions belong in
@@ -160,9 +160,16 @@ acceptance. Events from retired generations are ignored.
 
 ### Native publication and failure states
 
-The initial transport is a persistent Bun-to-Rust process connection with versioned
-packets and ordered scene sequences. It is replaceable behind the host interface;
-it does not define application authoring. Keep mutation batches small and do not
+The initial transport is a persistent JavaScript-to-Rust process connection with
+versioned packets and ordered scene sequences. Bun is the default execution
+backend, with Node using the same Node-compatible host adapter. Custom engines
+declare their command, module format and host adapter through build configuration.
+The portable publication client depends on that adapter's send/observe/deadline/
+dispose capabilities, not Bun/Node APIs. Engine-specific APIs remain in the
+selected adapter; unused adapters do not enter the application bundle. Bun remains
+the development bundler/test tool regardless of the selected execution engine.
+Runtime selection does not promise Node API compatibility for a custom engine.
+The interface does not define application authoring. Keep mutation batches small and do not
 rebuild/send the entire document on each update.
 
 Frames have a four-byte unsigned big-endian payload length followed by UTF-8 JSON,
