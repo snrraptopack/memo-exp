@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["bun", "node"]
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "../compiler/src/ast/tsrx/tsrx-core.d.ts"]
 }

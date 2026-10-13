@@ -8,6 +8,7 @@ import { executionCommand, type RuntimeSelection } from '../src/dev/execution';
 import { bundleExecutionEntry } from '../src/dev/bundle';
 import { PublicationClient } from '../src/host/client';
 import { connectNativeHost } from '../src/host/node-process';
+import { sourceTemplate } from './fixtures/native-template';
 
 const nativeHost = process.env.MEMOIZED_DESKTOP_HOST ?? fileURLToPath(new URL(
   '../rust/target/debug/memoized-dom-desktop' + (process.platform === 'win32' ? '.exe' : ''),
@@ -81,6 +82,58 @@ test('missing native executable rejects pending work without hanging', async () 
   expect(await active).toMatchObject({ code: 'acceptanceUnknown' });
   expect(await queued).toMatchObject({ code: 'acceptanceUnknown' });
   expect(client.isClosed).toBe(true);
+});
+
+test('packaged compiler templates address real native text, regions and retired generations', async () => {
+  const parent = sourceTemplate(`
+    export function App({children}){let count=0;
+      return <main><p>Count: {count}</p><section>{children}<small>End</small></section></main>
+    }
+  `, 'compiled-parent', ['children']).plan;
+  const row = sourceTemplate('export function App(){return <span>Row</span>}', 'compiled-row').plan;
+  const text = parent.steps.find(step => step.kind === 'text')!;
+  const region = parent.steps.find(step => step.kind === 'region')!;
+  const parentOwner = { id: 'Parent', generation: 1 };
+  const rowOwner = { id: 'Row', generation: 1 };
+  const client = new PublicationClient(connectNativeHost({ executable: nativeHost, args: ['--headless'] }));
+
+  try {
+    const mounted = await client.publish({
+      templates: [parent.template, row.template],
+      operations: [
+        { op: 'mount', owner: parentOwner, template: parent.template.key, target: { kind: 'body' } },
+        { op: 'text', target: { owner: parentOwner, source: text.source }, value: 'Count: 0' },
+        {
+          op: 'mount', owner: rowOwner, template: row.template.key,
+          target: { kind: 'region', source: { owner: parentOwner, source: region.source } },
+        },
+      ],
+    });
+    expect(mounted.sequence).toBe(1);
+
+    const updated = await client.publish({ operations: [
+      { op: 'text', target: { owner: parentOwner, source: text.source }, value: 'Count: 1' },
+      { op: 'text', target: { owner: rowOwner, source: 1 }, value: 'Updated row' },
+    ] });
+    expect(updated.sequence).toBe(2);
+
+    const retired = await client.publish({ operations: [{ op: 'retire', owner: parentOwner }] });
+    expect(retired.sequence).toBe(3);
+    const stale = await client.publish({ operations: [{
+      op: 'text', target: { owner: rowOwner, source: 1 }, value: 'Stale',
+    }] }).then(() => undefined, error => error);
+    expect(stale).toMatchObject({ code: 'documentRefused', reply: { expectedSequence: 4 } });
+
+    // Template records are reusable; source handles remain generation-specific.
+    const remounted = await client.publish({ operations: [{
+      op: 'mount', owner: { id: 'Parent', generation: 2 }, template: parent.template.key,
+      target: { kind: 'body' },
+    }] });
+    expect(remounted.sequence).toBe(4);
+    expect(client.isClosed).toBe(false);
+  } finally {
+    client.close();
+  }
 });
 
 test('native exit fails all active and queued jobs without replay', async () => {

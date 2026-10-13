@@ -1,6 +1,6 @@
 # Blitz milestone and decision record
 
-Updated: 2026-10-12. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-13. Branch: `codex/blitz-renderer`.
 
 Follow [plan.md](plan.md) for implementation order and [research.md](research.md)
 for inspected architecture. This log is append-only for completed work: correct
@@ -13,12 +13,12 @@ Update the status table when the corresponding completion gates pass.
 | --- | --- | --- |
 | M0 — Architecture and plan | Completed | Initial documentation batch below |
 | M1 — Shared semantic/compiler boundary | Completed | Runtime/core, shared pass order and project/manifest adaptation; unchanged fixture products, source-only contracts, builds/checks and 2,558 root tests pass |
-| M2 — Native document/transactions | In progress | Pinned native document, source identities and ranges; 17 Rust contracts pass; process sequencing and mixed atomic batches remain |
-| M3 — Ordinary native counter | Not started | No desktop compiler/mount integration exists yet |
+| M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
+| M3 — Ordinary native counter | In progress | M3.1 accepted shared-core lifecycle and M3.2 packaged template lowering pass; generated component execution, normal mount integration and visible CSS/window remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
 | M5 — Modules and structural parity | Not started | Core implementations available; native adapter not built |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
-| M7 — Refs/libraries/lifecycle | Not started | Capability plan only |
+| M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
 
 ## M0: research and implementation contract
@@ -996,3 +996,105 @@ Delivery: implementation and synchronized architecture docs committed as
 Pushed to `origin/codex/blitz-renderer` on 2026-10-13; `git ls-remote --heads`
 returned that exact SHA, matching local HEAD. This documentation follow-up records
 the verified delivery rather than marking the full M3 window milestone complete.
+
+## M3.2 — Packaged native template lowering from shared JSX plans
+
+Completed implementation/checks: 2026-10-13. Full M3 remains in progress:
+component JavaScript execution, normal mount integration and a visible CSS/window
+counter are still required. A template plan is not a complete application compiler.
+
+### Scope communicated before implementation
+
+Communicated native template/source-index lowering and the shared boundary first:
+move the existing pure SVG classifier from `dom/svg.ts` to `jsx/namespaces.ts`
+without changing behavior. Before changing build configuration, communicated the
+separate compiler/desktop entry and the need to include the compiler's existing
+TSRX declaration in the desktop test check. No application mounting API was added.
+The user's primary checkout and staged JSX work were left untouched in the
+separate `codex/jsx-type-coverage` checkout.
+
+### Implementation and decisions
+
+- Added `packages/compiler/src/desktop/template.ts` and `template-plan.ts`.
+  Lowering takes shared analyzed/normalized JSX, expression-source facts and
+  caller-resolved forwarded content. It uses `planOrderedAttributes` and
+  `planDirectChildren`, rather than reimplementing source/child classification.
+- Immutable native templates carry qualified element names, static text and
+  non-layout comments with deterministic parent-before-child indices. Fragments
+  retain their real roots without an artificial wrapper. The web namespace
+  classifier, SVG-only leaf behavior and foreignObject reset are reused unchanged.
+- Attributes, spreads, dynamic text, events and refs remain ordered AST work.
+  Even literal attributes stay in the program, avoiding incorrect precedence
+  around an earlier spread. No arbitrary source code executes while lowering;
+  callback/ref values do not enter native JSON. The future emitter evaluates
+  these steps in the authored component closure and publishes initial values
+  with mount in one accepted transaction, before activating core lifecycles.
+- Event addresses live in `desktop/events.ts`, separate from attribute and native
+  dispatch implementation. Entries retain authored names and positions; a later
+  spread/duplicate still determines the final binding. Explicit refs retain their
+  positions in that same program. Dynamic spread keys remain runtime work.
+- Component/member/dynamic tag calls, lists, conditionals and forwarded slots
+  retain shared source plans behind comment addresses. Their descriptors are not
+  claimed as executed structural JavaScript. Unresolved namespaced tag spelling
+  and JSX-valued text needing earlier normalization fail with source locations.
+- Added the separate `@memoized-dom/compiler/desktop` support entry and declarations.
+  It currently exports template lowering, not a whole-application compile function.
+  Application authors do not import it and still use existing mount authoring.
+  Compiler production code imports neither desktop package source nor a Rust
+  toolchain. Expanded the existing transitive backend-boundary check to cover it.
+- Tests analyze source through the real shared semantic coordinator and consume
+  lowering through the built package export. Native process tests mount the actual
+  projected templates, initialize/update their text addresses, insert a child at
+  a comment address, retire the parent, refuse a stale child handle and reuse the
+  immutable template for a new generation. Existing lifecycle/engine tests pass.
+- A source-attribution fixture initially expected unmodified `let` bindings to be
+  reactive. Shared analysis correctly treats these as static; adding real writes
+  exercises exact instance and conservative module attribution. No semantic
+  implementation was altered to force a desktop-specific classification.
+
+### Actual evidence
+
+- Full root suite, `bun test --parallel=2 ./tests`: **2,558 passed, 0 failed**,
+  exit 0, 30,454 assertions across 254 files, 149.64s. Output redirected directly
+  to a file and exit status checked; no PowerShell output pipeline ambiguity.
+- Desktop suite: **47 passed, 0 failed**, exit 0, 201 assertions, 1.415s, including
+  8 new template/source-planning contracts through the packaged export.
+- Real process suite: **10 passed, 0 failed**, exit 0, 34 assertions, 3.41s.
+  Reused the cached real Rust executable; no native compilation/link ran beside
+  the full JS suite. Bun, Node and selected custom CommonJS lifecycle contracts
+  remain covered alongside the new compiler/native identity contract.
+- Captured all root TSX fixtures and four namespace/inline cases before the shared
+  extraction: **15 cases match exactly** afterward. Nine generated-code products
+  are byte-identical; six baseline standalone compilation errors retain identical
+  messages. These are source fixture comparisons, not a claim that repackaged
+  compiler bundle bytes remain unchanged.
+- Expanded compiler backend boundary: **6 passed, 0 failed**, exit 0; transitive
+  desktop/shared imports cannot reach DOM lowering or runtime/package source.
+  This focused run verifies the expanded test after the full suite had started.
+- Compiler build and declaration generation pass for both entries. Its native
+  support entry imports one shipped shared chunk, without a desktop-source path.
+  Compiler Bun checking passes 241 files; desktop checking passes 108 files.
+  Included the existing TSRX declaration after the new source-analysis fixture
+  exposed it missing from the desktop-only checking scope.
+- Utils/server builds needed by this fresh checkout's root suite pass. Focused
+  Oxlint and native Rust formatting pass. No Cargo/Bun lock or runtime/Rust
+  production source changed; staged whitespace is the final commit gate.
+
+### Milestone audit and next implementation boundary
+
+Updated the previously stale status table: M3 is in progress after M3.1/M3.2.
+M2's document/transaction foundation gates are complete through M2.2a-g: pinned
+native document, mixed atomic topology validation, immutable template/range
+identity, ordered refusal/fatal closure, provider containment, bounded framing
+and worker/process ownership. The recorded locked native suite has 79 passes;
+`git diff --exit-code e4f28ad -- packages/desktop/rust` confirms those native sources
+are unchanged. Real JS/native process and shutdown checks now cover the final
+client boundary. This audit does not mark native window/painting/events complete;
+those remain M3/M4 gates. Historical in-progress entries are retained as history.
+
+Research, concrete plan, milestone status/evidence and desktop README are synced.
+Next: component JavaScript emission consuming these steps with the existing
+module-cell, guarded-write, access-table and shared lifecycle implementations;
+then ordinary mount wiring and the first visible counter/CSS window. No extra
+reactive engine, shadow DOM, tag-style catalogue or special application mount
+was introduced. Commit/push and exact remote verification follow this batch.

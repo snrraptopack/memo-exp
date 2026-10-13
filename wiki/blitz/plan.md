@@ -133,6 +133,15 @@ plans. It emits immutable template records and direct slot/property/structure
 updates alongside the existing core access table and cell ABI. JSX evaluation
 order, thrown exceptions and callback writes remain authored JavaScript semantics.
 
+M3.2 establishes template lowering in the separate `compiler/desktop` build entry.
+The emitted backbone carries source addresses, while ordered AST steps retain
+attributes/spreads, events/refs, text and structural work. This support entry does
+not yet compile a whole application. Next, consume those steps in real component
+closures and reuse shared state-cell, guarded-write and access-table emission;
+publish initial mount and initial values together through M3.1 acceptance. Keep
+normal `mount()` imports and calls. Window/CSS integration then completes the M3
+counter gate; source-plan descriptors alone do not close runtime capability gaps.
+
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts
 where they meet this plan. Its GPUI-specific tag catalogue, cascade, paragraph

@@ -8,16 +8,20 @@ This branch currently implements the Rust document foundation and ordered wire
 acceptance for complete mount/write/move/retire publications, with bounded worker
 queues and a private headless process for transport contracts. A
 portable JavaScript publication client, selectable execution bundler and internal
-accepted core lifecycle are also implemented. The desktop emitter and window
-command are subsequent milestones. There is no mounted application example to
-run yet. This package's scripts exercise the
-native foundation; they do not change web mounting or select a desktop renderer.
+accepted core lifecycle are also implemented. The compiler now lowers analyzed
+JSX to native source templates and ordered evaluation plans. Component JavaScript
+emission and the window command remain pending; there is no mounted application
+example to run yet. These scripts check the compiler/native foundation, and do
+not change web mounting or select a desktop renderer for an application.
 
 ## Native checks
 
 Run from the repository root with the installed Rust 1.96.0 toolchain:
 
 ```powershell
+# Build workspace dependencies first on a fresh checkout (`bun run build`).
+# After compiler edits, rebuild its two packaged entries before desktop tests.
+bun run --cwd packages/compiler build
 bun run --cwd packages/desktop native:check
 bun run --cwd packages/desktop native:test
 bun run --cwd packages/desktop native:fmt
@@ -34,6 +38,33 @@ its dependency graph in `rust/Cargo.lock`. Check and test builds reuse the same
 `rust/target` cache. The initial feature selection enables system fonts for text;
 windowing, painting and resource features will be selected when those integrations
 exist. Cold dependency compilation is not app startup or a TSX refresh measurement.
+
+## Compiler template lowering
+
+The compiler's separate `@memoized-dom/compiler/desktop` build entry exports
+`lowerNativeTemplate` for the compiler/build adapter. Applications do not import
+it. The default compiler entry continues to provide browser compilation; neither
+entry imports desktop package source or a native toolchain.
+
+Lowering consumes normalized/analyzed JSX, existing expression-source facts and
+the shared ordered-attribute/direct-child planners. It assigns parent-before-child
+source indices, keeps fragment roots without a wrapper, shares the web SVG
+namespace classifier, and uses comment anchors for structural insertion.
+Dynamic/member component calls remain source plans, rather than invented tags.
+
+Immutable wire templates contain the element/text/comment backbone. Attributes,
+spreads, refs, events and dynamic text remain ordered AST steps for the forthcoming
+component emitter. Even literal attributes retain their positions around spreads;
+event/ref addresses point into that same ordered program. Event metadata lives
+in `packages/compiler/src/desktop/events.ts`. No callback executes at compile time,
+and no function/ref value is serialized to Rust.
+
+Tests cover source immutability, fragment/source indices, SVG/foreignObject,
+decoded literals/text joins, shared exact/conservative source facts and retained
+component/list/conditional/forwarded plans. The built package's templates are
+mounted/written/retired against the real Rust host, including comment insertion
+and stale child-generation refusal. This is template/identity evidence, not
+executed structural JavaScript, CSS materialization or visible SVG painting.
 
 ## JavaScript execution backends
 

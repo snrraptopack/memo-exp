@@ -18,9 +18,10 @@ function sourceFiles(directory:string):string[] {
       entry.name.endsWith('.ts')?[join(directory,entry.name)]:[]);
 }
 
-it('shared analysis, planning and context cannot import DOM lowering or runtime types',()=>{
-  const files=['analysis','planning','context'].flatMap(folder=>sourceFiles(join(sourceRoot,folder)));
+it('shared analysis/planning/context and desktop lowering cannot import DOM or runtime types',()=>{
+  const files=['analysis','planning','context','desktop'].flatMap(folder=>sourceFiles(join(sourceRoot,folder)));
   files.push(join(sourceRoot,'context.ts'));
+  files.push(join(sourceRoot,'desktop.ts'));
   files.push(join(sourceRoot,'components/manifest.ts'));
   const violations:string[]=[];
   const visited=new Set<string>();

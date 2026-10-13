@@ -319,8 +319,8 @@ writer progress releases capacity and schedules the document without a timer.
 Ordinary refusal reports the correctable expected sequence without guessing fields
 from invalid JSON. Live failure/lost acknowledgment stops admission with no replay.
 Frame-boundary EOF drains replies in order. Generic stream shutdown does not claim
-to interrupt a blocked OS read/write: the future Bun process owner must terminate
-an unresponsive peer and fail pending jobs. Real process contracts precede the
+to interrupt a blocked OS read/write. M2.2g's process adapter/client now owns peer
+termination and pending-job failure, including deadlines. Real process contracts precede the
 mounted TSX window; these workers do not constitute its event-loop integration.
 
 Input editors are initialized during Blitz layout construction. The native contract
@@ -338,6 +338,17 @@ JS/CSS refresh path must reuse the native host; no refresh/startup comparison ha
 been measured yet.
 
 ## Architecture decision
+
+M3.2 lowers shared JSX plans to the native immutable template format. Parent and
+source indices, fragment roots and structural comment addresses belong to this
+target; literal decoding, text joins, ordered attributes and expression-source
+facts remain shared. The web SVG classifier moved unchanged to `jsx/namespaces.ts`
+instead of being copied into desktop code. A separate compiler support entry
+ships this lowering without importing desktop package source or changing app
+mounting. Attributes/spreads, events/refs and dynamic/structural expressions stay
+as ordered AST work until component JavaScript emission. Real native mounting,
+text writes, region insertion and generation retirement are tested; this does not
+claim executed source callbacks, broad CSS materialization or a visible window.
 
 The M3.1 implementation connects native acceptance to the existing core render
 preparation and effect-boundary capability. New candidates must wait for consumed
