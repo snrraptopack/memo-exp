@@ -1202,4 +1202,9 @@ Next is normal mount/entry integration, native stylesheet/resources and the visi
 counter window, followed immediately by native event defaults and input ordering.
 No native platform input latency, full ref/library compatibility, async callback
 scope, visible painting or state-preserving reload is claimed by these tests.
-Commit/push and exact remote verification follow the completed batch.
+
+Delivery: implementation and synced docs committed as
+[`15507bd839c12e58753e915a7e6803ef97ba5218`](https://github.com/snrraptopack/memo-exp/commit/15507bd839c12e58753e915a7e6803ef97ba5218).
+Pushed to `origin/codex/blitz-renderer` on 2026-10-13; `git ls-remote --heads`
+returned that exact SHA, matching local HEAD. Staged whitespace passed before
+commit. This documentation receipt records delivery; M3 window/mount remains open.
