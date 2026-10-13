@@ -339,6 +339,17 @@ been measured yet.
 
 ## Architecture decision
 
+M3.3 adds the first executable compiler phase: fixed hosts, scalar module cells,
+ordered attributes and callback/text closures. Existing identifier allocation,
+ordered-object emission and access serialization moved into neutral emission
+modules; the same cell lowering now accepts a neutral context. Pure text/class
+normalizers and attribute-name maps are shared with DOM, without importing DOM
+setters into core. Real compiled TSX runs under Bun, Node and a custom adapter
+against Rust. Presentation snapshots and accepted callback binding are host
+bookkeeping, not another reactive engine. Instance/store guards, scopes, replay,
+refs and structural execution remain diagnosed emission gates. Mount/window
+wiring and native platform events are not yet claimed complete.
+
 M3.2 lowers shared JSX plans to the native immutable template format. Parent and
 source indices, fragment roots and structural comment addresses belong to this
 target; literal decoding, text joins, ordered attributes and expression-source

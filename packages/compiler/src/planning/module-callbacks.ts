@@ -17,7 +17,11 @@ export interface ModuleCallbacks {
   readonly writesFor:(target:Callback,executionAware?:boolean)=>HandlerWritePlan;
 }
 
-export function planModuleCallbacks(ctx:Ctx,program:ProgramPath):ModuleCallbacks {
+export function planModuleCallbacks(
+  ctx: Ctx,
+  program: ProgramPath,
+  options: { readonly includeComponentSetup?: boolean } = {},
+): ModuleCallbacks {
   const bodies=new WeakMap<Callback,Callback>();
   const retained:ModuleCallbackSite[]=[];
   const selected=new Set<Callback>();
@@ -67,6 +71,14 @@ export function planModuleCallbacks(ctx:Ctx,program:ProgramPath):ModuleCallbacks
   for(const helper of ctx.helpers.values()){
     if(helper.node.async)select(helper.node,false);
     else setup(helper.node.body,false);
+  }
+  if (options.includeComponentSetup) {
+    // Native capability validation must also see callbacks retained by root
+    // setup (timers/subscriptions). Browser emission keeps its existing
+    // component-owned lifecycle planner and does not opt into this scan.
+    for (const component of ctx.compPaths.values()) {
+      setup(component.node.body, false);
+    }
   }
   return {retained,writesFor:(target,executionAware=false)=>{
     const authored=bodies.get(target);

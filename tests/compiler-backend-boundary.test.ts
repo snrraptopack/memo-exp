@@ -25,23 +25,28 @@ it('shared analysis/planning/context and desktop lowering cannot import DOM or r
   files.push(join(sourceRoot,'components/manifest.ts'));
   const violations:string[]=[];
   const visited=new Set<string>();
-  const pending=files.map(file=>({file,path:[relative(sourceRoot,file)]}));
+  const pending=files.map(file=>({
+    file,
+    path:[relative(sourceRoot,file)],
+    emissionAllowed: relative(sourceRoot,file).startsWith('desktop'),
+  }));
   while(pending.length) {
-    const {file,path}=pending.pop()!;
-    if(visited.has(file))continue;
-    visited.add(file);
+    const {file,path,emissionAllowed}=pending.pop()!;
+    const visitKey = file + ':' + emissionAllowed;
+    if(visited.has(visitKey))continue;
+    visited.add(visitKey);
     const program=parseEstreeOrThrow(readFileSync(file,'utf8'),{filename:file}).program;
     walkAst(program,{enter(node){
       if(!['ImportDeclaration','ExportNamedDeclaration','ExportAllDeclaration'].includes(node.type))return;
       const source=stringValue(childNode(node,'source'));
       if(source===null)return;
       const target=source.startsWith('.')?relative(sourceRoot,resolve(file,'..',source)).replaceAll('\\','/'):source;
-      if(/^(dom|emission)(\/|$)/.test(target)||/^@memoized-dom\/runtime(?:\/|$)/.test(target))
+      if(/^dom(\/|$)/.test(target) || (!emissionAllowed && /^emission(\/|$)/.test(target)) || /^@memoized-dom\/runtime(?:\/|$)/.test(target))
         violations.push([...path,source].join(' -> '));
       else if(source.startsWith('.')) {
         const absolute=resolve(dirname(file),source);
         const dependency=[`${absolute}.ts`,join(absolute,'index.ts')].find(existsSync);
-        if(dependency)pending.push({file:dependency,path:[...path,relative(sourceRoot,dependency)]});
+        if(dependency)pending.push({file:dependency,path:[...path,relative(sourceRoot,dependency)],emissionAllowed});
       }
     }});
   }

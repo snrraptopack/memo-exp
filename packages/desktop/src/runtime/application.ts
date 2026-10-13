@@ -21,6 +21,8 @@ export interface NativeApplicationOptions {
 export interface CandidateHooks {
   /** Commit host identities/connected flags before activating shared refs. */
   accepted?(): void;
+  /** Schedule subsequent work only after core preparation has activated. */
+  activated?(): void;
   /** Release this candidate's host handles before its core-owned cleanup. */
   disposed?(): void;
 }
@@ -276,6 +278,7 @@ export class NativeCandidate<T> {
         this.hooks.accepted?.();
         this.preparation.activate();
         this.state = 'active';
+        this.hooks.activated?.();
       });
     } catch (error) {
       if (this.status !== 'disposed') {

@@ -14,8 +14,15 @@ import {
   type Binding,
 } from './ast';
 import { astBindingAt, refreshAstAnalysis, unwrapTypeExpression, variableDeclaratorFor } from './context';
-import { type DomContext as Ctx } from './dom/context';
-import { generatedIdentifier, md } from './dom/identifiers';
+import type { Ctx as AnalysisContext } from './context';
+import { generatedIdentifier, md, type IdentifierOwner } from './emission/identifiers';
+
+/** Existing cell lowering needs source facts and AST allocation, not DOM state. */
+export interface CellEmissionContext extends AnalysisContext, IdentifierOwner {
+  emission: IdentifierOwner['emission'] & { header: t.Statement[] };
+}
+
+type Ctx = CellEmissionContext;
 
 type ReactiveKind = 'let' | 'store';
 

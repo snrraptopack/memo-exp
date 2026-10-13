@@ -8,6 +8,7 @@
  */
 
 import { markDirtySubtree } from './kernel';
+import { jsxAttributeName } from './jsx-attributes';
 import { classValue, setClassValue, setStyleValue } from './dom-values';
 import { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';
 
@@ -37,44 +38,6 @@ const HTML_PROPERTIES = new Set([
   'autoPlay',
   'tabIndex',
 ]);
-const ATTRIBUTE_NAMES: Record<string, string> = {
-  className: 'class',
-  htmlFor: 'for',
-  readOnly: 'readonly',
-  autoFocus: 'autofocus',
-  autoPlay: 'autoplay',
-  tabIndex: 'tabindex',
-  crossOrigin: 'crossorigin',
-};
-const SVG_ATTRIBUTE_NAMES: Record<string, string> = {
-  className: 'class',
-  clipPath: 'clip-path',
-  clipRule: 'clip-rule',
-  colorInterpolation: 'color-interpolation',
-  colorInterpolationFilters: 'color-interpolation-filters',
-  dominantBaseline: 'dominant-baseline',
-  fillOpacity: 'fill-opacity',
-  fillRule: 'fill-rule',
-  floodColor: 'flood-color',
-  floodOpacity: 'flood-opacity',
-  fontFamily: 'font-family',
-  fontSize: 'font-size',
-  markerEnd: 'marker-end',
-  markerMid: 'marker-mid',
-  markerStart: 'marker-start',
-  stopColor: 'stop-color',
-  stopOpacity: 'stop-opacity',
-  strokeDasharray: 'stroke-dasharray',
-  strokeDashoffset: 'stroke-dashoffset',
-  strokeLinecap: 'stroke-linecap',
-  strokeLinejoin: 'stroke-linejoin',
-  strokeMiterlimit: 'stroke-miterlimit',
-  strokeOpacity: 'stroke-opacity',
-  strokeWidth: 'stroke-width',
-  textAnchor: 'text-anchor',
-  vectorEffect: 'vector-effect',
-  xlinkHref: 'xlink:href',
-};
 const EVENT_NAMES: Record<string, string> = {
   doubleclick: 'dblclick',
 };
@@ -228,9 +191,7 @@ function setScalarDomValue(
     return;
   }
 
-  const attrName = html
-    ? ATTRIBUTE_NAMES[name] ?? name
-    : SVG_ATTRIBUTE_NAMES[name] ?? ATTRIBUTE_NAMES[name] ?? name;
+  const attrName = jsxAttributeName(name, html);
   const omitFalse = value === false && !isAriaAttribute(attrName);
   if (value == null || omitFalse) {
     element.removeAttribute(attrName);

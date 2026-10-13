@@ -37,3 +37,6 @@ export { createRenderPreparation, type RenderPreparation } from './preparation';
 export { readPreparationScope, releasePreparationRead } from './preparation-read';
 export { mountRef, refAssign } from './refs';
 export type { RefTarget, RefValue, RefCallback } from './refs';
+export { textValue, classValue } from './value-normalization';
+export { jsxAttributeName } from './jsx-attributes';
+export { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';

@@ -136,9 +136,12 @@ order, thrown exceptions and callback writes remain authored JavaScript semantic
 M3.2 establishes template lowering in the separate `compiler/desktop` build entry.
 The emitted backbone carries source addresses, while ordered AST steps retain
 attributes/spreads, events/refs, text and structural work. This support entry does
-not yet compile a whole application. Next, consume those steps in real component
-closures and reuse shared state-cell, guarded-write and access-table emission;
-publish initial mount and initial values together through M3.1 acceptance. Keep
+not yet compile a whole application. M3.3 now executes fixed-host/module-cell
+closures with shared cell lowering, reader serialization and M3.1 acceptance.
+Initial mount and values publish together; queued source work resumes through
+core invalidation after acceptance or freed credits. Next wire the normal entry
+and mount metadata, then the first visible CSS/window counter. Extend guarded
+instance/store publication, scopes and replay through shared emission afterward. Keep
 normal `mount()` imports and calls. Window/CSS integration then completes the M3
 counter gate; source-plan descriptors alone do not close runtime capability gaps.
 

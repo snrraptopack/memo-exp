@@ -6,7 +6,7 @@
  * guarded DOM writes without requiring compiler knowledge of their methods.
  */
 
-type ClassRecord = Record<string, unknown>;
+import { classValue } from './value-normalization';
 type StyleRecord = Record<string, string | number | null | undefined>;
 type WritableStyle = {
   cssText: string;
@@ -38,13 +38,7 @@ const UNITLESS = new Set([
   'zoom',
 ]);
 
-/** Normalize strings, nested arrays, and conditional class objects. */
-export function classValue(value: unknown): string {
-  if (typeof value === 'string') return value.trim();
-  const names: string[] = [];
-  appendClass(value, names);
-  return names.join(' ');
-}
+export { classValue } from './value-normalization';
 
 /** Apply a normalized class value to HTML or SVG elements. */
 export function setClassValue(element: Element, value: unknown): void {
@@ -105,22 +99,6 @@ export function setStyleValue(element: Element, value: unknown): void {
     }
   }
   styleSnapshots.set(element, next);
-}
-
-function appendClass(value: unknown, names: string[]): void {
-  if (value == null || value === false || value === true) return;
-  if (Array.isArray(value)) {
-    for (const item of value) appendClass(item, names);
-    return;
-  }
-  if (typeof value === 'object') {
-    for (const [name, enabled] of Object.entries(value as ClassRecord)) {
-      if (enabled) names.push(name);
-    }
-    return;
-  }
-  const text = String(value).trim();
-  if (text !== '') names.push(text);
 }
 
 function styleName(name: string): string {

@@ -9,6 +9,7 @@ import { bundleExecutionEntry } from '../src/dev/bundle';
 import { PublicationClient } from '../src/host/client';
 import { connectNativeHost } from '../src/host/node-process';
 import { sourceTemplate } from './fixtures/native-template';
+import { compileDesktop } from '@memoized-dom/compiler/desktop';
 
 const nativeHost = process.env.MEMOIZED_DESKTOP_HOST ?? fileURLToPath(new URL(
   '../rust/target/debug/memoized-dom-desktop' + (process.platform === 'win32' ? '.exe' : ''),
@@ -21,6 +22,53 @@ beforeAll(async () => {
     throw new Error('Build the native host with cargo +1.96.0 build first, or set MEMOIZED_DESKTOP_HOST');
   }
   directory = await mkdtemp(join(tmpdir(), 'memoized-dom-engine-contract-'));
+  // The application module is ordinary authored TSX. This private launcher
+  // checks the emitted ABI; normal mount/window integration remains next.
+  const core = fileURLToPath(new URL('../../runtime/dist/core.js', import.meta.url)).replaceAll('\\', '/');
+  const compiled = compileDesktop(`
+    let count=0;
+    export function increment(){count++;}
+    export function App(){return <main className={['counter',{active:count>0}]} style="display:flex;gap:12px;">
+      <button onClick={increment}>Increment</button><p>Count: {count}</p>
+    </main>}
+  `, { moduleId: './process-counter.tsx', runtimePath: core });
+  await Bun.write(join(directory, 'compiled-app.mjs'), compiled.code);
+  const application = fileURLToPath(new URL('../src/runtime/application.ts', import.meta.url)).replaceAll('\\', '/');
+  const client = fileURLToPath(new URL('../src/host/client.ts', import.meta.url)).replaceAll('\\', '/');
+  await Bun.write(join(directory, 'compiled-entry.ts'), `
+    import assert from 'node:assert/strict';
+    import {App} from './compiled-app.mjs';
+    import {commit,setScheduler} from ${JSON.stringify(core)};
+    import {NativeApplication} from ${JSON.stringify(application)};
+    import {PublicationClient} from ${JSON.stringify(client)};
+    import {connectNativeHost} from '@memoized-dom/desktop/internal-host';
+    async function run(){
+      const errors=[];
+      const app=new NativeApplication(new PublicationClient(connectNativeHost({
+        executable:process.argv[2],args:['--headless'],
+      })), {scheduleFrame:null,visible:()=>true,reportError:error=>errors.push(error)});
+      app.run(()=>setScheduler(()=>{}));
+      const owner={id:'App',generation:1};
+      let view;
+      try {
+        const candidate=app.prepare(()=>{
+          view=App({application:app,owner,parent:null,reportError:error=>errors.push(error)});
+          return view;
+        },{accepted(){view.acceptInitial()},activated(){view.activateUpdates()}});
+        const first=await candidate.publish(view.initialPublication);
+        view.dispatch(1,'onClick',new Event('click'));
+        app.run(commit);
+        const second=await view.publication();
+        assert.equal(second.sequence,2);
+        const third=await candidate.retire({operations:[{op:'retire',owner}]});
+        assert.throws(()=>view.dispatch(1,'onClick',new Event('click')),/not active/);
+        assert.deepEqual(errors,[]);
+        assert.equal(app.runtime.state.registry.size,0);
+        console.log(JSON.stringify({accepted:[first.sequence,second.sequence,third.sequence],compiled:true}));
+      }finally{app.close()}
+    }
+    run().catch(error=>{console.error(error);process.exitCode=1});
+  `);
 });
 
 afterAll(async () => {
@@ -37,11 +85,12 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle']) {
+  for (const fixture of ['application', 'lifecycle', 'compiled']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
-        entry: fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
+        entry: fixture === 'compiled' ? join(directory, 'compiled-entry.ts')
+          : fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
         outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
         runtime,
       });
@@ -62,7 +111,9 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
       });
       expect(result.stderr).toBe('');
       expect(result.code).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual(fixture === 'application'
+      expect(JSON.parse(result.stdout)).toEqual(fixture === 'compiled'
+        ? { accepted: [1, 2, 3], compiled: true }
+        : fixture === 'application'
         ? { accepted: [1, 2], refused: 'unknownTemplate' }
         : {
             accepted: [1, 2, 3], effects: [0, 1], refDisposals: 1,

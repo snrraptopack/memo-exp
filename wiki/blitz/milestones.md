@@ -14,7 +14,7 @@ Update the status table when the corresponding completion gates pass.
 | M0 — Architecture and plan | Completed | Initial documentation batch below |
 | M1 — Shared semantic/compiler boundary | Completed | Runtime/core, shared pass order and project/manifest adaptation; unchanged fixture products, source-only contracts, builds/checks and 2,558 root tests pass |
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
-| M3 — Ordinary native counter | In progress | M3.1 accepted shared-core lifecycle and M3.2 packaged template lowering pass; generated component execution, normal mount integration and visible CSS/window remain |
+| M3 — Ordinary native counter | In progress | M3.1 lifecycle, M3.2 templates and M3.3 compiled fixed-host/module-cell execution pass against Rust; normal mount integration and visible CSS/window remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
 | M5 — Modules and structural parity | Not started | Core implementations available; native adapter not built |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
@@ -1105,3 +1105,101 @@ Pushed to `origin/codex/blitz-renderer` on 2026-10-13; remote head returned that
 exact SHA. The final whitespace check caught one extra trailing blank line in
 the moved namespace file; this follow-up removes it and records the verified
 delivery. No semantic change or full M3 completion is implied by this cleanup.
+
+## M3.3 — Executable fixed-host/module-cell component closures
+
+Completed implementation/checks: 2026-10-13. M3 is still in progress: normal entry/
+mount metadata, visible native window and normal stylesheet/asset wiring remain.
+The process bootstrap is a private ABI fixture, not the user-facing application API.
+
+### Communicated boundaries and reuse
+
+Before editing existing code, communicated the shared identifier/access-table
+emission extraction, neutral cell context and shared attribute spellings. Ordered
+attribute object construction also moved intact to neutral emission. DOM files
+retain their existing exports; no DOM list implementation was changed. Later
+communicated the necessary desktop-only post-activation hook and opt-in component
+setup scan in the existing callback planner. The browser planner defaults remain.
+
+The first full regression run found core importing DOM setters through its new
+normalizer exports. Communicated and fixed that boundary by moving the existing
+pure text/class functions into `value-normalization.ts`, keeping DOM exports as
+references to the same functions. Strengthened the boundary check instead of
+relaxing it. No new reactive engine, cell store, access resolver or source bridge
+was introduced. The separate worktree preserves the primary JSX work.
+
+### Implementation and decisions
+
+- `compiler/desktop` now exports `compileDesktop`. It uses the real shared semantic
+  coordinator, return/source/reader plans, identifier allocation, ordered object
+  emission and binding-aware module-cell lowering. Generated closures call the
+  existing core cell operations; shadowed bindings retain ordinary JS semantics.
+  The sole root is selected from shared component facts so reader routing does
+  not depend on the root being named App. Source maps preserve the authored module.
+- The first execution scope is fixed hosts/fragments and scalar module state in
+  a synchronous root without props. It emits native templates and closures that
+  evaluate attributes/spreads, explicit event values and text in authored order.
+  Static backbones include a SHA-256 revision in their immutable template key;
+  this prepares safe identity across changed templates, not a completed HMR path.
+- Added compiler-private `src/runtime/view.ts`: core entity registration/cleanup,
+  source addresses, presentation snapshots and accepted JS callback bindings.
+  Initial mount and values publish atomically. Dispatch enters the owning core
+  runtime. Callbacks/functions never enter Rust JSON. Class/text/attribute names
+  and HTML boolean/ARIA facts reuse existing core helpers; CSS strings go to the
+  native attribute unchanged. No alternate CSS property language was added.
+- State changes before initial sending recompute in the owning runtime. Changes
+  racing acknowledgment queue a core render after shared preparation activates.
+  A precise internal `activated` lifecycle hook avoids making preparation dirty
+  before activation. Ref/effect/core preparation implementations are unchanged.
+- Pending snapshots include removals for attributes introduced by earlier admitted
+  work. Callback metadata changes only on acceptance. At eight pending view jobs,
+  later writes coalesce without adding jobs; released credit invalidates the core
+  entity to render the latest source state. Known accepted scalar values suppress
+  redundant writes; pending work uses complete values for ordering correctness.
+- Store/method writes, instance state, derivations/replay, effects, retained/awaited
+  callbacks, refs, structural execution and stylesheet/assets integration are
+  capability diagnostics. Shared callback discovery gained an opt-in component
+  setup scan to catch timers/subscriptions without copying its traversal. Dynamic
+  spread refs, innerHTML and style objects also have explicit adapter errors.
+  These are phased backend limits, not changes to general web authoring or a new
+  requirement for libraries to use this compiler. Wider scope remains planned.
+- The bundler resolves one private generated presentation import in addition to
+  the selected transport. Ordinary application authors import neither NativeView
+  nor NativeApplication; there is no new public mount or awaited ref API.
+
+### Evidence and corrections
+
+- Full root final suite: **2,558 passed, 0 failed**, exit 0, 30,462 assertions,
+  254 files, 122.84s. The earlier full run had 2,557 passes and one genuine core
+  dependency-boundary failure; the extraction above fixes it. Full suite rerun
+  confirms the fix, including web/SSR and optimized list contracts.
+- Final desktop suite: **54 passed, 0 failed**, exit 0, 225 assertions, 6.17s.
+  Seven new execution contracts cover real emitted cells/readers/closures,
+  pre-acceptance dispatch, pending attribute removal, initial races, application
+  isolation, bounded pressure/latest-state recovery and capability diagnostics.
+- Real process suite: **13 passed, 0 failed**, exit 0, 44 assertions. The run
+  initially recorded 10.21s while other JS checks were active; the final run after
+  scalar-write caching passes in **4.43s**. Each Bun/Node/custom CommonJS
+  backend executes a genuinely compiled TSX counter, dispatches its generated
+  callback, accepts the resulting Rust text/attribute batch and retires ownership.
+  Existing source-template/native identity and failure contracts remain covered.
+- The initial native process fixture was outside the workspace package resolver.
+  Supplying the existing compiler runtimePath option with the built core path
+  fixed test staging; no app imports or execution-engine behavior were changed.
+- Race testing caught initial re-evaluation outside the owning core scope and
+  dirtying preparation too early. Corrected both, using the shared runtime scope
+  and the internal post-activation hook. The pressure fixture now yields an event
+  loop turn rather than assuming a fixed number of promise continuations.
+- **17 web/SSR compilation cases match captured products exactly** after all shared
+  changes, including module-cell output. Compiler/runtime builds and declaration
+  emission pass. Bun checking passes desktop (110 files), compiler (245 files)
+  and runtime (59 files). Focused Oxlint passes; native formatting and staged
+  whitespace are final gates. Rust production source and locks are unchanged;
+  the cached binary was reused without native linking alongside the full JS suite.
+
+Research, plan, milestone status and desktop README describe this exact scope.
+Next is normal mount/entry integration, native stylesheet/resources and the visible
+counter window, followed immediately by native event defaults and input ordering.
+No native platform input latency, full ref/library compatibility, async callback
+scope, visible painting or state-preserving reload is claimed by these tests.
+Commit/push and exact remote verification follow the completed batch.

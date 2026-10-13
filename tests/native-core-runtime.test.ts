@@ -24,7 +24,7 @@ it('exports the same semantic implementations without importing a rendering host
   });
   const inputs = Object.keys(bundled.metafile!.inputs).map(path => path.replaceAll('\\', '/'));
 
-  for (const name of ['index', 'server', 'mount', 'hydration', 'markup', 'list', 'list-dom', 'setters']) {
+  for (const name of ['index', 'server', 'mount', 'hydration', 'markup', 'list', 'list-dom', 'setters', 'dom-values', 'dom-props']) {
     expect(inputs.some(path => path.endsWith(`/src/${name}.ts`))).toBe(false);
   }
   expect(bundled.outputFiles[0]!.text).not.toContain('node:async_hooks');

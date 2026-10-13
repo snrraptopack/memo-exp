@@ -18,6 +18,7 @@
  *   - objects compare by identity -> new reference means "changed"
  */
 
+import { textValue } from './value-normalization';
 import { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';
 
 export type SlotCache = Record<string, unknown>;
@@ -44,9 +45,7 @@ export function setTextData(node: Text, value: unknown): void {
 }
 
 /** Normalize a dynamic text slot before comparing its cached value. */
-export function textValue(value: unknown): string {
-  return value == null || typeof value === 'boolean' ? '' : String(value);
-}
+export { textValue } from './value-normalization';
 
 /** Full className string replacement. */
 export function setClassName(

@@ -9,9 +9,9 @@ acceptance for complete mount/write/move/retire publications, with bounded worke
 queues and a private headless process for transport contracts. A
 portable JavaScript publication client, selectable execution bundler and internal
 accepted core lifecycle are also implemented. The compiler now lowers analyzed
-JSX to native source templates and ordered evaluation plans. Component JavaScript
-emission and the window command remain pending; there is no mounted application
-example to run yet. These scripts check the compiler/native foundation, and do
+JSX to native templates and executes the first fixed-host/module-cell component
+phase. Normal mount integration and the window command remain pending; there is
+no mounted application example to run yet. These scripts check the compiler/native foundation, and do
 not change web mounting or select a desktop renderer for an application.
 
 ## Native checks
@@ -21,6 +21,7 @@ Run from the repository root with the installed Rust 1.96.0 toolchain:
 ```powershell
 # Build workspace dependencies first on a fresh checkout (`bun run build`).
 # After compiler edits, rebuild its two packaged entries before desktop tests.
+bun run --cwd packages/runtime build
 bun run --cwd packages/compiler build
 bun run --cwd packages/desktop native:check
 bun run --cwd packages/desktop native:test
@@ -42,7 +43,7 @@ exist. Cold dependency compilation is not app startup or a TSX refresh measureme
 ## Compiler template lowering
 
 The compiler's separate `@memoized-dom/compiler/desktop` build entry exports
-`lowerNativeTemplate` for the compiler/build adapter. Applications do not import
+`lowerNativeTemplate` and `compileDesktop` for the compiler/build adapter. Applications do not import
 it. The default compiler entry continues to provide browser compilation; neither
 entry imports desktop package source or a native toolchain.
 
@@ -53,8 +54,9 @@ namespace classifier, and uses comment anchors for structural insertion.
 Dynamic/member component calls remain source plans, rather than invented tags.
 
 Immutable wire templates contain the element/text/comment backbone. Attributes,
-spreads, refs, events and dynamic text remain ordered AST steps for the forthcoming
-component emitter. Even literal attributes retain their positions around spreads;
+spreads, refs, events and dynamic text retain ordered AST steps. The first
+component emitter executes fixed-host attributes/events/text; structural and ref
+steps remain capability gates. Even literal attributes retain their positions around spreads;
 event/ref addresses point into that same ordered program. Event metadata lives
 in `packages/compiler/src/desktop/events.ts`. No callback executes at compile time,
 and no function/ref value is serialized to Rust.
@@ -65,6 +67,39 @@ component/list/conditional/forwarded plans. The built package's templates are
 mounted/written/retired against the real Rust host, including comment insertion
 and stale child-generation refusal. This is template/identity evidence, not
 executed structural JavaScript, CSS materialization or visible SVG painting.
+
+## Generated component execution
+
+`compileDesktop` now emits real component closures with the existing shared
+module-state cell lowering and access-table serializer. Its current scope is one
+synchronous root without props, fixed hosts/fragments, scalar module state,
+ordered attributes/spreads, class values, CSS style strings and explicit event
+callbacks. Shared cell operations publish only writes that execute. Templates
+carry a structural SHA-256 revision so changed backbones do not reuse an immutable
+native template key. The browser compiler's existing output remains unchanged.
+
+The compiler-private `src/runtime/view.ts` registers core entities and owns native
+addresses, accepted attribute/text snapshots and callback bindings. It has no
+state-cell store, dependency resolver or subscription engine. Initial mount and
+values form one transaction; handlers activate after acceptance. Changes racing
+the first acknowledgment schedule a core render after preparation activation.
+Queued snapshots remove attributes introduced by earlier pending work. At eight
+pending jobs, later source changes coalesce and resume through core invalidation
+when a credit frees. Known accepted values suppress redundant scalar writes;
+pending work uses complete snapshots for ordering correctness.
+
+Instance state, stores/reactive receiver methods, derived replay, retained/async
+callbacks, effects, structural execution, refs and stylesheet/assets integration
+receive capability diagnostics rather than stale behavior. Dynamic spread refs,
+innerHTML and style objects currently produce explicit adapter errors. These are
+current emission limits, not new application syntax or restrictions on the web.
+
+The real process tests compile ordinary TSX, bundle the generated module for Bun,
+Node and a custom CommonJS adapter, then mount, dispatch its callback, publish an
+update and retire against the cached Rust host. The bootstrap is a private ABI
+fixture, not an application example or native platform event test. Applications
+will keep existing `mount()` authoring; normal entry wiring and the visible window
+are next, followed by default/input cancellation and revision contracts.
 
 ## JavaScript execution backends
 

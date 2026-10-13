@@ -37,6 +37,9 @@ export async function bundleExecutionEntry(options: ExecutionBundleOptions) {
         builder.onResolve({ filter: /^@memoized-dom\/desktop\/internal-host$/ }, () => ({
           path: adapter,
         }));
+        builder.onResolve({ filter: /^@memoized-dom\/desktop\/internal-runtime$/ }, () => ({
+          path: fileURLToPath(new URL('../runtime/view.ts', import.meta.url)),
+        }));
       },
     }],
   });
