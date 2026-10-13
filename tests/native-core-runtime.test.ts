@@ -5,11 +5,13 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as core from '../packages/runtime/src/core';
 import { createApplicationRuntime as sharedRuntime } from '../packages/runtime/src/kernel';
+import { createRenderPreparation as sharedPreparation } from '../packages/runtime/src/preparation';
 import { uninstallAccessTable } from '../packages/runtime/src/access';
 import { computedChanged as domComparison } from '../packages/runtime/src/setters';
 
 it('exports the same semantic implementations without importing a rendering host', async () => {
   expect(core.createApplicationRuntime).toBe(sharedRuntime);
+  expect(core.createRenderPreparation).toBe(sharedPreparation);
   expect(core.computedChanged).toBe(domComparison);
 
   const bundled = await build({

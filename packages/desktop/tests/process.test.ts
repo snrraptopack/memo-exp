@@ -36,35 +36,42 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  test(name + ' runs the selected adapter against the real native host', async () => {
-    const probe = join(directory, name + '.probe');
-    const { entry } = await bundleExecutionEntry({
-      entry: fileURLToPath(new URL('./fixtures/application.ts', import.meta.url)),
-      outfile: join(directory, name + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
-      runtime,
-    });
-    const [command, ...args] = executionCommand(entry, runtime, [nativeHost]);
-    const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(command, args, {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, MEMOIZED_CUSTOM_ADAPTER_PROBE: probe },
+  for (const fixture of ['application', 'lifecycle']) {
+    test(name + ' runs ' + fixture + ' against the real native host', async () => {
+      const probe = join(directory, name + '-' + fixture + '.probe');
+      const { entry } = await bundleExecutionEntry({
+        entry: fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
+        outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
+        runtime,
       });
-      let stdout = '';
-      let stderr = '';
-      const timer = setTimeout(() => { child.kill(); reject(new Error('Engine contract timed out')); }, 15_000);
-      child.stdout.on('data', chunk => { stdout += String(chunk); });
-      child.stderr.on('data', chunk => { stderr = (stderr + String(chunk)).slice(-4096); });
-      child.on('error', error => { clearTimeout(timer); reject(error); });
-      child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
-    });
-    expect(result.stderr).toBe('');
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({ accepted: [1, 2], refused: 'unknownTemplate' });
-    if (typeof runtime !== 'string') {
-      expect(await readFile(probe, 'utf8')).toBe('custom adapter selected');
-    }
-  }, 20_000);
+      const [command, ...args] = executionCommand(entry, runtime, [nativeHost]);
+      const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = spawn(command, args, {
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, MEMOIZED_CUSTOM_ADAPTER_PROBE: probe },
+        });
+        let stdout = '';
+        let stderr = '';
+        const timer = setTimeout(() => { child.kill(); reject(new Error('Engine contract timed out')); }, 15_000);
+        child.stdout.on('data', chunk => { stdout += String(chunk); });
+        child.stderr.on('data', chunk => { stderr = (stderr + String(chunk)).slice(-4096); });
+        child.on('error', error => { clearTimeout(timer); reject(error); });
+        child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+      });
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(fixture === 'application'
+        ? { accepted: [1, 2], refused: 'unknownTemplate' }
+        : {
+            accepted: [1, 2, 3], effects: [0, 1], refDisposals: 1,
+            effectDisposals: 2, ownedDisposals: 1, refused: 'documentRefused',
+          });
+      if (typeof runtime !== 'string') {
+        expect(await readFile(probe, 'utf8')).toBe('custom adapter selected');
+      }
+    }, 20_000);
+  }
 }
 
 test('missing native executable rejects pending work without hanging', async () => {

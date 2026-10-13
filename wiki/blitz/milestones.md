@@ -910,3 +910,84 @@ Next is desktop compiler emission, accepted core lifecycle and normal TSX/CSS
 mounting in the native window. No visible window, QuickJS compatibility, production
 packaging size or startup/event-latency benchmark is claimed by these contracts.
 Commit/push and exact remote verification follow the tested batch.
+
+## M3.1 — Native acceptance uses the shared core lifecycle
+
+Completed implementation/checks: 2026-10-13. M3 remains incomplete until ordinary
+compiled TSX, mount and CSS run in a visible native window.
+
+### Authorization and communicated boundary
+
+Continued the authorized selectable-backend implementation. Before editing shared
+code, communicated the exact boundary: additive preparation/read-scope exports in
+`packages/runtime/src/core.ts`. Existing preparation, effects, refs, access tables,
+state cells, web mount and optimized DOM lists retain their implementations.
+The user reiterated wiki synchronization and no extra application mounting API;
+the research, plan and desktop README now state this boundary explicitly.
+
+### Implementation and decisions
+
+- Added `packages/desktop/src/runtime/application.ts`, an internal compiler/host
+  lifecycle adapter. Applications keep `mount(target, component, options)` from
+  the framework runtime; no public native mounting function or awaited ref method
+  was added. Native application/candidate classes are compiler-owned operations.
+- Preparation and consumed-resource readiness use the existing shared runtime.
+  A failed build rolls back with core preparation before any native publication.
+  Accepted publication commits native handle connection flags before core refs
+  activate; core preserves ref-before-effect and reverse-cleanup ordering.
+- Outstanding publications hold existing effect callbacks through the core's
+  effect-boundary capability. Coalescing uses the existing entity identity, without
+  another reactive engine, access resolver, state store or external-source bridge.
+  A refused update does not roll back semantic values; effects stay held until a
+  corrected scene is accepted. Broad event/async-continuation contracts remain M4.
+- Refused new candidates never activate their refs/effects. Refused retirement
+  preserves accepted ownership; accepted retirement releases it exactly once.
+  Independent nested publication is refused; nested creation must join its parent
+  publication rather than independently activating an incomplete subtree.
+- Added publication-client connection lifetime notification. Idle native process
+  loss disposes accepted owners even with no pending jobs. Throwing teardown does
+  not strand queued promises or prevent another owner from receiving failure.
+- Accepted activation/effect failure closes the connection and drains core cleanup;
+  late replies cannot resurrect disposed ownership. Shared cell isolation remains
+  per application runtime. Actual native frame/visibility hooks must be supplied
+  by the future window integration; fixtures do not simulate a completed window.
+- Added deterministic lifecycle contracts and a cross-module, compiler-shaped
+  process fixture. The latter uses real shared cells/access tables and actual Rust
+  mount/text/retire publications under Bun, Node and the selected custom CommonJS
+  adapter. It is a private ABI test, not semantically compiled TSX.
+
+### Actual evidence
+
+- `bun run --cwd packages/desktop test`: **39 passed, 0 failed**, exit 0,
+  175 assertions, 452ms. Includes 12 lifecycle and 2 connection-owner contracts.
+- `bun run --cwd packages/desktop test:process`: **9 passed, 0 failed**, exit 0,
+  28 assertions, 2.38s. Reused the cached real Rust host without invoking Cargo.
+  Each engine executes both publication and lifecycle fixtures, including a
+  refused retirement followed by corrected acceptance at the same sequence.
+- An initial fixture expected an internal Rust error name on the wire. Real host
+  execution exposed the stable `documentRefused` protocol code. The fixture was
+  corrected to the declared protocol; no native behavior was changed to satisfy it.
+- Shared/web regression checks: **72 passed, 0 failed**, exit 0, 271 assertions,
+  across native-core-runtime, preparation, preparation-readiness, r44-dom-refs,
+  r26-effect and effect-cleanup-consumption. The initial fresh-checkout run could
+  not load unbuilt data/compiler packages; building dependencies resolved those
+  loading failures before the successful run.
+- Runtime/adapters/data/router/compiler builds pass, including existing declaration
+  generation. Bun checking passes desktop (21 files) and runtime (57 files).
+  Focused Oxlint and `cargo +1.96.0 fmt --check` pass.
+- Compared the generated runtime against HEAD's core export surface by rebuilding
+  before/after: **53 of 57 JS modules are byte-identical**, including semantic
+  implementations and DOM lists. `core.js` adds the intended exports. Index,
+  server and testing barrels change generated aliases/order; parser-normalized
+  export origins and startup AST remain identical. This is not a claim that all
+  barrel bytes are unchanged. No compiler production source or DOM output changed.
+- Rust production sources and Cargo/Bun locks are unchanged. The full native/root
+  suites were not repeated for this additive shared export/internal JS adapter
+  batch; targeted shared tests and real native process contracts are the gates.
+
+Research, plan, milestones and desktop README describe the implemented boundary.
+Next: emitter integration using shared compiler plans/access tables and existing
+mount authoring, then the first visible counter/CSS window. Event default/input
+ordering and ordinary native ref methods remain explicit follow-up gates. No
+window startup, input latency, complete browser DOM or QuickJS adapter is claimed.
+Commit/push and exact remote verification follow this tested batch.

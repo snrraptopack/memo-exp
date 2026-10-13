@@ -7,9 +7,10 @@ ordinary TSX, CSS, events, refs and `mount()` from the framework runtime.
 This branch currently implements the Rust document foundation and ordered wire
 acceptance for complete mount/write/move/retire publications, with bounded worker
 queues and a private headless process for transport contracts. A
-portable JavaScript publication client and selectable execution bundler are also
-implemented. The desktop emitter and window command are subsequent milestones. There
-is no mounted application example to run yet. This package's scripts exercise the
+portable JavaScript publication client, selectable execution bundler and internal
+accepted core lifecycle are also implemented. The desktop emitter and window
+command are subsequent milestones. There is no mounted application example to
+run yet. This package's scripts exercise the
 native foundation; they do not change web mounting or select a desktop renderer.
 
 ## Native checks
@@ -77,6 +78,33 @@ promise Node API/npm compatibility for another engine. Bun and Node, plus a
 separately selected custom CommonJS adapter, have real native process contracts.
 
 ## JavaScript publication ownership
+
+### Internal lifecycle, unchanged application mounting
+
+`src/runtime/application.ts` connects publication acceptance to the existing core
+render preparation, refs, effects and cleanup. It does not introduce another
+application entry point. Application code keeps the framework's existing
+`mount(target, component, options)` API. The compiler/build supplies the desktop
+host internally; applications do not import `NativeApplication` or candidates.
+
+Candidate creation uses shared core preparation and consumed-resource readiness.
+Native acceptance commits host connection flags before activating shared refs;
+effects wait while presentation publications are outstanding. Known refusal
+discards a new candidate without activating it, or preserves ownership when
+retirement was refused. Updated semantic values are not rolled back: their effects
+wait for a corrected accepted scene. Accepted retirement releases core-owned refs,
+effects, subscriptions and cleanup. Idle connection loss also tears down the
+application, and a lifecycle failure after native acceptance closes the host.
+
+The adapter holds existing effect callbacks through the core effect-boundary hook;
+it owns no cell store, access resolver, subscription bridge or reactive scheduler.
+The only shared-source addition is exporting existing preparation/read-scope
+functions from `runtime/core`. The web mount and DOM list implementations are
+unchanged. Process fixtures verify this internal ABI under Bun, Node and a selected
+custom CommonJS adapter against the real cached Rust host. They are not compiled
+TSX examples or visible-window tests; those remain M3 completion gates.
+
+### Transport ownership
 
 `PublicationClient` snapshots candidate packets before enqueueing and sends one
 at a time. At most eight publications are admitted by default, with an explicit

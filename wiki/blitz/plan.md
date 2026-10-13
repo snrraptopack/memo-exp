@@ -242,6 +242,13 @@ and host operations separate from source invalidation. Keep the current web
 defaults and ordering. Ref cleanup, reverse teardown, subscriptions and staged
 candidate disposal remain the existing core contracts.
 
+Keep the existing public `mount(target, component, options)` signature. Candidate
+preparation, publication and retirement are private compiler/host operations;
+applications do not import them, choose a different mounting function or await
+ordinary ref methods. Engine and presentation selection belong in build/launch
+configuration. M3.1 implements the internal acceptance boundary first; that batch
+alone does not complete the ordinary mounted window gate.
+
 Native refs expose implemented ordinary methods directly. `focus()` and `blur()`
 return void, with internal transport/error reporting. Do not export desktop focus
 helpers or awaited versions of browser geometry methods. Initial ref acceptance,

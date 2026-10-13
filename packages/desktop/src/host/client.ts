@@ -41,6 +41,7 @@ export class PublicationClient {
   private active?: ActivePublication;
   private nextSequence = 1;
   private terminal?: Error;
+  private readonly closeListeners = new Set<(error: Error) => void>();
   private unsubscribe: () => void = () => {};
 
   constructor(
@@ -80,6 +81,20 @@ export class PublicationClient {
 
   get isClosed(): boolean {
     return this.terminal !== undefined;
+  }
+
+  /** Connection lifetime, including idle process loss. Not a state subscription. */
+  onClose(listener: (error: Error) => void): () => void {
+    if (this.terminal) {
+      listener(this.terminal);
+      return () => {};
+    }
+
+    this.closeListeners.add(listener);
+
+    return () => {
+      this.closeListeners.delete(listener);
+    };
   }
 
   publish(publication: Publication): Promise<Acceptance> {
@@ -207,12 +222,15 @@ export class PublicationClient {
     this.active = undefined;
     active?.job.reject(error);
     this.rejectQueued(error);
+    const listeners = [...this.closeListeners];
+    this.closeListeners.clear();
     // Pending jobs settle even if a custom adapter's cleanup throws. The first
     // terminal failure remains authoritative; teardown must never strand jobs.
     for (const cleanup of [
       this.unsubscribe,
       active?.cancelDeadline ?? (() => {}),
       () => this.transport.dispose(),
+      ...listeners.map(listener => () => listener(error)),
     ]) {
       runCleanup(cleanup);
     }

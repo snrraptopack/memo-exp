@@ -33,5 +33,7 @@ export { setStorageFactory } from './async-storage';
 export { computedChanged, effectAssignmentChanged } from './comparison';
 export { registerEffect, registerConditionalEffect } from './effect';
 export { cleanup } from './cleanup';
+export { createRenderPreparation, type RenderPreparation } from './preparation';
+export { readPreparationScope, releasePreparationRead } from './preparation-read';
 export { mountRef, refAssign } from './refs';
 export type { RefTarget, RefValue, RefCallback } from './refs';

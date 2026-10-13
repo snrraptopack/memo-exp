@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Native presentation host for the shared memoized-dom compiler and runtime",
   "scripts": {
-    "test": "bun test ./tests/client.test.ts ./tests/framing.test.ts ./tests/execution.test.ts",
+    "test": "bun test ./tests/client.test.ts ./tests/framing.test.ts ./tests/execution.test.ts ./tests/lifecycle.test.ts",
     "test:process": "bun test ./tests/process.test.ts",
     "typecheck": "bun check -p tsconfig.json",
     "native:check": "cargo +1.96.0 check --manifest-path rust/Cargo.toml --locked --jobs 2",

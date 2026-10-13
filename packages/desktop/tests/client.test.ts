@@ -1,36 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { PublicationClient } from '../src/host/client';
 import { MAX_PACKET_BYTES, type Publication } from '../src/host/protocol';
-import type { PublicationTransport, TransportObserver } from '../src/host/transport';
-
-class TestTransport implements PublicationTransport {
-  observer?: TransportObserver;
-  readonly sent: string[] = [];
-  disposed = false;
-  deadline?: () => void;
-  write?: (json: string) => Promise<void>;
-
-  send(json: string): Promise<void> {
-    this.sent.push(json);
-    return this.write?.(json) ?? Promise.resolve();
-  }
-
-  listen(observer: TransportObserver): () => void {
-    this.observer = observer;
-    return () => { this.observer = undefined; };
-  }
-
-  scheduleDeadline(_milliseconds: number, callback: () => void): () => void {
-    this.deadline = callback;
-    return () => { this.deadline = undefined; };
-  }
-
-  dispose(): void { this.disposed = true; }
-
-  accept(sequence: number): void {
-    this.observer?.reply({ version: 1, status: 'accepted', sequence });
-  }
-}
+import { ManualTransport as TestTransport } from './fixtures/manual-transport';
 
 const empty: Publication = { operations: [] };
 
@@ -43,6 +14,41 @@ function observed(promise: Promise<unknown>): Promise<unknown> {
 async function turn(): Promise<void> { await Promise.resolve(); }
 
 describe('engine-independent publication client', () => {
+  test('idle close notifies current and late owners once, honoring unsubscribe', () => {
+    const transport = new TestTransport();
+    const client = new PublicationClient(transport);
+    const errors: Error[] = [];
+    const unsubscribe = client.onClose(() => { throw new Error('Removed listener must not run'); });
+    unsubscribe();
+    client.onClose(error => errors.push(error));
+
+    transport.observer!.failure(new Error('Host vanished while idle'));
+    client.close();
+    client.onClose(error => errors.push(error));
+
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatchObject({ code: 'acceptanceUnknown' });
+    expect(errors[1]).toBe(errors[0]);
+    expect(transport.disposed).toBe(true);
+  });
+
+  test('throwing close observer cannot strand queued rejections or other owners', async () => {
+    const transport = new TestTransport();
+    const client = new PublicationClient(transport);
+    const active = observed(client.publish(empty));
+    const queued = observed(client.publish(empty));
+    let notified = false;
+    client.onClose(() => { throw new Error('Owner cleanup failed'); });
+    client.onClose(() => { notified = true; });
+
+    transport.observer!.failure(new Error('Host failed'));
+
+    expect(await active).toMatchObject({ code: 'acceptanceUnknown' });
+    expect(await queued).toMatchObject({ code: 'acceptanceUnknown' });
+    expect(notified).toBe(true);
+    expect(client.isClosed).toBe(true);
+  });
+
   test('serializes jobs and snapshots caller mutation before enqueue', async () => {
     const transport = new TestTransport();
     const client = new PublicationClient(transport);

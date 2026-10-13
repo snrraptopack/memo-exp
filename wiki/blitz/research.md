@@ -339,6 +339,17 @@ been measured yet.
 
 ## Architecture decision
 
+The M3.1 implementation connects native acceptance to the existing core render
+preparation and effect-boundary capability. New candidates must wait for consumed
+resource readiness and native acceptance before shared refs/effects activate.
+Refused retirement preserves the accepted lifetime; connection loss disposes
+owned core lifetimes even while the publication queue is idle. This is an internal
+compiler/host boundary, not another application mounting API. The existing
+`mount(target, component, options)` authoring contract remains unchanged. Bun,
+Node and a separately selected CommonJS adapter exercise the lifecycle against
+the same real Rust host. The milestone log records the actual checks and remaining
+emitter/window gates; these internal fixtures do not constitute compiled TSX.
+
 M2.2g adds the engine-neutral JavaScript publication client and execution selection.
 The client snapshots bounded candidate batches, admits one active send/reply and
 advances ordering only on matching native acceptance plus complete write. Refusal
