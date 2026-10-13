@@ -990,4 +990,9 @@ Next: emitter integration using shared compiler plans/access tables and existing
 mount authoring, then the first visible counter/CSS window. Event default/input
 ordering and ordinary native ref methods remain explicit follow-up gates. No
 window startup, input latency, complete browser DOM or QuickJS adapter is claimed.
-Commit/push and exact remote verification follow this tested batch.
+
+Delivery: implementation and synchronized architecture docs committed as
+[`8843b7be18f0015cd4f559b88edecbf119c56e4f`](https://github.com/snrraptopack/memo-exp/commit/8843b7be18f0015cd4f559b88edecbf119c56e4f).
+Pushed to `origin/codex/blitz-renderer` on 2026-10-13; `git ls-remote --heads`
+returned that exact SHA, matching local HEAD. This documentation follow-up records
+the verified delivery rather than marking the full M3 window milestone complete.
