@@ -1,8 +1,10 @@
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::Write;
 
 use crate::document::{DocumentError, NativeDocument};
 
+use super::FrameWriter;
 use super::templates::TemplateRegistry;
 use super::wire::{DecodedPacket, MAX_SAFE_INTEGER};
 use super::{PROTOCOL_VERSION, ProtocolError};
@@ -66,6 +68,26 @@ impl PublicationSession {
         self.publish_with(bytes, |document, templates, packet| {
             packet.apply_to(document, templates)
         })
+    }
+
+    /// Apply and send structural acceptance on a transport worker/headless host.
+    /// A UI driver must use its nonblocking outbound queue and close the session
+    /// on worker failure; it must not perform blocking pipe I/O on the UI thread.
+    pub fn publish_to<W: Write>(
+        &mut self,
+        bytes: &[u8],
+        replies: &mut FrameWriter<W>,
+    ) -> Result<Acceptance, ProtocolError> {
+        if replies.is_closed() {
+            self.close();
+            return Err(ProtocolError::Closed);
+        }
+        let accepted = self.publish(bytes)?;
+        if let Err(error) = replies.write_json(&accepted) {
+            self.close();
+            return Err(ProtocolError::AcknowledgmentFailed(error.to_string()));
+        }
+        Ok(accepted)
     }
 
     /// A transport that loses an acknowledgment must close rather than replay it.

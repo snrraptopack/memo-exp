@@ -288,6 +288,15 @@ access resolver. Ordinary refusal advances neither the sequence nor declarations
 actual partial native failure closes the session. Process transport/provider control
 and window integration remain gates; this in-process codec is not a running app.
 
+M2.2d adds bounded stream framing and acceptance-send failure handling. Four-byte
+big-endian payload lengths reject oversize/empty declarations before allocation;
+JSON serialization is bounded before sending. Split/interrupted reads and terminal
+truncation/write/flush failures have native contracts. Failure sending acceptance
+after real native application closes the session rather than replaying applied
+work. The stream adapters are blocking transport/headless primitives, not a UI
+event loop or actual process launch. Worker queues, pending-job teardown and
+controlled native providers remain gates before a mounted window is claimed.
+
 Input editors are initialized during Blitz layout construction. The native contract
 checks values written before first layout and subsequent editor updates. The future
 input adapter must read live editor state and implement the planned revision/default

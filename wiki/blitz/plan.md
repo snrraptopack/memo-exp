@@ -165,6 +165,13 @@ packets and ordered scene sequences. It is replaceable behind the host interface
 it does not define application authoring. Keep mutation batches small and do not
 rebuild/send the entire document on each update.
 
+Frames have a four-byte unsigned big-endian payload length followed by UTF-8 JSON,
+bounded to 1 through 1,048,576 payload bytes before allocation. Stream readers and
+writers run off the UI thread; bounded queues hand complete packets/replies to the
+native event loop. Partial frames and I/O failure close the connection. Immutable
+templates declare once by key, with later instance mounts referring to accepted
+keys. Candidate declarations become accepted only with their complete scene batch.
+
 | State | Required behavior |
 | --- | --- |
 | Collected | JS has computed candidate updates; accepted caches and lifecycle remain unchanged |

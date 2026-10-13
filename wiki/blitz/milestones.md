@@ -666,3 +666,40 @@ M2 still needs bounded process framing, controlled shell/resource providers and
 transport fatal/lost-ack failure propagation. The codec/session remains in process,
 with no mounted TSX/window claimed. Source publication is reported with exact
 remote verification; autonomous continuation proceeds into the remaining boundary.
+
+## M2.2d — Bounded framing and lost-acknowledgment closure
+
+Completed implementation/checks: 2026-10-13. M2 remains in progress.
+
+Communicated the exact protocol-only boundary before editing: bounded length
+prefixes, allocation limits and automatic session closure if acceptance cannot be
+sent. Blocking I/O is explicitly separate from the future native UI event loop.
+Compiler/runtime/list code, dependencies and application authoring are unchanged.
+
+- Added one framing module: four-byte unsigned big-endian length, followed by
+  1..1,048,576 JSON payload bytes. The reader checks length before allocation,
+  handles split/interrupted reads and treats partial frames/I/O errors as terminal.
+  Clean EOF is allowed only at a frame boundary. There is no guessed resynchronizing.
+- The writer bounds serialization memory and emits no prefix for local size/
+  encoding refusal. Write/flush errors close it after I/O begins. No unrestricted
+  intermediate JSON buffer bypasses the outgoing byte limit.
+- `publish_to` sends structural acceptance after native application. A reply stream
+  already known closed prevents application. Failure sending acceptance closes the
+  session and returns unknown-acceptance diagnostics; no native scene replay.
+- Kept framing separate from scene ownership and from platform scheduling. The
+  public blocking adapters are for workers/headless contracts, not UI-thread waits.
+  Real driver refusal replies, worker queues and pending-job disposal remain gates.
+
+Final native suite: **57 passed, 0 failed**, exit 0 (3 unit, 54 integration).
+Changed-target build 46.46s; execution 0.09s unit and 1.84s integration. New evidence
+covers adjacent frames, one-byte reads/interruptions, UTF-8/newlines, truncated
+prefix/payload, invalid lengths before payload reads, exact capacity, local
+oversize refusal without bytes, bounded outgoing JSON, prefix/payload/flush
+failure, known-closed preflight, lost acknowledgment after a real wire mount,
+and one correctly framed acceptance reply. Existing real native contracts pass.
+
+All-target locked/offline Clippy with warnings denied, format/native checks and
+whitespace verification are completion gates. No full JS suite was repeated,
+and the unrelated fullstack edit remains unstaged. Commit/push and exact remote
+status are reported after verification. M2 still needs controlled providers and
+the actual process/UI transport driver before being marked complete.

@@ -7,6 +7,8 @@ use memoized_dom_desktop::document::{
     DocumentError, MountTarget, Mutation, NativeDocument, Owner, SourceNode, Template,
     TemplateNode, ValidatedTemplate, html_name,
 };
+#[path = "document_contracts/framing.rs"]
+mod framing;
 #[path = "document_contracts/protocol.rs"]
 mod protocol;
 #[path = "document_contracts/structural_wire.rs"]

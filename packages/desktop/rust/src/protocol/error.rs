@@ -16,6 +16,7 @@ pub enum ProtocolError {
     Refused(DocumentError),
     SequenceExhausted,
     AcceptanceUnknown,
+    AcknowledgmentFailed(String),
     Closed,
 }
 
@@ -51,6 +52,10 @@ impl fmt::Display for ProtocolError {
             Self::AcceptanceUnknown => write!(
                 output,
                 "desktop acceptance is unknown; close the connection and fail pending work"
+            ),
+            Self::AcknowledgmentFailed(reason) => write!(
+                output,
+                "desktop acknowledgment failed; acceptance is unknown: {reason}"
             ),
             Self::Closed => write!(output, "desktop publication connection is closed"),
         }

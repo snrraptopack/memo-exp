@@ -154,8 +154,34 @@ sequence accepts once; further publication requires a new connection/document.
 An ambiguous live failure closes the session and returns `AcceptanceUnknown`;
 subsequent packets refuse. A process driver must also call `close()` after a lost
 acknowledgment rather than replaying possibly applied work. This batch implements
-the codec/session contract, not an OS process or pending-job queue. Stream framing
-must enforce the packet byte limit before buffering; that reader is still pending.
+the codec/session contract, not an OS process or pending-job queue.
+
+## Process stream framing
+
+`FrameReader` and `FrameWriter` use a four-byte unsigned big-endian length followed
+by that many UTF-8 JSON bytes. Payload length is 1 through 1,048,576 bytes; the
+prefix is separate. The reader checks the untrusted length before allocating a
+payload. It handles split reads and interruptions; incomplete headers/payloads,
+invalid lengths and I/O errors terminate the stream. Clean EOF is accepted only
+between frames. A failed stream does not try to find another boundary.
+
+The writer bounds JSON serialization in memory before emitting a prefix. Local
+encoding/size errors emit no bytes. Once prefix/payload I/O begins, any write or
+flush failure closes the writer. The JSON codec independently checks the payload
+limit after framing.
+
+`PublicationSession::publish_to` applies a packet and writes one structural
+acceptance frame. A known-closed reply stream refuses before native application.
+Failure sending acceptance returns `AcknowledgmentFailed`, closes the session and
+prevents replay: applied native state may remain, while the sender's acceptance is
+unknown. Ordinary packet refusal does not send an acceptance frame; the future
+process driver still must send explicit refusal diagnostics and fail pending jobs.
+
+These blocking `Read`/`Write` adapters serve transport workers or a headless host.
+The UI driver must use nonblocking inbound/outbound queues and propagate worker
+failure to the session. No blocking pipe wait belongs on the UI thread. Actual
+process launching, queue bounds/event-loop integration and pending-job teardown
+remain implementation gates; these native contracts use controlled streams.
 
 ## Combined native transactions
 
@@ -188,8 +214,9 @@ uses this same transaction path, with no second topology validator.
 
 The in-process document API, wire write-set codec/session and headless native
 contracts are the current scope. Combined native transaction validation/application
-and structural wire publication are implemented in process. Process framing/transport,
-controlled resource providers and transport
+and structural wire publication are implemented in process, with bounded framing
+and acceptance-send failure handling. Process launch/UI queues, controlled resource
+providers and full transport
 failure propagation remain M2 work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
 
