@@ -58,6 +58,11 @@ impl PublicationSession {
         self.closed
     }
 
+    /// The next correctable publication slot; exhaustion requires a new session.
+    pub fn expected_sequence(&self) -> Option<u64> {
+        self.next_sequence
+    }
+
     pub fn template_count(&self) -> usize {
         self.templates.len()
     }

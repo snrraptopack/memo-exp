@@ -5,7 +5,8 @@ runtime with a retained Blitz document in Rust. Application authoring remains
 ordinary TSX, CSS, events, refs and `mount()` from the framework runtime.
 
 This branch currently implements the Rust document foundation and ordered wire
-acceptance for complete mount/write/move/retire publications. The desktop emitter,
+acceptance for complete mount/write/move/retire publications, with bounded worker
+queues and a private headless process for transport contracts. The desktop emitter,
 JavaScript publication adapter and window command are subsequent milestones. There
 is no mounted application example to run yet. This package's scripts exercise the
 native foundation; they do not change web mounting or select a desktop renderer.
@@ -72,8 +73,9 @@ remain for the lifetime of this native document.
 
 Unexpected failure after entering live application is terminal. Rust reports
 unknown acceptance, retains the failed state and rejects subsequent work; it does
-not claim rollback. The publication session closes in that state; a future process
-driver must fail pending jobs and terminate the transport. Structural acceptance
+not claim rollback. The publication session and native driver close in that state;
+the future JavaScript client must fail pending jobs and terminate the transport.
+Structural acceptance
 and completed layout/paint remain separate:
 `resolve()` runs Blitz's style/text/layout work explicitly.
 
@@ -152,9 +154,9 @@ integers, and source indices must fit unsigned 32-bit integers. The last safe
 sequence accepts once; further publication requires a new connection/document.
 
 An ambiguous live failure closes the session and returns `AcceptanceUnknown`;
-subsequent packets refuse. A process driver must also call `close()` after a lost
-acknowledgment rather than replaying possibly applied work. This batch implements
-the codec/session contract, not an OS process or pending-job queue.
+subsequent packets refuse. The native process driver also closes the session after
+a lost acknowledgment rather than replaying possibly applied work. A JavaScript
+pending-job queue and its failure handling remain integration gates.
 
 ## Process stream framing
 
@@ -174,14 +176,49 @@ limit after framing.
 acceptance frame. A known-closed reply stream refuses before native application.
 Failure sending acceptance returns `AcknowledgmentFailed`, closes the session and
 prevents replay: applied native state may remain, while the sender's acceptance is
-unknown. Ordinary packet refusal does not send an acceptance frame; the future
-process driver still must send explicit refusal diagnostics and fail pending jobs.
+unknown. This lower-level helper does not send refusal frames. The worker driver
+described below sends explicit refusal/fatal replies through its outbound queue.
 
 These blocking `Read`/`Write` adapters serve transport workers or a headless host.
-The UI driver must use nonblocking inbound/outbound queues and propagate worker
-failure to the session. No blocking pipe wait belongs on the UI thread. Actual
-process launching, queue bounds/event-loop integration and pending-job teardown
-remain implementation gates; these native contracts use controlled streams.
+No blocking pipe wait belongs on the UI thread. `ProcessDriver` provides bounded
+queues and worker-failure propagation; native window/event-loop integration and
+JavaScript process lifetime/pending-job teardown remain implementation gates.
+
+## Native worker driver
+
+`ProcessDriver` owns one publication session on the document thread. Named reader
+and writer workers own blocking stream I/O. The reader queues at most eight complete
+frames and may hold one additional bounded frame while waiting for capacity.
+Backpressure blocks only that worker. The document thread's `poll()` checks queues
+without waiting and applies at most eight packets per call.
+
+Eight reply slots include the writer's in-flight reply. The document thread reserves
+a slot before applying a publication; when all slots are occupied it pauses
+admission. A successful writer flush releases a slot and wakes the document thread.
+This keeps a healthy burst bounded without losing acceptance or busy polling while
+the parent is stalled. The supplied wake callback must schedule the owning thread
+without blocking; the window version will use the native event-loop proxy.
+
+Refusal replies have `version`, `status: "refused"`, `expectedSequence`, a stable
+machine `code`, and a diagnostic capped at 512 characters. Invalid JSON does not
+have a guessed sequence. The JavaScript client must associate replies with its
+outstanding serialized requests. Refusal leaves the slot available for correction.
+Fatal native failures send `status: "fatal"` where the stream is still available,
+then stop admission. Read/write errors and worker panics wake and close the session;
+a broken reply stream cannot guarantee delivery of its fatal diagnostic.
+
+Clean input EOF is queued behind complete frames, allowing already accepted replies
+to drain. Closing/dropping the driver stops native admission and provider work
+without joining blocked workers on the UI thread. Generic `Read`/`Write` cannot
+interrupt an OS syscall: the process/stream owner must close or terminate an
+unresponsive peer. `finish_headless()` is an explicit blocking writer join for a
+terminating headless process or test, never a UI callback.
+
+There is one host executable, currently with a private `--headless` contract mode.
+Native tests launch that actual executable with process pipes and verify refusal,
+corrected publication, immutable template reuse and reply draining on EOF. This
+mode is not an application API or a mounted TSX demo. A normal desktop launch and
+native painting still require M3.
 
 ## Combined native transactions
 
@@ -241,12 +278,11 @@ containment alone is not a process/event-loop integration or asset loader.
 
 ## Current boundary
 
-The in-process document API, wire write-set codec/session and headless native
-contracts are the current scope. Combined native transaction validation/application
-and structural wire publication are implemented in process, with bounded framing
-and acceptance-send failure handling. Shell/resource work is contained across
-complete application. Process launch/UI queues and full transport
-failure propagation remain M2 work. Window painting and
+The document API, wire session, native worker driver and headless process contracts
+are the current scope. Combined native transaction validation/application and
+structural wire publication use bounded framing and reply-capacity admission.
+Shell/resource work is contained across complete application. The Bun client,
+pending-job teardown and native event-loop wiring remain integration work. Window painting and
 ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
 
 Blitz creates a text input's editor during layout construction. Tests verify both

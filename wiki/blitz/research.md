@@ -307,6 +307,17 @@ no-op identity and caller abort ownership are preserved; default document-owned
 signals abort on shutdown. Already dispatched work cannot be rolled back, and the
 actual UI driver still needs nonblocking workers, queues and asset handling.
 
+M2.2f adds the native stream driver and one host executable's private headless mode.
+The document stays on its owning thread; reader/writer workers exchange bounded
+frames and replies. Publication reserves reply capacity before live application;
+writer progress releases capacity and schedules the document without a timer.
+Ordinary refusal reports the correctable expected sequence without guessing fields
+from invalid JSON. Live failure/lost acknowledgment stops admission with no replay.
+Frame-boundary EOF drains replies in order. Generic stream shutdown does not claim
+to interrupt a blocked OS read/write: the future Bun process owner must terminate
+an unresponsive peer and fail pending jobs. Real process contracts precede the
+mounted TSX window; these workers do not constitute its event-loop integration.
+
 Input editors are initialized during Blitz layout construction. The native contract
 checks values written before first layout and subsequent editor updates. The future
 input adapter must read live editor state and implement the planned revision/default

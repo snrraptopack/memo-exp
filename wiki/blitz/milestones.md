@@ -767,3 +767,67 @@ Real process launch, bounded UI/worker queues, refusal responses and pending-job
 teardown remain M2 work. Asset loading, native input/defaults and a mounted TSX
 window are not claimed by these tests. Preserve the unrelated fullstack edit.
 Commit/push and exact remote verification follow this tested batch.
+
+## M2.2f — Bounded native worker driver and real process contracts
+
+Completed implementation/checks: 2026-10-13. M2 remains in progress.
+
+### Boundary communicated before implementation
+
+Communicated the desktop-only Rust driver, response codec and private headless
+host mode before edits. The existing session gains only an immutable expected
+sequence accessor. No compiler, shared runtime, web output, DOM list or application
+authoring change was needed. The single native crate now has its planned one host
+executable; a separate headless binary was not introduced.
+
+### Implementation and decisions
+
+- Reader/writer workers own blocking pipe I/O. The document/session stays on its
+  owning thread. Nonblocking polling handles at most eight publications per turn;
+  a supplied wake callback schedules work rather than using a polling timer.
+- The reader bounds its queue to eight complete frames plus one frame held while
+  waiting for capacity. Closing drops the receiver to release queue backpressure.
+  All frame payloads retain the existing pre-allocation 1 MiB bound.
+- Eight reserved reply slots include the writer's in-flight reply. Reserve before
+  applying a packet; when full, pause native admission. Successful flush releases
+  capacity and wakes admission. A stalled healthy peer does not force a lost
+  acknowledgment, growing memory, blocking UI work or a scene replay.
+- Responses preserve the accepted envelope and add explicit versioned refusal/
+  fatal envelopes. Stable codes drive machine decisions; untrusted diagnostics
+  are capped at 512 characters. Invalid JSON gets the expected correctable slot,
+  never an unvalidated guessed sequence. The future client must match responses
+  to its outstanding serialized requests.
+- Live application failure sends a fatal reply when transport is available and
+  closes admission. Stream errors and worker panics wake/close the session and
+  cancel provider work. A failed reply stream cannot guarantee a fatal reply;
+  the client must fail pending jobs rather than replay possibly applied state.
+- Frame-boundary EOF follows queued packets, then drains replies. Driver disposal
+  never joins workers on the document/UI thread. Generic streams cannot interrupt
+  blocked OS syscalls; process ownership must close/terminate an unresponsive peer.
+  The explicit blocking writer join is restricted to headless termination/tests.
+- The private `--headless` mode runs this driver through stdin/stdout. It is a
+  contract harness, not a mounted application API. Cargo tests launch the actual
+  cached host executable with pipes; no JSON demo is presented as ordinary TSX.
+
+### Evidence and remaining gates
+
+- Final locked/offline native suite: **79 passed, 0 failed**, exit 0 (11 unit,
+  68 integration). Changed-target build 58.96s; execution 1.10s unit and 6.30s
+  integration. Initial host/binary test build 1m32s; these are build/test times,
+  not measured window startup or TSX refresh latency.
+- Ten new driver contracts cover refusal/correction, out-of-order replies, real
+  process template reuse/EOF drain, lost acknowledgment after real native mount,
+  invalid framing, native platform failure/fatal reply, bounded stalled-writer
+  admission/resumption, blocked-reader close, worker panic wake and bounded
+  untrusted diagnostics. Existing real native layout/input/transaction checks pass.
+- All-target locked/offline Clippy with warnings denied passed (14.61s). Package
+  native/format checks and staged whitespace validation complete the batch gates.
+  No JavaScript production source changed, so no full JS suite was repeated or
+  run beside native linking. Cargo/Bun dependency versions and locks are unchanged.
+
+Next: the Bun process client, bounded pending-job ownership/failure and host startup/
+shutdown contracts, then compiler emission and normal TSX/CSS mount in the native
+window. Native event-loop wiring, visible painting, input cancellation/revisions,
+asset loading and dev refresh remain unclaimed. README/research reflect this
+boundary; preserve the unrelated fullstack edit. Commit/push and exact remote
+verification follow the tested batch.
