@@ -65,4 +65,3 @@ const SVG_ONLY_TAGS = new Set([
 export function isSvgElement(tag: string, parentIsSvg: boolean): boolean {
   return parentIsSvg || tag === 'svg' || SVG_ONLY_TAGS.has(tag);
 }
-
