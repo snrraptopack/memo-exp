@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static local/imported components and reactive props work; staged replacement preserves live core ownership; conditional emission, children, lists and render callbacks remain |
+| M5 — Modules and structural parity | In progress | Static/imported components, reactive props and accepted inline host/component conditions work; component return branches, children, lists and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1636,3 +1636,31 @@ Next M5 work: add the compiler-owned conditional region controller that builds
 these staged views, publishes one retire/mount transaction, and commits the branch
 only on acceptance. Host-only and component-bearing branches will use the same
 path before forwarded children or keyed lists are added.
+
+## M5.5 — Accepted inline conditional regions
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- The desktop emitter consumes `ComponentRegionShapes.conditionalFor` and lowers
+  inline ternary/logical branches into native templates. It does not rescan branch
+  syntax or add a desktop selector rule. Host-only and component-bearing branches
+  share the same controller and transaction path.
+- One stable core controller owns `App/when0`; native branch content uses a private
+  `App/when0/$content` owner generation. Nested components keep ordinary semantic
+  IDs such as `App/when0/Label`, while their wire source IDs remain generation
+  qualified for Rust validation and event dispatch.
+- A switch stages the new branch, retires/mounts in one publication, and changes
+  core ownership only in the acceptance callback. Refusal discards the candidate
+  and leaves the previous event sources and core entities active.
+- The outgoing subtree suspends native updates while its retirement is pending.
+  Writes still update shared cells and mark the controller dirty; after acceptance
+  they render against the selected live generation. This prevents a stale child
+  publication from being queued behind the transaction that retires it.
+- The full desktop suite passes **70 tests**, zero failed, with 346 assertions.
+  Bun checking passes all 128 files and focused lint passes. The cached Rust host
+  accepts compiled conditional replacement for Bun, Node and the custom adapter;
+  the expanded real-process suite passes **19 tests**, zero failed.
+
+Next M5 work: apply the same controller to shared component return plans, including
+empty branches and early-return/switch selectors. Forwarded children follow after
+both inline and return-level branch shapes share this accepted lifetime.

@@ -3,7 +3,7 @@ import { rootFactoryStore } from '@memoized-dom/runtime/core';
 
 import { HostError } from '../host/protocol';
 import type { NativeApplication } from './application';
-import type { NativeRootDefinition, NativeView } from './view';
+import type { NativePresentation, NativeRootDefinition } from './view';
 
 export interface NativeMountHost {
   readonly id: string;
@@ -29,7 +29,7 @@ export function createMountAdapter(
 ) {
   let occupied = false;
   let generation = 0;
-  let currentView: NativeView | undefined;
+  let currentView: NativePresentation | undefined;
   let completion: Promise<unknown> = Promise.resolve();
 
   function mount(target: string, component: (...args: never[]) => unknown): NativeMountedApplication {
@@ -52,7 +52,7 @@ export function createMountAdapter(
     let requested = true;
     let retiring = false;
     let connected = false;
-    let view!: NativeView;
+    let view!: NativePresentation;
 
     const release = () => {
       requested = false;

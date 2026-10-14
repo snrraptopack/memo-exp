@@ -336,6 +336,153 @@ test('reactive component props replay through the shared core prop box', async (
   application.close();
 });
 
+test('inline conditions replace host and component branches after acceptance', async () => {
+  const module = moduleFactory(`
+    let shown = true;
+    let count = 0;
+
+    export function increment() {
+      shown = !shown;
+      count++;
+    }
+
+    function Label({ value }) {
+      return <strong>{value} {count}</strong>;
+    }
+
+    export function App() {
+      return <main>
+        {shown
+          ? <section><Label value="Visible" /></section>
+          : <aside onClick={increment}>Hidden</aside>}
+      </main>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } =
+    createCompiledApplication(module);
+  const initial = view.initialPublication;
+
+  expect(initial.operations).toContainEqual({
+    op: 'mount',
+    owner: { id: 'App/when0/$content', generation: 1 },
+    template: expect.stringContaining('#App/when0[0]:'),
+    target: {
+      kind: 'region',
+      source: { owner: { id: 'App', generation: 1 }, source: 1 },
+    },
+  });
+  expect(initial.operations).toContainEqual({
+    op: 'mount',
+    owner: { id: 'App/when0/$content/Label', generation: 1 },
+    template: expect.stringContaining('#Label:'),
+    target: expect.any(Object),
+  });
+
+  const mounted = candidate.publish(initial);
+  transport.accept(1);
+  await mounted;
+
+  const conditionEntity = application.runtime.state.registry.get('App/when0');
+  const labelEntity = application.runtime.state.registry.get('App/when0/Label');
+
+  expect(conditionEntity).toBeDefined();
+  expect(labelEntity).toBeDefined();
+
+  application.run(() => {
+    module.increment();
+    core.commit();
+  });
+
+  const replacement = JSON.parse(transport.sent[1]!);
+
+  expect(replacement.operations[0]).toEqual({
+    op: 'retire',
+    owner: { id: 'App/when0/$content', generation: 1 },
+  });
+  expect(replacement.operations).toContainEqual({
+    op: 'mount',
+    owner: { id: 'App/when0/$content', generation: 2 },
+    template: expect.stringContaining('#App/when0[1]:'),
+    target: {
+      kind: 'region',
+      source: { owner: { id: 'App', generation: 1 }, source: 1 },
+    },
+  });
+
+  expect(application.runtime.state.registry.get('App/when0')).toBe(conditionEntity);
+  expect(application.runtime.state.registry.get('App/when0/Label')).toBe(labelEntity);
+
+  application.run(() => {
+    module.increment();
+    core.commit();
+  });
+
+  // The old component stays callable while the structural publication is
+  // pending, but it must not enqueue a stale update behind its own retirement.
+  expect(transport.sent).toHaveLength(2);
+
+  transport.accept(2);
+  await view.publication();
+
+  expect(application.runtime.state.registry.get('App/when0')).toBe(conditionEntity);
+  expect(application.runtime.state.registry.has('App/when0/Label')).toBe(false);
+
+  application.run(core.commit);
+
+  const correction = JSON.parse(transport.sent[2]!);
+
+  expect(correction.operations[0]).toEqual({
+    op: 'retire',
+    owner: { id: 'App/when0/$content', generation: 2 },
+  });
+  expect(correction.operations).toContainEqual({
+    op: 'text',
+    target: {
+      owner: { id: 'App/when0/$content/Label', generation: 3 },
+      source: expect.any(Number),
+    },
+    value: 'Visible 2',
+  });
+
+  transport.accept(3);
+  await view.publication();
+
+  expect(application.runtime.state.registry.get('App/when0/Label')).toBeDefined();
+
+  application.run(() => {
+    module.increment();
+    core.commit();
+  });
+  transport.accept(4);
+  await view.publication();
+
+  const hiddenSource = {
+    owner: { id: 'App/when0/$content', generation: 4 },
+    source: 0,
+  };
+
+  view.dispatch(hiddenSource, 'onClick', new Event('click'));
+  application.run(core.commit);
+
+  expect(JSON.parse(transport.sent[4]!).operations[0]).toEqual({
+    op: 'retire',
+    owner: { id: 'App/when0/$content', generation: 4 },
+  });
+
+  const refused = view.publication().then(
+    value => value,
+    error => error,
+  );
+
+  transport.refuse(5);
+  expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+  expect(view.matchesSource(hiddenSource)).toBe(true);
+  expect(application.runtime.state.registry.get('App/when0')).toBe(conditionEntity);
+  expect(application.runtime.state.registry.has('App/when0/Label')).toBe(false);
+  expect(errors).toHaveLength(1);
+  application.close();
+});
+
 test('repeated and nested components keep shared owner paths and deduplicate templates', async () => {
   const module = moduleFactory(`
     export function increment() {}

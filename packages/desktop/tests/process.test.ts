@@ -34,6 +34,15 @@ beforeAll(async () => {
     </main>}
   `, { moduleId: './process-counter.tsx', runtimePath: core });
   await Bun.write(join(directory, 'compiled-app.mjs'), compiled.code);
+  const conditional = compileDesktop(`
+    let shown = true;
+    export function toggle(){ shown = !shown; }
+    function Label(){ return <strong>Visible</strong>; }
+    export function App(){ return <main>
+      {shown ? <section><Label /></section> : <aside>Hidden</aside>}
+    </main>; }
+  `, { moduleId: './process-conditional.tsx', runtimePath: core });
+  await Bun.write(join(directory, 'conditional-app.mjs'), conditional.code);
   const application = fileURLToPath(new URL('../src/runtime/application.ts', import.meta.url)).replaceAll('\\', '/');
   const client = fileURLToPath(new URL('../src/host/client.ts', import.meta.url)).replaceAll('\\', '/');
   await Bun.write(join(directory, 'compiled-entry.ts'), `
@@ -69,6 +78,52 @@ beforeAll(async () => {
       }finally{app.close()}
     }
     run().catch(error=>{console.error(error);process.exitCode=1});
+  `);
+  await Bun.write(join(directory, 'conditional-entry.ts'), `
+    import assert from 'node:assert/strict';
+    import { App, toggle } from './conditional-app.mjs';
+    import { commit, setScheduler } from ${JSON.stringify(core)};
+    import { NativeApplication } from ${JSON.stringify(application)};
+    import { PublicationClient } from ${JSON.stringify(client)};
+    import { connectNativeHost } from '@memoized-dom/desktop/internal-host';
+
+    async function run() {
+      const errors = [];
+      const app = new NativeApplication(new PublicationClient(connectNativeHost({
+        executable: process.argv[2], args: ['--headless'],
+      })), { scheduleFrame: null, visible: () => true, reportError: error => errors.push(error) });
+      app.run(() => setScheduler(() => {}));
+      const owner = { id: 'App', generation: 1 };
+      let view;
+
+      try {
+        const candidate = app.prepare(() => {
+          view = App({ application: app, owner, parent: null, reportError: error => errors.push(error) });
+          return view;
+        }, { accepted() { view.acceptInitial(); }, activated() { view.activateUpdates(); } });
+        const first = await candidate.publish(view.initialPublication);
+
+        app.run(() => { toggle(); commit(); });
+        const second = await view.publication();
+        assert.equal(app.runtime.state.registry.has('App/when0/Label'), false);
+
+        app.run(() => { toggle(); commit(); });
+        const third = await view.publication();
+        assert.equal(app.runtime.state.registry.has('App/when0/Label'), true);
+
+        const fourth = await candidate.retire({ operations: [{ op: 'retire', owner }] });
+        assert.deepEqual(errors, []);
+        assert.equal(app.runtime.state.registry.size, 0);
+        console.log(JSON.stringify({
+          accepted: [first.sequence, second.sequence, third.sequence, fourth.sequence],
+          conditional: true,
+        }));
+      } finally {
+        app.close();
+      }
+    }
+
+    run().catch(error => { console.error(error); process.exitCode = 1; });
   `);
 
   // This entry is the ordinary authoring boundary. Only the launcher knows
@@ -144,11 +199,12 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle', 'compiled', 'mounted']) {
+  for (const fixture of ['application', 'lifecycle', 'compiled', 'conditional', 'mounted']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
-        entry: fixture === 'compiled' || fixture === 'mounted' ? join(directory, fixture + '-entry.ts')
+        entry: fixture === 'compiled' || fixture === 'conditional' || fixture === 'mounted'
+          ? join(directory, fixture + '-entry.ts')
           : fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
         outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
         runtime,
@@ -172,6 +228,8 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual(fixture === 'mounted'
         ? { accepted: [1, 2, 3, 4, 5], mounted: true }
+        : fixture === 'conditional'
+        ? { accepted: [1, 2, 3, 4], conditional: true }
         : fixture === 'compiled'
         ? { accepted: [1, 2, 3], compiled: true }
         : fixture === 'application'

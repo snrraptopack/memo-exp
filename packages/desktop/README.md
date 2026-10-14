@@ -13,8 +13,9 @@ JSX to native templates and executes the first fixed-host/module-cell component
 phase. The Vite counter example now uses ordinary mount and processed CSS in the
 graphical Blitz host. The current executable supports click/capture callbacks;
 ordinary component calls now mount as accepted nested native owners and replay
-reactive props through the shared core prop box. Editing events, refs,
-list/conditional/forwarded regions and full
+reactive props through the shared core prop box. Inline conditional host/component
+branches use accepted native replacement. Editing events, refs, lists, forwarded
+regions and full
 event targets remain unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
@@ -136,8 +137,9 @@ Dynamic/member component calls remain source plans, rather than invented tags.
 
 Immutable wire templates contain the element/text/comment backbone. Attributes,
 spreads, refs, events and dynamic text retain ordered AST steps. The component
-emitter executes fixed-host attributes/events/text and static component regions;
-other structural regions and ref steps remain capability gates. Even literal
+emitter executes fixed-host attributes/events/text, static component regions and
+inline conditional regions; list/forwarded regions and ref steps remain capability
+gates. Even literal
 attributes retain their positions around spreads;
 event/ref addresses point into that same ordered program. Event metadata lives
 in `packages/compiler/src/desktop/events.ts`. No callback executes at compile time,
@@ -160,8 +162,8 @@ explicit event callbacks and nested/repeated component calls. Static and reactiv
 props retain the existing object/positional ABI, defaults and authored spread
 order. Generated factories bind the existing core prop box through the native
 lifecycle adapter, while parent views call the existing `setProps` writer before
-child invalidation. This works
-through linked imported components; it does not add a desktop state channel.
+child invalidation. This works through linked imported components; it does not add
+a desktop state channel.
 Shared cell
 operations publish only writes that execute. Templates
 carry a structural SHA-256 revision so changed backbones do not reuse an immutable
@@ -184,20 +186,23 @@ core attachment. Their ordinary component props remain in the view until the nat
 retire/mount transaction is accepted, then the old stable-ID subtree is removed and
 the candidate attaches parent-before-child through the same core registry and props
 functions. Refusal discards only the staged views. Conditional compiler emission is
-still pending, so this is a lifecycle capability rather than a claimed TSX branch
-feature.
+implemented for inline JSX conditional and logical regions. The stable conditional
+entity uses existing access-table routing; each selected branch receives a private
+native generation while nested components keep normal semantic IDs. Writes during
+a pending switch are coalesced after acceptance, so an old component cannot queue a
+stale update behind its retirement.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, component children, list/conditional/
-forwarded structural replay, refs and stylesheet/assets integration receive
+callbacks, effects, component children, component return branches, list/forwarded
+structural replay, refs and stylesheet/assets integration receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are
 current emission limits, not new application syntax or restrictions on the web.
 
 The real process tests compile ordinary TSX, bundle the generated module for Bun,
-Node and a custom CommonJS adapter, then mount, dispatch its callback, publish an
-update and retire against the cached Rust host. The bootstrap is a private ABI
-fixture, not an application example or native platform event test. Applications
+Node and a custom CommonJS adapter, then mount, dispatch callbacks, replace inline
+conditional branches and retire against the cached Rust host. The bootstrap is a
+private ABI fixture, not an application example or native platform event test. Applications
 keep existing `mount()` authoring. The Vite/window example above exercises that
 entry wiring; broader input/default and revision contracts remain M4 work.
 

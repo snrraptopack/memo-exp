@@ -1,5 +1,4 @@
 /** First executable backend: fixed hosts and shared module-cell publication. */
-import { createHash } from 'node:crypto';
 
 import * as b from '../ast/factory';
 import type * as t from '../ast/compiler-types';
@@ -11,7 +10,6 @@ import {
   parseWithEstreeFrontendOrThrow,
   printEstree,
   stripTypeScript,
-  valueToNode,
   walkAst,
   type EstreeFrontend
 } from '../ast';
@@ -29,22 +27,14 @@ import { planComponentCallbacks } from '../planning/component-callbacks';
 import { planComponentRendering } from '../planning/component-render';
 import { liftModuleStateCells, type CellEmissionContext } from '../cells';
 import { emitAccessTable } from '../emission/access-table';
-import { emitOrderedAttributes } from '../emission/attributes';
-import { planOrderedAttributes } from '../jsx/attributes';
-import {
-  callPropsFromObject,
-  orderCallProps,
-} from '../components/call-props';
 import {
   buildPropDeclaration,
   buildPropReplay,
 } from '../components/prop-runtime';
-import { runtimePropSlotCount } from '../components/props';
 
 import {
   generatedIdentifier,
   initializeGeneratedIdentifiers,
-  md,
   requireIdentifiers
 } from '../emission/identifiers';
 
@@ -54,30 +44,17 @@ import { planModuleCallbacks } from '../planning/module-callbacks';
 import { memberRootName } from '../context';
 import { lowerNativeTemplate } from './template';
 import type { NativeTemplatePlan } from './template-plan';
+import {
+  emitNativeView,
+  nativeEvaluation,
+  withTemplateRevision,
+} from './view-emission';
 
 export interface DesktopCompileOptions extends AnalysisOptions {
   readonly frontend?: EstreeFrontend;
   /** Compiler-private presentation adapter selected by the desktop build. */
   readonly presentationPath?: string
   readonly stylesheetImports?: 'preserve';
-}
-
-function evaluation(plan: NativeTemplatePlan): t.Expression {
-  return b.arrayExpression(plan.steps.flatMap((step) => {
-    if (step.kind === 'region') {
-      return [];
-    }
-
-    const value = step.kind === 'text'
-      ? cloneNode(step.expression)
-      : emitOrderedAttributes(step.plan);
-
-    return [b.objectExpression([
-      b.objectProperty(b.identifier('kind'), b.stringLiteral(step.kind)),
-      b.objectProperty(b.identifier('source'), b.numericLiteral(step.source)),
-      b.objectProperty(b.identifier('value'), value)
-    ])];
-  }));
 }
 
 export function compileDesktop(source: string, options: DesktopCompileOptions = {}) {
@@ -222,6 +199,9 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       ]),
     ),
   });
+  const renderedByName = new Map(
+    renderPlan.components.map(component => [component.name, component]),
+  );
 
   const prepared: {
     name: string;
@@ -277,27 +257,24 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     }
 
     for (const step of plan.steps) {
-      if (step.kind === 'region' && step.content.type !== 'component') {
-        fail('Lists, conditions and forwarded children require structural replay emission', jsx);
+      if (
+        step.kind === 'region' &&
+        step.content.type !== 'component' &&
+        step.content.type !== 'condition'
+      ) {
+        fail('Lists and forwarded children require structural replay emission', jsx);
       }
     }
-
-    const revision = createHash('sha256').update(JSON.stringify(plan.template.nodes)).digest('hex');
 
     prepared.push({
       name,
       returns,
-      plan: {
-        ...plan,
-        template: {
-          ...plan.template,
-          key: plan.template.key + ':' + revision,
-        },
-      },
+      plan: withTemplateRevision(plan),
     });
   }
 
   for (const component of prepared) {
+    const renderedComponent = renderedByName.get(component.name)!;
     const node = (ctx.compPaths.get(component.name)!).node;
     const frame = generatedIdentifier(ctx, 'frame');
     const props = ctx.componentProps.get(component.name)!;
@@ -328,121 +305,25 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     }
 
     const table = emitAccessTable(ctx, readers);
-    const childCounts = new Map<string, number>();
-    const children = component.plan.steps.flatMap((step) => {
-      if (step.kind !== 'region') {
-        return [];
-      }
-
-      if (step.content.type !== 'component') {
-        throw new Error('Structural capability must be checked before emission');
-      }
-
-      const element = step.content.node;
-      const opening = element.openingElement;
-
-      if (!b.isJSXIdentifier(opening.name)) {
-        fail('Member and dynamic component tags require shared dynamic-tag emission', opening.name);
-      }
-
-      const tag = (opening.name as t.JSXIdentifier).name;
-
-      if (!ctx.compPaths.has(tag) && !ctx.importedComponents.has(tag)) {
-        fail(`Component <${tag}> is not resolved by the application graph`, opening.name);
-      }
-
-      const seen = childCounts.get(tag) ?? 0;
-      childCounts.set(tag, seen + 1);
-      const segment = seen === 0 ? tag : `${tag}[${seen}]`;
-
-      if (element.children.some((child) =>
-        !b.isJSXText(child) || child.value.trim().length > 0)) {
-        fail('Component children require forwarded-content region emission', element);
-      }
-
-      const attributes = planOrderedAttributes(opening.attributes, {
-        skipKey: true,
-        fail: message => fail(message, opening),
-      });
-
-      const spreads = attributes.entries.some(entry => entry.type === 'spread');
-      const arguments_ = spreads
-        ? callPropsFromObject(ctx, tag, emitOrderedAttributes(attributes))
-        : orderCallProps(
-            ctx,
-            tag,
-            attributes.entries.map((entry) => {
-              if (entry.type === 'spread') {
-                throw new Error('Spread entries are handled by the object path');
-              }
-
-              return { name: entry.name, value: cloneNode(entry.value) };
-            }),
-          );
-      const childFrame = generatedIdentifier(ctx, 'childFrame');
-      const targetProps = ctx.componentProps.get(tag)!;
-      const targetPropSlots = runtimePropSlotCount(targetProps);
-      const boxedArguments = b.arrayExpression(
-        arguments_.map((argument) => cloneNode(argument)),
-      );
-      const create = b.arrowFunctionExpression(
-        [childFrame],
-        b.callExpression(b.identifier(tag), [
-          cloneNode(childFrame),
-          ...(targetPropSlots > 0 ? [boxedArguments] : []),
-        ]),
-      );
-      const childId = b.binaryExpression(
-        '+',
-        b.memberExpression(
-          b.memberExpression(cloneNode(frame), b.identifier('owner')),
-          b.identifier('id'),
-        ),
-        b.stringLiteral(`/${segment}`),
-      );
-      const update = targetPropSlots === 0
-        ? null
-        : b.arrowFunctionExpression(
-            [],
-            b.callExpression(md(ctx, 'setProps'), [
-              childId,
-              b.arrayExpression(
-                arguments_.map((argument) => cloneNode(argument)),
-              ),
-            ]),
-          );
-
-      return [
-        b.callExpression(
-          b.memberExpression(cloneNode(nativeId), b.identifier('child')),
-          [
-            b.stringLiteral(segment),
-            b.numericLiteral(step.source),
-            create,
-            ...(update === null ? [] : [update]),
-          ],
-        ),
-      ];
-    });
+    const emission = {
+      ctx,
+      moduleId,
+      component: renderedComponent,
+      nativeId,
+      conditionCount: { value: 0 },
+      fail,
+    };
 
     const evaluate = propsBox === null
-      ? b.arrowFunctionExpression([], evaluation(component.plan))
+      ? b.arrowFunctionExpression([], nativeEvaluation(component.plan))
       : b.arrowFunctionExpression(
           [],
           b.blockStatement([
             ...buildPropReplay(props, propSources),
-            b.returnStatement(evaluation(component.plan)),
+            b.returnStatement(nativeEvaluation(component.plan)),
           ]),
         );
-    const createView = b.callExpression(
-      b.memberExpression(cloneNode(nativeId), b.identifier('createView')),
-      [
-        cloneNode(frame),
-        valueToNode(component.plan.template) as t.Expression,
-        evaluate,
-        b.arrayExpression(children),
-      ],
-    );
+    const createView = emitNativeView(emission, component.plan, frame, evaluate);
 
     const result: t.Statement[] = [];
 

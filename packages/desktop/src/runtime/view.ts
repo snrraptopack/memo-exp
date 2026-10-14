@@ -9,7 +9,8 @@ import {
   registerEntity,
   registerProps,
   rootFactoryStore,
-  textValue
+  textValue,
+  unregisterSubtree,
 } from '@memoized-dom/runtime/core';
 
 import {
@@ -34,6 +35,10 @@ export interface NativeFrame {
   readonly reportError: (error: unknown) => void;
   /** Compiler-private destination inherited by a nested component view. */
   readonly mountTarget?: Destination;
+  /** Stable semantic identity when the native wire owner has an extra range. */
+  readonly entityId?: string;
+  /** Synthetic branch roots own presentation without registering an entity. */
+  readonly registerCore?: boolean;
   /**
    * Keep this candidate outside the live semantic registry until its native
    * replacement transaction is accepted.
@@ -44,12 +49,31 @@ export interface NativeFrame {
 export interface NativeRootDefinition {
   readonly kind: 'native';
   readonly id: string;
-  readonly create: (frame: NativeFrame) => NativeView;
+  readonly create: (frame: NativeFrame) => NativePresentation;
+}
+
+/** Internal presentation contract shared by views and structural controllers. */
+export interface NativePresentation {
+  readonly ownerId: string;
+  readonly initialPublication: Publication;
+  acceptInitial(): void;
+  activateUpdates(): void;
+  updateFromOwner(): void;
+  suspendUpdates(): void;
+  resumeUpdates(): void;
+  dispatch(source: number | SourceReference, name: string, event: unknown): unknown;
+  matchesSource(source: SourceReference): boolean;
+  eventTarget(source: number | SourceReference): object;
+  publication(): Promise<Acceptance | undefined>;
+  attachCore(): void;
+  discardStaged(): void;
+  retireCore(): void;
+  dispose(): void;
 }
 
 /** Compiler metadata, using the same registry as browser root factories. */
 export function registerNativeRoot(
-  component: (frame: NativeFrame) => NativeView,
+  component: (frame: NativeFrame) => NativePresentation,
   id: string
 ): void {
   rootFactoryStore<NativeRootDefinition>().set(component, {
@@ -68,7 +92,7 @@ export interface EvaluatedStep {
 export interface NativeChild {
   readonly segment: string;
   readonly source: number;
-  readonly create: (frame: NativeFrame) => NativeView;
+  readonly create: (frame: NativeFrame) => NativePresentation;
   /** Re-evaluate authored prop expressions before the child renders. */
   readonly update?: () => void;
 }
@@ -77,7 +101,7 @@ export interface NativeChild {
 export function child(
   segment: string,
   source: number,
-  create: (frame: NativeFrame) => NativeView,
+  create: (frame: NativeFrame) => NativePresentation,
   update?: () => void,
 ): NativeChild {
   return { segment, source, create, update };
@@ -91,17 +115,20 @@ interface Snapshot {
 }
 
 /** Compiler-owned view, never an application mounting API or reactive engine. */
-export class NativeView {
+export class NativeView implements NativePresentation {
   private phase: 'prepared' | 'publishing' | 'active' | 'disposed' = 'prepared';
   private accepted?: Snapshot;
   private initial: Snapshot;
   private needsUpdate = false;
+  private updatesSuspended = false;
   private readonly pending = new Map<Promise<Acceptance>, Snapshot>();
   private lastPublication?: Promise<Acceptance>;
-  private readonly children: NativeView[];
+  private readonly children: NativePresentation[];
   private readonly childUpdates: Array<(() => void) | undefined>;
   private coreAttached = false;
   private deferredProps?: unknown[];
+
+  readonly ownerId: string;
 
   constructor(
     private readonly frame: NativeFrame,
@@ -110,8 +137,9 @@ export class NativeView {
     children: readonly NativeChild[] = [],
   ) {
     this.template = withStylesheets(template);
+    this.ownerId = frame.entityId ?? frame.owner.id;
 
-    if (!frame.deferCore) {
+    if (frame.registerCore !== false && !frame.deferCore) {
       this.attachOwnCore();
     }
 
@@ -132,7 +160,7 @@ export class NativeView {
     }
 
     if (this.coreAttached) {
-      registerProps(this.frame.owner.id, box);
+      registerProps(this.ownerId, box);
       return;
     }
 
@@ -153,7 +181,9 @@ export class NativeView {
       return;
     }
 
-    this.attachOwnCore();
+    if (this.frame.registerCore !== false) {
+      this.attachOwnCore();
+    }
 
     for (const childView of this.children) {
       childView.attachCore();
@@ -175,6 +205,20 @@ export class NativeView {
     }
 
     this.deferredProps = undefined;
+    this.dispose();
+  }
+
+  /** Remove this semantic owner, or only descendants for a synthetic branch. */
+  retireCore(): void {
+    if (this.frame.registerCore !== false) {
+      unregisterSubtree(this.ownerId);
+      return;
+    }
+
+    for (const childView of this.children) {
+      childView.retireCore();
+    }
+
     this.dispose();
   }
 
@@ -234,7 +278,11 @@ export class NativeView {
   activateUpdates(): void {
     if (this.needsUpdate) {
       this.needsUpdate = false;
-      invalidateEntity(this.frame.owner.id);
+      if (this.frame.registerCore === false) {
+        this.render();
+      } else {
+        invalidateEntity(this.ownerId);
+      }
     }
 
     for (const childView of this.children) {
@@ -243,29 +291,49 @@ export class NativeView {
   }
 
   dispatch(source: number | SourceReference, name: string, event: unknown): unknown {
-    const view = typeof source === 'number' ? this : this.viewFor(source);
+    if (typeof source !== 'number' && !this.ownsSource(source)) {
+      for (const childView of this.children) {
+        if (childView.matchesSource(source)) {
+          return childView.dispatch(source, name, event);
+        }
+      }
 
-    if (view?.phase !== 'active') {
       throw new HostError('inactiveView', 'Native view is not active');
     }
 
+    if (this.phase !== 'active') {
+      throw new HostError('inactiveView', 'Native view is not active');
+    }
     const address = typeof source === 'number' ? source : source.source;
-    const handler = view.accepted?.handlers.get(address)?.get(name);
+    const handler = this.accepted?.handlers.get(address)?.get(name);
 
     return this.frame.application.run(() => handler?.(event));
   }
 
   matchesSource(source: SourceReference): boolean {
-    return this.viewFor(source)?.phase === 'active';
+    if (this.ownsSource(source)) {
+      return this.phase === 'active';
+    }
+
+    return this.children.some(childView => childView.matchesSource(source));
   }
 
   eventTarget(source: number | SourceReference): object {
-    const view = typeof source === 'number' ? this : this.viewFor(source);
+    if (typeof source !== 'number' && !this.ownsSource(source)) {
+      for (const childView of this.children) {
+        if (childView.matchesSource(source)) {
+          return childView.eventTarget(source);
+        }
+      }
+
+      throw new HostError('unknownEventSource', 'Native event source is unknown');
+    }
+
     const address = typeof source === 'number' ? source : source.source;
-    const node = view?.template.nodes[address]?.node;
+    const node = this.template.nodes[address]?.node;
 
     if (!node) throw new HostError('unknownEventSource', 'Native event source is unknown');
-    const attributes = view.accepted?.attributes.get(address);
+    const attributes = this.accepted?.attributes.get(address);
     const properties: Record<PropertyKey, unknown> = {
       nodeType: node.kind === 'element' ? 1 : node.kind === 'text' ? 3 : 8,
       nodeName: node.kind === 'element' ? node.name.local.toUpperCase() : node.kind === 'text' ? '#text' : '#comment',
@@ -310,8 +378,43 @@ export class NativeView {
     this.pending.clear();
   }
 
+  updateFromOwner(): void {
+    this.render();
+  }
+
+  suspendUpdates(): void {
+    this.updatesSuspended = true;
+
+    for (const childView of this.children) {
+      childView.suspendUpdates();
+    }
+  }
+
+  resumeUpdates(): void {
+    this.updatesSuspended = false;
+
+    for (const childView of this.children) {
+      childView.resumeUpdates();
+    }
+
+    if (this.needsUpdate && this.phase === 'active') {
+      this.needsUpdate = false;
+
+      if (this.frame.registerCore === false) {
+        this.render();
+      } else {
+        invalidateEntity(this.ownerId);
+      }
+    }
+  }
+
   private render(): void {
     if (this.phase === 'disposed') {
+      return;
+    }
+
+    if (this.updatesSuspended) {
+      this.needsUpdate = true;
       return;
     }
 
@@ -342,7 +445,7 @@ export class NativeView {
       this.childUpdates[index]?.();
 
       const childView = this.children[index]!;
-      invalidateEntity(childView.frame.owner.id);
+      invalidateEntity(childView.ownerId);
     }
 
     if (
@@ -387,7 +490,7 @@ export class NativeView {
 
   private createChildren(
     children: readonly NativeChild[],
-  ): Array<{ view: NativeView; update: (() => void) | undefined }> {
+  ): Array<{ view: NativePresentation; update: (() => void) | undefined }> {
     const sources = new Set<number>();
     const segments = new Set<string>();
 
@@ -416,7 +519,8 @@ export class NativeView {
           id: `${this.frame.owner.id}/${descriptor.segment}`,
           generation: this.frame.owner.generation,
         },
-        parent: this.frame.owner.id,
+        entityId: `${this.ownerId}/${descriptor.segment}`,
+        parent: this.ownerId,
         reportError: this.frame.reportError,
         deferCore: this.frame.deferCore,
         mountTarget: {
@@ -432,24 +536,12 @@ export class NativeView {
     });
   }
 
-  private viewFor(source: SourceReference): NativeView | undefined {
-    if (
+  private ownsSource(source: SourceReference): boolean {
+    return (
       source.owner.id === this.frame.owner.id &&
       source.owner.generation === this.frame.owner.generation &&
       this.template.nodes[source.source] !== undefined
-    ) {
-      return this;
-    }
-
-    for (const childView of this.children) {
-      const match = childView.viewFor(source);
-
-      if (match) {
-        return match;
-      }
-    }
-
-    return undefined;
+    );
   }
 
   private snapshot(): Snapshot {
@@ -565,16 +657,16 @@ export class NativeView {
 
   private attachOwnCore(): void {
     registerEntity({
-      id: this.frame.owner.id,
+      id: this.ownerId,
       parent: this.frame.parent,
       render: () => this.render(),
     });
 
-    cleanup(this.frame.owner.id, () => this.dispose());
+    cleanup(this.ownerId, () => this.dispose());
     this.coreAttached = true;
 
     if (this.deferredProps !== undefined) {
-      registerProps(this.frame.owner.id, this.deferredProps);
+      registerProps(this.ownerId, this.deferredProps);
       this.deferredProps = undefined;
     }
   }
@@ -618,3 +710,10 @@ export function createView(
 export function bindViewProps(view: NativeView, box: unknown[]): void {
   view.bindProps(box);
 }
+
+/** Semantic frame identity, independent from native branch range ownership. */
+export function frameId(frame: NativeFrame): string {
+  return frame.entityId ?? frame.owner.id;
+}
+
+export { createConditional } from './conditional';

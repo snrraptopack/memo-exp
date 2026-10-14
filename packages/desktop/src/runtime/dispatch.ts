@@ -1,9 +1,9 @@
 /** Synchronous event routing over accepted source addresses, using core scopes. */
 import type { NativeEventPacket } from '../host/events';
-import type { NativeView } from './view';
+import type { NativePresentation } from './view';
 
 export function dispatchNativeEvent(
-  view: NativeView | undefined,
+  view: NativePresentation | undefined,
   packet: NativeEventPacket,
   reportError: (error: unknown) => void
 ): boolean {
