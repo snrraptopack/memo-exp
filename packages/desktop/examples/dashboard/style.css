@@ -503,6 +503,18 @@ td p {
   box-shadow: 0 8px 16px #d9d1e8;
 }
 
+/* Inline vectors retain their intrinsic aspect ratio inside a fluid card. */
+.vector-lab {
+  margin-top: 24px;
+}
+
+.vector-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 24px;
+}
+
 .page-footer {
   margin-top: 28px;
   color: #aaa1b0;

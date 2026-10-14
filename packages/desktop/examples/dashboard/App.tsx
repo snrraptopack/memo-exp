@@ -227,6 +227,62 @@ export function App() {
             </div>
           </div>
         </section>
+        <section class="card vector-lab">
+          <div class="section-heading">
+            <h2>Vector lab</h2>
+            <span class="badge neutral">Inline SVG</span>
+          </div>
+          <p class="muted small">
+            Paths, a gradient, circles and rounded rectangles share one viewBox.
+            Resize to check that the artwork scales without changing its
+            geometry.
+          </p>
+          <svg
+            class="vector-art"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 720 180"
+            width="720"
+            height="180"
+            role="img"
+            aria-label="A curved activity line beside a vector orbit illustration"
+          >
+            <defs>
+              <linearGradient id="activity-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#a48bdf" stop-opacity="0.45" />
+                <stop offset="100%" stop-color="#a48bdf" stop-opacity="0.02" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="720" height="180" rx="14" fill="#faf9fc" />
+            <path
+              d="M 24 132 H 470 M 24 86 H 470 M 24 40 H 470"
+              fill="none"
+              stroke="#e9e3f1"
+            />
+            <path
+              d="M 24 128 C 72 128 64 60 120 76 S 190 130 230 88 S 300 24 340 52 S 420 110 470 32 L 470 154 H 24 Z"
+              fill="url(#activity-fill)"
+            />
+            <path
+              d="M 24 128 C 72 128 64 60 120 76 S 190 130 230 88 S 300 24 340 52 S 420 110 470 32"
+              fill="none"
+              stroke="#9676ce"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <circle cx="470" cy="32" r="6" fill="#9676ce" />
+            <circle
+              cx="608"
+              cy="90"
+              r="54"
+              fill="none"
+              stroke="#cabbe8"
+              stroke-width="2"
+            />
+            <circle cx="608" cy="90" r="34" fill="#e9e1f6" />
+            <circle cx="608" cy="90" r="14" fill="#ab91d7" />
+            <circle cx="652" cy="60" r="9" fill="#d8abbd" />
+          </svg>
+        </section>
         <footer class="page-footer">
           Visual fixture • Fixed content • Scroll to inspect every section
         </footer>

@@ -1498,3 +1498,31 @@ optimized DOM list implementation were not modified.
 Next visual work: inspect this fixture, diagnose unsupported paint/layout behavior,
 then close component/structural emission gaps using shared plans before calling
 complex application composition ready. Event expansion follows this visual gate.
+
+### Inline SVG follow-up — parser, rebuild and graphical submission verified
+
+- Investigation confirms component composition needs real region emission and
+  child ownership within accepted preparations. It was not bypassed by inlining.
+- Added an ordinary inline SVG specimen to the visual dashboard: paths, circles,
+  rounded rectangle, gradient and viewBox. It uses no native drawing API.
+- Corrected an initial inspection assumption: the pinned Blitz workspace disables
+  dependency defaults for both blitz-dom and blitz-paint. SVG therefore needs
+  explicit parser and painter features; shell presence does not enable them.
+  Native Cargo configuration now declares both at the same pinned revision.
+- The native contract verifies the initial usvg tree contains the authored curve
+  and dot, changes the root width, and confirms both vector nodes survive the
+  rebuild while all three native DOM node IDs stay unchanged. usvg legitimately
+  normalizes the widened content into a group, so the contract addresses shapes
+  by authored IDs rather than depending on normalized root-child count.
+- Rebuilt the actual window host with both SVG features. `bun run
+  desktop:dashboard` compiled the application, accepted the native root and
+  submitted its first content frame at 6,869 ms in the measured probe. This proves
+  the vector painter is present in the graphical path; it is not a pixel-fidelity
+  or scanout claim.
+- Full native window-feature suite: **90 passed, 0 failed** (13 library, 71
+  document/driver and six renderer tests). All-target native Clippy passes with
+  warnings denied. Desktop suite: **64 passed, 0 failed**, 287 assertions. Bun
+  checking passes 127 files; focused lint, formatting and diff checks pass.
+- The initial verification attempt was blocked when disk space fell to about
+  21 MB. After space was freed, the one-time SVG dependency build and every gate
+  above completed. External SVG URLs/images and pixel comparison remain open.

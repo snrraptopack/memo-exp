@@ -451,8 +451,12 @@ example without selecting another runtime or renderer architecture. Tests use it
 actual stylesheet to measure wide, medium and narrow sidebar/card placement and
 border-box shape sizes in Blitz. A compiled graphical mount verifies the whole
 source/build/publication path; layout assertions do not establish pixel fidelity.
-Component/list regions remain gated in the desktop emitter. CSS shapes in this
-fixture are separate from SVG and image-resource capabilities, which are unclaimed.
+Component/list regions remain gated in the desktop emitter. Inline SVG is a
+separate verified capability: the compiler retains SVG namespaces, Blitz parses
+the retained subtree through usvg, and Blitz Paint submits the vector tree through
+the same Vello renderer. The pinned workspace disables dependency defaults, so
+both `blitz-dom/svg` and `blitz-paint/svg` are explicit native dependencies.
+External image/resource loading remains unclaimed.
 
 The pinned Vello window renderer originally configures its surface on every size
 notification and waits indefinitely for GPU completion after each frame. These

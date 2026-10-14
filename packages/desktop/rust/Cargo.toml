@@ -6,15 +6,16 @@ rust-version = "1.96"
 publish = false
 
 [features]
-window = ["dep:blitz-shell", "dep:anyrender_vello", "dep:winit"]
+window = ["dep:blitz-shell", "dep:blitz-paint", "dep:anyrender_vello", "dep:winit"]
 
 [dependencies]
-blitz-dom = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7", default-features = false, features = ["system-fonts"] }
+blitz-dom = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7", default-features = false, features = ["system-fonts", "svg"] }
 blitz-traits = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.149"
 cursor-icon = "=1.2.0"
 blitz-shell = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7", default-features = false, optional = true }
+blitz-paint = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b063719ebeae4e0761273f7881b3d7", default-features = false, features = ["svg"], optional = true }
 anyrender_vello = { version = "=0.15.0", optional = true }
 winit = { version = "=0.31.0-beta.3", optional = true }
 

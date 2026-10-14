@@ -27,15 +27,16 @@ normal `mount('app', App)` call and an ordinary CSS import. Node selection uses
 the same `MEMOIZED_DESKTOP_RUNTIME` setting described below.
 
 The fixed-content dashboard exercises nested HTML, grid/flex layouts, a table,
-responsive cards, typography and six CSS shape specimens: circle, ring, rotated
-diamond, border triangle, gradient and shadow. Resize across 1050px and 650px,
-scroll to the shape lab, and inspect text/edges. These are native physical
-viewport breakpoints. Layout contracts using the same stylesheet pass at 1280,
-900 and 600 pixels; painted appearance still needs visual inspection.
+responsive cards, typography, six CSS shape specimens and an inline SVG chart.
+Resize across 1050px and 650px, scroll through both shape labs, and inspect text
+and edges. These are native physical viewport breakpoints. Layout contracts using
+the same stylesheet pass at 1280, 900 and 600 pixels. The SVG contract verifies
+paths survive native parsing and an attribute-driven rebuild with stable document
+identity; painted appearance still needs visual inspection.
 
 Navigation and project rows are visual fixtures, not an interaction demo. This
-example does not establish component/list region emission, SVG, external image
-loading or browser layout parity. Those capabilities remain explicit gates.
+example does not establish component/list region emission, external image loading
+or browser layout parity. Those capabilities remain explicit gates.
 
 ## Run the counter
 
