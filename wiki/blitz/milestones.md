@@ -1823,3 +1823,54 @@ Next M5 work: render callback presentation using shared callback/region plans.
 Opaque JSX object bags remain governed by shared compile-time alias restrictions;
 keyed list source/key planning and the optimized DOM list implementation remain
 unchanged.
+
+## M5.10 — Accepted keyed native range lifetimes
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Traced shared render-callback and list-site planning before choosing the batch.
+  Callback emission needs accepted row lifetimes; implementing an isolated callback
+  adapter first would leave ordinary mapped callbacks unusable. Communicated the
+  desktop presentation/test boundary, then the additive core key export, before
+  editing. Compiler emission, Rust source and optimized DOM list algorithms did
+  not change.
+- Added the private `NativeList` presentation controller. It retains rows by
+  SameValueZero key identity in the existing core graph and sends existing native
+  range operations. Row closures rebind their item/index without copying state
+  into another reactive system. The existing primitive key encoder is exported
+  from `runtime/core`; nonprimitive keys use process-local synthetic addresses.
+- New rows remain outside core until acceptance. Removed rows and retained
+  bindings stay accepted until then; reorders retain their views, local state,
+  event addresses and nested owners. A reinserted primitive key keeps its semantic
+  id with a fresh native generation. Refusal discards candidates and resumes the
+  accepted graph. Pending source writes coalesce through core invalidation.
+- Native placement uses temporary neighbor links to avoid moving unchanged
+  neighbors and to plan in linear time. It does not claim minimum move counts or
+  the web reconciler's LIS/mutation optimizations. No DOM algorithm was extracted
+  or replaced, and no access resolver, source bridge or reactive engine was added.
+- The controller and its factory remain in a private presentation module until
+  compiler emission selects them. A Vite check showed the current dynamic engine
+  namespace retains all presentation exports; avoided exporting unused list code
+  into the existing counter at this prerequisite stage.
+- Deterministic contracts cover local-state retention, item-field replay, typed
+  and escaped keys, duplicate validation before factories, mixed range orders,
+  accepted descendant cleanup, refused binding changes, retry generations,
+  factory failure, connection close, ancestor suspension, deferred attachment and
+  writes before initial acceptance, and reentrant row cleanup that retires its
+  containing list without resurrecting staged candidates.
+- The real Rust process fixture appends an invalid operation after a candidate
+  retire/mount/move transaction. Rust refuses the complete transaction, preserving
+  accepted ownership. Corrected range moves retain local click state; removal
+  retires descendants, reinsertion rejects stale addresses, and root retirement
+  drains core. This runs under Bun, Node and the custom adapter. It is a private
+  ABI fixture, not a new application mounting API or a compiled Todo claim.
+- Desktop checks pass **100 tests**, zero failed, with 494 assertions. Real process
+  and Vite checks pass **26 tests**, zero failed, with 103 assertions. Focused web
+  list/callback/boundary regression checks pass **105 tests**, zero failed, with
+  21 unchanged snapshots and 8,211 assertions, including existing minimum DOM
+  move-count contracts. Runtime build, focused lint and Bun checking pass: 60
+  runtime files and 132 desktop files. No native rebuild was necessary.
+
+Next M5 work: consume shared list-site and callback plans to emit ordinary native
+row factories. Authored list/callback emission remains diagnostic until that batch;
+physical focus/selection retention and native large-list performance remain gates.

@@ -42,3 +42,5 @@ export { textValue, classValue } from './value-normalization';
 export { jsxAttributeName } from './jsx-attributes';
 export { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';
 export { rootFactoryStore } from './root-factories';
+// Host-neutral identity encoding; DOM reconciliation stays in its own entry.
+export { encodeListKey } from './list-keys';

@@ -16,8 +16,9 @@ ordinary component calls now mount as accepted nested native owners and replay
 reactive props through the shared core prop box. Inline and component-return
 host/component branches use accepted native replacement. Editing events, refs,
 and full event targets remain unfinished. Nested component children and forwarded
-content references and direct JSX-valued props mount into native regions. Lists
-and render callbacks remain unfinished. Web mounting and the optimized DOM list
+content references and direct JSX-valued props mount into native regions. Internal
+keyed native range retention is implemented; authored list and render-callback
+emission remain unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
 ## Run the visual dashboard
@@ -211,6 +212,21 @@ Positional components evaluate their ordered prop object once before extraction.
 Conditional slot source writes receive caller replay destinations in the existing
 core access table, reaching native ranges below their receiving controller. This
 currently replays the caller subtree rather than targeting only that slot.
+
+The private `NativeList` presentation controller retains row ranges by key through
+the existing core registry and native mount/move/retire operations. It uses the
+shared primitive key encoder; other keys receive process-local identities.
+Reorders retain row views, nested owners and local bindings. Reinserted keys use
+fresh native generations so retired event addresses stay inactive. New rows attach
+to core only after structural acceptance, and retained item/index bindings advance
+at that boundary. Refusal discards additions and resumes the accepted rows.
+Source changes during pending work replay through core invalidation. No list source
+resolver or reactive engine is added. The placement planner uses temporary neighbor
+links; it does not change or claim the web reconciler's LIS/mutation optimizations.
+Private process fixtures verify atomic refusal, correction, range moves, descendant
+retirement and keyed state on the real Rust host with Bun, Node and the custom
+adapter. Compiler list/callback emission, physical focus/selection parity and
+large-list throughput remain unverified. Applications do not import this controller.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
 callbacks, effects, lists, opaque JSX prop bags, render callbacks,

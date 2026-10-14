@@ -270,7 +270,7 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle', 'compiled', 'conditional', 'slots', 'mounted']) {
+  for (const fixture of ['application', 'lifecycle', 'list', 'compiled', 'conditional', 'slots', 'mounted']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
@@ -299,6 +299,8 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual(fixture === 'mounted'
         ? { accepted: [1, 2, 3, 4, 5], mounted: true }
+        : fixture === 'list'
+        ? { accepted: [1, 2, 3, 4, 5], refused: 'documentRefused', list: true }
         : fixture === 'slots'
         ? { accepted: [1, 3, 4], slots: true }
         : fixture === 'conditional'

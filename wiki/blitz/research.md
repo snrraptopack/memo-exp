@@ -496,6 +496,17 @@ map these values with one pure property mapper that preserves spread, accessor
 and scalar evaluation shape. Lists, opaque JSX prop bags and render callbacks
 remain emission gates.
 
+The native list prerequisite now retains keyed presentation ranges through the
+existing core ownership graph and Rust range operations. Primitive identity uses
+the existing runtime key encoder, with process-local identities for other keys.
+Structure is staged before publication: additions stay outside core, outgoing
+rows freeze updates, and retained item/index bindings advance only after native
+acceptance. Refusal preserves the accepted rows. A reinserted key receives a fresh
+native generation. Temporary neighbor links plan range placement; the optimized
+DOM reconciliation path is unchanged. The internal controller is verified against
+the real headless host, but shared list/callback plans still need compiler emission.
+It does not establish physical focus/selection retention or large-list performance.
+
 Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses
 the retained subtree through usvg, and Blitz Paint submits the vector tree through

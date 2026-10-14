@@ -169,6 +169,21 @@ region identity. M5.9 selects the existing JSX alias/collection normalizer and
 shares static spread contract discovery/property mapping between targets. Opaque
 JSX prop bags, render callbacks and keyed lists remain subsequent M5 gates.
 
+M5.10 establishes the native keyed range lifetime prerequisite. One core list
+entity retains row presentations; source resolution and callback contracts remain
+in shared compiler plans. Use the existing key encoder and native range operations.
+Stage additions outside core, suspend outgoing updates, and advance item/index
+bindings only after structural acceptance. Refusal discards staged additions and
+keeps accepted rows/events. Fresh native generations distinguish reinsertion from
+retired addresses. Pending source changes replay through core invalidation. Native
+placement uses temporary neighbor links without modifying web reconciliation.
+The next emission batch consumes `ComponentListSites`, `planListCallback` and
+`planRenderCallback` to generate these row factories and their binding updates.
+Keep unsupported store/write forms diagnostic until existing guarded publication
+is wired; runtime range support alone does not close the authored-list gate.
+Complete M5 only after ordinary keyed Todo authoring and native focus/selection
+checks also pass.
+
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts
 where they meet this plan. Its GPUI-specific tag catalogue, cascade, paragraph
