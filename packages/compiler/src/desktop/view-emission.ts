@@ -9,6 +9,9 @@ import {
   valueToNode,
 } from '../ast';
 import { isRenderPropReference } from '../analysis/render-prop-reference';
+import { componentPatterns } from '../analysis/component-graph';
+import { canonicalStateKey } from '../context';
+import { nodeHasJsx } from '../context/ast';
 import type { CellEmissionContext } from '../cells';
 import {
   callPropsFromObject,
@@ -21,7 +24,7 @@ import {
   md,
 } from '../emission/identifiers';
 import { planOrderedAttributes } from '../jsx/attributes';
-import { hasComponentChildren } from '../jsx/children';
+import { hasComponentChildren, type JsxChild } from '../jsx/children';
 import type { PlannedComponent } from '../planning/component-render';
 
 import { lowerNativeTemplate } from './template';
@@ -70,7 +73,82 @@ export interface NativeViewEmissionInputs {
   readonly conditionCount: { value: number };
   readonly slotCount: { value: number };
   readonly prelude: t.Statement[];
+  readonly slotReplayReaders: Map<string, Set<string>>;
   readonly fail: (message: string, at: t.Node) => never;
+}
+
+/**
+ * Nested children and JSX-valued props share one lazy caller-closure factory.
+ * Hoisting the factory declaration preserves its identity during prop replay;
+ * authored content expressions still run only when the callee mounts/updates it.
+ */
+function emitContentFactory(
+  inputs: NativeViewEmissionInputs,
+  children: readonly JsxChild[],
+  at: t.Node,
+  inSvg: boolean,
+): t.Identifier {
+  const { ctx, moduleId, component, fail } = inputs;
+
+  // Shared condition facts address lexical regions. Native slots retain their
+  // ranges below the receiving controller, so route those source writes through
+  // the caller's existing update traversal as well. This is a presentation
+  // destination projection of shared facts, not a dependency scan or resolver.
+  for (const site of ctx.condReads.values()) {
+    if (site.owner !== component.name) {
+      continue;
+    }
+
+    for (const source of site.vars) {
+      const key = canonicalStateKey(ctx, source);
+      let destinations = inputs.slotReplayReaders.get(key);
+
+      if (destinations === undefined) {
+        destinations = new Set();
+        inputs.slotReplayReaders.set(key, destinations);
+      }
+
+      for (const owner of componentPatterns(ctx, component.name)) {
+        destinations.add(owner);
+      }
+    }
+  }
+
+  const slotIndex = inputs.slotCount.value++;
+  const slotPlan = withTemplateRevision(lowerNativeTemplate({
+    key: `${moduleId}#${component.name}/$slot[${slotIndex}]`,
+    jsx: b.jsxFragment(
+      b.jsxOpeningFragment(),
+      b.jsxClosingFragment(),
+      children.map(child => cloneNode(child)),
+    ),
+    expressionSources: component.expressionSources,
+    isForwarded: expression => isRenderPropReference(
+      ctx, component.name, expression as unknown as BaseNode,
+    ),
+    inSvg,
+    fail,
+  }));
+
+  validateNativeTemplatePlan(slotPlan, at, fail);
+
+  const factory = generatedIdentifier(ctx, 'content');
+  const slotFrame = generatedIdentifier(ctx, 'contentFrame');
+  const create = emitNativeView(
+    inputs,
+    slotPlan,
+    slotFrame,
+    b.arrowFunctionExpression([], nativeEvaluation(slotPlan)),
+  );
+
+  inputs.prelude.push(b.variableDeclaration('const', [
+    b.variableDeclarator(
+      cloneNode(factory),
+      b.arrowFunctionExpression([slotFrame], create),
+    ),
+  ]));
+
+  return factory;
 }
 
 /**
@@ -206,7 +284,7 @@ export function emitNativeView(
     childCounts.set(tag, seen + 1);
     const segment = seen === 0 ? tag : `${tag}[${seen}]`;
 
-    const attributes = planOrderedAttributes(opening.attributes, {
+    const authoredAttributes = planOrderedAttributes(opening.attributes, {
       skipKey: true,
       fail: message => fail(message, opening),
     });
@@ -215,48 +293,52 @@ export function emitNativeView(
     let childrenFactory: t.Identifier | null = null;
 
     if (authoredChildren) {
-      if (attributes.entries.some((entry) =>
+      if (authoredAttributes.entries.some((entry) =>
         entry.type === 'attribute' && entry.name === 'children')) {
         fail(`Component <${tag}> cannot use both a children prop and nested JSX children`, element);
       }
 
-      const slotIndex = inputs.slotCount.value++;
-      const slotPlan = withTemplateRevision(lowerNativeTemplate({
-        key: `${moduleId}#${component.name}/$slot[${slotIndex}]`,
-        jsx: b.jsxFragment(
-          b.jsxOpeningFragment(),
-          b.jsxClosingFragment(),
-          element.children.map(child => cloneNode(child)),
-        ),
-        expressionSources: component.expressionSources,
-        isForwarded: expression => isRenderPropReference(
-          ctx, component.name, expression as unknown as BaseNode,
-        ),
-        fail,
-      }));
-
-      validateNativeTemplatePlan(slotPlan, element, fail);
-
-      childrenFactory = generatedIdentifier(ctx, 'children');
-      const slotFrame = generatedIdentifier(ctx, 'childrenFrame');
-
-      inputs.prelude.push(
-        b.variableDeclaration('const', [
-          b.variableDeclarator(
-            cloneNode(childrenFactory),
-            b.arrowFunctionExpression(
-              [slotFrame],
-              emitNativeView(
-                inputs,
-                slotPlan,
-                slotFrame,
-                b.arrowFunctionExpression([], nativeEvaluation(slotPlan)),
-              ),
-            ),
-          ),
-        ]),
+      childrenFactory = emitContentFactory(
+        inputs, element.children, element, step.inSvg,
       );
     }
+
+    const attributes = {
+      ...authoredAttributes,
+      entries: authoredAttributes.entries.map(entry => {
+        // Spreads keep their authored evaluation and override positions. A
+        // forwarded factory in a spread already uses the ordinary props ABI.
+        if (entry.type === 'spread') {
+          return entry;
+        }
+
+        const value = entry.value;
+
+        if (!nodeHasJsx(value)) {
+          return entry;
+        }
+
+        if (targetProps.renderCallbacks.includes(entry.name)) {
+          fail('Render callbacks require shared callback presentation emission', value);
+        }
+
+        if (!targetProps.renderProps.includes(entry.name)) {
+          fail(
+            `JSX prop '${entry.name}' on <${tag}> is not rendered by the callee`,
+            value,
+          );
+        }
+
+        const content = b.isJSXElement(value) || b.isJSXFragment(value)
+          ? [value]
+          : [b.jsxExpressionContainer(value)];
+
+        return {
+          ...entry,
+          value: emitContentFactory(inputs, content, value, step.inSvg),
+        };
+      }),
+    };
 
     const spreads = attributes.entries.some(entry => entry.type === 'spread');
     const orderedAttributes = emitOrderedAttributes(attributes);

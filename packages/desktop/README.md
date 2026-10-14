@@ -16,8 +16,8 @@ ordinary component calls now mount as accepted nested native owners and replay
 reactive props through the shared core prop box. Inline and component-return
 host/component branches use accepted native replacement. Editing events, refs,
 and full event targets remain unfinished. Nested component children and forwarded
-content references mount into native regions; lists and render callbacks remain
-unfinished. Web mounting and the optimized DOM list
+content references and direct JSX-valued props mount into native regions. Lists
+and render callbacks remain unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
 ## Run the visual dashboard
@@ -200,10 +200,16 @@ mounts that factory at a native comment boundary. Forwarding it to another compo
 and mounting it more than once retain independent ranges, event bindings and
 cleanup. Unused content stays lazy. Slot factory changes use the same accepted
 replacement controller as conditions, so refusal preserves the current content.
-The counter example's `Panel` exercises this through normal mount and CSS.
+The counter example's `Panel` exercises nested content and a JSX heading prop
+through normal mount and CSS. Direct
+JSX-valued props such as `header={<h2>Heading</h2>}` and `children={<Panel />}` use
+the same factory emission. Ordered spreads retain their normal override behavior.
+Conditional slot source writes receive caller replay destinations in the existing
+core access table, reaching native ranges below their receiving controller. This
+currently replays the caller subtree rather than targeting only that slot.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, lists, authored JSX attribute slots/render callbacks,
+callbacks, effects, lists, JSX-bearing spread/alias normalization, render callbacks,
 refs and stylesheet/assets integration receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are

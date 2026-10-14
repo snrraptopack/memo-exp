@@ -162,8 +162,11 @@ descriptors alone do not close runtime capability gaps. M5.4–M5.7 now establis
 staged replacement, shared inline/return conditions and lazy nested/forwarded
 component children over accepted native ranges. Both targets consume the same
 pure render-slot predicates and linked caller-usage mapping. The counter's
-ordinary `Panel` exercises nested children; authored JSX attribute slots, render
-callbacks and keyed lists remain subsequent M5 gates.
+ordinary `Panel` exercises nested children. M5.8 adds direct JSX-valued props using
+the same content factories and shared condition plans; target-side access-table
+destinations replay their callers where native placement differs from lexical
+region identity. JSX-bearing spread/alias normalization, render callbacks and
+keyed lists remain subsequent M5 gates.
 
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts

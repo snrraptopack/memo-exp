@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static/imported components, reactive props, inline/return conditions and nested/forwarded children use accepted native ownership; lists, JSX attribute slots and render callbacks remain |
+| M5 — Modules and structural parity | In progress | Static/imported components, props, inline/return conditions, children and direct JSX attribute slots use accepted ownership; lists, JSX spread/alias normalization and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1739,3 +1739,44 @@ Completed implementation/checks: 2026-10-14. M5 remains in progress.
 Next M5 work: authored JSX-valued attribute slots and render callbacks, using the
 same presentation factories and accepted controller. List source/key planning
 and the optimized web list implementation remain unchanged.
+
+## M5.8 — Direct JSX-valued props through existing content factories
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Communicated the existing-code boundary before editing: desktop view emission,
+  compiler execution tests, native process/Vite fixtures and documentation. No
+  shared semantic/runtime or Rust source changed in this batch.
+- Extracted the existing nested-children emission into one content-factory helper.
+  Direct JSX-valued attributes, fragments, explicit `children` props and nested
+  children consume it. Shared render-slot analysis, ordered attribute plans and
+  object/positional props remain the source contract. Factories retain identity
+  through prop replay; forwarded factories use the existing accepted slot adapter.
+- A focused conditional-slot test exposed a destination mismatch: shared readers
+  address caller lexical regions, while native ranges are retained below callee
+  slots. Communicated this and projected caller replay destinations from shared
+  `condReads`/component paths into the desktop access table. Every emitted component
+  installs the same finalized module table. The existing core and retained-child
+  traversal execute replay. This adds no dependency scan, access resolver or
+  subscription bridge; it currently replays a caller subtree rather than a single
+  slot. The same fix covers conditional nested children from M5.7.
+- Contracts cover repeated forwarding, reactive slot events, factory stability,
+  dormant content laziness, ordered spread overrides and rejection of JSX passed
+  to a non-rendered scalar prop. Both nested and attribute conditional content
+  verify accepted retirement and refused recreation without attaching staged core
+  entities.
+- The linked Rust process fixture uses a conditional header and explicit JSX
+  children. Vite's fixture uses a named JSX prop through imported components with
+  ordinary mount, CSS plugins and accepted root reloads. The counter's normal
+  `Panel` combines a JSX heading prop and nested reactive controls.
+- Desktop tests pass **82 tests**, zero failed, with 408 assertions; checking
+  passes all 129 files. Shared/DOM regression checks pass **53 tests**, zero failed,
+  with 21 unchanged snapshots and 173 assertions. The linked slot process checks
+  pass on Bun, Node and the custom adapter (three tests, ten assertions), and the
+  real Vite/mount/CSS/reload contract passes (one test, 19 assertions). Compiler
+  build and focused lint pass. No native relink or new physical input behavior
+  is claimed.
+
+Next M5 work: JSX-bearing spread/alias normalization and render callbacks through
+shared normalization/planning. Keyed lists continue to use existing shared source
+and key plans; no changes to the optimized web list implementation are required.

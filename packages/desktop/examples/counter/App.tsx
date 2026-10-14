@@ -11,8 +11,13 @@ function decrement() {
 }
 
 /** Ordinary component content: the caller retains the counter expressions. */
-function Panel({ children }: { children: unknown }) {
-  return <section class="panel">{children}</section>;
+function Panel({ heading, children }: { heading: unknown; children: unknown }) {
+  return (
+    <section class="panel">
+      <header>{heading}</header>
+      {children}
+    </section>
+  );
 }
 
 export function App() {
@@ -20,7 +25,7 @@ export function App() {
     <main class="counter">
       <h1>Memoized DOM with Blitz</h1>
       <p>Ordinary TSX, CSS and mount. Vite builds the application.</p>
-      <Panel>
+      <Panel heading={<h2>Counter controls</h2>}>
         <p class="value">Count: {count}</p>
         <div class="actions">
           <button onClick={increment}>Increment</button>

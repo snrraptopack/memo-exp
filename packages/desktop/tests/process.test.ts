@@ -55,12 +55,15 @@ beforeAll(async () => {
       let count = 0;
       export function increment() { count++; }
       export function App() {
-        return <Frame><button onClick={increment}>Count: {count}</button></Frame>;
+        return <Frame
+          header={count === 0 ? <h2>Start</h2> : <h2>Count: {count}</h2>}
+          children={<button onClick={increment}>Count: {count}</button>}
+        />;
       }
     `,
     './Frame.tsx': `
-      export function Frame({ children }) {
-        return <section><article>{children}</article><aside>{children}</aside></section>;
+      export function Frame({ header, children }) {
+        return <section><header>{header}</header><article>{children}</article></section>;
       }
     `,
   }, { runtimePath: '@memoized-dom/runtime' });
@@ -177,7 +180,7 @@ beforeAll(async () => {
         }, { accepted() { view.acceptInitial(); }, activated() { view.activateUpdates(); } });
         const first = await candidate.publish(view.initialPublication);
         view.dispatch({
-          owner: { id: 'App/Frame/slot/$content', generation: 1 }, source: 0,
+          owner: { id: 'App/Frame/slot[1]/$content', generation: 1 }, source: 0,
         }, 'onClick', new Event('click'));
         app.run(commit);
         const updated = await view.publication();

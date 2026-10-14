@@ -748,6 +748,148 @@ test('unused component children remain lazy and competing children are diagnosed
   `)).toThrow('cannot use both a children prop and nested JSX children');
 });
 
+test('JSX-valued props forward stable content factories and retain reactive events', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+
+    function Frame({ header, body }) {
+      return <section><header>{header}</header><article>{body}</article></section>;
+    }
+
+    function Wrapper({ header, body }) {
+      return <Frame header={header} body={body} />;
+    }
+
+    export function App() {
+      return <Wrapper
+        header={<h2>Heading {count}</h2>}
+        body={<button onClick={increment}>Button {count}</button>}
+      />;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const initial = view.initialPublication;
+
+  expect(initial.operations).toContainEqual({
+    op: 'text',
+    target: { owner: { id: 'App/Wrapper/Frame/slot/$content', generation: 1 }, source: 1 },
+    value: 'Heading 0',
+  });
+
+  const mounted = candidate.publish(initial);
+  transport.accept(1);
+  await mounted;
+
+  view.dispatch({
+    owner: { id: 'App/Wrapper/Frame/slot[1]/$content', generation: 1 }, source: 0,
+  }, 'onClick', new Event('click'));
+  application.run(core.commit);
+  transport.accept(2);
+  await Bun.sleep(0);
+  transport.accept(3);
+  await view.publication();
+
+  const operations = transport.sent.slice(1).flatMap(packet => JSON.parse(packet).operations);
+  expect(operations.filter((operation: { op: string }) => operation.op === 'retire')).toEqual([]);
+  expect(operations.filter((operation: { op: string; value?: string }) =>
+    operation.op === 'text').map((operation: { value: string }) => operation.value)
+    .sort()).toEqual(['Button 1', 'Heading 1']);
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test.each([false, true])('conditional content shares replay for nested children=%s and dormant JSX props', async nested => {
+  const module = moduleFactory(`
+    let shown = true;
+    export function increment() { shown = !shown; }
+
+    function Frame({ children }) { return <section>{children}</section>; }
+    function AppHeader() { return <h2>Ready</h2>; }
+    function Unused({ header }) {
+      return <aside>{false && <header>{header}</header>}</aside>;
+    }
+    function Never() {
+      throw new Error('Unused prop must remain lazy');
+      return <p>Hidden</p>;
+    }
+
+    export function App() {
+      return <main>
+        ${nested
+          ? '<Frame>{shown ? <AppHeader /> : null}</Frame>'
+          : '<Frame children={shown ? <AppHeader /> : null} />'}
+        <Unused header={<Never />} />
+      </main>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const mounted = candidate.publish(view.initialPublication);
+  transport.accept(1);
+  await mounted;
+
+  application.run(() => { module.increment(); core.commit(); });
+  const packet = JSON.parse(transport.sent[1]!);
+  expect(packet.operations).toEqual([{
+    op: 'retire',
+    owner: { id: 'App/Frame/slot/$content/when0/$content', generation: 1 },
+  }]);
+  expect(application.runtime.state.registry.has('App/Frame/slot/when0/AppHeader')).toBe(true);
+  transport.accept(2);
+  await view.publication();
+  expect(application.runtime.state.registry.has('App/Frame/slot/when0/AppHeader')).toBe(false);
+  expect(errors).toEqual([]);
+
+  // A refused show must preserve the accepted empty range and avoid attaching
+  // the staged component to the shared registry.
+  application.run(() => { module.increment(); core.commit(); });
+  const refused = view.publication().then(value => value, error => error);
+  transport.refuse(3);
+  expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+  expect(application.runtime.state.registry.has('App/Frame/slot/when0/AppHeader')).toBe(false);
+  expect(errors).toHaveLength(1);
+  application.close();
+});
+
+test('JSX props require the existing callee render-slot contract', () => {
+  expect(() => compileDesktop(`
+    function Scalar({ title }) { return <div title={title} />; }
+    export function App() { return <Scalar title={<h2>Heading</h2>} />; }
+  `)).toThrow("JSX prop 'title' on <Scalar> is not rendered by the callee");
+});
+
+test('ordered prop spreads can override a lazy JSX factory without creating its content', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+    function Never() {
+      throw new Error('Overridden JSX content must not be created');
+      return <p>Hidden</p>;
+    }
+    function Frame({ header, title }) {
+      return <section title={title}>{header}</section>;
+    }
+    export function App() {
+      return <Frame header={<Never />} {...{ title: 'First', header: undefined }}
+        title="Last" header={<h2>Chosen</h2>} />;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const initial = view.initialPublication;
+  expect(initial.operations).toContainEqual({
+    op: 'setAttribute',
+    target: { owner: { id: 'App/Frame', generation: 1 }, source: 0 },
+    name: { namespace: '', local: 'title' }, value: 'Last',
+  });
+  expect(initial.templates?.flatMap(template => template.nodes).some(source =>
+    source.node.kind === 'text' && source.node.value === 'Chosen')).toBe(true);
+
+  const mounted = candidate.publish(initial);
+  transport.accept(1);
+  await mounted;
+  expect(errors).toEqual([]);
+  application.close();
+});
+
 test('a component inside forwarded content retains its own shared state readers', async () => {
   const module = moduleFactory(`
     let count = 0;

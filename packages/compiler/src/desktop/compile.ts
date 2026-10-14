@@ -213,6 +213,11 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     plans: readonly (NativeTemplatePlan | null)[];
     returns: (typeof renderPlan.components)[number]['returns'];
   }[] = [];
+  const slotReplayReaders = new Map<string, Set<string>>();
+  const tableSites: Array<{
+    readonly body: t.BlockStatement;
+    readonly marker: t.BlockStatement;
+  }> = [];
 
   for (const component of renderPlan.components) {
     const { name } = component;
@@ -301,7 +306,11 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       node.body.body.unshift(propDeclaration);
     }
 
-    const table = emitAccessTable(ctx, readers);
+    // Content factories are emitted after shared reader planning. Keep one
+    // insertion marker so every component installs the same finalized module
+    // table, including native caller-replay destinations discovered by emission.
+    const table = b.blockStatement([]);
+    tableSites.push({ body: node.body, marker: table });
     const emission = {
       ctx,
       moduleId,
@@ -310,6 +319,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       conditionCount: { value: 0 },
       slotCount: { value: 0 },
       prelude: [] as t.Statement[],
+      slotReplayReaders,
       fail,
     };
 
@@ -406,6 +416,29 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
         ...result,
       ];
     }
+  }
+
+  const nativeReaders = new Map(
+    [...readers].map(([source, destinations]) => [source, new Set(destinations)]),
+  );
+
+  for (const [source, destinations] of slotReplayReaders) {
+    let routed = nativeReaders.get(source);
+
+    if (routed === undefined) {
+      routed = new Set();
+      nativeReaders.set(source, routed);
+    }
+
+    for (const destination of destinations) {
+      routed.add(destination);
+    }
+  }
+
+  for (const { body, marker } of tableSites) {
+    const table = emitAccessTable(ctx, nativeReaders);
+    body.body = body.body.flatMap(statement =>
+      statement === marker ? (table === null ? [] : [table]) : [statement]);
   }
 
   liftModuleStateCells(ctx, path);

@@ -483,7 +483,13 @@ classification identifies callee interpolation and forwarding sites; the target
 mounts content at native comment boundaries. Repeated content mounts have distinct
 native ranges and event bindings. Slot factory changes use the same conditional
 acceptance controller, preserving current content after a refused replacement.
-Lists, authored JSX attribute slots and render callbacks remain emission gates.
+Direct JSX attribute slots use that same factory emission, including conditional
+and fragment content. Native slot ranges currently live below receiving controllers,
+so their conditional source writes also target caller replay destinations projected
+from shared condition-read facts. The existing core traverses retained children;
+there is no native access resolver or subscription bridge. Caller replay is coarser
+than direct slot invalidation. Lists, JSX-bearing spread/alias normalization and
+render callbacks remain emission gates.
 
 Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses
