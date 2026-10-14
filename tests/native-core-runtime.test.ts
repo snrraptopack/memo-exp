@@ -8,6 +8,16 @@ import { createApplicationRuntime as sharedRuntime } from '../packages/runtime/s
 import { createRenderPreparation as sharedPreparation } from '../packages/runtime/src/preparation';
 import { uninstallAccessTable } from '../packages/runtime/src/access';
 import { computedChanged as domComparison } from '../packages/runtime/src/setters';
+import { rootFactoryStore as browserRootFactoryStore } from '../packages/runtime/src/mount-core';
+
+it('shares browser root metadata without a second host registry', () => {
+  expect(core.rootFactoryStore()).toBe(browserRootFactoryStore());
+  const component = () => undefined;
+  const definition = { id: 'RegistryParity', create: () => document.createTextNode('shared') };
+  browserRootFactoryStore().set(component, definition);
+  expect(core.rootFactoryStore().get(component)).toBe(definition);
+  core.rootFactoryStore().delete(component);
+});
 
 it('exports the same semantic implementations without importing a rendering host', async () => {
   expect(core.createApplicationRuntime).toBe(sharedRuntime);

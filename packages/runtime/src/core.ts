@@ -40,3 +40,4 @@ export type { RefTarget, RefValue, RefCallback } from './refs';
 export { textValue, classValue } from './value-normalization';
 export { jsxAttributeName } from './jsx-attributes';
 export { isAriaAttribute, isHtmlBooleanAttribute } from './html-attributes';
+export { rootFactoryStore } from './root-factories';

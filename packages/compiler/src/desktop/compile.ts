@@ -265,6 +265,15 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
 
   liftModuleStateCells(ctx, path);
 
+  // Root metadata joins the existing realm registry. The authored component
+  // reference remains what mount receives; callers never supply a native frame.
+  for (const component of prepared) {
+    program.body.push(b.expressionStatement(b.callExpression(
+      b.memberExpression(cloneNode(nativeId), b.identifier('registerNativeRoot')),
+      [b.identifier(component.name), b.stringLiteral(ctx.rootId)]
+    )));
+  }
+
   walkAst<t.Node>(program, {
     enter(node) {
       if (node.type === 'JSXElement' || node.type === 'JSXFragment') {

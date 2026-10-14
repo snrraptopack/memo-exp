@@ -5,6 +5,7 @@ import {
 } from './kernel';
 import { rootNodes } from './jsx-dom';
 import type { HydrationMismatchError } from './hydration-error';
+import { rootFactoryStore as sharedRootFactoryStore } from './root-factories';
 
 /** Authored zero-argument component reference accepted by the browser entry. */
 export type MountableComponent = () => unknown;
@@ -41,14 +42,8 @@ export interface MountedApplication {
 }
 
 // Factory definitions are build artifacts shared across request runtimes.
-const rootFactoriesKey = Symbol.for('memoized-dom:root-factories');
 export function rootFactoryStore(): WeakMap<Function, RootFactoryDefinition> {
-  const realm = globalThis as unknown as Record<PropertyKey, unknown>;
-  const existing = realm[rootFactoriesKey];
-  if (existing instanceof WeakMap) return existing as WeakMap<Function, RootFactoryDefinition>;
-  const created = new WeakMap<Function, RootFactoryDefinition>();
-  realm[rootFactoriesKey] = created;
-  return created;
+  return sharedRootFactoryStore<RootFactoryDefinition, Function>();
 }
 
 export interface MountStore {

@@ -1,6 +1,6 @@
 # Blitz implementation plan
 
-Updated: 2026-10-13. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
 
 This is the implementation plan for the architecture described in
 [research.md](research.md). Completed batches and decisions belong in
@@ -139,8 +139,11 @@ attributes/spreads, events/refs, text and structural work. This support entry do
 not yet compile a whole application. M3.3 now executes fixed-host/module-cell
 closures with shared cell lowering, reader serialization and M3.1 acceptance.
 Initial mount and values publish together; queued source work resumes through
-core invalidation after acceptance or freed credits. Next wire the normal entry
-and mount metadata, then the first visible CSS/window counter. Extend guarded
+core invalidation after acceptance or freed credits. M3.4 wires native root
+metadata into the existing shared root registry and selects the normal mount
+entry at build time. The launcher privately observes acceptance; authored mount
+and unmount remain synchronous. Next integrate the first visible CSS/window
+counter. Extend guarded
 instance/store publication, scopes and replay through shared emission afterward. Keep
 normal `mount()` imports and calls. Window/CSS integration then completes the M3
 counter gate; source-plan descriptors alone do not close runtime capability gaps.

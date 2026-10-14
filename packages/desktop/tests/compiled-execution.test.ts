@@ -13,6 +13,7 @@ import * as presentation from '../src/runtime/view';
 import { NativeApplication } from '../src/runtime/application';
 import { PublicationClient } from '../src/host/client';
 import { ManualTransport } from './fixtures/manual-transport';
+import { createMountAdapter } from '../src/runtime/mount';
 
 const source = `
   let count = 0;
@@ -24,9 +25,10 @@ const source = `
   }
 `;
 
-function moduleFactory(text = source) {
+function moduleFactory(text = source, rootName = 'App', rootId?: string) {
   const compiled = compileDesktop(text, {
     moduleId: './compiled-test.tsx',
+    rootId,
     runtimePath: 'core',
     presentationPath: 'presentation'
   });
@@ -49,7 +51,7 @@ function moduleFactory(text = source) {
     return [statement];
   });
 
-  return new Function(...parameters, printEstree(program).code + '\nreturn {App,increment};')(core, presentation) as {
+  return new Function(...parameters, printEstree(program).code + '\nreturn {App:' + rootName + ',increment};')(core, presentation) as {
     App(frame: presentation.NativeFrame): presentation.NativeView;
     increment(): void
    };
@@ -93,6 +95,92 @@ function createCompiledApplication(module = moduleFactory()) {
 
   return { application, candidate, view, transport, errors, module };
 }
+
+test('compiled metadata mounts a root without an authored native frame', async () => {
+  const { application, transport, errors, module, candidate } = createCompiledApplication();
+  candidate.discard();
+  const adapter = createMountAdapter(application, 'app', error => errors.push(error));
+
+  expect(() => adapter.mount('missing', module.App)).toThrow('was not found');
+  expect(() => adapter.mount('app', () => {})).toThrow('not a compiled native root');
+
+  const mounted = adapter.mount('app', module.App);
+  expect(mounted.mounted).toBe(true);
+  expect(mounted.host.isConnected).toBe(false);
+  expect(() => adapter.mount('app', module.App)).toThrow('already owns');
+  transport.accept(1);
+  await adapter.settled();
+  expect(mounted.host.isConnected).toBe(true);
+
+  adapter.view()!.dispatch(1, 'onClick', new Event('click'));
+  application.run(core.commit);
+  expect(JSON.parse(transport.sent[1]!).operations).toContainEqual({
+    op: 'text', target: { owner: { id: 'App', generation: 1 }, source: 4 }, value: '1'
+  });
+  transport.accept(2);
+  await adapter.view()!.publication();
+  mounted.unmount();
+  await Bun.sleep(0);
+  transport.accept(3);
+  await adapter.settled();
+  expect(mounted.mounted).toBe(false);
+  expect(mounted.host.isConnected).toBe(false);
+  expect(errors).toEqual([]);
+
+  const remounted = adapter.mount('app', module.App);
+  expect(JSON.parse(transport.sent[3]!).templates).toBeUndefined();
+  expect(JSON.parse(transport.sent[3]!).operations[0].owner.generation).toBe(2);
+  transport.accept(4);
+  await adapter.settled();
+  expect(remounted.mounted).toBe(true);
+  application.close();
+});
+
+test('root registration uses the shared reader identity rather than the authored function name', async () => {
+  const module = moduleFactory(source.replace('function App()', 'function Counter()'), 'Counter', 'WindowRoot');
+  const { application, transport, errors, candidate } = createCompiledApplication(module);
+  candidate.discard();
+  const adapter = createMountAdapter(application, 'app', error => errors.push(error));
+  const mounted = adapter.mount('app', module.App);
+  expect(mounted.rootId).toBe('WindowRoot');
+  transport.accept(1);
+  await adapter.settled();
+  adapter.view()!.dispatch(1, 'onClick', new Event('click'));
+  application.run(core.commit);
+  expect(JSON.parse(transport.sent[1]!).operations).toContainEqual({
+    op: 'text', target: { owner: { id: 'WindowRoot', generation: 1 }, source: 4 }, value: '1'
+  });
+  transport.accept(2);
+  await adapter.view()!.publication();
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test('synchronous unmount waits for creation acceptance and refused retirement retains ownership', async () => {
+  const { application, transport, errors, module, candidate } = createCompiledApplication();
+  candidate.discard();
+  const adapter = createMountAdapter(application, 'app', error => errors.push(error));
+  const mounted = adapter.mount('app', module.App);
+  mounted.unmount();
+  mounted.unmount();
+  expect(transport.sent).toHaveLength(1);
+  transport.accept(1);
+  await Bun.sleep(0);
+  expect(transport.sent).toHaveLength(2);
+  transport.refuse(2);
+  await expect(adapter.settled()).rejects.toThrow('Source does not exist');
+  await Bun.sleep(0);
+  expect(mounted.mounted).toBe(true);
+  expect(mounted.host.isConnected).toBe(true);
+  expect(() => adapter.mount('app', module.App)).toThrow('already owns');
+  mounted.unmount();
+  await Bun.sleep(0);
+  transport.accept(2);
+  await adapter.settled();
+  expect(mounted.mounted).toBe(false);
+  expect(errors).toHaveLength(1);
+  application.close();
+});
 
 test('ordinary TSX emits real cell/access closures and accepted event dispatch updates text', async () => {
   const { application, candidate, view, transport, errors } = createCompiledApplication();

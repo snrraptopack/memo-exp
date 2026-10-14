@@ -40,6 +40,9 @@ export async function bundleExecutionEntry(options: ExecutionBundleOptions) {
         builder.onResolve({ filter: /^@memoized-dom\/desktop\/internal-runtime$/ }, () => ({
           path: fileURLToPath(new URL('../runtime/view.ts', import.meta.url)),
         }));
+        builder.onResolve({ filter: /^@memoized-dom\/runtime(?:\/client)?$/ }, () => ({
+          path: fileURLToPath(new URL('../runtime/entry.ts', import.meta.url)),
+        }));
       },
     }],
   });

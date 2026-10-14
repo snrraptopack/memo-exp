@@ -69,6 +69,64 @@ beforeAll(async () => {
     }
     run().catch(error=>{console.error(error);process.exitCode=1});
   `);
+
+  // This entry is the ordinary authoring boundary. Only the launcher knows
+  // about the host connection, acceptance observation or generated frames.
+  await Bun.write(join(directory, 'mounted-app.ts'), `
+    import { mount } from '@memoized-dom/runtime';
+    import { App } from './compiled-app.mjs';
+    export const application = mount('app', App);
+  `);
+  const mounting = fileURLToPath(new URL('../src/runtime/mount.ts', import.meta.url)).replaceAll('\\', '/');
+  const runtimeEntry = fileURLToPath(new URL('../src/runtime/entry.ts', import.meta.url)).replaceAll('\\', '/');
+  await Bun.write(join(directory, 'mounted-entry.ts'), `
+    import assert from 'node:assert/strict';
+    import { commit, setScheduler } from ${JSON.stringify(core)};
+    import { NativeApplication } from ${JSON.stringify(application)};
+    import { PublicationClient } from ${JSON.stringify(client)};
+    import { createMountAdapter } from ${JSON.stringify(mounting)};
+    import { installNativeMount } from ${JSON.stringify(runtimeEntry)};
+    import { connectNativeHost } from '@memoized-dom/desktop/internal-host';
+
+    async function run() {
+      const errors = [];
+      const reportError = error => errors.push(error);
+      const app = new NativeApplication(new PublicationClient(connectNativeHost({
+        executable: process.argv[2], args: ['--headless']
+      })), { scheduleFrame: null, visible: () => true, reportError });
+      app.run(() => setScheduler(() => {}));
+      const adapter = createMountAdapter(app, 'app', reportError);
+      const uninstall = installNativeMount(adapter);
+
+      try {
+        const { application: mounted } = await import('./mounted-app.ts');
+        const first = await adapter.settled();
+        assert.equal(mounted.host.isConnected, true);
+        adapter.view().dispatch(1, 'onClick', new Event('click'));
+        app.run(commit);
+        const second = await adapter.view().publication();
+        mounted.unmount();
+        const third = await adapter.settled();
+        assert.equal(mounted.mounted, false);
+        const { App } = await import('./compiled-app.mjs');
+        const again = adapter.mount('app', App);
+        const fourth = await adapter.settled();
+        again.unmount();
+        const fifth = await adapter.settled();
+        assert.equal(app.runtime.state.registry.size, 0);
+        assert.deepEqual(errors, []);
+        console.log(JSON.stringify({
+          accepted: [first.sequence, second.sequence, third.sequence, fourth.sequence, fifth.sequence],
+          mounted: true
+        }));
+      } finally {
+        uninstall();
+        app.close();
+      }
+    }
+
+    run().catch(error => { console.error(error); process.exitCode = 1; });
+  `);
 });
 
 afterAll(async () => {
@@ -85,11 +143,11 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle', 'compiled']) {
+  for (const fixture of ['application', 'lifecycle', 'compiled', 'mounted']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
-        entry: fixture === 'compiled' ? join(directory, 'compiled-entry.ts')
+        entry: fixture === 'compiled' || fixture === 'mounted' ? join(directory, fixture + '-entry.ts')
           : fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
         outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
         runtime,
@@ -111,7 +169,9 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
       });
       expect(result.stderr).toBe('');
       expect(result.code).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual(fixture === 'compiled'
+      expect(JSON.parse(result.stdout)).toEqual(fixture === 'mounted'
+        ? { accepted: [1, 2, 3, 4, 5], mounted: true }
+        : fixture === 'compiled'
         ? { accepted: [1, 2, 3], compiled: true }
         : fixture === 'application'
         ? { accepted: [1, 2], refused: 'unknownTemplate' }

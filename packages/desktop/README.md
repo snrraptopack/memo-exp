@@ -10,8 +10,9 @@ queues and a private headless process for transport contracts. A
 portable JavaScript publication client, selectable execution bundler and internal
 accepted core lifecycle are also implemented. The compiler now lowers analyzed
 JSX to native templates and executes the first fixed-host/module-cell component
-phase. Normal mount integration and the window command remain pending; there is
-no mounted application example to run yet. These scripts check the compiler/native foundation, and do
+phase. Build-selected ordinary mount now runs against the headless Rust host;
+the visible window command and CSS example remain pending. These scripts check
+the compiler/native foundation, and do
 not change web mounting or select a desktop renderer for an application.
 
 ## Native checks
@@ -448,8 +449,24 @@ are the current scope. Combined native transaction validation/application and
 structural wire publication use bounded framing and reply-capacity admission.
 Shell/resource work is contained across complete application. The portable client
 and selected execution adapter implement process/pending-job teardown. Compiler
-acceptance/lifecycle integration and native event-loop wiring remain work. Window painting and
-ordinary TSX mounting follow in M3; input ordering/cancellation follows in M4.
+acceptance/lifecycle and ordinary mounting execute against the real headless
+host. Native event-loop wiring, CSS and window painting remain M3 gates;
+platform input ordering/cancellation follows in M4.
+
+The desktop build selects the private runtime entry for ordinary
+`import { mount } from '@memoized-dom/runtime'`. Compiled roots register in the
+same realm-wide metadata WeakMap as browser roots. The launcher binds a single
+configured string mount target before loading the authored entry; element targets
+and DOM node inspection are not implemented. Its internal host identity exposes
+`id` and accepted `isConnected`, not a fabricated HTMLElement. Ordinary JSX/ref
+types and browser mounting remain unchanged.
+
+Mount/unmount return synchronously. The launcher observes acceptance privately.
+Unmount requested before creation acceptance waits in order; a refused retirement
+retains the accepted owner and can be retried. Accepted retirement releases the
+target. Remount increments the owner generation and reuses already accepted
+templates on that connection. Bun, Node and the selected custom adapter exercise
+the authored mount entry against Rust; these are not platform-click tests.
 
 Blitz creates a text input's editor during layout construction. Tests verify both
 pre-layout value initialization and later editor updates through the engine.

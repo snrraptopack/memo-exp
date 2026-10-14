@@ -1,6 +1,6 @@
 # Blitz milestone and decision record
 
-Updated: 2026-10-13. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
 
 Follow [plan.md](plan.md) for implementation order and [research.md](research.md)
 for inspected architecture. This log is append-only for completed work: correct
@@ -14,7 +14,7 @@ Update the status table when the corresponding completion gates pass.
 | M0 — Architecture and plan | Completed | Initial documentation batch below |
 | M1 — Shared semantic/compiler boundary | Completed | Runtime/core, shared pass order and project/manifest adaptation; unchanged fixture products, source-only contracts, builds/checks and 2,558 root tests pass |
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
-| M3 — Ordinary native counter | In progress | M3.1 lifecycle, M3.2 templates and M3.3 compiled fixed-host/module-cell execution pass against Rust; normal mount integration and visible CSS/window remain |
+| M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
 | M5 — Modules and structural parity | Not started | Core implementations available; native adapter not built |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
@@ -1208,3 +1208,75 @@ Delivery: implementation and synced docs committed as
 Pushed to `origin/codex/blitz-renderer` on 2026-10-13; `git ls-remote --heads`
 returned that exact SHA, matching local HEAD. Staged whitespace passed before
 commit. This documentation receipt records delivery; M3 window/mount remains open.
+
+## M3.4 — Ordinary mount metadata and accepted root ownership
+
+Implementation batch on 2026-10-13; M3 remains in progress until the visible
+CSS/window counter and platform-click gates pass.
+
+### Boundary communication and decisions
+
+Before editing existing code, the user was told that `mount-core.ts`'s existing
+root-factory WeakMap would be extracted so both hosts use it, the build would
+select a native mount adapter, browser mounting would keep its behavior, and
+compiler-output comparisons plus mount tests would check that boundary.
+
+- Moved the existing realm registry, preserving its symbol and WeakMap identity,
+  into `runtime/root-factories.ts`. Browser mount retains its typed wrapper;
+  core exposes the same store without importing browser mounting. No second
+  root registry, cell engine, resolver or subscription bridge was introduced.
+- The desktop compiler registers each generated root in that store. Its identity
+  is the existing shared reader/root ID; neither the authored function name nor
+  immutable template hash substitutes for access routing. A Counter/WindowRoot
+  contract verifies this explicitly.
+- The desktop bundle selects a private runtime entry for ordinary runtime/client
+  imports. The launcher installs its owned host before evaluating application
+  code. The process fixture actually imports ordinary `mount` and calls
+  `mount('app', App)` without a native frame or another mounting function.
+- `mount` and `unmount` remain synchronous. Acceptance observation is private
+  launcher bookkeeping. Unmount before initial acceptance retires in order;
+  duplicate requests coalesce. Refused retirement preserves the accepted owner
+  and can be retried. Accepted retirement releases the target; remount increments
+  generation and omits already accepted immutable templates on that connection.
+- The present adapter supports one configured string target. Its internal host
+  identity has id/isConnected, not invented DOM element properties. Element
+  targets and normal native ref capabilities are still unimplemented. The
+  optimized DOM list code, browser event/ref types and SSR were not changed.
+- Pinned shell inspection confirms its Document guards/poll can drive our one
+  retained engine document. EventDriver runs script handlers before defaults
+  synchronously. Cross-process cancellation must preserve that ordering without
+  waiting on a pipe from the UI thread; forwarding after a native default is
+  not an acceptable implementation. Native platform events are not claimed by
+  these headless callback contracts.
+
+### Verification
+
+- Desktop suite: **57 passed, 0 failed**, 249 assertions across six files.
+  Three added contracts cover ordinary root ownership/remount, configured reader
+  identity, early unmount and refused-retirement retry.
+- Real process suite: **16 passed, 0 failed**, 54 assertions. New ordinary mount
+  entry fixtures run under Bun, Node and the custom CommonJS adapter against the
+  cached Rust host; each accepts creation, generated callback update, retirement,
+  remount and second retirement without restarting the host.
+- **17 captured browser/SSR products match exactly.** Focused shared-core,
+  browser mounting, initial ownership and backend-boundary tests: **31 passed,
+  0 failed**, including proof that both root registry APIs return one WeakMap.
+- Compiler and runtime build/declaration emission pass. No Rust implementation,
+  dependency feature or lockfile changed; no native linking ran alongside JS tests.
+- Bun checking passes runtime (60 files), compiler (245 files) and desktop (112
+  files). Focused lint passes for added/changed native code and the extracted
+  registry; the existing browser mount Function declarations are unchanged.
+  Checking caught a WeakMap key type mismatch after narrowing the neutral store.
+  Giving it a generic key parameter preserves the browser signature and fixes
+  that error; the runtime check was rerun successfully.
+- The first full root run completed with 2,558 passes and one 60-second Chromium
+  timeout (545.75s overall). The failing DOM-shape/custom-element fixture passed
+  in isolation (one test, ten assertions, 35.45s test duration), without changing
+  its implementation or timeout. The final serial full rerun passed **2,559
+  tests, 0 failures**, exit 0, 28 snapshots and 30,456 assertions across 254 files
+  (398.90s), including the Chromium fixture. Contention is a hypothesis, not a
+  measured cause for the earlier timeout. No test timeout was increased.
+
+The README, research and plan describe the implemented mount boundary and retain
+the unfinished visible window/CSS/input gates. No startup, native pointer latency,
+ref compatibility or state-preserving reload claim is inferred from this batch.

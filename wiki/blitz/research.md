@@ -1,6 +1,6 @@
 # Blitz architecture research
 
-Updated: 2026-10-12. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
 
 This is the canonical research for the Blitz implementation. [plan.md](plan.md)
 defines the implementation architecture and order. [milestones.md](milestones.md)
@@ -347,8 +347,9 @@ normalizers and attribute-name maps are shared with DOM, without importing DOM
 setters into core. Real compiled TSX runs under Bun, Node and a custom adapter
 against Rust. Presentation snapshots and accepted callback binding are host
 bookkeeping, not another reactive engine. Instance/store guards, scopes, replay,
-refs and structural execution remain diagnosed emission gates. Mount/window
-wiring and native platform events are not yet claimed complete.
+refs and structural execution remain diagnosed emission gates. M3.4 now wires
+ordinary mount into the headless host. Visible window wiring and native platform
+events are not yet claimed complete.
 
 M3.2 lowers shared JSX plans to the native immutable template format. Parent and
 source indices, fragment roots and structural comment addresses belong to this
@@ -387,3 +388,23 @@ and JavaScript application runtime. Establish transaction and event contracts
 before broad native features. Keep the web target stable, preserve the prior
 GPUI branch as a reference, and avoid bringing its presentation layer into this
 implementation. Complete milestones only with their stated evidence.
+
+M3.4 connects ordinary mount authoring to native compiled root metadata. The
+existing `mount-core.ts` realm-wide WeakMap implementation moved into the
+host-neutral `root-factories.ts`; browser mounting keeps its typed wrapper and
+uses that same store. Native roots register the shared reader/root identity,
+not their template hash or authored function name. The build selects a private
+runtime entry; application source retains `mount('app', App)` and synchronous
+unmount. Accepted template knowledge is connection-local presentation bookkeeping,
+not another document tree. Real process contracts cover mount, callback update,
+retirement and remount under each supported execution selection.
+
+Inspection of the pinned shell confirms `WindowConfig` accepts the engine's
+`Document` trait, whose `inner`/`inner_mut` guards expose one retained BaseDocument
+and whose `poll` integrates scheduled work. `EventDriver` invokes the handler
+before running native defaults synchronously. The cross-process adapter must
+therefore hold cancellable defaults and resume them after JavaScript dispatch
+without a blocking pipe read on the UI thread. Merely forwarding a callback
+after a default has run does not satisfy event cancellation. Window/CSS painting
+and native event/default ordering remain uncompleted gates; this batch does not
+claim platform input verification.

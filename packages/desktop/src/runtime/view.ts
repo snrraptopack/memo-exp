@@ -7,6 +7,7 @@ import {
   jsxAttributeName,
   invalidateEntity,
   registerEntity,
+  rootFactoryStore,
   textValue
 } from '@memoized-dom/runtime/core';
 
@@ -26,6 +27,24 @@ export interface NativeFrame {
   readonly owner: Owner;
   readonly parent: string | null;
   readonly reportError: (error: unknown) => void
+}
+
+export interface NativeRootDefinition {
+  readonly kind: 'native';
+  readonly id: string;
+  readonly create: (frame: NativeFrame) => NativeView;
+}
+
+/** Compiler metadata, using the same registry as browser root factories. */
+export function registerNativeRoot(
+  component: (frame: NativeFrame) => NativeView,
+  id: string
+): void {
+  rootFactoryStore<NativeRootDefinition>().set(component, {
+    kind: 'native',
+    id,
+    create: component
+  });
 }
 
 export interface EvaluatedStep {
