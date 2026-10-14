@@ -7,6 +7,7 @@ import {
   jsxAttributeName,
   invalidateEntity,
   registerEntity,
+  registerProps,
   rootFactoryStore,
   textValue
 } from '@memoized-dom/runtime/core';
@@ -33,6 +34,11 @@ export interface NativeFrame {
   readonly reportError: (error: unknown) => void;
   /** Compiler-private destination inherited by a nested component view. */
   readonly mountTarget?: Destination;
+  /**
+   * Keep this candidate outside the live semantic registry until its native
+   * replacement transaction is accepted.
+   */
+  readonly deferCore?: boolean;
 }
 
 export interface NativeRootDefinition {
@@ -94,6 +100,8 @@ export class NativeView {
   private lastPublication?: Promise<Acceptance>;
   private readonly children: NativeView[];
   private readonly childUpdates: Array<(() => void) | undefined>;
+  private coreAttached = false;
+  private deferredProps?: unknown[];
 
   constructor(
     private readonly frame: NativeFrame,
@@ -102,18 +110,72 @@ export class NativeView {
     children: readonly NativeChild[] = [],
   ) {
     this.template = withStylesheets(template);
-    registerEntity({
-      id: frame.owner.id,
-      parent: frame.parent,
-      render: () => this.render()
-    });
 
-    cleanup(frame.owner.id, () => this.dispose());
+    if (!frame.deferCore) {
+      this.attachOwnCore();
+    }
+
     this.initial = this.snapshot();
     const createdChildren = this.createChildren(children);
 
     this.children = createdChildren.map((child) => child.view);
     this.childUpdates = createdChildren.map((child) => child.update);
+  }
+
+  /**
+   * Bind the shared props box now, or retain it until an accepted replacement
+   * attaches this view to the live core registry.
+   */
+  bindProps(box: unknown[]): void {
+    if (this.deferredProps !== undefined) {
+      throw new HostError('duplicateProps', 'Native view props are already bound');
+    }
+
+    if (this.coreAttached) {
+      registerProps(this.frame.owner.id, box);
+      return;
+    }
+
+    this.deferredProps = box;
+  }
+
+  /**
+   * Attach a previously staged subtree after native acceptance. The caller
+   * retires the old semantic subtree first, so stable component ids remain
+   * valid across branch generations.
+   */
+  attachCore(): void {
+    if (this.phase === 'disposed') {
+      throw new HostError('disposedView', 'A disposed native view cannot be attached');
+    }
+
+    if (this.coreAttached) {
+      return;
+    }
+
+    this.attachOwnCore();
+
+    for (const childView of this.children) {
+      childView.attachCore();
+    }
+  }
+
+  /** Discard a refused staged subtree without touching the accepted subtree. */
+  discardStaged(): void {
+    if (this.coreAttached) {
+      throw new HostError('attachedView', 'An attached native view requires core-owned disposal');
+    }
+
+    if (this.phase === 'disposed') {
+      return;
+    }
+
+    for (const childView of this.children) {
+      childView.discardStaged();
+    }
+
+    this.deferredProps = undefined;
+    this.dispose();
   }
 
   get initialPublication(): Publication {
@@ -356,6 +418,7 @@ export class NativeView {
         },
         parent: this.frame.owner.id,
         reportError: this.frame.reportError,
+        deferCore: this.frame.deferCore,
         mountTarget: {
           kind: 'region',
           source: {
@@ -499,6 +562,22 @@ export class NativeView {
 
     return result;
   }
+
+  private attachOwnCore(): void {
+    registerEntity({
+      id: this.frame.owner.id,
+      parent: this.frame.parent,
+      render: () => this.render(),
+    });
+
+    cleanup(this.frame.owner.id, () => this.dispose());
+    this.coreAttached = true;
+
+    if (this.deferredProps !== undefined) {
+      registerProps(this.frame.owner.id, this.deferredProps);
+      this.deferredProps = undefined;
+    }
+  }
 }
 
 function handlersEqual(
@@ -533,4 +612,9 @@ export function createView(
   children: readonly NativeChild[] = [],
 ): NativeView {
   return new NativeView(frame, template, evaluate, children);
+}
+
+/** Compiler adapter: props retain the shared core implementation and timing. */
+export function bindViewProps(view: NativeView, box: unknown[]): void {
+  view.bindProps(box);
 }

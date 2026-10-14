@@ -3,9 +3,17 @@ import {
   cleanup, commit, defineStateCell, getActiveApplicationRuntime, installAccessTable,
   invalidateEntity, mountRef, readCell, readPreparationScope, refAssign,
   registerEffect, registerEntity, setScheduler, updateCell,
+  unregisterSubtree,
 } from '@memoized-dom/runtime/core';
+import { _propsBox } from '@memoized-dom/runtime/testing';
 import { NativeApplication } from '../src/runtime/application';
 import { PublicationClient } from '../src/host/client';
+import {
+  bindViewProps,
+  child,
+  NativeView,
+  type NativeFrame,
+} from '../src/runtime/view';
 import { ManualTransport } from './fixtures/manual-transport';
 
 function createApplication(transport = new ManualTransport()) {
@@ -236,6 +244,129 @@ describe('native publication uses shared core lifetimes', () => {
     expect(JSON.parse(transport.sent[3]!).templates).toEqual([nextTemplate]);
     transport.accept(3);
     await retried;
+    application.close();
+  });
+
+  test('staged view replacement preserves the live core until native acceptance', async () => {
+    const { application, transport } = createApplication();
+    const ownerId = 'App/when0/Content';
+    const childId = `${ownerId}/Leaf`;
+    const regionTemplate = {
+      key: 'conditional-content',
+      nodes: [{
+        parent: null,
+        node: { kind: 'comment' as const, value: 'content' },
+      }],
+    };
+    const leafTemplate = {
+      key: 'conditional-leaf',
+      nodes: [{
+        parent: null,
+        node: { kind: 'text' as const, value: '' },
+      }],
+    };
+
+    function frame(generation: number, deferCore = false): NativeFrame {
+      return {
+        application,
+        owner: { id: ownerId, generation },
+        parent: 'App/when0',
+        reportError() {},
+        deferCore,
+      };
+    }
+
+    function view(generation: number, label: string, deferCore = false): NativeView {
+      const result = new NativeView(
+        frame(generation, deferCore),
+        regionTemplate,
+        () => [],
+        [
+          child('Leaf', 0, (childFrame) => {
+            const leaf = new NativeView(
+              childFrame,
+              leafTemplate,
+              () => [{ kind: 'text', source: 0, value: label }],
+            );
+
+            bindViewProps(leaf, [`${label}-leaf`]);
+            return leaf;
+          }),
+        ],
+      );
+
+      bindViewProps(result, [label]);
+      return result;
+    }
+
+    application.run(() => {
+      registerEntity({ id: 'App/when0', parent: null, render() {} });
+    });
+
+    const current = application.run(() => view(1, 'current'));
+    expect(current.initialPublication.operations).toHaveLength(3);
+    current.acceptInitial();
+
+    const currentEntity = application.runtime.state.registry.get(ownerId);
+    const currentChildEntity = application.runtime.state.registry.get(childId);
+    expect(currentEntity).toBeDefined();
+    expect(currentChildEntity).toBeDefined();
+    expect(application.run(() => _propsBox(ownerId))).toEqual(['current']);
+    expect(application.run(() => _propsBox(childId))).toEqual(['current-leaf']);
+
+    const refused = application.run(() => view(2, 'refused', true));
+    const refusedPublication = refused.initialPublication;
+    const refusal = observe(application.publish({
+      templates: refusedPublication.templates,
+      operations: [
+        { op: 'retire', owner: { id: ownerId, generation: 1 } },
+        ...refusedPublication.operations,
+      ],
+    }, () => {
+      throw new Error('A refused transaction must not activate its staged core');
+    }));
+
+    expect(application.runtime.state.registry.get(ownerId)).toBe(currentEntity);
+    expect(application.runtime.state.registry.get(childId)).toBe(currentChildEntity);
+    expect(application.run(() => _propsBox(ownerId))).toEqual(['current']);
+    expect(application.run(() => _propsBox(childId))).toEqual(['current-leaf']);
+
+    transport.refuse(1);
+    expect(await refusal).toMatchObject({ name: 'PublicationRefusedError' });
+    application.run(() => refused.discardStaged());
+
+    expect(application.runtime.state.registry.get(ownerId)).toBe(currentEntity);
+    expect(application.runtime.state.registry.get(childId)).toBe(currentChildEntity);
+    expect(application.run(() => _propsBox(ownerId))).toEqual(['current']);
+    expect(application.run(() => _propsBox(childId))).toEqual(['current-leaf']);
+
+    const replacement = application.run(() => view(2, 'replacement', true));
+    const replacementPublication = replacement.initialPublication;
+    const accepted = application.publish({
+      templates: replacementPublication.templates,
+      operations: [
+        { op: 'retire', owner: { id: ownerId, generation: 1 } },
+        ...replacementPublication.operations,
+      ],
+    }, () => {
+      unregisterSubtree(ownerId);
+      replacement.attachCore();
+      replacement.acceptInitial();
+      replacement.activateUpdates();
+    });
+
+    expect(application.runtime.state.registry.get(ownerId)).toBe(currentEntity);
+    expect(application.runtime.state.registry.get(childId)).toBe(currentChildEntity);
+    expect(application.run(() => _propsBox(ownerId))).toEqual(['current']);
+    expect(application.run(() => _propsBox(childId))).toEqual(['current-leaf']);
+
+    transport.accept(1);
+    await accepted;
+
+    expect(application.runtime.state.registry.get(ownerId)).not.toBe(currentEntity);
+    expect(application.runtime.state.registry.get(childId)).not.toBe(currentChildEntity);
+    expect(application.run(() => _propsBox(ownerId))).toEqual(['replacement']);
+    expect(application.run(() => _propsBox(childId))).toEqual(['replacement-leaf']);
     application.close();
   });
 

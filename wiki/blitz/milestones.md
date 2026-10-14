@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static local/imported child components use accepted native regions; reactive props, children, branches, lists and render callbacks remain |
+| M5 — Modules and structural parity | In progress | Static local/imported components and reactive props work; staged replacement preserves live core ownership; conditional emission, children, lists and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1609,3 +1609,30 @@ Next M5 work remains accepted conditional replacement. Investigation established
 that a component-bearing branch must keep its old shared core ownership live until
 the native retire/mount transaction is accepted; a host-only immediate swap would
 be an incomplete shortcut.
+
+## M5.4 — Staged core lifetime for accepted replacement
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- `NativeView` can now stage a candidate subtree outside the live core registry.
+  Staging propagates through nested component views, keeps the currently accepted
+  entities and props boxes addressable, and does not create a parallel state or
+  invalidation system.
+- Generated desktop components bind props through a small presentation lifecycle
+  adapter. Attached views immediately call the existing core `registerProps`;
+  staged views retain the same box and call that function only after native
+  acceptance. Ordinary component authoring and the shared prop ABI are unchanged.
+- An accepted replacement removes the old stable-ID core subtree and attaches the
+  candidate parent-before-child. A refused candidate is discarded without touching
+  either the current parent/child entities or their props boxes. Native generation
+  numbers remain independent from stable semantic IDs.
+- The complete desktop suite passes **69 tests**, zero failed, with 326
+  assertions. Desktop Bun checking passes all 127 files; the compiler build and
+  focused lint pass. Seventeen shared compiler boundary/project/pipeline contracts
+  pass with 104 assertions. A broad root run was stopped after remaining active
+  for several minutes without a final result, so no full-root result is claimed.
+
+Next M5 work: add the compiler-owned conditional region controller that builds
+these staged views, publishes one retire/mount transaction, and commits the branch
+only on acceptance. Host-only and component-bearing branches will use the same
+path before forwarded children or keyed lists are added.

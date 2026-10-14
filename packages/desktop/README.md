@@ -158,8 +158,9 @@ serializer. Its current scope includes synchronous roots, fixed hosts/fragments,
 scalar module state, ordered attributes/spreads, class values, CSS style strings,
 explicit event callbacks and nested/repeated component calls. Static and reactive
 props retain the existing object/positional ABI, defaults and authored spread
-order. Generated factories register the existing core prop box, while parent
-views call the existing `setProps` writer before child invalidation. This works
+order. Generated factories bind the existing core prop box through the native
+lifecycle adapter, while parent views call the existing `setProps` writer before
+child invalidation. This works
 through linked imported components; it does not add a desktop state channel.
 Shared cell
 operations publish only writes that execute. Templates
@@ -177,6 +178,14 @@ Queued snapshots remove attributes introduced by earlier pending work. At eight
 pending jobs, later source changes coalesce and resume through core invalidation
 when a credit frees. Known accepted values suppress redundant scalar writes;
 pending work uses complete snapshots for ordering correctness.
+
+Candidate subtrees used for structural replacement may be created with deferred
+core attachment. Their ordinary component props remain in the view until the native
+retire/mount transaction is accepted, then the old stable-ID subtree is removed and
+the candidate attaches parent-before-child through the same core registry and props
+functions. Refusal discards only the staged views. Conditional compiler emission is
+still pending, so this is a lifecycle capability rather than a claimed TSX branch
+feature.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
 callbacks, effects, component children, list/conditional/

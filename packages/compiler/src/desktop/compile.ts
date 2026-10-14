@@ -456,13 +456,10 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
           b.variableDeclarator(cloneNode(view), createView),
         ]),
         b.expressionStatement(
-          b.callExpression(md(ctx, 'registerProps'), [
-            b.memberExpression(
-              b.memberExpression(cloneNode(frame), b.identifier('owner')),
-              b.identifier('id'),
-            ),
-            cloneNode(propsBox),
-          ]),
+          b.callExpression(
+            b.memberExpression(cloneNode(nativeId), b.identifier('bindViewProps')),
+            [cloneNode(view), cloneNode(propsBox)],
+          ),
         ),
         b.returnStatement(cloneNode(view)),
       );
