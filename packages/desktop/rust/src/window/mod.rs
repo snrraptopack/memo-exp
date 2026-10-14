@@ -1,13 +1,16 @@
 //! The native event loop owns the existing document and publication driver.
 //! Pipe workers wake it; layout, paint and input never wait for pipe I/O.
 
+mod trace;
+use trace::StartupTrace;
+
 use std::any::Any;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::task::Context;
 
-use anyrender_vello::VelloWindowRenderer;
+use anyrender_vello::{VelloRendererOptions, VelloWindowRenderer};
 use blitz_dom::{DocGuard, DocGuardMut, Document, DocumentConfig};
 use blitz_shell::{BlitzApplication, BlitzShellEvent, BlitzShellProxy, WindowConfig};
 use blitz_traits::events::UiEvent;
@@ -24,6 +27,7 @@ use crate::protocol::EventSink;
 use crate::protocol::{DriverStatus, ProcessDriver, PublicationSession};
 
 struct HostWake;
+struct GpuInitializationWake;
 
 struct WindowDocument {
     driver: ProcessDriver,
@@ -31,6 +35,8 @@ struct WindowDocument {
     sink: EventSink,
     defaults: PendingDefaults,
     ready: bool,
+    trace: StartupTrace,
+    scene_accepted: bool,
 }
 
 impl WindowDocument {
@@ -39,7 +45,10 @@ impl WindowDocument {
             return;
         }
         match self.sink.ready() {
-            Ok(()) => self.ready = true,
+            Ok(()) => {
+                self.ready = true;
+                self.trace.mark("renderer_ready");
+            }
             Err(failure) => {
                 eprintln!("desktop startup {}: {}", failure.code, failure.message);
                 self.driver.close();
@@ -110,6 +119,10 @@ impl Document for WindowDocument {
                 self.terminal.store(2, Ordering::Release);
             }
         }
+        if !self.scene_accepted && self.driver.session().document().owner_count() > 0 {
+            self.scene_accepted = true;
+            self.trace.mark("first_scene_accepted");
+        }
         before != self.driver.session().expected_sequence()
     }
 }
@@ -118,6 +131,8 @@ struct WindowApplication {
     shell: BlitzApplication<VelloWindowRenderer>,
     wake_pending: Arc<AtomicBool>,
     terminal: Arc<AtomicU8>,
+    trace: StartupTrace,
+    first_frame: bool,
 }
 
 impl WindowApplication {
@@ -134,7 +149,9 @@ impl WindowApplication {
 
 impl ApplicationHandler for WindowApplication {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.trace.mark("window_renderer_init_begin");
         self.shell.can_create_surfaces(event_loop);
+        self.trace.mark("window_renderer_init_end");
         for window in self.shell.windows.values_mut() {
             // Scene admission does not depend on asynchronous GPU readiness.
             // The first renderer frame will use this already accepted document.
@@ -184,7 +201,25 @@ impl ApplicationHandler for WindowApplication {
         if self.finish_if_terminal(event_loop) {
             return;
         }
+        let content_frame = !self.first_frame
+            && matches!(event, WindowEvent::RedrawRequested)
+            && self.shell.windows.get(&id).is_some_and(|window| {
+                window.is_visible
+                    && (&*window.doc as &dyn Any)
+                        .downcast_ref::<WindowDocument>()
+                        .is_some_and(|document| document.ready && document.scene_accepted)
+                    && !window.doc.inner().has_pending_critical_resources()
+            });
+        if content_frame {
+            self.trace.mark("first_content_frame_begin");
+        }
         self.shell.window_event(event_loop, id, event);
+        if content_frame {
+            // Blitz resolves and submits this visible, unblocked frame inside
+            // its redraw handler. This measures submission, not scanout pixels.
+            self.first_frame = true;
+            self.trace.mark("first_content_frame_submitted");
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -196,7 +231,20 @@ impl ApplicationHandler for WindowApplication {
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
         while let Ok(event) = self.shell.event_queue.try_recv() {
-            if matches!(&event, BlitzShellEvent::Embedder(value) if value.is::<HostWake>()) {
+            if matches!(&event, BlitzShellEvent::Embedder(value) if value.is::<GpuInitializationWake>())
+            {
+                for window in self.shell.windows.values_mut() {
+                    if let Err(error) = window.renderer.notify_initialization_ready() {
+                        eprintln!("desktop GPU initialization failed: {error}");
+                        if let Some(document) =
+                            (&mut *window.doc as &mut dyn Any).downcast_mut::<WindowDocument>()
+                        {
+                            document.driver.close();
+                        }
+                        self.terminal.store(2, Ordering::Release);
+                    }
+                }
+            } else if matches!(&event, BlitzShellEvent::Embedder(value) if value.is::<HostWake>()) {
                 self.wake_pending.store(false, Ordering::Release);
                 for window in self.shell.windows.values_mut() {
                     if window.doc.poll(None) {
@@ -233,7 +281,10 @@ impl ApplicationHandler for WindowApplication {
 /// Graphical mode is cross-platform; the Cargo feature is named `window`, not
 /// Windows. The same executable retains --headless for process contracts.
 pub fn run(mount_target: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let trace = StartupTrace::new();
+    trace.mark("host_started");
     let event_loop = blitz_shell::create_default_event_loop();
+    trace.mark("event_loop_created");
     let (proxy, events) = BlitzShellProxy::new(event_loop.create_proxy());
     let wake_pending = Arc::new(AtomicBool::new(false));
     let terminal = Arc::new(AtomicU8::new(0));
@@ -246,9 +297,11 @@ pub fn run(mount_target: &str) -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut native = NativeDocument::new(DocumentConfig::default());
+    trace.mark("document_fonts_created");
     native.configure_mount(mount_target);
     let session = PublicationSession::new(native);
     let driver = ProcessDriver::start(session, io::stdin(), io::stdout(), wake)?;
+    trace.mark("workers_started");
     let sink = driver.event_sink();
     let document = WindowDocument {
         driver,
@@ -256,11 +309,20 @@ pub fn run(mount_target: &str) -> Result<(), Box<dyn std::error::Error>> {
         sink,
         defaults: PendingDefaults::new(),
         ready: false,
+        trace,
+        scene_accepted: false,
     };
     let mut shell = BlitzApplication::new(proxy, events);
+    let graphics_proxy = shell.proxy.clone();
+    let renderer = VelloWindowRenderer::with_options(VelloRendererOptions::default().startup_wake(
+        Arc::new(move || {
+            graphics_proxy.send_event(BlitzShellEvent::embedder_event(GpuInitializationWake));
+        }),
+    ));
+    trace.mark("renderer_context_created");
     shell.add_window(WindowConfig::with_attributes(
         Box::new(document),
-        VelloWindowRenderer::new(),
+        renderer,
         WindowAttributes::default()
             .with_title("Memoized DOM Desktop")
             .with_surface_size(LogicalSize::new(960.0, 720.0)),
@@ -269,6 +331,8 @@ pub fn run(mount_target: &str) -> Result<(), Box<dyn std::error::Error>> {
         shell,
         wake_pending,
         terminal: terminal.clone(),
+        trace,
+        first_frame: false,
     };
     event_loop.run_app(application)?;
     if terminal.load(Ordering::Acquire) == 2 {

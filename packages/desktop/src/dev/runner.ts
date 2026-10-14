@@ -8,9 +8,11 @@ import { createInterface } from 'node:readline';
 const directory = process.argv[2]!;
 const executable = process.argv[3]!;
 const headless = process.argv.includes('--headless');
+const started = performance.now();
+const trace = process.env.MEMOIZED_DESKTOP_TRACE === '1';
 const engine = await import(pathToFileURL(resolve(directory, 'engine.mjs')).href);
 const manifest = JSON.parse(await readFile(resolve(directory, 'desktop.json'), 'utf8'));
-const host = engine.openApplication(executable, manifest.mountTarget, headless);
+const host = engine.openApplication(executable, manifest.mountTarget, headless, trace);
 const commands = createInterface({ input: process.stdin });
 let revision = 0;
 let queued = false;
@@ -41,6 +43,9 @@ async function replace() {
       lastEntry = entry;
       revision++;
       console.log(`Desktop root accepted (revision ${revision}, native host reused)`);
+      if (trace && revision === 1) {
+        console.log(`desktop-startup ${JSON.stringify({ stage: 'javascript_mount_accepted', elapsedMs: performance.now() - started })}`);
+      }
     } while (queued && !stopped);
   } finally {
     replacing = false;

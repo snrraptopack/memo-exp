@@ -9,14 +9,19 @@ import { installNativeMount } from '../runtime/entry';
 import { dispatchNativeEvent } from '../runtime/dispatch';
 import { replaceStylesheets, type StylesheetSource } from '../runtime/stylesheets';
 import { connectNativeHost } from '@memoized-dom/desktop/internal-host';
+import { HostError } from '../host/protocol';
 
 /** Transport, dispatch and acceptance are launcher concerns, not authored APIs. */
-export function openApplication(executable: string, target: string, headless = false) {
-  const reportError = (error: unknown) => console.error(error);
+export function openApplication(executable: string, target: string, headless = false, trace = false) {
+  const reportError = (error: unknown) => {
+    if (error instanceof HostError && error.code === 'windowClosed') return;
+    console.error(error);
+  };
   let adapter: ReturnType<typeof createMountAdapter>;
   const client = new PublicationClient(connectNativeHost({
     executable,
     args: headless ? ['--headless'] : ['--window', '--mount-target', target],
+    diagnostics: trace ? text => console.error(text.trimEnd()) : undefined,
   }), {
     requireReady: !headless,
     dispatch: event => dispatchNativeEvent(adapter.view(), event, reportError),

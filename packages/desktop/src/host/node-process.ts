@@ -14,6 +14,7 @@ export function connectNativeHost(options: NativeProcessOptions): PublicationTra
   let terminal: Error | undefined;
   let disposed = false;
   let diagnostics = '';
+  let diagnosticLine = '';
   let streamEnded = false;
   let exitDeadline: ReturnType<typeof setTimeout> | undefined;
   const writes = new Set<(error: Error) => void>();
@@ -77,6 +78,20 @@ export function connectNativeHost(options: NativeProcessOptions): PublicationTra
   child.stderr.on('data', (text: string) => {
     // Drain continuously, retaining only a bounded diagnostic tail.
     diagnostics = (diagnostics + text).slice(-2048);
+    if (options.diagnostics) {
+      diagnosticLine += text;
+      while (diagnosticLine.includes('\n') || diagnosticLine.length >= 4096) {
+        const newline = diagnosticLine.indexOf('\n');
+        const end = newline >= 0 && newline < 4096 ? newline + 1 : 4096;
+        const line = diagnosticLine.slice(0, end);
+        diagnosticLine = diagnosticLine.slice(end);
+        try {
+          options.diagnostics(line);
+        } catch {
+          // Diagnostic consumers cannot decide transport acceptance/framing.
+        }
+      }
+    }
   });
   child.on('error', terminate);
   child.on('close', (code, signal) => {

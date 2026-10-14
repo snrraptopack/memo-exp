@@ -1399,3 +1399,33 @@ Date: 2026-10-14. M3 remains partial; this batch adds its first graphical exampl
   launcher accepted its root with native PID **21336**. The probe was closed
   before delivery. This confirms graphical startup/acceptance under Node; it
   does not add a pixel, physical click or latency-parity claim.
+
+## M3.6 — GPU startup responsiveness (partial startup gate)
+
+The preceding Vite/window batch was pushed as `914195e7f7b2fbc592f5fcf6017d12c3f45bb9ab`.
+
+- Only the presentation boundary changes. The pinned `anyrender_vello` 0.15.0
+  dependency is vendored with its licenses and provenance. GPU/device
+  initialization runs on a bounded worker; surface creation and completion stay
+  on the UI thread. Suspension cancels callbacks, late results cannot activate
+  newer surfaces, and failures wake the UI without acknowledging readiness.
+  Compiler analysis, shared runtime and DOM list code are unchanged.
+- Shader initialization compiles the configured anti-aliasing mode only, retaining
+  the existing quality. Other embedders and Wasm retain the upstream path.
+- `MEMOIZED_DESKTOP_TRACE=1` records initialization, acceptance and first content
+  frame submission. Submission is not measured pixel presentation. Transport
+  diagnostics are bounded and cannot affect publication acceptance.
+- Actual Windows baseline: context 1,412 ms, synchronous initialization ended
+  at 4,334 ms, first frame submitted at 4,955 ms. The worker probe was slower:
+  context 12,889 ms, readiness 20,761 ms, submission 21,349 ms. No speedup claim.
+- An explicit `WGPU_BACKEND=dx12` experiment reached context creation at 288 ms,
+  returned from renderer initialization at 572 ms, but readiness took 16,248 ms
+  and first submission 16,927 ms. No backend default changed. Context creation
+  remains synchronous; the user's delayed-content report is not resolved.
+- Four actual worker-helper tests pass: UI-thread/non-Send callback, cancellation
+  and late wake, panic reporting, and the two-job bound. Window-feature build and
+  all-target Clippy with warnings denied pass. Process/Vite contracts: 17 passes,
+  0 failures, 73 assertions. Bun checking: 125 files, no errors.
+
+Next: profile adapter/device versus shader initialization, verify responsiveness
+through that interval, and repeat warm launch timings. M8 startup remains open.

@@ -48,6 +48,13 @@ returning to an already loaded revision. Long-session ESM cache reclamation and
 generated asset cleanup remain M8 work. Resource URLs/fonts/images and full CSS
 module binding integration are not claimed by this first CSS example.
 
+For startup diagnostics in PowerShell, set `$env:MEMOIZED_DESKTOP_TRACE='1'`
+before `bun run desktop:dev`. The trace separates context creation, GPU readiness,
+scene acceptance and first content-frame submission. GPU initialization runs on
+a bounded worker; surface creation and completion remain on the window thread.
+Driver/context setup and first-content latency still need improvement. Frame
+submission does not establish that pixels have reached the display.
+
 Window readiness has its own bounded startup handshake. The five-second scene
 acceptance deadline starts after readiness; startup never implies publication
 acceptance. A Windows graphical probe accepted this counter after 15.6 seconds

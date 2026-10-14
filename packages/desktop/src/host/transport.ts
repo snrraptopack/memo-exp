@@ -21,4 +21,6 @@ export interface NativeProcessOptions {
   readonly executable: string;
   readonly args?: readonly string[];
   readonly cwd?: string;
+  /** Optional launch diagnostics; they do not acknowledge native work. */
+  readonly diagnostics?: (text: string) => void;
 }

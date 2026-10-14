@@ -18,6 +18,14 @@ blitz-shell = { git = "https://github.com/DioxusLabs/blitz", rev = "45496d9288b0
 anyrender_vello = { version = "=0.15.0", optional = true }
 winit = { version = "=0.31.0-beta.3", optional = true }
 
+[patch.crates-io]
+# The pinned renderer keeps GPU initialization off the native UI thread.
+anyrender_vello = { path = "vendor/anyrender_vello" }
+
+[dev-dependencies]
+# Exercise the exact vendored worker helper in the host's existing test build.
+pollster = "=0.4.0"
+
 # Keep host symbols useful without emitting full dependency debug information.
 # The development and test profiles use the same dependency compilation cache.
 [profile.dev]
