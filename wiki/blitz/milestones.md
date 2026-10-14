@@ -1280,3 +1280,10 @@ compiler-output comparisons plus mount tests would check that boundary.
 The README, research and plan describe the implemented mount boundary and retain
 the unfinished visible window/CSS/input gates. No startup, native pointer latency,
 ref compatibility or state-preserving reload claim is inferred from this batch.
+
+Delivery: implementation and synchronized docs committed as
+[`eba0cc1a2f857f6ce78130405ca8919e87a7660d`](https://github.com/snrraptopack/memo-exp/commit/eba0cc1a2f857f6ce78130405ca8919e87a7660d).
+Pushed to `origin/codex/blitz-renderer` on 2026-10-14; `git ls-remote --heads`
+returned that exact SHA, matching local HEAD. The working tree and staged
+whitespace checks were clean. This receipt records delivery; M3's visible
+window, CSS example and native input/default gates remain open.
