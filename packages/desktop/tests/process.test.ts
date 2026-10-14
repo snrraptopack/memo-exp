@@ -28,8 +28,9 @@ beforeAll(async () => {
   const compiled = compileDesktop(`
     let count=0;
     export function increment(){count++;}
-    export function App(){return <main className={['counter',{active:count>0}]} style="display:flex;gap:12px;">
-      <button onClick={increment}>Increment</button><p>Count: {count}</p>
+    function Summary(){return <p>Count: {count}</p>}
+    export function App(){return <main className="counter" style="display:flex;gap:12px;">
+      <button onClick={increment}>Increment</button><Summary />
     </main>}
   `, { moduleId: './process-counter.tsx', runtimePath: core });
   await Bun.write(join(directory, 'compiled-app.mjs'), compiled.code);

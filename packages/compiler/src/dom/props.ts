@@ -3,6 +3,8 @@ import type * as t from '../ast/compiler-types';
 import * as astFactory from '../ast/factory';
 import {cloneNode,walkAst,type BaseNode} from '../ast';
 import {parameterTarget,isObjectProperty,propertyName,bindingNames,type ComponentPropsPlan,type ComponentParam,type PropTarget} from '../components/props';
+
+export { runtimeParameter } from '../components/props';
 function cloneCompilerNode<TNode extends t.Node>(node:TNode):TNode {
  return cloneNode(node as unknown as BaseNode) as unknown as TNode;
 }
@@ -85,13 +87,6 @@ export function propReasonArguments(
     astFactory.objectExpression(keys),
     ...(rest === null ? [] : [rest]),
   ];
-}
-
-/** Clone an authored parameter for emitted JavaScript factory syntax. */
-export function runtimeParameter(param: ComponentParam): ComponentParam {
-  const cloned = cloneCompilerNode(param);
-  stripTypeSyntax(cloned);
-  return cloned;
 }
 
 function inputWithDefault(

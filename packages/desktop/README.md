@@ -12,8 +12,10 @@ accepted core lifecycle are also implemented. The compiler now lowers analyzed
 JSX to native templates and executes the first fixed-host/module-cell component
 phase. The Vite counter example now uses ordinary mount and processed CSS in the
 graphical Blitz host. The current executable supports click/capture callbacks;
-editing events, refs, structural component emission and full event targets remain
-unfinished. Web mounting and the optimized DOM list implementation are unchanged.
+ordinary static component calls now mount as accepted nested native owners. Editing
+events, refs, reactive prop replay, list/conditional/forwarded regions and full
+event targets remain unfinished. Web mounting and the optimized DOM list
+implementation are unchanged.
 
 ## Run the visual dashboard
 
@@ -26,7 +28,8 @@ The launcher reuses the cached graphical host, just like the counter. Edit
 normal `mount('app', App)` call and an ordinary CSS import. Node selection uses
 the same `MEMOIZED_DESKTOP_RUNTIME` setting described below.
 
-The fixed-content dashboard exercises nested HTML, grid/flex layouts, a table,
+The fixed-content dashboard exercises nested HTML, repeated `Avatar` and
+`StatusBadge` components with ordinary props, grid/flex layouts, a table,
 responsive cards, typography, six CSS shape specimens and an inline SVG chart.
 Resize across 1050px and 650px, scroll through both shape labs, and inspect text
 and edges. These are native physical viewport breakpoints. Layout contracts using
@@ -34,9 +37,9 @@ the same stylesheet pass at 1280, 900 and 600 pixels. The SVG contract verifies
 paths survive native parsing and an attribute-driven rebuild with stable document
 identity; painted appearance still needs visual inspection.
 
-Navigation and project rows are visual fixtures, not an interaction demo. This
-example does not establish component/list region emission, external image loading
-or browser layout parity. Those capabilities remain explicit gates.
+Navigation and project rows are visual fixtures, not an interaction demo. Static
+component regions are exercised; list/conditional/forwarded regions, reactive prop
+replay, external image loading and browser layout parity remain explicit gates.
 
 ## Run the counter
 
@@ -131,9 +134,10 @@ namespace classifier, and uses comment anchors for structural insertion.
 Dynamic/member component calls remain source plans, rather than invented tags.
 
 Immutable wire templates contain the element/text/comment backbone. Attributes,
-spreads, refs, events and dynamic text retain ordered AST steps. The first
-component emitter executes fixed-host attributes/events/text; structural and ref
-steps remain capability gates. Even literal attributes retain their positions around spreads;
+spreads, refs, events and dynamic text retain ordered AST steps. The component
+emitter executes fixed-host attributes/events/text and static component regions;
+other structural regions and ref steps remain capability gates. Even literal
+attributes retain their positions around spreads;
 event/ref addresses point into that same ordered program. Event metadata lives
 in `packages/compiler/src/desktop/events.ts`. No callback executes at compile time,
 and no function/ref value is serialized to Rust.
@@ -141,24 +145,28 @@ and no function/ref value is serialized to Rust.
 Tests cover source immutability, fragment/source indices, SVG/foreignObject,
 decoded literals/text joins, shared exact/conservative source facts and retained
 component/list/conditional/forwarded plans. The built package's templates are
-mounted/written/retired against the real Rust host, including comment insertion
-and stale child-generation refusal. This is template/identity evidence, not
-executed structural JavaScript, CSS materialization or visible SVG painting.
+mounted/written/retired against the real Rust host, including compiled nested
+components, comment insertion and stale child-generation refusal. This remains
+structural and identity evidence rather than browser pixel parity.
 
 ## Generated component execution
 
 `compileDesktop` now emits real component closures with the existing shared
-module-state cell lowering and access-table serializer. Its current scope is one
-synchronous root without props, fixed hosts/fragments, scalar module state,
-ordered attributes/spreads, class values, CSS style strings and explicit event
-callbacks. Shared cell operations publish only writes that execute. Templates
+module-state cell lowering, component render planner, prop contract and access-table
+serializer. Its current scope includes synchronous roots, fixed hosts/fragments,
+scalar module state, ordered attributes/spreads, class values, CSS style strings,
+explicit event callbacks and nested/repeated static component calls. Static props
+retain the existing object/positional ABI and authored spread order. Shared cell
+operations publish only writes that execute. Templates
 carry a structural SHA-256 revision so changed backbones do not reuse an immutable
 native template key. The browser compiler's existing output remains unchanged.
 
-The compiler-private `src/runtime/view.ts` registers core entities and owns native
-addresses, accepted attribute/text snapshots and callback bindings. It has no
-state-cell store, dependency resolver or subscription engine. Initial mount and
-values form one transaction; handlers activate after acceptance. Changes racing
+The compiler-private `src/runtime/view.ts` registers parent-before-child core
+entities and owns native addresses, accepted attribute/text snapshots and callback
+bindings. Child paths use the shared `App/Card`, `App/Card[1]` identity convention.
+Their templates, region mounts and initial values join one transaction; activation,
+event lookup, update waiting and cleanup traverse the accepted subtree. It has no
+state-cell store, dependency resolver or subscription engine. Handlers activate after acceptance. Changes racing
 the first acknowledgment schedule a core render after preparation activation.
 Queued snapshots remove attributes introduced by earlier pending work. At eight
 pending jobs, later source changes coalesce and resume through core invalidation
@@ -166,8 +174,9 @@ when a credit frees. Known accepted values suppress redundant scalar writes;
 pending work uses complete snapshots for ordering correctness.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, structural execution, refs and stylesheet/assets integration
-receive capability diagnostics rather than stale behavior. Dynamic spread refs,
+callbacks, effects, reactive component props, component children, list/conditional/
+forwarded structural replay, refs and stylesheet/assets integration receive
+capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are
 current emission limits, not new application syntax or restrictions on the web.
 

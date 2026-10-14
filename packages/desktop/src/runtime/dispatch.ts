@@ -12,16 +12,21 @@ export function dispatchNativeEvent(
   let cancelled = false;
   let stopped = false;
   let immediate = false;
-  const targets = new Map<number, object>();
-  function targetFor(source: number): object {
-    let target = targets.get(source);
+  const targets = new Map<string, object>();
+
+  function targetFor(source: NativeEventPacket['path'][number]): object {
+    const key = `${source.owner.id}:${source.owner.generation}:${source.source}`;
+    let target = targets.get(key);
+
     if (!target) {
       target = view!.eventTarget(source);
-      targets.set(source, target);
+      targets.set(key, target);
     }
+
     return target;
   }
-  const target = targetFor(packet.path[0]!.source);
+
+  const target = targetFor(packet.path[0]!);
   let currentTarget: object | null = null;
   let phase = 0;
 
@@ -62,16 +67,18 @@ export function dispatchNativeEvent(
         immediate = true;
       }
     },
-    composedPath: () => packet.path.filter(source => view.matchesSource(source)).map(source => targetFor(source.source))
+    composedPath: () => packet.path
+      .filter(source => view.matchesSource(source))
+      .map(source => targetFor(source))
   };
 
   function invoke(index: number, name: string, eventPhase: number): void {
     const source = packet.path[index]!;
     if (!view!.matchesSource(source)) return;
-    currentTarget = targetFor(source.source);
+    currentTarget = targetFor(source);
     phase = eventPhase;
     try {
-      const result = view!.dispatch(source.source, name, event);
+      const result = view!.dispatch(source, name, event);
       if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
         void Promise.resolve(result).catch(reportError);
       }

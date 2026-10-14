@@ -148,11 +148,13 @@ Initial mount and values publish together; queued source work resumes through
 core invalidation after acceptance or freed credits. M3.4 wires native root
 metadata into the existing shared root registry and selects the normal mount
 entry at build time. The launcher privately observes acceptance; authored mount
-and unmount remain synchronous. Next integrate the first visible CSS/window
-counter. Extend guarded
-instance/store publication, scopes and replay through shared emission afterward. Keep
-normal `mount()` imports and calls. Window/CSS integration then completes the M3
-counter gate; source-plan descriptors alone do not close runtime capability gaps.
+and unmount remain synchronous. M3.5 integrates the visible Vite CSS/window
+counter. M5.1 adds static local and imported child components: delayed child
+factories preserve parent-first core registration, shared owner paths and one
+accepted region-mounted publication. Extend reactive prop replay, guarded
+instance/store publication, conditions, forwarded content and lists through the
+shared plans afterward. Keep normal `mount()` imports and calls; source-plan
+descriptors alone do not close runtime capability gaps.
 
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts

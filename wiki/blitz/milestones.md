@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | Not started | Core implementations available; native adapter not built |
+| M5 — Modules and structural parity | In progress | Static local/imported child components use accepted native regions; reactive props, children, branches, lists and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1526,3 +1526,38 @@ complex application composition ready. Event expansion follows this visual gate.
 - The initial verification attempt was blocked when disk space fell to about
   21 MB. After space was freed, the one-time SVG dependency build and every gate
   above completed. External SVG URLs/images and pixel comparison remain open.
+
+## M5.1 — Accepted static component subtrees
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Replaced the desktop emitter's one-component shortcut with the shared component
+  render, placement, region replay, list-site, pull and callback plans. Static
+  component calls consume the shared analyzed prop contract and ordered spread
+  object; the DOM emitter imports the same neutral prop-call helpers, so this adds
+  no desktop prop semantics.
+- Component calls remain delayed until after their parent `NativeView` registers.
+  Nested entities use the core graph's `App/Card`, `App/Card[1]` path convention.
+  Parent and descendant templates, values and region mounts publish atomically;
+  activation, event targeting, publication waiting and cleanup cover the subtree.
+  The connection-local template cache now tracks every submitted child template.
+- Conservative owner invalidation reaches registered children through the existing
+  core entity tree. No second reactive engine, access resolver or source bridge was
+  introduced. Reactive prop replay, component children, lists, conditionals and
+  forwarded/render content still fail at compilation with named capability errors.
+- The dashboard now exercises repeated ordinary `Avatar` and `StatusBadge`
+  components with static props. The Vite contract also mounts an imported component
+  and retains its normal CSS, mount and root-replacement workflow.
+- The complete desktop Bun suite passes **66 tests** / **298 assertions**, including
+  owner-qualified event sources. The real cached Rust
+  host passes **16 process tests** across Bun, Node and the custom adapter, including
+  compiled child updates, retirement and remount/template reuse. The Vite imported
+  component/process contract passes. Desktop Bun checking passes all 127 files.
+  Because the neutral prop-call helper moved out of the DOM emitter, the complete
+  root/web suite was also rerun: **2,559 tests passed**, zero failed, with 30,469
+  assertions.
+
+Next M5 work: accepted reactive prop replay using the shared prop-source plans,
+then conditional regions and forwarded children. Keyed list work continues to use
+the existing optimized core list implementation rather than introducing a native
+list engine.

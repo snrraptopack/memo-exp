@@ -14,6 +14,7 @@ import {
 import {
   HostError,
   type Acceptance,
+  type Destination,
   type Operation,
   type Owner,
   type Publication,
@@ -29,7 +30,9 @@ export interface NativeFrame {
   readonly application: NativeApplication;
   readonly owner: Owner;
   readonly parent: string | null;
-  readonly reportError: (error: unknown) => void
+  readonly reportError: (error: unknown) => void;
+  /** Compiler-private destination inherited by a nested component view. */
+  readonly mountTarget?: Destination;
 }
 
 export interface NativeRootDefinition {
@@ -56,6 +59,21 @@ export interface EvaluatedStep {
   readonly value: unknown
 }
 
+export interface NativeChild {
+  readonly segment: string;
+  readonly source: number;
+  readonly create: (frame: NativeFrame) => NativeView;
+}
+
+/** Describe a child call without running it before its parent is registered. */
+export function child(
+  segment: string,
+  source: number,
+  create: (frame: NativeFrame) => NativeView,
+): NativeChild {
+  return { segment, source, create };
+}
+
 interface Snapshot {
   readonly operations: Operation[];
   readonly texts: Map<number, string>;
@@ -71,11 +89,13 @@ export class NativeView {
   private needsUpdate = false;
   private readonly pending = new Map<Promise<Acceptance>, Snapshot>();
   private lastPublication?: Promise<Acceptance>;
+  private readonly children: NativeView[];
 
   constructor(
     private readonly frame: NativeFrame,
     readonly template: Template,
-    private readonly evaluate: () => readonly EvaluatedStep[]
+    private readonly evaluate: () => readonly EvaluatedStep[],
+    children: readonly NativeChild[] = [],
   ) {
     this.template = withStylesheets(template);
     registerEntity({
@@ -86,6 +106,7 @@ export class NativeView {
 
     cleanup(frame.owner.id, () => this.dispose());
     this.initial = this.snapshot();
+    this.children = this.createChildren(children);
   }
 
   get initialPublication(): Publication {
@@ -98,17 +119,32 @@ export class NativeView {
       this.phase = 'publishing';
     }
 
+    const templates = new Map<string, Template>([
+      [this.template.key, this.template],
+    ]);
+    const operations: Operation[] = [
+      {
+        op: 'mount',
+        owner: this.frame.owner,
+        template: this.template.key,
+        target: this.frame.mountTarget ?? { kind: 'body' },
+      },
+      ...this.initial.operations,
+    ];
+
+    for (const childView of this.children) {
+      const publication = childView.initialPublication;
+
+      for (const template of publication.templates ?? []) {
+        templates.set(template.key, template);
+      }
+
+      operations.push(...publication.operations);
+    }
+
     return {
-      templates: [this.template],
-      operations: [
-        {
-          op: 'mount',
-          owner: this.frame.owner,
-          template: this.template.key,
-          target: { kind: 'body' }
-        },
-        ...this.initial.operations
-      ]
+      templates: [...templates.values()],
+      operations,
     };
   }
 
@@ -120,6 +156,10 @@ export class NativeView {
 
     this.accepted = this.initial;
     this.phase = 'active';
+
+    for (const childView of this.children) {
+      childView.acceptInitial();
+    }
   }
 
   activateUpdates(): void {
@@ -127,27 +167,36 @@ export class NativeView {
       this.needsUpdate = false;
       invalidateEntity(this.frame.owner.id);
     }
+
+    for (const childView of this.children) {
+      childView.activateUpdates();
+    }
   }
 
-  dispatch(source: number, name: string, event: unknown): unknown {
-    if (this.phase !== 'active') {
+  dispatch(source: number | SourceReference, name: string, event: unknown): unknown {
+    const view = typeof source === 'number' ? this : this.viewFor(source);
+
+    if (view?.phase !== 'active') {
       throw new HostError('inactiveView', 'Native view is not active');
     }
 
-    const handler = this.accepted?.handlers.get(source)?.get(name);
+    const address = typeof source === 'number' ? source : source.source;
+    const handler = view.accepted?.handlers.get(address)?.get(name);
 
     return this.frame.application.run(() => handler?.(event));
   }
 
   matchesSource(source: SourceReference): boolean {
-    return this.phase === 'active' && source.owner.id === this.frame.owner.id &&
-      source.owner.generation === this.frame.owner.generation && this.template.nodes[source.source] !== undefined;
+    return this.viewFor(source)?.phase === 'active';
   }
 
-  eventTarget(source: number): object {
-    const node = this.template.nodes[source]?.node;
+  eventTarget(source: number | SourceReference): object {
+    const view = typeof source === 'number' ? this : this.viewFor(source);
+    const address = typeof source === 'number' ? source : source.source;
+    const node = view?.template.nodes[address]?.node;
+
     if (!node) throw new HostError('unknownEventSource', 'Native event source is unknown');
-    const attributes = this.accepted?.attributes.get(source);
+    const attributes = view.accepted?.attributes.get(address);
     const properties: Record<PropertyKey, unknown> = {
       nodeType: node.kind === 'element' ? 1 : node.kind === 'text' ? 3 : 8,
       nodeName: node.kind === 'element' ? node.name.local.toUpperCase() : node.kind === 'text' ? '#text' : '#comment',
@@ -169,8 +218,21 @@ export class NativeView {
     });
   }
 
-  publication(): Promise<Acceptance | undefined> {
-    return this.lastPublication ?? Promise.resolve(undefined);
+  async publication(): Promise<Acceptance | undefined> {
+    const accepted = await Promise.all([
+      this.lastPublication ?? Promise.resolve(undefined),
+      ...this.children.map(childView => childView.publication()),
+    ]);
+
+    return accepted.reduce<Acceptance | undefined>((latest, candidate) => {
+      if (candidate === undefined) {
+        return latest;
+      }
+
+      return latest === undefined || candidate.sequence > latest.sequence
+        ? candidate
+        : latest;
+    }, undefined);
   }
 
   dispose(): void {
@@ -193,6 +255,12 @@ export class NativeView {
       return;
     }
 
+    // Shared access plans may conservatively target an owning component.
+    // Preserve that subtree meaning without a second dependency resolver.
+    for (const childView of this.children) {
+      invalidateEntity(childView.frame.owner.id);
+    }
+
     if (this.pending.size >= 8) {
       // Coalesce source changes through the existing core when a credit frees.
       // Do not discard a final user value merely because native work is busy.
@@ -202,6 +270,15 @@ export class NativeView {
     }
 
     const next = this.snapshot();
+
+    if (
+      next.operations.length === 0 &&
+      this.accepted !== undefined &&
+      handlersEqual(this.accepted.handlers, next.handlers)
+    ) {
+      this.accepted = next;
+      return;
+    }
 
     const publication = this.frame.application.publish({ operations: next.operations }, () => {
       if (this.phase === 'active') {
@@ -232,6 +309,68 @@ export class NativeView {
       this.needsUpdate = false;
       this.frame.application.run(() => invalidateEntity(this.frame.owner.id));
     }
+  }
+
+  private createChildren(children: readonly NativeChild[]): NativeView[] {
+    const sources = new Set<number>();
+    const segments = new Set<string>();
+
+    return children.map((descriptor) => {
+      const source = this.template.nodes[descriptor.source];
+
+      if (
+        source?.node.kind !== 'comment' ||
+        sources.has(descriptor.source) ||
+        descriptor.segment.length === 0 ||
+        descriptor.segment.includes('/') ||
+        segments.has(descriptor.segment)
+      ) {
+        throw new HostError(
+          'invalidChildRegion',
+          'A nested component requires unique native region and owner addresses',
+        );
+      }
+
+      sources.add(descriptor.source);
+      segments.add(descriptor.segment);
+
+      return descriptor.create({
+        application: this.frame.application,
+        owner: {
+          id: `${this.frame.owner.id}/${descriptor.segment}`,
+          generation: this.frame.owner.generation,
+        },
+        parent: this.frame.owner.id,
+        reportError: this.frame.reportError,
+        mountTarget: {
+          kind: 'region',
+          source: {
+            owner: this.frame.owner,
+            source: descriptor.source,
+          },
+        },
+      });
+    });
+  }
+
+  private viewFor(source: SourceReference): NativeView | undefined {
+    if (
+      source.owner.id === this.frame.owner.id &&
+      source.owner.generation === this.frame.owner.generation &&
+      this.template.nodes[source.source] !== undefined
+    ) {
+      return this;
+    }
+
+    for (const childView of this.children) {
+      const match = childView.viewFor(source);
+
+      if (match) {
+        return match;
+      }
+    }
+
+    return undefined;
   }
 
   private snapshot(): Snapshot {
@@ -346,10 +485,36 @@ export class NativeView {
   }
 }
 
+function handlersEqual(
+  left: ReadonlyMap<number, ReadonlyMap<string, (event: unknown) => unknown>>,
+  right: ReadonlyMap<number, ReadonlyMap<string, (event: unknown) => unknown>>,
+): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const [source, leftHandlers] of left) {
+    const rightHandlers = right.get(source);
+
+    if (rightHandlers === undefined || leftHandlers.size !== rightHandlers.size) {
+      return false;
+    }
+
+    for (const [name, handler] of leftHandlers) {
+      if (rightHandlers.get(name) !== handler) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 export function createView(
   frame: NativeFrame,
   template: Template,
-  evaluate: () => readonly EvaluatedStep[]
+  evaluate: () => readonly EvaluatedStep[],
+  children: readonly NativeChild[] = [],
 ): NativeView {
-  return new NativeView(frame, template, evaluate);
+  return new NativeView(frame, template, evaluate, children);
 }

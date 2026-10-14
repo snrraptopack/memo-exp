@@ -5,6 +5,7 @@ import * as astFactory from '../ast/factory';
 import {
   cloneNode,
   extractPatternIdentifiers,
+  walkAst,
   type BaseNode,
 } from '../ast';
 import { analyzeComponentPropShape } from './prop-shape';
@@ -221,4 +222,28 @@ export function parameterTarget(param: ComponentParam): PropTarget {
     throw new Error('unsupported component parameter target');
   }
   return target;
+}
+
+/** Clone an authored parameter for a backend's emitted JavaScript factory. */
+export function runtimeParameter(param: ComponentParam): ComponentParam {
+  const cloned = cloneCompilerNode(param);
+
+  walkAst(cloned, {
+    enter(current) {
+      const typed = current as t.Node & {
+        typeAnnotation?: t.TypeAnnotation | t.TSTypeAnnotation | null;
+        optional?: boolean | null;
+      };
+
+      if ('typeAnnotation' in typed) {
+        typed.typeAnnotation = null;
+      }
+
+      if ('optional' in typed) {
+        typed.optional = null;
+      }
+    },
+  });
+
+  return cloned;
 }

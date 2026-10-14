@@ -451,7 +451,17 @@ example without selecting another runtime or renderer architecture. Tests use it
 actual stylesheet to measure wide, medium and narrow sidebar/card placement and
 border-box shape sizes in Blitz. A compiled graphical mount verifies the whole
 source/build/publication path; layout assertions do not establish pixel fidelity.
-Component/list regions remain gated in the desktop emitter. Inline SVG is a
+Static component regions now use the existing component graph and prop contract.
+The compiler emits delayed child factories so the parent core entity registers
+first, then the presentation adapter assigns the same `Parent/Child` and
+`Parent/Child[1]` identities used by shared access planning. Child templates and
+region mounts join the parent's initial accepted publication; native event lookup,
+activation and cleanup traverse that owner subtree. Conservative owner
+invalidation propagates through registered children, using the core registry
+instead of adding a desktop dependency graph. Reactive prop replay, authored
+children, lists and conditions remain capability gates.
+
+Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses
 the retained subtree through usvg, and Blitz Paint submits the vector tree through
 the same Vello renderer. The pinned workspace disables dependency defaults, so

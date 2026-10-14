@@ -17,11 +17,17 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
     export let count = 0;
     export function increment() { count++; }
   `);
+  await writeFile(join(directory, 'Summary.tsx'), `
+    export function Summary() {
+      return <aside>Imported native child</aside>;
+    }
+  `);
   await writeFile(join(directory, 'App.tsx'), `
     import './style.css';
     import { count, increment } from './state';
+    import { Summary } from './Summary';
     export function App() {
-      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p></main>;
+      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p><Summary /></main>;
     }
   `);
   await writeFile(join(directory, 'main.ts'), `

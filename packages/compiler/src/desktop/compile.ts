@@ -21,10 +21,21 @@ import { astBindingAt, variableDeclaratorFor, unwrapTypeExpression } from '../co
 import { prepareSemanticAnalysis } from '../analysis/pipeline';
 import { planAccessReaders } from '../analysis/access-table';
 import { planExpressionSources } from '../planning/expression-sources';
-import { analyzeComponentReturns } from '../components/return-plan';
+import { planComponentPulls } from '../planning/primitive-pull';
+import { planComponentPlacements } from '../planning/component-placement';
+import { planRegionReplays } from '../planning/region-replay';
+import { planComponentListSites } from '../planning/list-sites';
+import { planComponentCallbacks } from '../planning/component-callbacks';
+import { planComponentRendering } from '../planning/component-render';
 import { liftModuleStateCells, type CellEmissionContext } from '../cells';
 import { emitAccessTable } from '../emission/access-table';
 import { emitOrderedAttributes } from '../emission/attributes';
+import { planOrderedAttributes } from '../jsx/attributes';
+import {
+  callPropsFromObject,
+  orderCallProps,
+} from '../components/call-props';
+import { runtimeParameter } from '../components/props';
 
 import {
   generatedIdentifier,
@@ -47,20 +58,20 @@ export interface DesktopCompileOptions extends AnalysisOptions {
 }
 
 function evaluation(plan: NativeTemplatePlan): t.Expression {
-  return b.arrayExpression(plan.steps.map((step) => {
+  return b.arrayExpression(plan.steps.flatMap((step) => {
     if (step.kind === 'region') {
-      throw new Error('Structural capability must be checked before emission');
+      return [];
     }
 
     const value = step.kind === 'text'
       ? cloneNode(step.expression)
       : emitOrderedAttributes(step.plan);
 
-    return b.objectExpression([
+    return [b.objectExpression([
       b.objectProperty(b.identifier('kind'), b.stringLiteral(step.kind)),
       b.objectProperty(b.identifier('source'), b.numericLiteral(step.source)),
       b.objectProperty(b.identifier('value'), value)
-    ]);
+    ])];
   }));
 }
 
@@ -124,11 +135,14 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     }
   });
 
-  if (ctx.compPaths.size > 1) {
-    fail('Component composition requires the structural emission phase');
-  }
-  if (ctx.rootComponent === null && ctx.compPaths.size === 1) {
-    ctx.rootComponent = ctx.compPaths.keys().next().value!;
+  if (ctx.rootComponent === null) {
+    if (ctx.compPaths.has('App')) {
+      ctx.rootComponent = 'App';
+    } else if (ctx.compPaths.size === 1) {
+      ctx.rootComponent = ctx.compPaths.keys().next().value!;
+    } else if (ctx.compPaths.size > 1) {
+      fail('Multiple components require an identified application root');
+    }
   }
 
   if (ctx.computeds.size || ctx.moduleControlFlow.length) {
@@ -184,44 +198,65 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   const nativeId = generatedIdentifier(ctx, 'native');
   const facts = planExpressionSources(ctx);
   const readers = planAccessReaders(ctx);
+  const renderPlan = planComponentRendering(ctx.compPaths, {
+    callbacks: new Map(
+      [...ctx.compPaths].map(([name, component]) => [
+        name,
+        planComponentCallbacks(ctx, name, component),
+      ]),
+    ),
+    expressionSources: facts,
+    pullPlans: planComponentPulls(ctx),
+    placements: planComponentPlacements(ctx),
+    regionReplays: planRegionReplays(ctx),
+    listSites: planComponentListSites(ctx),
+    renderCallbackProps: new Map(
+      [...ctx.componentProps].map(([name, props]) => [
+        name,
+        [...props.renderCallbacks],
+      ]),
+    ),
+  });
 
   const prepared: {
     name: string;
     plan: NativeTemplatePlan;
-    returns: ReturnType<typeof analyzeComponentReturns>
-   }[] = [];
+    returns: (typeof renderPlan.components)[number]['returns'];
+  }[] = [];
 
-  for (const [name, component] of ctx.compPaths) {
-    if (component.node.async || component.node.params.length) {
-      fail('This emission phase requires a synchronous root without props', component.node);
+  for (const component of renderPlan.components) {
+    const { name } = component;
+
+    if (component.source.node.async) {
+      fail('This emission phase requires synchronous components', component.source.node);
     }
 
     if (ctx.instanceState.get(name)?.size) {
-      fail('Instance writes require shared guarded-publication emission', component.node);
+      fail('Instance writes require shared guarded-publication emission', component.source.node);
     }
 
     if (ctx.instanceDerivations.get(name)?.length || ctx.instanceControlFlow.get(name)?.length) {
-      fail('Instance derivations require shared replay emission', component.node);
+      fail('Instance derivations require shared replay emission', component.source.node);
     }
 
     if (ctx.effects.get(name)?.length) {
-      fail('Component effects require shared lifecycle emission', component.node);
+      fail('Component effects require shared lifecycle emission', component.source.node);
     }
 
     if (ctx.volatileComponents.has(name)) {
-      fail('Opaque pulls require shared pull-plan emission', component.node);
+      fail('Opaque pulls require shared pull-plan emission', component.source.node);
     }
 
-    const returns = analyzeComponentReturns(component, name);
+    const { returns } = component;
 
     const jsx = 'jsx' in returns
       ? returns.jsx
-      : fail('Branch returns require structural emission', component.node);
+      : fail('Branch returns require structural emission', component.source.node);
 
     const plan = lowerNativeTemplate({
       key: moduleId + '#' + name,
       jsx,
-      expressionSources: facts.get(name)!,
+      expressionSources: component.expressionSources,
       isForwarded: () => false,
       fail
     });
@@ -236,8 +271,10 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       }
     }
 
-    if (plan.steps.some((step) => step.kind === 'region')) {
-      fail('Structural content requires region emission', jsx);
+    for (const step of plan.steps) {
+      if (step.kind === 'region' && step.content.type !== 'component') {
+        fail('Lists, conditions and forwarded children require structural replay emission', jsx);
+      }
     }
 
     const revision = createHash('sha256').update(JSON.stringify(plan.template.nodes)).digest('hex');
@@ -247,23 +284,103 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       returns,
       plan: {
         ...plan,
-        template: { ...plan.template, key: plan.template.key + ':' + revision }
-      }
+        template: {
+          ...plan.template,
+          key: plan.template.key + ':' + revision,
+        },
+      },
     });
   }
 
   for (const component of prepared) {
     const node = (ctx.compPaths.get(component.name)!).node;
     const frame = generatedIdentifier(ctx, 'frame');
+    const props = ctx.componentProps.get(component.name)!;
 
-    node.params = [frame];
+    node.params = [frame, ...props.params.map(runtimeParameter)];
 
     const table = emitAccessTable(ctx, readers);
+    const childCounts = new Map<string, number>();
+    const children = component.plan.steps.flatMap((step) => {
+      if (step.kind !== 'region') {
+        return [];
+      }
+
+      if (step.content.type !== 'component') {
+        throw new Error('Structural capability must be checked before emission');
+      }
+
+      const element = step.content.node;
+      const opening = element.openingElement;
+
+      if (!b.isJSXIdentifier(opening.name)) {
+        fail('Member and dynamic component tags require shared dynamic-tag emission', opening.name);
+      }
+
+      const tag = (opening.name as t.JSXIdentifier).name;
+
+      if (!ctx.compPaths.has(tag) && !ctx.importedComponents.has(tag)) {
+        fail(`Component <${tag}> is not resolved by the application graph`, opening.name);
+      }
+
+      const seen = childCounts.get(tag) ?? 0;
+      childCounts.set(tag, seen + 1);
+      const segment = seen === 0 ? tag : `${tag}[${seen}]`;
+
+      if (element.children.some((child) =>
+        !b.isJSXText(child) || child.value.trim().length > 0)) {
+        fail('Component children require forwarded-content region emission', element);
+      }
+
+      const attributes = planOrderedAttributes(opening.attributes, {
+        skipKey: true,
+        fail: message => fail(message, opening),
+      });
+
+      for (const entry of attributes.entries) {
+        const sources = facts.get(component.name)!.sourcesFor(entry.value);
+
+        if (sources === null || sources.length > 0) {
+          fail('Reactive component props require accepted prop replay emission', entry.value);
+        }
+      }
+
+      const spreads = attributes.entries.some(entry => entry.type === 'spread');
+      const arguments_ = spreads
+        ? callPropsFromObject(ctx, tag, emitOrderedAttributes(attributes))
+        : orderCallProps(
+            ctx,
+            tag,
+            attributes.entries.map((entry) => {
+              if (entry.type === 'spread') {
+                throw new Error('Spread entries are handled by the object path');
+              }
+
+              return { name: entry.name, value: cloneNode(entry.value) };
+            }),
+          );
+      const childFrame = generatedIdentifier(ctx, 'childFrame');
+      const create = b.arrowFunctionExpression(
+        [childFrame],
+        b.callExpression(b.identifier(tag), [
+          cloneNode(childFrame),
+          ...arguments_,
+        ]),
+      );
+
+      return [
+        b.callExpression(
+          b.memberExpression(cloneNode(nativeId), b.identifier('child')),
+          [b.stringLiteral(segment), b.numericLiteral(step.source), create],
+        ),
+      ];
+    });
 
     const result = b.returnStatement(b.callExpression(b.memberExpression(cloneNode(nativeId), b.identifier('createView')), [
       cloneNode(frame),
       valueToNode(component.plan.template) as t.Expression,
-      b.arrowFunctionExpression([], evaluation(component.plan))
+      b.arrowFunctionExpression([], evaluation(component.plan)),
+      b.arrayExpression(children),
     ]));
 
     const original = component.returns;
@@ -280,6 +397,10 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   // Root metadata joins the existing realm registry. The authored component
   // reference remains what mount receives; callers never supply a native frame.
   for (const component of prepared) {
+    if (component.name !== ctx.rootComponent) {
+      continue;
+    }
+
     program.body.push(b.expressionStatement(b.callExpression(
       b.memberExpression(cloneNode(nativeId), b.identifier('registerNativeRoot')),
       [b.identifier(component.name), b.stringLiteral(ctx.rootId)]

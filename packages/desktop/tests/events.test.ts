@@ -3,6 +3,7 @@ import { PublicationClient } from '../src/host/client';
 import { parseNativeEvent, type NativeEventPacket } from '../src/host/events';
 import { dispatchNativeEvent } from '../src/runtime/dispatch';
 import type { NativeView } from '../src/runtime/view';
+import type { SourceReference } from '../src/host/protocol';
 import { ManualTransport } from './fixtures/manual-transport';
 
 const packet: NativeEventPacket = {
@@ -58,13 +59,13 @@ test('capture and bubble use one event identity; cancellation is synchronous', (
   let captured: Event | undefined;
   const view = {
     matchesSource: () => true,
-    eventTarget: (source: number) => targets[source],
-    dispatch(source: number, name: string, event: Event) {
-      calls.push(`${source}:${name}:${event.eventPhase}`);
+    eventTarget: (source: SourceReference) => targets[source.source],
+    dispatch(source: SourceReference, name: string, event: Event) {
+      calls.push(`${source.source}:${name}:${event.eventPhase}`);
       captured = event;
       expect(event.target).toBe(targets[0]);
-      expect(event.currentTarget).toBe(targets[source]!);
-      if (source === 0 && name === 'onClick') event.preventDefault();
+      expect(event.currentTarget).toBe(targets[source.source]!);
+      if (source.source === 0 && name === 'onClick') event.preventDefault();
     },
   } as unknown as NativeView;
   expect(dispatchNativeEvent(view, packet, error => { throw error; })).toBe(true);
@@ -81,7 +82,7 @@ test('late promise cancellation cannot change the already returned default decis
   const view = {
     matchesSource: () => true,
     eventTarget: () => ({}),
-    dispatch(_source: number, name: string, event: Event) {
+    dispatch(_source: SourceReference, name: string, event: Event) {
       if (name !== 'onClick') return;
       captured = event;
       return Promise.resolve().then(() => event.preventDefault());

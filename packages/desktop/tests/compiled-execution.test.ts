@@ -208,6 +208,120 @@ test('ordinary TSX emits real cell/access closures and accepted event dispatch u
   expect(() => view.dispatch(1, 'onClick', new Event('click'))).toThrow('not active');
 });
 
+test('compiled child components join one accepted owner subtree and retain their events', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+
+    export function increment() {
+      count++;
+    }
+
+    function Card({ title, onClick }) {
+      return <section>
+        <h2>{title}</h2>
+        <button onClick={onClick}>Increment</button>
+        <p>{count}</p>
+      </section>;
+    }
+
+    export function App() {
+      return <main>
+        <Card title="Summary" onClick={increment} />
+        <footer>End</footer>
+      </main>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const publication = view.initialPublication;
+
+  expect(publication.templates?.map(template => template.key)).toHaveLength(2);
+  expect(publication.operations).toContainEqual({
+    op: 'mount',
+    owner: { id: 'App/Card', generation: 1 },
+    template: expect.stringContaining('#Card:'),
+    target: {
+      kind: 'region',
+      source: { owner: { id: 'App', generation: 1 }, source: 1 },
+    },
+  });
+  expect(publication.operations).toContainEqual({
+    op: 'text',
+    target: { owner: { id: 'App/Card', generation: 1 }, source: 2 },
+    value: 'Summary',
+  });
+
+  const mounted = candidate.publish(publication);
+  transport.accept(1);
+  await mounted;
+
+  view.dispatch(
+    { owner: { id: 'App/Card', generation: 1 }, source: 3 },
+    'onClick',
+    new Event('click'),
+  );
+  application.run(core.commit);
+
+  const update = JSON.parse(transport.sent[1]!);
+
+  expect(update.operations).toContainEqual({
+    op: 'text',
+    target: { owner: { id: 'App/Card', generation: 1 }, source: 6 },
+    value: '1',
+  });
+
+  transport.accept(2);
+  await Bun.sleep(0);
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test('repeated and nested components keep shared owner paths and deduplicate templates', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+
+    function Leaf({ label }) {
+      return <span>{label}</span>;
+    }
+
+    function Panel() {
+      return <section><Leaf label="Nested" /></section>;
+    }
+
+    export function App() {
+      return <main>
+        <Panel />
+        <Panel />
+      </main>;
+    }
+  `);
+  const { application, candidate, view, transport } = createCompiledApplication(module);
+  const publication = view.initialPublication;
+  const mounts = publication.operations.filter(operation => operation.op === 'mount');
+
+  expect(publication.templates).toHaveLength(3);
+  expect(mounts.map(operation => operation.owner.id)).toEqual([
+    'App',
+    'App/Panel',
+    'App/Panel/Leaf',
+    'App/Panel[1]',
+    'App/Panel[1]/Leaf',
+  ]);
+
+  const mounted = candidate.publish(publication);
+  transport.accept(1);
+  await mounted;
+  expect([...application.runtime.state.registry.keys()]).toEqual([
+    'App',
+    'App/Panel',
+    'App/Panel/Leaf',
+    'App/Panel[1]',
+    'App/Panel[1]/Leaf',
+  ]);
+
+  application.close();
+  expect(application.runtime.state.registry.size).toBe(0);
+});
+
 test('queued snapshots remove attributes introduced by a not-yet-accepted update', async () => {
   const { application, candidate, view, transport } = createCompiledApplication();
   const mounted = candidate.publish(view.initialPublication);
@@ -334,4 +448,6 @@ test('unsupported lifetimes/structures/reactivity fail instead of silently losin
   expect(() => compileDesktop('export function App(){return <div ref={node}/>}')).toThrow('Refs');
   expect(() => compileDesktop('let items=[];export function App(){return <button onClick={()=>items.push(1)}>Add</button>}')).toThrow('guarded-publication');
   expect(() => compileDesktop('let count=0;export function App(){setTimeout(()=>{count++;},0);return <p>{count}</p>}')).toThrow('Retained callbacks');
+  expect(() => compileDesktop('function Child({value}){return <p>{value}</p>}let value=0;export function change(){value++}export function App(){return <Child value={value}/>}')).toThrow('Reactive component props');
+  expect(() => compileDesktop('function Child(){return <section/>}export function App(){return <Child><p>Content</p></Child>}')).toThrow('Component children');
 });

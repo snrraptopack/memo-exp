@@ -1,5 +1,23 @@
 import "./style.css";
 
+interface AvatarProps {
+  tone: string;
+  label: string;
+}
+
+interface StatusBadgeProps {
+  tone: string;
+  label: string;
+}
+
+function Avatar({ tone, label }: AvatarProps) {
+  return <span class={`avatar ${tone}`}>{label}</span>;
+}
+
+function StatusBadge({ tone, label }: StatusBadgeProps) {
+  return <span class={`badge ${tone}`}>{label}</span>;
+}
+
 /**
  * Visual capability fixture. Keep the content fixed so layout and painting can
  * be examined independently of the event/editing work that follows this batch.
@@ -47,9 +65,9 @@ export function App() {
             </p>
           </div>
           <div class="avatar-stack" aria-label="Three team members">
-            <span class="avatar lavender">AL</span>
-            <span class="avatar peach">MK</span>
-            <span class="avatar mint">JS</span>
+            <Avatar tone="lavender" label="AL" />
+            <Avatar tone="peach" label="MK" />
+            <Avatar tone="mint" label="JS" />
           </div>
         </header>
 
@@ -57,7 +75,7 @@ export function App() {
           <article class="card metric">
             <p class="metric-label">Active projects</p>
             <div class="metric-value">
-              24 <span class="badge positive">+4 this month</span>
+              24 <StatusBadge tone="positive" label="+4 this month" />
             </div>
             <div class="sparkline" aria-label="Increasing activity">
               <span class="bar bar-1"></span>
@@ -94,7 +112,7 @@ export function App() {
           <section class="card projects" id="projects">
             <div class="section-heading">
               <h2>Current projects</h2>
-              <span class="badge neutral">4 projects</span>
+              <StatusBadge tone="neutral" label="4 projects" />
             </div>
             <p class="muted small">
               A table checks intrinsic sizing, borders and text alignment.
@@ -114,7 +132,7 @@ export function App() {
                     <p class="muted small">Foundations & components</p>
                   </td>
                   <td>
-                    <span class="badge positive">On track</span>
+                    <StatusBadge tone="positive" label="On track" />
                   </td>
                   <td>78%</td>
                 </tr>
@@ -124,7 +142,7 @@ export function App() {
                     <p class="muted small">Product experience</p>
                   </td>
                   <td>
-                    <span class="badge purple">Review</span>
+                    <StatusBadge tone="purple" label="Review" />
                   </td>
                   <td>64%</td>
                 </tr>
@@ -134,7 +152,7 @@ export function App() {
                     <p class="muted small">Identity & direction</p>
                   </td>
                   <td>
-                    <span class="badge amber">Planning</span>
+                    <StatusBadge tone="amber" label="Planning" />
                   </td>
                   <td>25%</td>
                 </tr>
@@ -144,7 +162,7 @@ export function App() {
                     <p class="muted small">Rendering & layout</p>
                   </td>
                   <td>
-                    <span class="badge positive">On track</span>
+                    <StatusBadge tone="positive" label="On track" />
                   </td>
                   <td>42%</td>
                 </tr>
@@ -188,7 +206,7 @@ export function App() {
         <section class="card shape-lab" id="shapes">
           <div class="section-heading">
             <h2>Shape lab</h2>
-            <span class="badge neutral">CSS only</span>
+            <StatusBadge tone="neutral" label="CSS only" />
           </div>
           <p class="muted small">
             These specimens exercise native paint. Resize the window and inspect
@@ -230,7 +248,7 @@ export function App() {
         <section class="card vector-lab">
           <div class="section-heading">
             <h2>Vector lab</h2>
-            <span class="badge neutral">Inline SVG</span>
+            <StatusBadge tone="neutral" label="Inline SVG" />
           </div>
           <p class="muted small">
             Paths, a gradient, circles and rounded rectangles share one viewBox.
