@@ -488,8 +488,13 @@ and fragment content. Native slot ranges currently live below receiving controll
 so their conditional source writes also target caller replay destinations projected
 from shared condition-read facts. The existing core traverses retained children;
 there is no native access resolver or subscription bridge. Caller replay is coarser
-than direct slot invalidation. Lists, JSX-bearing spread/alias normalization and
-render callbacks remain emission gates.
+than direct slot invalidation. Component-local JSX aliases, arrays and finite
+collection selections use the same normalizer as the web target. Local and linked
+prop-contract discovery share one source-attribute projection; static object
+spreads contribute proven named JSX values and forwarding evidence. Both emitters
+map these values with one pure property mapper that preserves spread, accessor
+and scalar evaluation shape. Lists, opaque JSX prop bags and render callbacks
+remain emission gates.
 
 Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses

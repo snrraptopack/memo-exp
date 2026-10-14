@@ -22,7 +22,6 @@ import {
   canonicalStateKey,
   isConstObjectState,
   isStoreObject,
-  nodeHasJsx,
   unwrapTypeExpression,
   type LinkedImport,
   type ProgramPath,
@@ -35,6 +34,8 @@ import {
   type Ctx,
 } from '../context/model';
 import { renderPropReferenceName } from '../analysis/render-prop-reference';
+import { expressionCarriesJsx } from '../analysis/render-props';
+import { sourceAttributeValues } from '../jsx/attributes';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../analysis/routes';
@@ -88,27 +89,14 @@ function analyzedComponentUsages(ctx: Ctx): ComponentPropUsage[] {
           (ctx.comps.has(tag.name) ? `${ctx.moduleId}#${tag.name}` : null);
         if (target === null) return;
 
-        for (const attribute of opening.attributes) {
-          if (!astFactory.isJSXAttribute(attribute)) continue;
-          const name = astFactory.isJSXIdentifier(attribute.name)
-            ? attribute.name.name
-            : attribute.name.name.name;
-          const value = attribute.value;
-          if (
-            astFactory.isJSXElement(value) ||
-            astFactory.isJSXFragment(value) ||
-            (astFactory.isJSXExpressionContainer(value) &&
-              astFactory.isExpression(value.expression) &&
-              nodeHasJsx(value.expression))
-          ) {
+        for (const { name, value } of sourceAttributeValues(opening.attributes)) {
+          if (expressionCarriesJsx(ctx, value as unknown as BaseNode)) {
             record(target, name, 'jsx');
-          } else if (astFactory.isJSXExpressionContainer(value) && astFactory.isExpression(value.expression)) {
-            const prop = renderPropReferenceName(ctx, owner, value.expression);
+          } else {
+            const prop = renderPropReferenceName(ctx, owner, value);
             record(target, name, 'scalar', prop === null
               ? undefined
               : { target: `${ctx.moduleId}#${owner}`, prop });
-          } else {
-            record(target, name, 'scalar');
           }
         }
         if (

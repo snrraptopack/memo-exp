@@ -165,8 +165,9 @@ pure render-slot predicates and linked caller-usage mapping. The counter's
 ordinary `Panel` exercises nested children. M5.8 adds direct JSX-valued props using
 the same content factories and shared condition plans; target-side access-table
 destinations replay their callers where native placement differs from lexical
-region identity. JSX-bearing spread/alias normalization, render callbacks and
-keyed lists remain subsequent M5 gates.
+region identity. M5.9 selects the existing JSX alias/collection normalizer and
+shares static spread contract discovery/property mapping between targets. Opaque
+JSX prop bags, render callbacks and keyed lists remain subsequent M5 gates.
 
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts

@@ -17,6 +17,7 @@ import {
 } from '../ast';
 import { astBindingAt, nodeHasJsx, refreshAstAnalysis, type ComponentPath } from '../context';
 import { type Ctx } from '../context';
+import { staticAttributePropertyName } from '../jsx/attributes';
 
 interface StructuredCandidate {
   key: t.Expression;
@@ -56,11 +57,27 @@ function isRenderPosition(
 ): boolean {
   const analysis = ctx.astAnalysis!;
   let current = reference;
+  let spreadProp: string | null = null;
   while (true) {
     const parent = analysis.parentByNode.get(current) ?? null;
     if (parent === null) return false;
-    if (parent.type === 'JSXAttribute' || parent.type === 'JSXSpreadAttribute') {
+    if (parent.type === 'JSXSpreadAttribute') {
+      const opening = analysis.parentByNode.get(parent) ?? null;
+      const tag = opening?.type === 'JSXOpeningElement'
+        ? identifierName(childNode(opening, 'name'))
+        : null;
+
+      return tag !== null && spreadProp !== null &&
+        ctx.componentProps.get(tag)?.renderProps.includes(spreadProp) === true;
+    }
+    if (parent.type === 'JSXAttribute') {
       return false;
+    }
+    if (
+      (parent.type === 'ObjectProperty' || parent.type === 'Property') &&
+      childNode(parent, 'value') === current
+    ) {
+      spreadProp = staticAttributePropertyName(parent as unknown as t.Node);
     }
     if (parent.type === 'JSXExpressionContainer') {
       const containerParent = analysis.parentByNode.get(parent) ?? null;

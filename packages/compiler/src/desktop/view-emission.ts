@@ -18,7 +18,7 @@ import {
   orderCallProps,
 } from '../components/call-props';
 import { runtimePropSlotCount } from '../components/props';
-import { emitOrderedAttributes } from '../emission/attributes';
+import { emitOrderedAttributes, mapStaticAttributeValues } from '../emission/attributes';
 import {
   generatedIdentifier,
   md,
@@ -303,41 +303,37 @@ export function emitNativeView(
       );
     }
 
+    const prepareValue = (name: string, value: t.Expression): t.Expression => {
+      if (!nodeHasJsx(value)) {
+        return value;
+      }
+
+      if (targetProps.renderCallbacks.includes(name)) {
+        fail('Render callbacks require shared callback presentation emission', value);
+      }
+
+      if (!targetProps.renderProps.includes(name)) {
+        fail(`JSX prop '${name}' on <${tag}> is not rendered by the callee`, value);
+      }
+
+      const content = b.isJSXElement(value) || b.isJSXFragment(value)
+        ? [value]
+        : [b.jsxExpressionContainer(value)];
+
+      return emitContentFactory(inputs, content, value, step.inSvg);
+    };
     const attributes = {
       ...authoredAttributes,
-      entries: authoredAttributes.entries.map(entry => {
-        // Spreads keep their authored evaluation and override positions. A
-        // forwarded factory in a spread already uses the ordinary props ABI.
-        if (entry.type === 'spread') {
-          return entry;
-        }
-
-        const value = entry.value;
-
-        if (!nodeHasJsx(value)) {
-          return entry;
-        }
-
-        if (targetProps.renderCallbacks.includes(entry.name)) {
-          fail('Render callbacks require shared callback presentation emission', value);
-        }
-
-        if (!targetProps.renderProps.includes(entry.name)) {
-          fail(
-            `JSX prop '${entry.name}' on <${tag}> is not rendered by the callee`,
-            value,
-          );
-        }
-
-        const content = b.isJSXElement(value) || b.isJSXFragment(value)
-          ? [value]
-          : [b.jsxExpressionContainer(value)];
-
-        return {
-          ...entry,
-          value: emitContentFactory(inputs, content, value, step.inSvg),
-        };
-      }),
+      entries: authoredAttributes.entries.map(entry => ({
+        ...entry,
+        value: entry.type === 'spread'
+          ? mapStaticAttributeValues(entry.value, prepareValue, property => {
+              if (nodeHasJsx(property)) {
+                fail('JSX spread values require static data-property names', property);
+              }
+            })
+          : prepareValue(entry.name, entry.value),
+      })),
     };
 
     const spreads = attributes.entries.some(entry => entry.type === 'spread');
@@ -352,8 +348,9 @@ export function emitNativeView(
       );
     }
 
-    const arguments_ = spreads
-      ? callPropsFromObject(ctx, tag, orderedAttributes)
+    const propObject = spreads ? generatedIdentifier(ctx, 'callProps') : null;
+    const arguments_ = propObject !== null
+      ? callPropsFromObject(ctx, tag, propObject)
       : orderCallProps(
           ctx,
           tag,
@@ -372,9 +369,19 @@ export function emitNativeView(
         );
     const childFrame = generatedIdentifier(ctx, 'childFrame');
     const targetPropSlots = runtimePropSlotCount(targetProps);
-    const boxedArguments = b.arrayExpression(
+    const argumentsArray = b.arrayExpression(
       arguments_.map((argument) => cloneNode(argument)),
     );
+    const boxedArguments = propObject === null
+      ? argumentsArray
+      : b.callExpression(b.arrowFunctionExpression([], b.blockStatement([
+          // Positional extraction must read one already-evaluated object, not
+          // replay a spread/getter/call separately for each declared parameter.
+          b.variableDeclaration('const', [
+            b.variableDeclarator(cloneNode(propObject), orderedAttributes),
+          ]),
+          b.returnStatement(argumentsArray),
+        ])), []);
     const create = b.arrowFunctionExpression(
       [childFrame],
       b.callExpression(b.identifier(tag), [
@@ -398,9 +405,7 @@ export function emitNativeView(
           [],
           b.callExpression(md(ctx, 'setProps'), [
             childId,
-            b.arrayExpression(
-              arguments_.map((argument) => cloneNode(argument)),
-            ),
+            cloneNode(boxedArguments),
           ]),
         );
 

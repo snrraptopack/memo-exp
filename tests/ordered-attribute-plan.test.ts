@@ -1,7 +1,7 @@
 import { expect, it } from 'bun:test';
 import { parseEstreeOrThrow, printEstree } from '../packages/compiler/src/ast';
 import type * as t from '../packages/compiler/src/ast/compiler-types';
-import { planOrderedAttributes } from '../packages/compiler/src/jsx/attributes';
+import { planOrderedAttributes, sourceAttributeValues } from '../packages/compiler/src/jsx/attributes';
 import { emitOrderedAttributes } from '../packages/compiler/src/dom/ordered-attributes';
 
 const fail = (message:string):never => {throw new Error(message);};
@@ -43,4 +43,18 @@ it('lets backend instrumentation change cloned values without altering the seman
 it('omits only list keys and retains namespaced attributes',()=>{
   const plan=planOrderedAttributes(attributes('<svg key={id} xlink:href={url}/>'),{skipKey:true,fail});
   expect(plan.entries.map(entry=>entry.type==='attribute'&&entry.name)).toEqual(['xlink:href']);
+});
+
+it('projects known final prop values without evaluating accessors or losing source bindings', () => {
+  const source = attributes(`<Slot body={first}
+    {...{ body: second, ...{ header: title }, get opaque() { throw new Error('never'); }, [key]: value }}
+    body={last} {...unknown} />`);
+  const before = JSON.stringify(source);
+  const values = sourceAttributeValues(source);
+  const finalBody = source[2] as t.JSXAttribute;
+
+  expect(values.map(value => [value.name, printEstree(value.value).code]))
+    .toEqual([['body', 'last'], ['header', 'title']]);
+  expect(values[0]!.value).toBe((finalBody.value as t.JSXExpressionContainer).expression);
+  expect(JSON.stringify(source)).toBe(before);
 });

@@ -27,6 +27,74 @@ export interface OrderedAttributeOptions {
   fail(message: string): never;
 }
 
+/** Static data-property names are shared by contract discovery and lowering. */
+export function staticAttributePropertyName(property: t.Node): string | null {
+  if (!astFactory.isObjectProperty(property)) {
+    return null;
+  }
+
+  const source = property as t.ObjectProperty & { kind?: string; method?: boolean };
+
+  if (
+    property.computed ||
+    source.method === true ||
+    (source.kind !== undefined && source.kind !== 'init')
+  ) {
+    return null;
+  }
+
+  return astFactory.isIdentifier(property.key)
+    ? property.key.name
+    : astFactory.isStringLiteral(property.key) || astFactory.isNumericLiteral(property.key)
+      ? String(property.key.value)
+      : null;
+}
+
+/**
+ * Proven named values for component contract discovery, retaining source AST
+ * references for binding-aware alias analysis. Later known properties override
+ * earlier ones; opaque spreads contribute no guessed property contract.
+ * This projection never evaluates or changes the emitted attribute program.
+ */
+export function sourceAttributeValues(
+  attributes: readonly (t.JSXAttribute | t.JSXSpreadAttribute)[],
+): readonly { readonly name: string; readonly value: t.Expression }[] {
+  const values = new Map<string, t.Expression>();
+
+  const visitSpread = (expression: t.Expression): void => {
+    if (!astFactory.isObjectExpression(expression)) {
+      return;
+    }
+
+    for (const property of expression.properties) {
+      if (astFactory.isSpreadElement(property)) {
+        visitSpread(property.argument);
+        continue;
+      }
+
+      const name = staticAttributePropertyName(property);
+
+      if (name === null || !astFactory.isObjectProperty(property) || !astFactory.isExpression(property.value)) {
+        continue;
+      }
+
+      values.set(name, property.value);
+    }
+  };
+
+  for (const attribute of attributes) {
+    if (astFactory.isJSXSpreadAttribute(attribute)) {
+      visitSpread(attribute.argument);
+    } else {
+      values.set(jsxAttributeName(attribute.name), jsxAttributeValue(attribute, message => {
+        throw new Error(message);
+      }));
+    }
+  }
+
+  return [...values].map(([name, value]) => ({ name, value }));
+}
+
 /** Capture authored order and values without choosing an emission target. */
 export function planOrderedAttributes(
   attributes: readonly (t.JSXAttribute | t.JSXSpreadAttribute)[],
@@ -49,7 +117,7 @@ export function planOrderedAttributes(
     const name = jsxAttributeName(attribute.name);
     if (name === 'key' && options.skipKey) continue;
     const event = /^on[A-Z]/.test(name);
-    entries.push({type:'attribute', name, value:jsxAttributeValue(attribute, options.fail), event});
+    entries.push({type:'attribute', name, value:cloneEstreeNode(jsxAttributeValue(attribute, options.fail)), event});
     if (event && index > lastSpread) {
       safeEventKeys.push(name);
     }
@@ -74,13 +142,13 @@ function jsxAttributeValue(
 ): t.Expression {
   if (attribute.value == null) return astFactory.booleanLiteral(true);
   if (astFactory.isStringLiteral(attribute.value)) {
-    return cloneEstreeNode(attribute.value);
+    return attribute.value;
   }
   if (
     astFactory.isJSXExpressionContainer(attribute.value) &&
     astFactory.isExpression(attribute.value.expression)
   ) {
-    return cloneEstreeNode(attribute.value.expression);
+    return attribute.value.expression;
   }
   return fail(
     `memo-dom: attribute '${jsxAttributeName(

@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static/imported components, props, inline/return conditions, children and direct JSX attribute slots use accepted ownership; lists, JSX spread/alias normalization and render callbacks remain |
+| M5 — Modules and structural parity | In progress | Static/imported components, props, conditions, children, JSX aliases/collections and static spread slots use shared plans and accepted ownership; lists, opaque JSX prop bags and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1780,3 +1780,46 @@ Completed implementation/checks: 2026-10-14. M5 remains in progress.
 Next M5 work: JSX-bearing spread/alias normalization and render callbacks through
 shared normalization/planning. Keyed lists continue to use existing shared source
 and key plans; no changes to the optimized web list implementation are required.
+
+## M5.9 — Shared JSX alias normalization and static spread slots
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Communicated the desktop normalization boundary before implementation. Final
+  desktop emission selects `normalizeComponentJsxValues`, the existing web
+  normalizer for constants, arrays and finite collections. Manifest discovery
+  retains authored aliases until imported prop contracts are known; it shares
+  the existing binding-aware JSX-evidence predicate with local render-slot scans.
+- Communicated the shared source-contract gap before editing `jsx/attributes.ts`,
+  render-prop analysis and manifest discovery. One source-value projection supplies
+  proven static spread fields to local, linked and forwarding discovery. It retains
+  original AST references, excludes statically overridden values from contract
+  evidence, and evaluates nothing. Computed properties, accessors and opaque
+  spreads provide no guessed contract.
+- The new web parity fixture exposed the DOM emitter's top-level-only property
+  transformation. Communicated the additional boundary before changing it. One
+  pure `mapStaticAttributeValues` helper now maps proven values in nested literal
+  spreads for both targets. DOM retains its existing slot/callback builders;
+  desktop retains its existing content factories. Objects and spreads remain
+  nested, preserving scalar accessor/call behavior. Existing web output snapshots
+  remain unchanged.
+- Corrected desktop positional spread extraction to bind the ordered object once
+  before calling the shared prop extractor. A getter contract proves one source
+  evaluation rather than one evaluation per parameter. No shared core runtime,
+  native adapter, source bridge or Rust implementation changed in this batch.
+- Desktop contracts verify direct/spread JSX aliases, array content, forwarding,
+  stable reactive events and accepted finite-collection selection. The web fixture
+  exercises the same alias/spread authoring. Real linked native process fixtures
+  keep importers before definitions and combine aliases, array content and static
+  spreads; Vite verifies imported aliases/spreads with normal mount, CSS and reload.
+  The counter now authors its heading as a JSX constant passed through a spread.
+- The desktop suite passes **86 tests**, zero failed, with 419 assertions. The
+  Rust process/Vite suite passes **23 tests**, zero failed, with 93 assertions.
+  Shared/DOM contracts pass **62 tests**, zero failed, with 21 unchanged snapshots
+  and 207 assertions. Compiler build, focused lint and Bun checking pass: 252
+  compiler files and 129 desktop files. No native relink was necessary.
+
+Next M5 work: render callback presentation using shared callback/region plans.
+Opaque JSX object bags remain governed by shared compile-time alias restrictions;
+keyed list source/key planning and the optimized DOM list implementation remain
+unchanged.

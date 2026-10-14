@@ -45,6 +45,7 @@ import { isIntrinsicLifecycleCall, planCompilerIntrinsics } from '../intrinsics'
 import { planModuleCallbacks } from '../planning/module-callbacks';
 import { memberRootName } from '../context';
 import { desktopAnalysisProfile } from './analyze';
+import { normalizeComponentJsxValues } from '../components/jsx-values';
 import { lowerNativeTemplate } from './template';
 import type { NativeTemplatePlan } from './template-plan';
 import {
@@ -101,6 +102,12 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
 
   prepareSemanticAnalysis(ctx, path, {
     ...desktopAnalysisProfile,
+    normalizeComponents(context, sourcePath) {
+      desktopAnalysisProfile.normalizeComponents?.(context, sourcePath);
+      // Manifest discovery retains source aliases until linked contracts are
+      // known. Final emission reuses the web target's binding-aware normalizer.
+      normalizeComponentJsxValues(context);
+    },
     install() {
       initializeGeneratedIdentifiers(ctx, program);
     }

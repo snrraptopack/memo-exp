@@ -53,7 +53,7 @@ function moduleFactory(text = source, rootName = 'App', rootId?: string) {
 
   return new Function(...parameters, printEstree(program).code + '\nreturn {App:' + rootName + ',increment};')(core, presentation) as {
     App(frame: presentation.NativeFrame): presentation.NativeView;
-    increment(): void
+    increment(): unknown
    };
 }
 
@@ -856,6 +856,100 @@ test('JSX props require the existing callee render-slot contract', () => {
     function Scalar({ title }) { return <div title={title} />; }
     export function App() { return <Scalar title={<h2>Heading</h2>} />; }
   `)).toThrow("JSX prop 'title' on <Scalar> is not rendered by the callee");
+});
+
+test.each([false, true])('shared JSX aliases and arrays remain reactive through static spreads=%s', async spread => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+
+    function Frame({ heading, children }) {
+      return <section><header>{heading}</header><article>{children}</article></section>;
+    }
+    function Wrapper({ heading, children }) {
+      return <Frame {...{ heading, children }} />;
+    }
+    export function App() {
+      const heading = <h2>Heading {count}</h2>;
+      const children = [
+        <button onClick={increment}>Value {count}</button>,
+        <small>End</small>,
+      ];
+      return ${spread
+        ? '<Wrapper {...{ heading, ...{ children } }} />'
+        : '<Wrapper heading={heading} children={children} />'};
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const initial = view.initialPublication;
+  const mounted = candidate.publish(initial);
+  transport.accept(1);
+  await mounted;
+
+  view.dispatch({
+    owner: { id: 'App/Wrapper/Frame/slot[1]/$content', generation: 1 }, source: 0,
+  }, 'onClick', new Event('click'));
+  application.run(core.commit);
+  transport.accept(2);
+  await Bun.sleep(0);
+  transport.accept(3);
+  await view.publication();
+  const operations = transport.sent.slice(1).flatMap(packet => JSON.parse(packet).operations);
+  expect(operations.filter((operation: { op: string; value?: string }) =>
+    operation.op === 'text').map((operation: { value: string }) => operation.value)
+    .sort()).toEqual(['Heading 1', 'Value 1']);
+  expect(operations.some((operation: { op: string }) => operation.op === 'retire')).toBe(false);
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test('shared JSX collection selections use accepted native branches', async () => {
+  const module = moduleFactory(`
+    let mode = 0;
+    export function increment() { mode = 1 - mode; }
+    function Frame({ content }) { return <section>{content}</section>; }
+    export function App() {
+      const bodies = { first: <h2>First</h2>, second: <h2>Second</h2> };
+      const selected = bodies[mode === 0 ? 'first' : 'second'];
+      return <Frame content={selected} />;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const mounted = candidate.publish(view.initialPublication);
+  transport.accept(1);
+  await mounted;
+  application.run(() => { module.increment(); core.commit(); });
+  expect(JSON.parse(transport.sent[1]!).operations[0]).toMatchObject({ op: 'retire' });
+  expect(JSON.parse(transport.sent[1]!).templates.flatMap((template: presentation.NativeView['template']) =>
+    template.nodes).some((source: presentation.NativeView['template']['nodes'][number]) =>
+    source.node.kind === 'text' && source.node.value === 'Second')).toBe(true);
+  transport.accept(2);
+  await view.publication();
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test('positional prop extraction evaluates the ordered spread object once', async () => {
+  const module = moduleFactory(`
+    let reads = 0;
+    export function increment() { return reads; }
+    function Frame(header, title) {
+      return <section title={title}>{header}</section>;
+    }
+    export function App() {
+      return <Frame {...{
+        header: <h2>Heading</h2>,
+        get title() { reads++; return 'Read once'; },
+      }} />;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  expect(application.run(() => module.increment())).toBe(1);
+  const mounted = candidate.publish(view.initialPublication);
+  transport.accept(1);
+  await mounted;
+  expect(errors).toEqual([]);
+  application.close();
 });
 
 test('ordered prop spreads can override a lazy JSX factory without creating its content', async () => {

@@ -12,6 +12,7 @@ import { hasComponentChildren } from '../jsx/children';
 import { isRenderPropReference } from './components/children';
 import { planOrderedAttributes, jsxAttributeName } from '../jsx/attributes';
 import { emitOrderedAttributes } from './ordered-attributes';
+import { mapStaticAttributeValues } from '../emission/attributes';
 import { buildSpreadComponentPropUpdate, callPropsFromObject, orderCallProps } from './components/calls';
 import { isInlineScalarCallback, stabilizeInlineCallbackProp } from './components/callback-props';
 import { emitComponentCallback } from './component-callback';
@@ -102,26 +103,12 @@ export function emitComponentCall(
           ? compileRefValue(ctx, componentPath, componentName, value)
           : value,
     });
-    orderedPropObject = ordered;
-    for (const property of orderedPropObject.properties) {
-      if (
-        !astFactory.isObjectProperty(property) ||
-        property.computed ||
-        !astFactory.isExpression(property.value)
-      ) {
-        continue;
-      }
-      const propName = astFactory.isIdentifier(property.key)
-        ? property.key.name
-        : astFactory.isStringLiteral(property.key)
-          ? property.key.value
-          : null;
-      if (propName === null) continue;
+    orderedPropObject = mapStaticAttributeValues(ordered, (propName, value) => {
       if (targetPlan?.renderCallbacks.includes(propName) === true) {
-        property.value = buildRenderCallbackAdapter(
+        return buildRenderCallbackAdapter(
           ctx,
           scope,
-          scope.regionShapes!.renderCallbackFor(property.value),
+          scope.regionShapes!.renderCallbackFor(value),
           componentName,
           componentPath,
           emitNode,
@@ -129,16 +116,16 @@ export function emitComponentCall(
           ownerId,
         );
       } else if (targetPlan?.renderProps.includes(propName) === true) {
-        if (isRenderPropReference(ctx, componentName, property.value)) continue;
-        if (!nodeHasJsx(property.value)) {
+        if (isRenderPropReference(ctx, componentName, value)) return value;
+        if (!nodeHasJsx(value)) {
           throw componentPath.buildCodeFrameError(
             `memo-dom: render prop '${propName}' on <${tag}> must be JSX, a JSX-bearing conditional/list, or a forwarded render prop`,
           );
         }
-        property.value = buildAuthoredRenderValueSlot(
+        return buildAuthoredRenderValueSlot(
           ctx,
           scope,
-          property.value,
+          value,
           componentName,
           componentPath,
           nestedIn,
@@ -147,24 +134,25 @@ export function emitComponentCall(
           inSvg,
           ownerId,
         );
-      } else if (nodeHasJsx(property.value)) {
+      } else if (nodeHasJsx(value)) {
         throw componentPath.buildCodeFrameError(
           `memo-dom: JSX prop '${propName}' on <${tag}> is not rendered by the callee; interpolate that prop in <${tag}> to declare a render slot`,
         );
       } else if (
         propName !== 'ref' &&
         targetPlan?.refProps.includes(propName) !== true &&
-        isInlineScalarCallback(property.value)
+        isInlineScalarCallback(value)
       ) {
-        emitComponentCallback(ctx,scope.callbacks!.forValue(property.value),rowContext);
-        property.value = stabilizeInlineCallbackProp(
+        emitComponentCallback(ctx,scope.callbacks!.forValue(value),rowContext);
+        return stabilizeInlineCallbackProp(
           ctx,
           scope,
-          property.value,
+          value,
           `${propName}Callback`,
         );
       }
-    }
+      return value;
+    });
     needsPush =
       exprReadsState(ctx, orderedPropObject, componentName) ||
       (rowContext !== undefined &&

@@ -13,6 +13,7 @@ import {
 import { renderPropReferenceName } from './render-prop-reference';
 import { subtreeHasJsx } from './module-discovery';
 import { resolveRenderUsage, type ComponentPropUsage } from '../components/render-usage';
+import { sourceAttributeValues } from '../jsx/attributes';
 
 function scalarTsType(
   type: t.TSType,
@@ -190,7 +191,7 @@ function declaredScalarProp(
   return false;
 }
 
-function expressionCarriesJsx(
+export function expressionCarriesJsx(
   ctx: Ctx,
   expression: BaseNode,
   visiting = new Set<BaseNode>(),
@@ -307,20 +308,13 @@ export function scanRenderProps(ctx: Ctx): void {
         ) {
           record('children','jsx');
         }
-        for (const attribute of element.openingElement.attributes) {
-          if (!astFactory.isJSXAttribute(attribute)) continue;
-          const name = attribute.name;
-          const prop = astFactory.isJSXIdentifier(name) ? name.name : name.name.name;
-          const value = attribute.value;
+        for (const { name: prop, value } of sourceAttributeValues(element.openingElement.attributes)) {
           let carriesJsx = false;
-          if (
-            astFactory.isJSXExpressionContainer(value) &&
-            isAstExpression(value.expression)
-          ) {
-            if (expressionCarriesJsx(ctx, value.expression)) {
+          if (isAstExpression(value)) {
+            if (expressionCarriesJsx(ctx, value)) {
               carriesJsx = true;
             } else {
-              const sourceProp=renderPropReferenceName(ctx,owner,value.expression);
+              const sourceProp=renderPropReferenceName(ctx,owner,value);
               if(sourceProp!==null) {
                 record(prop,'scalar',sourceProp);
                 continue;
@@ -361,33 +355,24 @@ export function scanRenderProps(ctx: Ctx): void {
     for (const [name, componentPath] of ctx.compPaths) {
       const plan = ctx.componentProps.get(name)!;
       walkAst<BaseNode>(componentPath.node as unknown as BaseNode, {
-        enter(node, parent) {
-          if (node.type !== 'JSXAttribute') return;
-          const attribute = node as unknown as t.JSXAttribute;
-          const container = attribute.value;
-          if (
-            !astFactory.isJSXExpressionContainer(container) ||
-            !isAstExpression(container.expression)
-          ) {
-            return;
-          }
-          const sourceProp = renderPropReferenceName(
-            ctx,
-            name,
-            container.expression,
-          );
-          if (sourceProp === null || plan.renderProps.includes(sourceProp)) {
-            return;
-          }
-          if (parent?.type !== 'JSXOpeningElement') return;
-          const tag = (parent as unknown as t.JSXOpeningElement).name;
+        enter(node) {
+          if (node.type !== 'JSXElement') return;
+          const opening = (node as unknown as t.JSXElement).openingElement;
+          const tag = opening.name;
           if (!astFactory.isJSXIdentifier(tag) || !/^[A-Z]/.test(tag.name)) return;
           const target = ctx.componentProps.get(tag.name);
-          const attr = attribute.name;
-          const attrName = astFactory.isJSXIdentifier(attr) ? attr.name : attr.name.name;
-          if (target?.renderProps.includes(attrName) === true) {
-            plan.renderProps.push(sourceProp);
-            changed = true;
+
+          for (const attribute of sourceAttributeValues(opening.attributes)) {
+            const sourceProp = renderPropReferenceName(ctx, name, attribute.value);
+
+            if (sourceProp === null || plan.renderProps.includes(sourceProp)) {
+              continue;
+            }
+
+            if (target?.renderProps.includes(attribute.name) === true) {
+              plan.renderProps.push(sourceProp);
+              changed = true;
+            }
           }
         },
       });

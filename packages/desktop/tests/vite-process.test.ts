@@ -20,7 +20,8 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
   await writeFile(join(directory, 'Summary.tsx'), `
     import { Frame } from './Frame';
     export function Summary({ count }) {
-      return <Frame content={<aside>Imported native child: {count}</aside>} />;
+      const content = <aside>Imported native child: {count}</aside>;
+      return <Frame {...{ content }} />;
     }
   `);
   await writeFile(join(directory, 'Frame.tsx'), `

@@ -59,7 +59,7 @@ const SOURCE = `
   }
 `;
 
-function importCompiled(): Promise<any> {
+function importCompiled(): Promise<{ App(id: string, parent: string | null): Node }> {
   const specifier = './fixtures/out/r36-jsx-render-props.compiled.ts';
   return import(specifier);
 }
@@ -123,6 +123,32 @@ describe('R36 - JSX render props', () => {
     });
     expect(output['./App.tsx']).toContain('childrenParent');
     expect(output['./App.tsx']).toContain('createElement("strong")');
+  });
+
+  it('keeps JSX aliases reactive when static spreads declare and forward render slots', async () => {
+    const code = compile(`
+      function Frame({ header, children }) {
+        return <section><header>{header}</header><article>{children}</article></section>;
+      }
+      function Wrapper({ header, children }) {
+        return <Frame {...{ header, children }} />;
+      }
+      export function App() {
+        let count = 0;
+        const header = <h2 id="spread-heading">Heading {count}</h2>;
+        const children = [<button id="spread-button" onClick={() => count++}>Value {count}</button>];
+        return <Wrapper {...{ header, ...{ children } }} />;
+      }
+    `, { runtimePath: '@memoized-dom/runtime' });
+    writeFileSync(join(outDir, 'r36-static-spread.compiled.ts'), code);
+    const specifier = './fixtures/out/r36-static-spread.compiled.ts';
+    const { App } = await import(specifier);
+    document.body.appendChild(App('App', null));
+    expect(document.querySelector('#spread-heading')?.textContent).toBe('Heading 0');
+    expect(document.querySelector('#spread-button')?.textContent).toBe('Value 0');
+    document.querySelector<HTMLButtonElement>('#spread-button')!.click();
+    expect(document.querySelector('#spread-heading')?.textContent).toBe('Heading 1');
+    expect(document.querySelector('#spread-button')?.textContent).toBe('Value 1');
   });
 
   it('keeps an untyped cross-module sole interpolation scalar when callers supply text', () => {

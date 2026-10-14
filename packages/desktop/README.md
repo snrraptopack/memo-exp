@@ -204,12 +204,16 @@ The counter example's `Panel` exercises nested content and a JSX heading prop
 through normal mount and CSS. Direct
 JSX-valued props such as `header={<h2>Heading</h2>}` and `children={<Panel />}` use
 the same factory emission. Ordered spreads retain their normal override behavior.
+Component-local JSX constants, arrays and finite object/array selections use the
+shared compiler normalizer. Static object-literal spreads can carry and forward
+JSX values, including nested spreads; both targets reuse the same property mapper.
+Positional components evaluate their ordered prop object once before extraction.
 Conditional slot source writes receive caller replay destinations in the existing
 core access table, reaching native ranges below their receiving controller. This
 currently replays the caller subtree rather than targeting only that slot.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, lists, JSX-bearing spread/alias normalization, render callbacks,
+callbacks, effects, lists, opaque JSX prop bags, render callbacks,
 refs and stylesheet/assets integration receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are

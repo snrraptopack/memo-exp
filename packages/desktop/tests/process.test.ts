@@ -55,10 +55,9 @@ beforeAll(async () => {
       let count = 0;
       export function increment() { count++; }
       export function App() {
-        return <Frame
-          header={count === 0 ? <h2>Start</h2> : <h2>Count: {count}</h2>}
-          children={<button onClick={increment}>Count: {count}</button>}
-        />;
+        const header = count === 0 ? <h2>Start</h2> : <h2>Count: {count}</h2>;
+        const children = [<button onClick={increment}>Count: {count}</button>];
+        return <Frame {...{ header, children }} />;
       }
     `,
     './Frame.tsx': `
