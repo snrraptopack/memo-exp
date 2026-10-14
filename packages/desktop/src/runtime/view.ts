@@ -56,6 +56,8 @@ export interface NativeRootDefinition {
 export interface NativePresentation {
   readonly ownerId: string;
   readonly initialPublication: Publication;
+  bindProps(box: unknown[]): void;
+  retirementPublication(): Publication;
   acceptInitial(): void;
   activateUpdates(): void;
   updateFromOwner(): void;
@@ -165,6 +167,12 @@ export class NativeView implements NativePresentation {
     }
 
     this.deferredProps = box;
+  }
+
+  retirementPublication(): Publication {
+    return {
+      operations: [{ op: 'retire', owner: this.frame.owner }],
+    };
   }
 
   /**
@@ -707,7 +715,7 @@ export function createView(
 }
 
 /** Compiler adapter: props retain the shared core implementation and timing. */
-export function bindViewProps(view: NativeView, box: unknown[]): void {
+export function bindViewProps(view: NativePresentation, box: unknown[]): void {
   view.bindProps(box);
 }
 

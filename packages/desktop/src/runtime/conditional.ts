@@ -3,6 +3,7 @@ import {
   cleanup,
   invalidateEntity,
   registerEntity,
+  registerProps,
   unregisterSubtree,
 } from '@memoized-dom/runtime/core';
 
@@ -40,6 +41,7 @@ export class NativeConditional implements NativePresentation {
   private pending?: Promise<Acceptance>;
   private needsUpdate = false;
   private updatesSuspended = false;
+  private deferredProps?: unknown[];
 
   constructor(
     private readonly frame: NativeFrame,
@@ -71,6 +73,27 @@ export class NativeConditional implements NativePresentation {
     }
 
     return this.current?.initialPublication ?? { operations: [] };
+  }
+
+  bindProps(box: unknown[]): void {
+    if (this.deferredProps !== undefined) {
+      throw new HostError('duplicateProps', 'Native conditional props are already bound');
+    }
+
+    if (this.coreAttached) {
+      registerProps(this.ownerId, box);
+      return;
+    }
+
+    this.deferredProps = box;
+  }
+
+  retirementPublication(): Publication {
+    return {
+      operations: this.currentOwner === null
+        ? []
+        : [{ op: 'retire', owner: this.currentOwner }],
+    };
   }
 
   acceptInitial(): void {
@@ -166,6 +189,7 @@ export class NativeConditional implements NativePresentation {
     }
 
     this.current?.discardStaged();
+    this.deferredProps = undefined;
     this.current = null;
     this.currentOwner = null;
     this.dispose();
@@ -320,6 +344,11 @@ export class NativeConditional implements NativePresentation {
 
     cleanup(this.ownerId, () => this.dispose());
     this.coreAttached = true;
+
+    if (this.deferredProps !== undefined) {
+      registerProps(this.ownerId, this.deferredProps);
+      this.deferredProps = undefined;
+    }
   }
 
   private resumeDeferred(): void {

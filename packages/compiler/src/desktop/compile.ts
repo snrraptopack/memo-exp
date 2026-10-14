@@ -47,6 +47,7 @@ import type { NativeTemplatePlan } from './template-plan';
 import {
   emitNativeView,
   nativeEvaluation,
+  validateNativeTemplatePlan,
   withTemplateRevision,
 } from './view-emission';
 
@@ -205,7 +206,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
 
   const prepared: {
     name: string;
-    plan: NativeTemplatePlan;
+    plans: readonly (NativeTemplatePlan | null)[];
     returns: (typeof renderPlan.components)[number]['returns'];
   }[] = [];
 
@@ -233,43 +234,33 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     }
 
     const { returns } = component;
+    const branches = 'jsx' in returns
+      ? [returns.jsx]
+      : returns.branches;
+    const plans = branches.map((jsx, index) => {
+      if (jsx === null) {
+        return null;
+      }
 
-    const jsx = 'jsx' in returns
-      ? returns.jsx
-      : fail('Branch returns require structural emission', component.source.node);
+      const key = 'jsx' in returns
+        ? `${moduleId}#${name}`
+        : `${moduleId}#${name}/$return[${index}]`;
+      const plan = withTemplateRevision(lowerNativeTemplate({
+        key,
+        jsx,
+        expressionSources: component.expressionSources,
+        isForwarded: () => false,
+        fail,
+      }));
 
-    const plan = lowerNativeTemplate({
-      key: moduleId + '#' + name,
-      jsx,
-      expressionSources: component.expressionSources,
-      isForwarded: () => false,
-      fail
+      validateNativeTemplatePlan(plan, jsx, fail);
+      return plan;
     });
-
-    if (plan.refs.length) {
-      fail('Refs require native handle capability emission', jsx);
-    }
-
-    for (const event of plan.events) {
-      if (event.name !== 'onClick' && event.name !== 'onClickCapture') {
-        fail(`Event ${event.name} requires native platform dispatch integration`, jsx);
-      }
-    }
-
-    for (const step of plan.steps) {
-      if (
-        step.kind === 'region' &&
-        step.content.type !== 'component' &&
-        step.content.type !== 'condition'
-      ) {
-        fail('Lists and forwarded children require structural replay emission', jsx);
-      }
-    }
 
     prepared.push({
       name,
       returns,
-      plan: withTemplateRevision(plan),
+      plans,
     });
   }
 
@@ -314,27 +305,68 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       fail,
     };
 
-    const evaluate = propsBox === null
-      ? b.arrowFunctionExpression([], nativeEvaluation(component.plan))
-      : b.arrowFunctionExpression(
-          [],
-          b.blockStatement([
-            ...buildPropReplay(props, propSources),
-            b.returnStatement(nativeEvaluation(component.plan)),
-          ]),
+    const evaluate = (plan: NativeTemplatePlan): t.ArrowFunctionExpression =>
+      propsBox === null
+        ? b.arrowFunctionExpression([], nativeEvaluation(plan))
+        : b.arrowFunctionExpression(
+            [],
+            b.blockStatement([
+              ...buildPropReplay(props, propSources),
+              b.returnStatement(nativeEvaluation(plan)),
+            ]),
+          );
+    const createPresentation = 'jsx' in component.returns
+      ? emitNativeView(
+          emission,
+          component.plans[0]!,
+          frame,
+          evaluate(component.plans[0]!),
+        )
+      : b.callExpression(
+          b.memberExpression(cloneNode(nativeId), b.identifier('createConditional')),
+          [
+            cloneNode(frame),
+            propsBox === null
+              ? cloneNode(component.returns.pick)
+              : b.arrowFunctionExpression(
+                  [],
+                  b.blockStatement([
+                    ...buildPropReplay(props, propSources),
+                    b.returnStatement(
+                      b.callExpression(cloneNode(component.returns.pick), []),
+                    ),
+                  ]),
+                ),
+            b.arrayExpression(component.plans.map((plan) => {
+              if (plan === null) {
+                return b.nullLiteral();
+              }
+
+              const branchFrame = generatedIdentifier(ctx, 'returnBranchFrame');
+
+              return b.arrowFunctionExpression(
+                [branchFrame],
+                emitNativeView(
+                  emission,
+                  plan,
+                  branchFrame,
+                  evaluate(plan),
+                ),
+              );
+            })),
+          ],
         );
-    const createView = emitNativeView(emission, component.plan, frame, evaluate);
 
     const result: t.Statement[] = [];
 
     if (propsBox === null) {
-      result.push(b.returnStatement(createView));
+      result.push(b.returnStatement(createPresentation));
     } else {
       const view = generatedIdentifier(ctx, 'view');
 
       result.push(
         b.variableDeclaration('const', [
-          b.variableDeclarator(cloneNode(view), createView),
+          b.variableDeclarator(cloneNode(view), createPresentation),
         ]),
         b.expressionStatement(
           b.callExpression(
@@ -348,18 +380,22 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
 
     const original = component.returns;
 
-    if (!('statement' in original)) {
-      throw new Error('Missing direct return');
+    if ('statement' in original) {
+      node.body.body = node.body.body.flatMap((statement) =>
+        statement === original.statement
+          ? [
+              ...(table ? [table] : []),
+              ...result,
+            ]
+          : [statement],
+      );
+    } else {
+      node.body.body = [
+        ...node.body.body.filter(statement => !original.statements.has(statement)),
+        ...(table ? [table] : []),
+        ...result,
+      ];
     }
-
-    node.body.body = node.body.body.flatMap((statement) =>
-      statement === original.statement
-        ? [
-            ...(table ? [table] : []),
-            ...result,
-          ]
-        : [statement],
-    );
   }
 
   liftModuleStateCells(ctx, path);

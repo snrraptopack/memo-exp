@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static/imported components, reactive props and accepted inline host/component conditions work; component return branches, children, lists and render callbacks remain |
+| M5 — Modules and structural parity | In progress | Static/imported components, reactive props, inline conditions and shared component return plans use accepted native ownership; children, lists and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1664,3 +1664,29 @@ Completed implementation/checks: 2026-10-14. M5 remains in progress.
 Next M5 work: apply the same controller to shared component return plans, including
 empty branches and early-return/switch selectors. Forwarded children follow after
 both inline and return-level branch shapes share this accepted lifetime.
+
+## M5.6 — Shared component return plans
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- The desktop emitter now consumes `ComponentReturnPlan` directly. Tail early
+  returns, terminal if/else and exhaustive switch selectors all use the existing
+  shared `pick`, `branches` and `statements`; the target adds no control-flow scan.
+- A component return controller keeps the component's semantic ID and prop box.
+  Prop replay runs before its shared selector and branch evaluation, so a parent
+  prop can switch the branch without a desktop-specific state channel.
+- Empty branches retire the current native range while retaining the component
+  controller. Host and nested-component branches attach only after acceptance;
+  refusal keeps the old generation and event source live.
+- Presentation-owned retirement replaces the mount adapter's assumption that the
+  root always mounts its semantic ID. Ordinary unmount now retires a live root
+  branch such as `App/$content`, then shared preparation disposes the `App` core
+  subtree after acceptance.
+- The desktop suite passes **72 tests**, zero failed, with 364 assertions. Bun
+  checking passes all 128 files, the compiler build and focused lint pass, and the
+  root-return replacement/unmount contract passes against the cached Rust host on
+  Bun, Node and the custom adapter.
+
+Next M5 work: forwarded component children and render callbacks. Their content
+factories should reuse the same presentation view emission and accepted ownership;
+keyed list work remains on the existing optimized core list implementation.

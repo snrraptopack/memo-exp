@@ -105,9 +105,9 @@ export function createMountAdapter(
         retiring = true;
         // Retirement follows initial acceptance even if unmount was requested
         // before the native reply. A refused retire retains the accepted owner.
-        const retired = accepted.then(() => candidate.retire({
-          operations: [{ op: 'retire', owner }]
-        }));
+        const retired = accepted.then(() =>
+          candidate.retire(view.retirementPublication()),
+        );
         completion = retired;
         void retired.catch(error => {
           retiring = false;

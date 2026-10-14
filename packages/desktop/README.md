@@ -13,9 +13,9 @@ JSX to native templates and executes the first fixed-host/module-cell component
 phase. The Vite counter example now uses ordinary mount and processed CSS in the
 graphical Blitz host. The current executable supports click/capture callbacks;
 ordinary component calls now mount as accepted nested native owners and replay
-reactive props through the shared core prop box. Inline conditional host/component
-branches use accepted native replacement. Editing events, refs, lists, forwarded
-regions and full
+reactive props through the shared core prop box. Inline and component-return
+host/component branches use accepted native replacement. Editing events, refs,
+lists, forwarded regions and full
 event targets remain unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
@@ -159,7 +159,8 @@ module-state cell lowering, component render planner, prop contract and access-t
 serializer. Its current scope includes synchronous roots, fixed hosts/fragments,
 scalar module state, ordered attributes/spreads, class values, CSS style strings,
 explicit event callbacks and nested/repeated component calls. Static and reactive
-props retain the existing object/positional ABI, defaults and authored spread
+props, inline conditions and shared component return plans retain their existing
+object/positional ABI, defaults and authored spread
 order. Generated factories bind the existing core prop box through the native
 lifecycle adapter, while parent views call the existing `setProps` writer before
 child invalidation. This works through linked imported components; it does not add
@@ -186,14 +187,14 @@ core attachment. Their ordinary component props remain in the view until the nat
 retire/mount transaction is accepted, then the old stable-ID subtree is removed and
 the candidate attaches parent-before-child through the same core registry and props
 functions. Refusal discards only the staged views. Conditional compiler emission is
-implemented for inline JSX conditional and logical regions. The stable conditional
-entity uses existing access-table routing; each selected branch receives a private
-native generation while nested components keep normal semantic IDs. Writes during
-a pending switch are coalesced after acceptance, so an old component cannot queue a
-stale update behind its retirement.
+implemented for inline JSX conditions and shared component return plans. The stable
+conditional entity uses existing access-table routing; each selected branch receives
+a private native generation while nested components keep normal semantic IDs. Writes
+during a pending switch are coalesced after acceptance, so an old component cannot
+queue a stale update behind its retirement.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, component children, component return branches, list/forwarded
+callbacks, effects, component children, list/forwarded
 structural replay, refs and stylesheet/assets integration receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are
@@ -201,10 +202,11 @@ current emission limits, not new application syntax or restrictions on the web.
 
 The real process tests compile ordinary TSX, bundle the generated module for Bun,
 Node and a custom CommonJS adapter, then mount, dispatch callbacks, replace inline
-conditional branches and retire against the cached Rust host. The bootstrap is a
-private ABI fixture, not an application example or native platform event test. Applications
-keep existing `mount()` authoring. The Vite/window example above exercises that
-entry wiring; broader input/default and revision contracts remain M4 work.
+and component-return branches, and retire against the cached Rust host. The bootstrap
+is a private ABI fixture, not an application example or native platform event test.
+Applications keep existing `mount()` authoring. The Vite/window example above
+exercises that entry wiring; broader input/default and revision contracts remain M4
+work.
 
 ## JavaScript execution backends
 

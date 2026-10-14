@@ -38,9 +38,10 @@ beforeAll(async () => {
     let shown = true;
     export function toggle(){ shown = !shown; }
     function Label(){ return <strong>Visible</strong>; }
-    export function App(){ return <main>
-      {shown ? <section><Label /></section> : <aside>Hidden</aside>}
-    </main>; }
+    export function App(){
+      if (shown) return <main><Label /></main>;
+      return <aside>Hidden</aside>;
+    }
   `, { moduleId: './process-conditional.tsx', runtimePath: core });
   await Bun.write(join(directory, 'conditional-app.mjs'), conditional.code);
   const application = fileURLToPath(new URL('../src/runtime/application.ts', import.meta.url)).replaceAll('\\', '/');
@@ -105,13 +106,13 @@ beforeAll(async () => {
 
         app.run(() => { toggle(); commit(); });
         const second = await view.publication();
-        assert.equal(app.runtime.state.registry.has('App/when0/Label'), false);
+        assert.equal(app.runtime.state.registry.has('App/Label'), false);
 
         app.run(() => { toggle(); commit(); });
         const third = await view.publication();
-        assert.equal(app.runtime.state.registry.has('App/when0/Label'), true);
+        assert.equal(app.runtime.state.registry.has('App/Label'), true);
 
-        const fourth = await candidate.retire({ operations: [{ op: 'retire', owner }] });
+        const fourth = await candidate.retire(view.retirementPublication());
         assert.deepEqual(errors, []);
         assert.equal(app.runtime.state.registry.size, 0);
         console.log(JSON.stringify({

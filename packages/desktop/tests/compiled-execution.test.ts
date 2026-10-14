@@ -483,6 +483,162 @@ test('inline conditions replace host and component branches after acceptance', a
   application.close();
 });
 
+test('component return plans preserve props and empty branches through acceptance', async () => {
+  const module = moduleFactory(`
+    let mode = 0;
+
+    export function increment() {
+      mode = (mode + 1) % 3;
+    }
+
+    function Badge({ label }) {
+      return <strong>{label}</strong>;
+    }
+
+    function ModeView({ prefix = 'Mode', mode }) {
+      if (mode === 0) {
+        return <section><Badge label={prefix + ' first'} /></section>;
+      }
+
+      if (mode === 1) {
+        return null;
+      }
+
+      return <aside onClick={increment}>{prefix} third</aside>;
+    }
+
+    export function App() {
+      return <main><ModeView prefix="Panel" mode={mode} /></main>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } =
+    createCompiledApplication(module);
+  const initial = view.initialPublication;
+
+  expect(initial.operations).toContainEqual({
+    op: 'mount',
+    owner: { id: 'App/ModeView/$content', generation: 1 },
+    template: expect.stringContaining('#ModeView/$return[0]:'),
+    target: expect.any(Object),
+  });
+  expect(initial.operations).toContainEqual({
+    op: 'text',
+    target: {
+      owner: { id: 'App/ModeView/$content/Badge', generation: 1 },
+      source: expect.any(Number),
+    },
+    value: 'Panel first',
+  });
+
+  const mounted = candidate.publish(initial);
+  transport.accept(1);
+  await mounted;
+
+  const componentEntity = application.runtime.state.registry.get('App/ModeView');
+  const badgeEntity = application.runtime.state.registry.get('App/ModeView/Badge');
+
+  application.run(() => {
+    module.increment();
+    core.commit();
+  });
+
+  expect(JSON.parse(transport.sent[1]!).operations).toEqual([{
+    op: 'retire',
+    owner: { id: 'App/ModeView/$content', generation: 1 },
+  }]);
+  expect(application.runtime.state.registry.get('App/ModeView/Badge')).toBe(badgeEntity);
+
+  transport.accept(2);
+  await view.publication();
+
+  expect(application.runtime.state.registry.get('App/ModeView')).toBe(componentEntity);
+  expect(application.runtime.state.registry.has('App/ModeView/Badge')).toBe(false);
+
+  application.run(() => {
+    module.increment();
+    core.commit();
+  });
+
+  expect(JSON.parse(transport.sent[2]!).operations).toContainEqual({
+    op: 'mount',
+    owner: { id: 'App/ModeView/$content', generation: 3 },
+    template: expect.stringContaining('#ModeView/$return[2]:'),
+    target: expect.any(Object),
+  });
+
+  transport.accept(3);
+  await view.publication();
+
+  const thirdSource = {
+    owner: { id: 'App/ModeView/$content', generation: 3 },
+    source: 0,
+  };
+
+  view.dispatch(thirdSource, 'onClick', new Event('click'));
+  application.run(core.commit);
+
+  expect(JSON.parse(transport.sent[3]!).operations[0]).toEqual({
+    op: 'retire',
+    owner: { id: 'App/ModeView/$content', generation: 3 },
+  });
+
+  const refused = view.publication().then(
+    value => value,
+    error => error,
+  );
+
+  transport.refuse(4);
+  expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+  expect(view.matchesSource(thirdSource)).toBe(true);
+  expect(application.runtime.state.registry.get('App/ModeView')).toBe(componentEntity);
+  expect(application.runtime.state.registry.has('App/ModeView/Badge')).toBe(false);
+  expect(errors).toHaveLength(1);
+  application.close();
+});
+
+test('a root return plan retires its live native branch through ordinary unmount', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+
+    export function App() {
+      if (true) {
+        return <main>Root branch</main>;
+      }
+
+      return null;
+    }
+  `);
+  const { application, candidate, transport, errors } = createCompiledApplication(module);
+
+  candidate.discard();
+
+  const adapter = createMountAdapter(application, 'app', error => errors.push(error));
+  const mounted = adapter.mount('app', module.App);
+  const initial = JSON.parse(transport.sent[0]!);
+
+  expect(initial.operations[0]).toMatchObject({
+    op: 'mount',
+    owner: { id: 'App/$content', generation: 1 },
+  });
+
+  transport.accept(1);
+  await adapter.settled();
+  mounted.unmount();
+  await Bun.sleep(0);
+
+  expect(JSON.parse(transport.sent[1]!).operations).toEqual([{
+    op: 'retire',
+    owner: { id: 'App/$content', generation: 1 },
+  }]);
+
+  transport.accept(2);
+  await adapter.settled();
+  expect(mounted.mounted).toBe(false);
+  expect(application.runtime.state.registry.size).toBe(0);
+  expect(errors).toEqual([]);
+  application.close();
+});
+
 test('repeated and nested components keep shared owner paths and deduplicate templates', async () => {
   const module = moduleFactory(`
     export function increment() {}

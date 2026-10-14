@@ -109,7 +109,7 @@ export function emitNativeView(
           fail,
         }));
 
-        validateNestedPlan(branchPlan, branch, fail);
+        validateNativeTemplatePlan(branchPlan, branch, fail);
 
         const branchFrame = generatedIdentifier(ctx, 'branchFrame');
 
@@ -253,7 +253,7 @@ export function emitNativeView(
   );
 }
 
-function validateNestedPlan(
+export function validateNativeTemplatePlan(
   plan: NativeTemplatePlan,
   jsx: t.Node,
   fail: (message: string, at: t.Node) => never,
