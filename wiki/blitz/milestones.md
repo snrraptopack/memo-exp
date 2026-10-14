@@ -1463,3 +1463,38 @@ through that interval, and repeat warm launch timings. M8 startup remains open.
 Next: surface-loss/redraw recovery and controlled physical resize verification,
 then measured context/device/cache improvements. Compiler, shared runtime and
 optimized DOM list implementation were not modified.
+
+## M6.1 — Fixed-content visual dashboard (partial visual capability gate)
+
+- User-directed order: visual UI and shapes before expanding events. The prior
+  resize batch is pushed as `b08ec90fb53b7fdd9ff0b9ce60f8e88c468ac66e`.
+- Added `examples/dashboard/{App.tsx,main.ts,style.css}`: sidebar, responsive metric
+  cards, bar chart, progress indicator, project table, timeline, avatars and six
+  CSS shape specimens. Ordinary TSX, CSS import and `mount('app', App)` only.
+  CSS uses multiline declarations, blank lines between rules and section comments;
+  TSX nested markup is formatted for readability.
+- Communicated existing-code boundary before implementation: the example launcher
+  gains an explicit counter/dashboard selector, preserving its counter default and
+  reusing its Vite watcher, pinned engine, selectable execution and native host.
+  Root command `bun run desktop:dashboard` selects the new fixture. No compiler,
+  shared runtime, DOM list or production native implementation changed.
+- Vite builds the actual dashboard and its CSS. Graphical root acceptance passed
+  under Bun and Node. The final Node probe submitted a native content frame at
+  2,786 ms after host start; this is a successful paint-submission observation,
+  not a screenshot or pixel-fidelity measurement.
+- Native layout test consumes the example's actual CSS and measures a focused
+  native element fixture at 1280, 900 and 600 pixels. It verifies sidebar width/
+  placement, metric-grid wrapping across both breakpoints, nonzero card boxes and
+  the 52px ring border box. The test passes. Native all-target Clippy with warnings
+  denied, formatting, focused example lint and Bun checking (127 files) pass.
+- The current emitter still rejects component/list regions, refs, instance replay
+  and other pending semantic capabilities. This fixed tree does not bypass those
+  gates or imply that arbitrary component composition works. SVG and external
+  images/resources are not included. CSS shape edges, transformed painting,
+  shadows/gradients, scrolling and rapid-drag quality need visual inspection in
+  the running example. M6 Chromium box parity and broader paint fidelity remain
+  open; M6 is not marked complete.
+
+Next visual work: inspect this fixture, diagnose unsupported paint/layout behavior,
+then close component/structural emission gaps using shared plans before calling
+complex application composition ready. Event expansion follows this visual gate.

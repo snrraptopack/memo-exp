@@ -19,6 +19,8 @@ mod providers;
 mod structural_wire;
 #[path = "document_contracts/transaction.rs"]
 mod transaction;
+#[path = "document_contracts/visual_layout.rs"]
+mod visual_layout;
 
 #[derive(Default)]
 struct RecordingShell {

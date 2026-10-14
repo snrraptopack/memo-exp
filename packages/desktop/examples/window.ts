@@ -1,4 +1,4 @@
-/** Build-side example launcher. Application authoring lives in counter/main.ts. */
+/** Build-side launcher shared by ordinary mounted examples. */
 import { spawn, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,8 +6,12 @@ import { build } from 'vite';
 import { buildDesktopEngine, buildDesktopRunner, desktopApplicationConfig } from '../src/dev/vite';
 import { executionCommand } from '../src/dev/execution';
 
-const root = fileURLToPath(new URL('./counter', import.meta.url));
-const outDir = resolve(root, '../../../../.cache/blitz-counter');
+const example = process.argv[2] ?? 'counter';
+if (example !== 'counter' && example !== 'dashboard') {
+  throw new Error('Choose the counter or dashboard example');
+}
+const root = fileURLToPath(new URL(`./${example}`, import.meta.url));
+const outDir = resolve(root, `../../../../.cache/blitz-${example}`);
 const executable = process.env.MEMOIZED_DESKTOP_HOST ?? fileURLToPath(new URL(
   '../rust/target/debug/memoized-dom-desktop' + (process.platform === 'win32' ? '.exe' : ''),
   import.meta.url,

@@ -15,6 +15,28 @@ graphical Blitz host. The current executable supports click/capture callbacks;
 editing events, refs, structural component emission and full event targets remain
 unfinished. Web mounting and the optimized DOM list implementation are unchanged.
 
+## Run the visual dashboard
+
+```powershell
+bun run desktop:dashboard
+```
+
+The launcher reuses the cached graphical host, just like the counter. Edit
+`examples/dashboard/App.tsx` and `style.css`; application source uses only the
+normal `mount('app', App)` call and an ordinary CSS import. Node selection uses
+the same `MEMOIZED_DESKTOP_RUNTIME` setting described below.
+
+The fixed-content dashboard exercises nested HTML, grid/flex layouts, a table,
+responsive cards, typography and six CSS shape specimens: circle, ring, rotated
+diamond, border triangle, gradient and shadow. Resize across 1050px and 650px,
+scroll to the shape lab, and inspect text/edges. These are native physical
+viewport breakpoints. Layout contracts using the same stylesheet pass at 1280,
+900 and 600 pixels; painted appearance still needs visual inspection.
+
+Navigation and project rows are visual fixtures, not an interaction demo. This
+example does not establish component/list region emission, SVG, external image
+loading or browser layout parity. Those capabilities remain explicit gates.
+
 ## Run the counter
 
 ```powershell

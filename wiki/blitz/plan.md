@@ -2,6 +2,12 @@
 
 Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
 
+Current user-directed order: establish a richer fixed-content visual example and
+measure its native layouts before expanding M4 events. The dashboard is the first
+M6 visual fixture. It does not complete M6 browser parity or waive M3's component
+and structural emission gates. Reuse the existing launcher and normal mount/CSS
+authoring; do not introduce a drawing or styling API for this fixture.
+
 This is the implementation plan for the architecture described in
 [research.md](research.md). Completed batches and decisions belong in
 [milestones.md](milestones.md). The following architecture is selected; milestones

@@ -444,6 +444,16 @@ claim platform input verification.
 
 ### Native startup and resize presentation
 
+The fixed-content dashboard in `packages/desktop/examples/dashboard` establishes
+an application-level visual fixture before event expansion. It uses only ordinary
+TSX, a CSS import and the existing mount call. The shared launcher selects the
+example without selecting another runtime or renderer architecture. Tests use its
+actual stylesheet to measure wide, medium and narrow sidebar/card placement and
+border-box shape sizes in Blitz. A compiled graphical mount verifies the whole
+source/build/publication path; layout assertions do not establish pixel fidelity.
+Component/list regions remain gated in the desktop emitter. CSS shapes in this
+fixture are separate from SVG and image-resource capabilities, which are unclaimed.
+
 The pinned Vello window renderer originally configures its surface on every size
 notification and waits indefinitely for GPU completion after each frame. These
 are presentation concerns; neither requires changing framework authoring or the
