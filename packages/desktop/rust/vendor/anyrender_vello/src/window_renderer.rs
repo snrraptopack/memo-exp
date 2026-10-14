@@ -179,6 +179,10 @@ pub struct VelloWindowRenderer {
     texture_handles: FxHashMap<ResourceId, ImageData>,
     #[cfg(not(target_arch = "wasm32"))]
     native_init: crate::native_init::NativeInitialization,
+    // Resize notifications may arrive faster than frames. Reconfigure once,
+    // directly before drawing the latest layout, rather than clearing between events.
+    pending_size: crate::frame_size::FrameSize,
+    frame_submitted: bool,
 }
 
 impl VelloWindowRenderer {
@@ -198,6 +202,8 @@ impl VelloWindowRenderer {
             texture_handles: FxHashMap::default(),
             #[cfg(not(target_arch = "wasm32"))]
             native_init: Default::default(),
+            pending_size: Default::default(),
+            frame_submitted: false,
         }
     }
 
@@ -206,6 +212,12 @@ impl VelloWindowRenderer {
             RenderState::Active(active) => Some(&active.render_surface.device_handle),
             _ => None,
         }
+    }
+
+    /// Whether the latest render call reached surface presentation submission.
+    /// A skipped or unavailable surface is not counted as a displayed frame.
+    pub fn frame_submitted(&self) -> bool {
+        self.frame_submitted
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -326,6 +338,16 @@ impl WindowRenderer for VelloWindowRenderer {
             .find_compatible_device_handle(Some(&surface));
 
         let initialize = async move {
+            let started = std::time::Instant::now();
+            let trace = std::env::var("MEMOIZED_DESKTOP_TRACE").as_deref() == Ok("1");
+            let mark = |stage: &str| {
+                if trace {
+                    eprintln!(
+                        "desktop-gpu {{\"stage\":\"{stage}\",\"elapsedMs\":{}}}",
+                        started.elapsed().as_secs_f64() * 1000.0
+                    );
+                }
+            };
             let device_handle = match existing_device_handle {
                 Some(device_handle) => device_handle,
                 None => DeviceHandle::new_from_compatible_surface(
@@ -337,6 +359,10 @@ impl WindowRenderer for VelloWindowRenderer {
                 .await
                 .expect("Error creating DeviceHandle"),
             };
+            mark("device_created");
+            if trace {
+                eprintln!("desktop-gpu adapter {:?}", device_handle.adapter.get_info());
+            }
 
             let adapter = &device_handle.adapter;
             let caps = surface.get_capabilities(adapter);
@@ -401,6 +427,7 @@ impl WindowRenderer for VelloWindowRenderer {
                 device_handle,
             )
             .expect("Error creating SurfaceRenderer");
+            mark("surface_configured");
 
             let renderer = VelloRenderer::new(
                 render_surface.device(),
@@ -412,6 +439,7 @@ impl WindowRenderer for VelloWindowRenderer {
                 },
             )
             .unwrap();
+            mark("shaders_compiled");
 
             sender
                 .send(InitOutput {
@@ -462,17 +490,30 @@ impl WindowRenderer for VelloWindowRenderer {
     }
 
     fn set_size(&mut self, width: u32, height: u32) {
-        if let RenderState::Active(active) = &mut self.render_state {
-            active.render_surface.resize(width, height);
-        };
+        // Keep the most recent physical size even while GPU initialization is
+        // pending. Never configure a zero-sized surface during minimization.
+        self.pending_size.update(width, height);
     }
 
     fn render<F: FnOnce(&mut Self::ScenePainter<'_>)>(&mut self, draw_fn: F) {
+        self.frame_submitted = false;
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
 
         let render_surface = &mut state.render_surface;
+
+        match self
+            .pending_size
+            .before_frame((render_surface.config.width, render_surface.config.height))
+        {
+            crate::frame_size::SizeDecision::Skip => return,
+            crate::frame_size::SizeDecision::Keep => {}
+            crate::frame_size::SizeDecision::Resize(width, height) => {
+                render_surface.clear_surface_texture();
+                render_surface.resize(width, height);
+            }
+        }
 
         debug_timer!(timer, feature = "log_frame_times");
 
@@ -520,13 +561,17 @@ impl WindowRenderer for VelloWindowRenderer {
             return;
         }
         timer.record_time("present");
+        self.frame_submitted = true;
 
         render_surface
             .device()
-            .poll(wgpu::PollType::wait_indefinitely())
+            // Submission retains GPU resources. Drain callbacks without waiting
+            // for completion on the UI thread; surface acquisition provides the
+            // configured presentation backpressure on subsequent frames.
+            .poll(wgpu::PollType::Poll)
             .unwrap();
 
-        timer.record_time("wait");
+        timer.record_time("poll");
         timer.print_times("vello: ");
 
         // Empty the Vello scene (memory optimisation)

@@ -1429,3 +1429,37 @@ The preceding Vite/window batch was pushed as `914195e7f7b2fbc592f5fcf6017d12c3f
 
 Next: profile adapter/device versus shader initialization, verify responsiveness
 through that interval, and repeat warm launch timings. M8 startup remains open.
+
+## M3.7 — Frame-boundary resize and startup cost breakdown
+
+- Prior batch `88af17f2078fbcd04ead3668d0565a0998a4bd3c` is pushed to the Blitz branch.
+- Communicated boundary: native presentation only. The pinned renderer now applies
+  the latest physical resize immediately before painting instead of allocating
+  and configuring a surface for every notification. Equal sizes do not reallocate;
+  zero-size surfaces remain skipped until restored. Pending initialization keeps
+  the latest size. There is no debounce that intentionally stretches stale text.
+- Removed the renderer's indefinite post-frame GPU wait on the UI thread in favor
+  of nonblocking callback polling. Existing queue ordering and one-frame surface
+  presentation latency remain. Anti-aliasing quality is unchanged.
+- Startup diagnostics separately report device, surface and shader completion,
+  plus adapter/driver identity. The first-content submission trace now requires
+  the renderer to have submitted a surface successfully; skipped frames do not
+  satisfy that gate.
+- Actual Windows probe on AMD Radeon R7 Graphics, Vulkan, driver 22.6.1: device
+  1,363 ms, surface 1,433 ms, shaders 2,282 ms after worker start; first content
+  submission 4,273 ms after host start. Final rebuilt probe: device 1,602 ms,
+  surface 1,692 ms, shaders 2,490 ms; context completed at 2,401 ms and first
+  submission at 5,579 ms. Launch timing is variable; no claim of GPUI parity.
+- Six worker/resize tests pass, including a burst of 300 size notifications,
+  unchanged-size suppression, repeated minimized frames and restoration. Native
+  all-target Clippy passes with warnings denied. Actual rebuilt graphical app
+  mounted and submitted its first frame. Rapid physical drag quality and the
+  user's black flash have not been visually verified; those gates remain open.
+- Full native window-feature regression suite: **88 passed, 0 failed** (13 library,
+  69 document/driver and six worker/resize tests). Host and vendored renderer
+  formatting checks and `git diff --check` pass. No JavaScript or shared-code
+  files changed in this batch.
+
+Next: surface-loss/redraw recovery and controlled physical resize verification,
+then measured context/device/cache improvements. Compiler, shared runtime and
+optimized DOM list implementation were not modified.

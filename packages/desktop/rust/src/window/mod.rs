@@ -214,7 +214,13 @@ impl ApplicationHandler for WindowApplication {
             self.trace.mark("first_content_frame_begin");
         }
         self.shell.window_event(event_loop, id, event);
-        if content_frame {
+        if content_frame
+            && self
+                .shell
+                .windows
+                .get(&id)
+                .is_some_and(|window| window.renderer.frame_submitted())
+        {
             // Blitz resolves and submits this visible, unblocked frame inside
             // its redraw handler. This measures submission, not scanout pixels.
             self.first_frame = true;

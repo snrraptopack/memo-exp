@@ -441,3 +441,22 @@ without a blocking pipe read on the UI thread. Merely forwarding a callback
 after a default has run does not satisfy event cancellation. Window/CSS painting
 and native event/default ordering remain uncompleted gates; this batch does not
 claim platform input verification.
+
+### Native startup and resize presentation
+
+The pinned Vello window renderer originally configures its surface on every size
+notification and waits indefinitely for GPU completion after each frame. These
+are presentation concerns; neither requires changing framework authoring or the
+semantic runtime. The local renderer patch coalesces physical sizes until drawing,
+retains zero-size suspension until restoration, and polls completion without
+blocking the window thread. Presentation backpressure remains the existing
+one-frame surface latency. Text is still rendered at the latest physical viewport
+size with the original anti-aliasing quality; no reduced-quality resize mode or
+CSS workaround is introduced.
+
+Detailed Windows traces identify driver-context creation, adapter/device creation
+and shader compilation as separate startup costs. Observed first-frame submission
+varies considerably, so a successful worker conversion does not establish a
+startup speedup or absence of visual flashes. Milestones record timings and the
+remaining physical resize verification gate. Submission traces now require actual
+renderer presentation submission rather than merely entering Blitz's redraw path.

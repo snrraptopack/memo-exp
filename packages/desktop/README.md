@@ -54,6 +54,11 @@ scene acceptance and first content-frame submission. GPU initialization runs on
 a bounded worker; surface creation and completion remain on the window thread.
 Driver/context setup and first-content latency still need improvement. Frame
 submission does not establish that pixels have reached the display.
+GPU trace lines distinguish device creation, surface configuration and shader
+compilation. Resize notifications coalesce at the next frame, and GPU completion
+polling no longer waits indefinitely on the window thread. Text quality is not
+lowered during resizing. Rapid-drag visual quality and black-flash recovery remain
+verification gates; these changes do not establish that those symptoms are gone.
 
 Window readiness has its own bounded startup handshake. The five-second scene
 acceptance deadline starts after readiness; startup never implies publication

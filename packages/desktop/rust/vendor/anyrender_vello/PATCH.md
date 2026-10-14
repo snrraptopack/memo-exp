@@ -20,6 +20,13 @@ Local changes:
   renderer's options fix the mode for its lifetime.
 - Without an embedder startup wake, the upstream inline initialization path is
   retained. Wasm keeps upstream spawn-local initialization.
+- Physical size notifications coalesce until the next frame. Only the latest
+  nonzero size reconfigures the surface immediately before drawing; unchanged
+  dimensions do not reallocate, and minimized surfaces skip until restored.
+- Frame completion polls nonblocking instead of waiting indefinitely on the UI
+  thread. The configured presentation latency and surface acquisition remain
+  responsible for backpressure. Frame submission is reported only after a
+  successful present, and opt-in GPU traces separate device, surface and shaders.
 
 This is a presentation dependency patch, not another semantic runtime. Keep its
 diff against the pinned registry source small and reassess it on upstream updates.

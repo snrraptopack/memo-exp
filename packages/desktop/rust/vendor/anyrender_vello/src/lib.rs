@@ -1,5 +1,6 @@
 //! A [`vello`] backend for the [`anyrender`] 2D drawing abstraction
 
+mod frame_size;
 #[cfg(not(target_arch = "wasm32"))]
 mod image_renderer;
 #[cfg(not(target_arch = "wasm32"))]
