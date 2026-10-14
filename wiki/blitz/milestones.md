@@ -1561,3 +1561,30 @@ Next M5 work: accepted reactive prop replay using the shared prop-source plans,
 then conditional regions and forwarded children. Keyed list work continues to use
 the existing optimized core list implementation rather than introducing a native
 list engine.
+
+## M5.2 — Shared reactive prop replay
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Desktop child factories now use the existing core prop-box contract. The core
+  entry re-exports its existing `registerProps` and `setProps` functions; no new
+  registry, scheduler, subscription path or application API was added.
+- Generic parameter declaration and replay builders moved from the DOM folder to
+  `compiler/src/components/prop-runtime.ts`. The DOM path keeps a compatibility
+  re-export, so its generated behavior remains on the same implementation.
+- Parent child descriptors re-evaluate ordinary JSX attributes and spreads before
+  core invalidation. Child evaluation replays destructuring, aliases and defaults
+  from its stable box. A nested `App/Summary/Value` contract verifies parent props
+  replay before grandchild expressions, preventing one-update lag.
+- The shared linked-component manifest reconstructs the same object/positional
+  slot count for imports. The Vite contract passes a reactive imported cell from
+  `App.tsx` to `Summary.tsx` with ordinary TSX and normal mount authoring.
+- Compiler and runtime packages build. Desktop Bun checking passes 127 files.
+  The desktop suite passes **67 tests**, zero failed, with 300 assertions. The
+  cached Rust host passes **16 process tests** across Bun, Node and the custom
+  adapter. The Vite/real-host process contract passes. The full root/web suite
+  passes **2,559 tests**, zero failed, with 30,474 assertions.
+
+Next M5 work: conditional component/host regions, then forwarded children and
+render callbacks. Keyed list emission remains after those region foundations and
+must reuse the existing optimized core list implementation.

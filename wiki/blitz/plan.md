@@ -151,9 +151,13 @@ entry at build time. The launcher privately observes acceptance; authored mount
 and unmount remain synchronous. M3.5 integrates the visible Vite CSS/window
 counter. M5.1 adds static local and imported child components: delayed child
 factories preserve parent-first core registration, shared owner paths and one
-accepted region-mounted publication. Extend reactive prop replay, guarded
-instance/store publication, conditions, forwarded content and lists through the
-shared plans afterward. Keep normal `mount()` imports and calls; source-plan
+accepted region-mounted publication. Extend guarded instance/store publication,
+conditions, forwarded content and lists through the shared plans afterward. M5.2
+completes reactive prop replay with the existing
+core `registerProps`/`setProps`
+box for local, nested and linked imported component calls. The neutral compiler
+prop initialization/replay builders are shared; no desktop prop store or dirty
+scheduler exists. Keep normal `mount()` imports and calls; source-plan
 descriptors alone do not close runtime capability gaps.
 
 Reuse the previous desktop branch's shared extraction work only after comparing

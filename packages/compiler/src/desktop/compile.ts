@@ -35,11 +35,16 @@ import {
   callPropsFromObject,
   orderCallProps,
 } from '../components/call-props';
-import { runtimeParameter } from '../components/props';
+import {
+  buildPropDeclaration,
+  buildPropReplay,
+} from '../components/prop-runtime';
+import { runtimePropSlotCount } from '../components/props';
 
 import {
   generatedIdentifier,
   initializeGeneratedIdentifiers,
+  md,
   requireIdentifiers
 } from '../emission/identifiers';
 
@@ -296,8 +301,31 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const node = (ctx.compPaths.get(component.name)!).node;
     const frame = generatedIdentifier(ctx, 'frame');
     const props = ctx.componentProps.get(component.name)!;
+    const propsBox = props.params.length > 0
+      ? generatedIdentifier(ctx, 'props')
+      : null;
 
-    node.params = [frame, ...props.params.map(runtimeParameter)];
+    node.params = [
+      frame,
+      ...(propsBox === null
+        ? []
+        : [b.assignmentPattern(cloneNode(propsBox), b.arrayExpression([]))]),
+    ];
+
+    const propSources = props.params.map((_, index) =>
+      b.memberExpression(
+        cloneNode(propsBox!),
+        b.numericLiteral(index),
+        true,
+      ),
+    );
+    const propDeclaration = propsBox === null
+      ? null
+      : buildPropDeclaration(props, propSources);
+
+    if (propDeclaration !== null) {
+      node.body.body.unshift(propDeclaration);
+    }
 
     const table = emitAccessTable(ctx, readers);
     const childCounts = new Map<string, number>();
@@ -337,14 +365,6 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
         fail: message => fail(message, opening),
       });
 
-      for (const entry of attributes.entries) {
-        const sources = facts.get(component.name)!.sourcesFor(entry.value);
-
-        if (sources === null || sources.length > 0) {
-          fail('Reactive component props require accepted prop replay emission', entry.value);
-        }
-      }
-
       const spreads = attributes.entries.some(entry => entry.type === 'spread');
       const arguments_ = spreads
         ? callPropsFromObject(ctx, tag, emitOrderedAttributes(attributes))
@@ -360,28 +380,93 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
             }),
           );
       const childFrame = generatedIdentifier(ctx, 'childFrame');
+      const targetProps = ctx.componentProps.get(tag)!;
+      const targetPropSlots = runtimePropSlotCount(targetProps);
+      const boxedArguments = b.arrayExpression(
+        arguments_.map((argument) => cloneNode(argument)),
+      );
       const create = b.arrowFunctionExpression(
         [childFrame],
         b.callExpression(b.identifier(tag), [
           cloneNode(childFrame),
-          ...arguments_,
+          ...(targetPropSlots > 0 ? [boxedArguments] : []),
         ]),
       );
+      const childId = b.binaryExpression(
+        '+',
+        b.memberExpression(
+          b.memberExpression(cloneNode(frame), b.identifier('owner')),
+          b.identifier('id'),
+        ),
+        b.stringLiteral(`/${segment}`),
+      );
+      const update = targetPropSlots === 0
+        ? null
+        : b.arrowFunctionExpression(
+            [],
+            b.callExpression(md(ctx, 'setProps'), [
+              childId,
+              b.arrayExpression(
+                arguments_.map((argument) => cloneNode(argument)),
+              ),
+            ]),
+          );
 
       return [
         b.callExpression(
           b.memberExpression(cloneNode(nativeId), b.identifier('child')),
-          [b.stringLiteral(segment), b.numericLiteral(step.source), create],
+          [
+            b.stringLiteral(segment),
+            b.numericLiteral(step.source),
+            create,
+            ...(update === null ? [] : [update]),
+          ],
         ),
       ];
     });
 
-    const result = b.returnStatement(b.callExpression(b.memberExpression(cloneNode(nativeId), b.identifier('createView')), [
-      cloneNode(frame),
-      valueToNode(component.plan.template) as t.Expression,
-      b.arrowFunctionExpression([], evaluation(component.plan)),
-      b.arrayExpression(children),
-    ]));
+    const evaluate = propsBox === null
+      ? b.arrowFunctionExpression([], evaluation(component.plan))
+      : b.arrowFunctionExpression(
+          [],
+          b.blockStatement([
+            ...buildPropReplay(props, propSources),
+            b.returnStatement(evaluation(component.plan)),
+          ]),
+        );
+    const createView = b.callExpression(
+      b.memberExpression(cloneNode(nativeId), b.identifier('createView')),
+      [
+        cloneNode(frame),
+        valueToNode(component.plan.template) as t.Expression,
+        evaluate,
+        b.arrayExpression(children),
+      ],
+    );
+
+    const result: t.Statement[] = [];
+
+    if (propsBox === null) {
+      result.push(b.returnStatement(createView));
+    } else {
+      const view = generatedIdentifier(ctx, 'view');
+
+      result.push(
+        b.variableDeclaration('const', [
+          b.variableDeclarator(cloneNode(view), createView),
+        ]),
+        b.expressionStatement(
+          b.callExpression(md(ctx, 'registerProps'), [
+            b.memberExpression(
+              b.memberExpression(cloneNode(frame), b.identifier('owner')),
+              b.identifier('id'),
+            ),
+            cloneNode(propsBox),
+          ]),
+        ),
+        b.returnStatement(cloneNode(view)),
+      );
+    }
 
     const original = component.returns;
 
@@ -389,7 +474,14 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       throw new Error('Missing direct return');
     }
 
-    node.body.body = node.body.body.flatMap((statement) => statement === original.statement ? [...table ? [table] : [], result] : [statement]);
+    node.body.body = node.body.body.flatMap((statement) =>
+      statement === original.statement
+        ? [
+            ...(table ? [table] : []),
+            ...result,
+          ]
+        : [statement],
+    );
   }
 
   liftModuleStateCells(ctx, path);

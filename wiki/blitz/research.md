@@ -458,8 +458,17 @@ first, then the presentation adapter assigns the same `Parent/Child` and
 region mounts join the parent's initial accepted publication; native event lookup,
 activation and cleanup traverse that owner subtree. Conservative owner
 invalidation propagates through registered children, using the core registry
-instead of adding a desktop dependency graph. Reactive prop replay, authored
-children, lists and conditions remain capability gates.
+instead of adding a desktop dependency graph.
+
+Reactive props now use the same core registry as the web emitter. A compiled
+child owns one mutable prop box, registers it under the shared owner identity and
+replays its original parameter pattern before evaluating native values. Its
+parent re-evaluates authored attributes and ordered spreads, then calls the
+existing `setProps` writer before core child invalidation. Nested propagation
+replays parent props before calculating grandchild props, avoiding a one-update
+lag. Linked imports reconstruct the same object/positional slot count from the
+component manifest. The compiler has no desktop prop registry or subscription
+path. Authored children, lists and conditions remain capability gates.
 
 Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses

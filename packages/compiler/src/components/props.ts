@@ -59,6 +59,21 @@ export interface SimpleObjectPropBinding {
 }
 
 /**
+ * Number of values carried by the runtime prop box.
+ *
+ * Local plans retain their original parameter AST. Linked imports retain the
+ * public object/positional shape and names, so their slot count is reconstructed
+ * from that manifest without teaching a backend a second component-call ABI.
+ */
+export function runtimePropSlotCount(plan: ComponentPropsPlan): number {
+  if (plan.params.length > 0) {
+    return plan.params.length;
+  }
+
+  return plan.mode === 'object' ? 1 : plan.names.length;
+}
+
+/**
  * Closed `{ item, selected }`-style contracts can use positional arguments in
  * compiler-private lightweight row factories. Defaults, nested patterns,
  * rest properties, and unproven generic `props` bindings retain the object

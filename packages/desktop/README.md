@@ -12,8 +12,9 @@ accepted core lifecycle are also implemented. The compiler now lowers analyzed
 JSX to native templates and executes the first fixed-host/module-cell component
 phase. The Vite counter example now uses ordinary mount and processed CSS in the
 graphical Blitz host. The current executable supports click/capture callbacks;
-ordinary static component calls now mount as accepted nested native owners. Editing
-events, refs, reactive prop replay, list/conditional/forwarded regions and full
+ordinary component calls now mount as accepted nested native owners and replay
+reactive props through the shared core prop box. Editing events, refs,
+list/conditional/forwarded regions and full
 event targets remain unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
@@ -38,8 +39,8 @@ paths survive native parsing and an attribute-driven rebuild with stable documen
 identity; painted appearance still needs visual inspection.
 
 Navigation and project rows are visual fixtures, not an interaction demo. Static
-component regions are exercised; list/conditional/forwarded regions, reactive prop
-replay, external image loading and browser layout parity remain explicit gates.
+component regions are exercised there; list/conditional/forwarded regions,
+external image loading and browser layout parity remain explicit gates.
 
 ## Run the counter
 
@@ -155,8 +156,12 @@ structural and identity evidence rather than browser pixel parity.
 module-state cell lowering, component render planner, prop contract and access-table
 serializer. Its current scope includes synchronous roots, fixed hosts/fragments,
 scalar module state, ordered attributes/spreads, class values, CSS style strings,
-explicit event callbacks and nested/repeated static component calls. Static props
-retain the existing object/positional ABI and authored spread order. Shared cell
+explicit event callbacks and nested/repeated component calls. Static and reactive
+props retain the existing object/positional ABI, defaults and authored spread
+order. Generated factories register the existing core prop box, while parent
+views call the existing `setProps` writer before child invalidation. This works
+through linked imported components; it does not add a desktop state channel.
+Shared cell
 operations publish only writes that execute. Templates
 carry a structural SHA-256 revision so changed backbones do not reuse an immutable
 native template key. The browser compiler's existing output remains unchanged.
@@ -174,7 +179,7 @@ when a credit frees. Known accepted values suppress redundant scalar writes;
 pending work uses complete snapshots for ordering correctness.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, reactive component props, component children, list/conditional/
+callbacks, effects, component children, list/conditional/
 forwarded structural replay, refs and stylesheet/assets integration receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are

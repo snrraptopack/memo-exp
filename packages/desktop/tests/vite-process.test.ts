@@ -18,8 +18,8 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
     export function increment() { count++; }
   `);
   await writeFile(join(directory, 'Summary.tsx'), `
-    export function Summary() {
-      return <aside>Imported native child</aside>;
+    export function Summary({ count }) {
+      return <aside>Imported native child: {count}</aside>;
     }
   `);
   await writeFile(join(directory, 'App.tsx'), `
@@ -27,7 +27,7 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
     import { count, increment } from './state';
     import { Summary } from './Summary';
     export function App() {
-      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p><Summary /></main>;
+      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p><Summary count={count} /></main>;
     }
   `);
   await writeFile(join(directory, 'main.ts'), `
@@ -69,7 +69,8 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
       source.node.kind === 'element' && source.node.name?.local === 'button');
     first.dispatch(button, 'onClick', new Event('click'));
     await Bun.sleep(0);
-    expect((await first.publication()).sequence).toBe(2);
+    // The root text and imported child are separate accepted view updates.
+    expect((await first.publication()).sequence).toBe(3);
     const firstValues = first.frame.application.run(() => first.evaluate());
     expect(firstValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 1)).toBe(true);
     await host.replace([]);

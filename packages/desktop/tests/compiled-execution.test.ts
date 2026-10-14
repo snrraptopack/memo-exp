@@ -275,6 +275,67 @@ test('compiled child components join one accepted owner subtree and retain their
   application.close();
 });
 
+test('reactive component props replay through the shared core prop box', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+
+    export function increment() {
+      count++;
+    }
+
+    function Value({ label, value }) {
+      return <p>{label}: {value}</p>;
+    }
+
+    function Summary({ label = 'Count', value }) {
+      return <section><Value label={label} value={value} /></section>;
+    }
+
+    export function App() {
+      return <main>
+        <button onClick={increment}>Increment</button>
+        <Summary {...(count % 2 === 0
+          ? { label: 'Even', value: count }
+          : { label: 'Odd', value: count })} />
+      </main>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const initial = view.initialPublication;
+
+  expect(initial.operations).toContainEqual({
+    op: 'text',
+    target: {
+      owner: { id: 'App/Summary/Value', generation: 1 },
+      source: expect.any(Number),
+    },
+    value: 'Even: 0',
+  });
+
+  const mounted = candidate.publish(initial);
+
+  transport.accept(1);
+  await mounted;
+  view.dispatch(1, 'onClick', new Event('click'));
+  application.run(core.commit);
+
+  const update = JSON.parse(transport.sent[1]!);
+
+  expect(update.operations).toContainEqual({
+    op: 'text',
+    target: {
+      owner: { id: 'App/Summary/Value', generation: 1 },
+      source: expect.any(Number),
+    },
+    value: 'Odd: 1',
+  });
+
+  transport.accept(2);
+  await view.publication();
+  expect(errors).toEqual([]);
+  application.close();
+});
+
 test('repeated and nested components keep shared owner paths and deduplicate templates', async () => {
   const module = moduleFactory(`
     export function increment() {}
@@ -448,6 +509,5 @@ test('unsupported lifetimes/structures/reactivity fail instead of silently losin
   expect(() => compileDesktop('export function App(){return <div ref={node}/>}')).toThrow('Refs');
   expect(() => compileDesktop('let items=[];export function App(){return <button onClick={()=>items.push(1)}>Add</button>}')).toThrow('guarded-publication');
   expect(() => compileDesktop('let count=0;export function App(){setTimeout(()=>{count++;},0);return <p>{count}</p>}')).toThrow('Retained callbacks');
-  expect(() => compileDesktop('function Child({value}){return <p>{value}</p>}let value=0;export function change(){value++}export function App(){return <Child value={value}/>}')).toThrow('Reactive component props');
   expect(() => compileDesktop('function Child(){return <section/>}export function App(){return <Child><p>Content</p></Child>}')).toThrow('Component children');
 });

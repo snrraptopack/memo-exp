@@ -63,6 +63,8 @@ export interface NativeChild {
   readonly segment: string;
   readonly source: number;
   readonly create: (frame: NativeFrame) => NativeView;
+  /** Re-evaluate authored prop expressions before the child renders. */
+  readonly update?: () => void;
 }
 
 /** Describe a child call without running it before its parent is registered. */
@@ -70,8 +72,9 @@ export function child(
   segment: string,
   source: number,
   create: (frame: NativeFrame) => NativeView,
+  update?: () => void,
 ): NativeChild {
-  return { segment, source, create };
+  return { segment, source, create, update };
 }
 
 interface Snapshot {
@@ -90,6 +93,7 @@ export class NativeView {
   private readonly pending = new Map<Promise<Acceptance>, Snapshot>();
   private lastPublication?: Promise<Acceptance>;
   private readonly children: NativeView[];
+  private readonly childUpdates: Array<(() => void) | undefined>;
 
   constructor(
     private readonly frame: NativeFrame,
@@ -106,7 +110,10 @@ export class NativeView {
 
     cleanup(frame.owner.id, () => this.dispose());
     this.initial = this.snapshot();
-    this.children = this.createChildren(children);
+    const createdChildren = this.createChildren(children);
+
+    this.children = createdChildren.map((child) => child.view);
+    this.childUpdates = createdChildren.map((child) => child.update);
   }
 
   get initialPublication(): Publication {
@@ -255,12 +262,6 @@ export class NativeView {
       return;
     }
 
-    // Shared access plans may conservatively target an owning component.
-    // Preserve that subtree meaning without a second dependency resolver.
-    for (const childView of this.children) {
-      invalidateEntity(childView.frame.owner.id);
-    }
-
     if (this.pending.size >= 8) {
       // Coalesce source changes through the existing core when a credit frees.
       // Do not discard a final user value merely because native work is busy.
@@ -270,6 +271,17 @@ export class NativeView {
     }
 
     const next = this.snapshot();
+
+    // Snapshot first so this component replays its own props before expressions
+    // feeding a nested child are evaluated. Shared access plans can also target
+    // an owning component conservatively, so every direct child is invalidated
+    // through the existing core after its latest prop box has been pushed.
+    for (let index = 0; index < this.children.length; index++) {
+      this.childUpdates[index]?.();
+
+      const childView = this.children[index]!;
+      invalidateEntity(childView.frame.owner.id);
+    }
 
     if (
       next.operations.length === 0 &&
@@ -311,7 +323,9 @@ export class NativeView {
     }
   }
 
-  private createChildren(children: readonly NativeChild[]): NativeView[] {
+  private createChildren(
+    children: readonly NativeChild[],
+  ): Array<{ view: NativeView; update: (() => void) | undefined }> {
     const sources = new Set<number>();
     const segments = new Set<string>();
 
@@ -334,7 +348,7 @@ export class NativeView {
       sources.add(descriptor.source);
       segments.add(descriptor.segment);
 
-      return descriptor.create({
+      const view = descriptor.create({
         application: this.frame.application,
         owner: {
           id: `${this.frame.owner.id}/${descriptor.segment}`,
@@ -350,6 +364,8 @@ export class NativeView {
           },
         },
       });
+
+      return { view, update: descriptor.update };
     });
   }
 
