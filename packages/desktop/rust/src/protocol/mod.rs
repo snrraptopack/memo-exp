@@ -13,6 +13,8 @@ mod templates;
 mod types;
 mod wire;
 
+#[cfg(feature = "window")]
+pub(crate) use driver::EventSink;
 pub use driver::{ConnectionFailure, DriverStatus, ProcessDriver, QUEUE_CAPACITY};
 pub use error::ProtocolError;
 pub use framing::{FrameError, FrameReader, FrameWriter};

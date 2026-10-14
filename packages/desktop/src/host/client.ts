@@ -9,6 +9,8 @@ import {
 } from './protocol';
 import type { PublicationTransport } from './transport';
 import { snapshotPublication } from './serialization';
+import { PacketWriter } from './writer';
+import { parseNativeEvent, type NativeEventPacket, type DispatchDecision } from './events';
 
 interface Job {
   readonly body: string;
@@ -25,9 +27,13 @@ interface ActivePublication {
 }
 
 export interface ClientOptions {
+  /** Graphical launch waits for window/GPU initialization before publishing. */
+  readonly requireReady?: boolean;
   /** Includes the active publication. Pressure refuses locally, without I/O. */
   readonly maxPending?: number;
   readonly acknowledgmentTimeoutMs?: number;
+  /** Launcher-owned synchronous dispatch, independent of scene acceptance. */
+  readonly dispatch?: (event: NativeEventPacket) => boolean;
 }
 
 /**
@@ -43,11 +49,33 @@ export class PublicationClient {
   private terminal?: Error;
   private readonly closeListeners = new Set<(error: Error) => void>();
   private unsubscribe: () => void = () => {};
+  private readonly writer: PacketWriter;
+  private readonly dispatch?: (event: NativeEventPacket) => boolean;
+  private lastDispatch = 0;
+  private readonly events: NativeEventPacket[] = [];
+  private eventsScheduled = false;
+  private readyReceived = false;
+  private readyPromise: Promise<void> = Promise.resolve();
+  private resolveReady?: () => void;
+  private rejectReady?: (error: Error) => void;
+  private cancelReadyDeadline: () => void = () => {};
 
   constructor(
     private readonly transport: PublicationTransport,
     options: ClientOptions = {},
   ) {
+    this.writer = new PacketWriter(transport);
+    this.dispatch = options.dispatch;
+    if (options.requireReady) {
+      this.readyPromise = new Promise((resolve, reject) => {
+        this.resolveReady = resolve;
+        this.rejectReady = reject;
+      });
+      void this.readyPromise.catch(() => {});
+      this.cancelReadyDeadline = transport.scheduleDeadline(30_000, () => {
+        this.fail(new HostError('startupTimedOut', 'Native window initialization timed out'));
+      });
+    }
     this.maxPending = options.maxPending ?? 8;
     this.timeoutMs = options.acknowledgmentTimeoutMs ?? 5_000;
     if (
@@ -65,6 +93,11 @@ export class PublicationClient {
       this.unsubscribe = transport.listen({
         reply: value => this.receive(value),
         failure: error => {
+          if (!this.active && this.queue.length === 0 && this.events.length === 0 &&
+              error instanceof HostError && error.code === 'windowClosed') {
+            this.fail(error);
+            return;
+          }
           this.fail(new HostError(
             'acceptanceUnknown',
             'Native connection failed; pending work cannot be replayed',
@@ -77,6 +110,10 @@ export class PublicationClient {
     }
     // A custom adapter may synchronously report its existing failure in listen().
     if (this.terminal) runCleanup(this.unsubscribe);
+  }
+
+  whenReady(): Promise<void> {
+    return this.readyPromise;
   }
 
   get isClosed(): boolean {
@@ -127,6 +164,7 @@ export class PublicationClient {
 
   private pump(): void {
     if (this.terminal || this.active || this.queue.length === 0) return;
+    if (this.resolveReady && !this.readyReceived) return;
     if (!Number.isSafeInteger(this.nextSequence)) {
       this.fail(new HostError('sequenceExhausted', 'A new native connection is required'));
       return;
@@ -156,7 +194,7 @@ export class PublicationClient {
       }
       const json = '{"version":' + PROTOCOL_VERSION + ',"sequence":' + active.sequence +
         ',' + job.body.slice(1);
-      this.transport.send(json).then(
+      this.writer.send(json).then(
         () => {
           if (this.active !== active || this.terminal) return;
           active.sent = true;
@@ -178,6 +216,33 @@ export class PublicationClient {
   private receive(value: unknown): void {
     if (this.terminal) return;
     try {
+      if (typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'ready') {
+        if (!this.resolveReady || this.readyReceived || Object.keys(value).length !== 2 ||
+            !('version' in value) || value.version !== 1 || this.active) {
+          throw new HostError('unexpectedReady', 'Native readiness does not match startup');
+        }
+        this.readyReceived = true;
+        this.cancelReadyDeadline();
+        this.resolveReady();
+        this.pump();
+        return;
+      }
+      if (typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'event') {
+        const event = parseNativeEvent(value);
+        if (!this.dispatch || event.dispatchId <= this.lastDispatch) {
+          throw new HostError('unexpectedEvent', 'Native event has no dispatcher or duplicates a dispatch');
+        }
+        this.lastDispatch = event.dispatchId;
+        if (event.sceneSequence >= this.nextSequence && event.sceneSequence !== this.active?.sequence) {
+          throw new HostError('invalidEventOrder', 'Native event refers to an unknown scene acceptance');
+        }
+        if (this.events.length >= 8) {
+          throw new HostError('eventQueueFull', 'Native dispatch queue is full');
+        }
+        this.events.push(event);
+        this.scheduleEvents();
+        return;
+      }
       const reply = parseReply(value);
       const active = this.active;
       if (!active || active.reply) {
@@ -207,6 +272,7 @@ export class PublicationClient {
       this.nextSequence++;
       active.job.resolve(active.reply);
       this.pump();
+      this.scheduleEvents();
     } else {
       active.job.reject(new PublicationRefusedError(active.reply));
       // Queued work may depend on the refused mount/template. Do not advance it
@@ -218,6 +284,10 @@ export class PublicationClient {
   private fail(error: Error): void {
     if (this.terminal) return;
     this.terminal = error;
+    this.cancelReadyDeadline();
+    this.rejectReady?.(error);
+    this.writer.close(error);
+    this.events.length = 0;
     const active = this.active;
     this.active = undefined;
     active?.job.reject(error);
@@ -238,6 +308,31 @@ export class PublicationClient {
 
   private rejectQueued(error: Error): void {
     for (const job of this.queue.splice(0)) job.reject(error);
+  }
+
+  private scheduleEvents(): void {
+    if (this.eventsScheduled || this.events.length === 0 || this.terminal) return;
+    this.eventsScheduled = true;
+    // An accepted publication resolves its owner continuation first. Dispatch
+    // then observes activated refs/bindings even when frames arrive together.
+    void Promise.resolve().then(() => {
+      this.eventsScheduled = false;
+      try {
+        while (this.events.length > 0 && !this.terminal) {
+          const event = this.events[0]!;
+          if (event.sceneSequence >= this.nextSequence) return;
+          this.events.shift();
+          const cancelled = this.dispatch!(event);
+          if (typeof cancelled !== 'boolean') {
+            throw new HostError('invalidDecision', 'Native dispatch must return its synchronous cancellation decision');
+          }
+          const decision: DispatchDecision = { kind: 'dispatchResult', version: 1, dispatchId: event.dispatchId, cancelled };
+          void this.writer.send(JSON.stringify(decision)).catch(error => this.fail(error));
+        }
+      } catch (error) {
+        this.fail(error instanceof Error ? error : new HostError('dispatchFailed', String(error)));
+      }
+    });
   }
 }
 

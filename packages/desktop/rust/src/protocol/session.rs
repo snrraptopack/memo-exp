@@ -58,6 +58,11 @@ impl PublicationSession {
         self.closed
     }
 
+    #[cfg(feature = "window")]
+    pub(crate) fn document_mut(&mut self) -> &mut NativeDocument {
+        &mut self.document
+    }
+
     /// The next correctable publication slot; exhaustion requires a new session.
     pub fn expected_sequence(&self) -> Option<u64> {
         self.next_sequence

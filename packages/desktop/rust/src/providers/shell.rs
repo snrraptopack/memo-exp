@@ -40,7 +40,7 @@ pub(super) struct ControlledShell(pub Arc<PublicationProviders>);
 impl ShellProvider for ControlledShell {
     fn request_redraw(&self) {
         if !self.0.queue_shell(|pending| pending.redraw = true) {
-            self.0.shell.request_redraw();
+            self.0.shell_backend().request_redraw();
         }
     }
 
@@ -50,13 +50,13 @@ impl ShellProvider for ControlledShell {
             .0
             .queue_shell(|pending| pending.title = Some(title.clone()))
         {
-            self.0.shell.set_window_title(title);
+            self.0.shell_backend().set_window_title(title);
         }
     }
 
     fn set_cursor(&self, cursor: Option<CursorIcon>) {
         if !self.0.queue_shell(|pending| pending.cursor = Some(cursor)) {
-            self.0.shell.set_cursor(cursor);
+            self.0.shell_backend().set_cursor(cursor);
         }
     }
 
@@ -65,7 +65,7 @@ impl ShellProvider for ControlledShell {
             .0
             .queue_shell(|pending| pending.ime_enabled = Some(enabled))
         {
-            self.0.shell.set_ime_enabled(enabled);
+            self.0.shell_backend().set_ime_enabled(enabled);
         }
     }
 
@@ -74,7 +74,9 @@ impl ShellProvider for ControlledShell {
             .0
             .queue_shell(|pending| pending.ime_area = Some((x, y, width, height)))
         {
-            self.0.shell.set_ime_cursor_area(x, y, width, height);
+            self.0
+                .shell_backend()
+                .set_ime_cursor_area(x, y, width, height);
         }
     }
 
@@ -82,7 +84,7 @@ impl ShellProvider for ControlledShell {
     // capabilities outside publication; an unexpected scene-time query is fatal.
     fn get_clipboard_text(&self) -> Result<String, ClipboardError> {
         if self.0.interactive_allowed() {
-            self.0.shell.get_clipboard_text()
+            self.0.shell_backend().get_clipboard_text()
         } else {
             Err(ClipboardError)
         }
@@ -90,7 +92,7 @@ impl ShellProvider for ControlledShell {
 
     fn set_clipboard_text(&self, text: String) -> Result<(), ClipboardError> {
         if self.0.interactive_allowed() {
-            self.0.shell.set_clipboard_text(text)
+            self.0.shell_backend().set_clipboard_text(text)
         } else {
             Err(ClipboardError)
         }
@@ -98,7 +100,7 @@ impl ShellProvider for ControlledShell {
 
     fn open_file_dialog(&self, multiple: bool, filter: Option<FileDialogFilter>) -> Vec<PathBuf> {
         if self.0.interactive_allowed() {
-            self.0.shell.open_file_dialog(multiple, filter)
+            self.0.shell_backend().open_file_dialog(multiple, filter)
         } else {
             Vec::new()
         }
@@ -106,35 +108,35 @@ impl ShellProvider for ControlledShell {
 
     fn request_window_close(&self) {
         if self.0.interactive_allowed() {
-            self.0.shell.request_window_close();
+            self.0.shell_backend().request_window_close();
         }
     }
 
     fn set_window_minimized(&self, minimized: bool) {
         if self.0.interactive_allowed() {
-            self.0.shell.set_window_minimized(minimized);
+            self.0.shell_backend().set_window_minimized(minimized);
         }
     }
 
     fn set_window_maximized(&self, maximized: bool) {
         if self.0.interactive_allowed() {
-            self.0.shell.set_window_maximized(maximized);
+            self.0.shell_backend().set_window_maximized(maximized);
         }
     }
 
     fn is_window_maximized(&self) -> bool {
-        self.0.interactive_allowed() && self.0.shell.is_window_maximized()
+        self.0.interactive_allowed() && self.0.shell_backend().is_window_maximized()
     }
 
     fn set_window_decorations(&self, decorations: bool) {
         if self.0.interactive_allowed() {
-            self.0.shell.set_window_decorations(decorations);
+            self.0.shell_backend().set_window_decorations(decorations);
         }
     }
 
     fn drag_window(&self) {
         if self.0.interactive_allowed() {
-            self.0.shell.drag_window();
+            self.0.shell_backend().drag_window();
         }
     }
 }

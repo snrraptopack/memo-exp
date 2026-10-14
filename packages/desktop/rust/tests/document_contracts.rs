@@ -54,6 +54,46 @@ fn attribute(name: &str, value: &str) -> Attribute {
     }
 }
 
+#[test]
+fn mounted_style_sources_use_stylo_and_retirement_removes_their_rules() {
+    let (mut document, _) = host();
+    let styled = Owner::new("styled", 1);
+    let css = template(vec![
+        element("div", vec![attribute("class", "measured")], None),
+        element("style", Vec::new(), None),
+        text(
+            ".measured { width: 320px; height: 40px; margin-left: 17px; }",
+            Some(1),
+        ),
+    ]);
+    document
+        .mount(styled.clone(), &css, MountTarget::Body)
+        .unwrap();
+    document.resolve(0.0).unwrap();
+    let first = document
+        .engine()
+        .get_client_bounding_rect(document.node_id(&styled.node(0)).unwrap())
+        .unwrap();
+    assert!((first.width - 320.0).abs() < 0.01);
+    assert!((first.height - 40.0).abs() < 0.01);
+    document.retire(&styled).unwrap();
+    let plain = Owner::new("plain", 1);
+    let source = template(vec![element(
+        "div",
+        vec![attribute("class", "measured")],
+        None,
+    )]);
+    document
+        .mount(plain.clone(), &source, MountTarget::Body)
+        .unwrap();
+    document.resolve(0.0).unwrap();
+    let next = document
+        .engine()
+        .get_client_bounding_rect(document.node_id(&plain.node(0)).unwrap())
+        .unwrap();
+    assert!(next.width > 320.0);
+}
+
 fn element(tag: &str, attributes: Vec<Attribute>, parent: Option<u32>) -> TemplateNode {
     TemplateNode {
         parent,

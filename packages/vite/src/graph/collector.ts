@@ -4,6 +4,7 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { compileDesktopProject } from '@memoized-dom/compiler/desktop';
 import {
   compileModulesDetailed,
   emitInitialHtml,
@@ -51,6 +52,8 @@ export interface GraphPluginContext {
 }
 
 export interface CompiledGraph {
+  /** Native shell container discovered from the ordinary application mount. */
+  readonly mountTarget?: string;
   readonly hydrationCapabilities: CompiledModules['hydrationCapabilities'];
   readonly initialDelivery?: InitialDelivery;
   readonly initialPage?: InitialPage;
@@ -227,6 +230,52 @@ export async function compileGraph(
   }
   for (const entry of seeds) {
     await visit(entry);
+  }
+
+  if (options.target === 'desktop') {
+    const project = compileDesktopProject(Object.fromEntries(sources), {
+      ...options,
+      stylesheetImports: 'preserve',
+      resolveImport(specifier, importer) {
+        return resolutions.get(resolutionKey(importer, specifier));
+      },
+    });
+    const output = new Map<string, string>();
+    const maps = new Map<string, CompilerSourceMap>();
+    const css = new Map<string, string>();
+
+    for (const [file, id] of sourceIds) {
+      const product = project.modules.get(id)!;
+      let code = product.code;
+      if (product.css) {
+        css.set(file, product.css);
+        recordStyle(id, `${file}?memo-style.css`);
+        code = `import ${JSON.stringify(`./${basename(file)}?memo-style.css`)};\n${code}`;
+      }
+      output.set(file, code);
+      if (product.map === null) {
+        throw new Error(`memoized-dom: native compiler omitted the source map for ${id}`);
+      }
+      maps.set(file, {
+        ...product.map,
+        file,
+        sources: product.map.sources.map(source => source === id ? file : source ?? file),
+      });
+    }
+
+    return {
+      mountTarget: project.mountTarget,
+      hydrationCapabilities: { list: false, markup: false },
+      files: new Set(sourceIds.keys()),
+      output,
+      maps,
+      css,
+      styles,
+      eagerStyles: styles,
+      routeStyles: [],
+      routeTree: [],
+      routes: [],
+    };
   }
 
   const compileOptions = {

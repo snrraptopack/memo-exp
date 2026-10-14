@@ -37,7 +37,7 @@ enum Phase {
 pub(crate) struct PublicationProviders {
     phase: Mutex<Phase>,
     net: Arc<dyn NetProvider>,
-    shell: Arc<dyn ShellProvider>,
+    shell: Mutex<Arc<dyn ShellProvider>>,
     owned_abort: Mutex<Option<AbortController>>,
 }
 
@@ -58,10 +58,12 @@ impl PublicationProviders {
                 .net_provider
                 .take()
                 .unwrap_or_else(|| Arc::new(DummyNetProvider)),
-            shell: config
-                .shell_provider
-                .take()
-                .unwrap_or_else(|| Arc::new(DummyShellProvider)),
+            shell: Mutex::new(
+                config
+                    .shell_provider
+                    .take()
+                    .unwrap_or_else(|| Arc::new(DummyShellProvider)),
+            ),
             owned_abort: Mutex::new(owned_abort),
         });
         config.net_provider = Some(Arc::new(ControlledNet(providers.clone())));
@@ -106,7 +108,7 @@ impl PublicationProviders {
                     let shell = std::mem::take(&mut pending.shell);
                     *phase = Phase::Idle;
                     drop(phase);
-                    shell.release(self.shell.as_ref());
+                    shell.release(self.shell_backend().as_ref());
                     return;
                 }
                 std::mem::take(&mut pending.resources)
@@ -122,6 +124,19 @@ impl PublicationProviders {
                 }
             }
         }
+    }
+
+    /// Window attachment changes the backend, never the publication gate.
+    #[cfg(any(feature = "window", test))]
+    pub fn bind_shell(&self, backend: Arc<dyn ShellProvider>) {
+        assert!(matches!(*self.phase.lock().unwrap(), Phase::Idle));
+        *self.shell.lock().unwrap() = backend;
+    }
+
+    fn shell_backend(&self) -> Arc<dyn ShellProvider> {
+        // Drop the lock before invoking platform callbacks, including reentrant
+        // callbacks. The document thread owns attachment ordering.
+        self.shell.lock().unwrap().clone()
     }
 
     pub fn fail(&self) {

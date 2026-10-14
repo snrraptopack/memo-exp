@@ -170,7 +170,8 @@ Blitz identity does not encode our component or keyed-row lifetime.
 The source includes an optional Boa-based JavaScript module for its browser app.
 That is separate from driving a Rust document and is not our chosen execution
 model. We retain the existing JavaScript semantic runtime, with Bun as the default
-execution backend and development tool. Execution is selectable: Node uses the
+execution backend and JavaScript test/check runner. Vite owns application builds,
+CSS processing and watched rebuilds. Execution is selectable: Node uses the
 same Node-compatible host adapter; custom engines supply a module implementing the
 portable publication transport. The bundler selects one adapter without rewriting
 application TSX or duplicating state/access routing. QuickJS/Hermes remain custom
@@ -178,6 +179,38 @@ engine candidates, not promises of an already included adapter or full Node APIs
 [Optional scripting crate](https://github.com/DioxusLabs/blitz/blob/45496d9288b063719ebeae4e0761273f7881b3d7/packages/blitz-vibey-script/Cargo.toml).
 
 ## Retention and rendering
+
+### Implemented Vite/window boundary
+
+The existing Vite collector resolves the application source graph once. An
+explicit desktop target sends that same graph to `compileDesktopProject`, which
+uses the shared project discovery/worklist and source analysis. The browser
+target retains its existing emission branch. The existing mount scan exposes
+the authored string target to create a real native container with that id.
+
+Vite processes ordinary CSS imports and extracted CSS through its CSS/plugins
+pipeline. The launcher reads the emitted CSS asset manifest, then installs the
+result as real owner-scoped style/text sources. Blitz's Stylo parser/cascade owns
+their interpretation; no application CSS bypasses Vite or enters a second style
+engine. Native tests verify measured layout and stylesheet removal on retirement.
+
+A separately emitted execution module holds one shared semantic core and native
+presentation identity across accepted whole-root reloads. Application imports
+use that pinned identity. Runtime selection changes the transport adapter/command,
+not authored mount or build semantics. CSS-only rebuilds remount the last compiled
+root; content-hashed JS revisions load fresh modules, with remembered factories
+for already cached revisions. ESM revision-cache reclamation remains unfinished.
+
+The graphical host uses bounded pipe workers and event-loop wakes. Readiness is
+sent after native window/renderer initialization, before the launcher evaluates
+the application. Scene acceptance keeps its separate deadline. Native clicks are
+captured before default handling, sent with accepted owner/source/generation and
+scene sequence, and resumed only after a synchronous cancellation decision.
+This first bridge supports click/capture and common event control methods. It
+does not yet implement a complete MouseEvent, live HTMLElement refs, native edit
+reports, composition, resource loading or browser-layout parity fixtures. M3/M4
+are therefore still partial; successful window acceptance is not first-paint or
+interaction-latency evidence.
 
 Blitz already implements damage-driven incremental layout, enabled by default
 at this snapshot. Resolution performs style traversal, damage propagation,

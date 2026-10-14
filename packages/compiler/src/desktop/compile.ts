@@ -43,6 +43,7 @@ export interface DesktopCompileOptions extends AnalysisOptions {
   readonly frontend?: EstreeFrontend;
   /** Compiler-private presentation adapter selected by the desktop build. */
   readonly presentationPath?: string
+  readonly stylesheetImports?: 'preserve';
 }
 
 function evaluation(plan: NativeTemplatePlan): t.Expression {
@@ -72,12 +73,17 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     throw compilerError('memo-dom desktop: ' + message, moduleId, at);
   };
 
-  if (parsed.css) {
+  if (parsed.css && options.stylesheetImports !== 'preserve') {
     fail('Stylesheet emission requires native CSS/asset integration');
   }
   for (const statement of program.body) {
     if (b.isImportDeclaration(statement) && statement.source.value.endsWith('.css')) {
-      fail('Stylesheet imports require native CSS/asset integration', statement);
+      if (options.stylesheetImports !== 'preserve') {
+        fail('Stylesheet imports require native CSS/asset integration', statement);
+      }
+      if (statement.specifiers.length) {
+        fail('CSS module bindings require stylesheet export integration', statement);
+      }
     }
   }
 
@@ -224,6 +230,12 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       fail('Refs require native handle capability emission', jsx);
     }
 
+    for (const event of plan.events) {
+      if (event.name !== 'onClick' && event.name !== 'onClickCapture') {
+        fail(`Event ${event.name} requires native platform dispatch integration`, jsx);
+      }
+    }
+
     if (plan.steps.some((step) => step.kind === 'region')) {
       fail('Structural content requires region emission', jsx);
     }
@@ -304,6 +316,9 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   return {
     code: output.code,
     map: output.map,
+    // The build adapter hands this to Vite's ordinary CSS pipeline. Raw CSS
+    // must never bypass its plugins by entering the native template here.
+    css: parsed.css,
     components: prepared.map((component) => component.name)
   };
 }

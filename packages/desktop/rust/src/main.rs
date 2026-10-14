@@ -1,5 +1,5 @@
 //! One native host executable; the private headless mode exercises its stream.
-//! Window creation and ordinary mounted TSX are subsequent implementation gates.
+//! Graphical mode uses the same retained document and worker protocol.
 
 use std::io;
 use std::process::ExitCode;
@@ -10,8 +10,31 @@ use memoized_dom_desktop::document::NativeDocument;
 use memoized_dom_desktop::protocol::{DriverStatus, ProcessDriver, PublicationSession};
 
 fn main() -> ExitCode {
-    if std::env::args().skip(1).collect::<Vec<_>>() != ["--headless"] {
-        eprintln!("The mounted window is not implemented yet. Private host mode: --headless");
+    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    if arguments == ["--capabilities"] {
+        println!(
+            "{{\"protocolVersion\":1,\"window\":{}}}",
+            cfg!(feature = "window")
+        );
+        return ExitCode::SUCCESS;
+    }
+    #[cfg(feature = "window")]
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--window")
+        && (arguments.len() == 1 || arguments.len() == 3 && arguments[1] == "--mount-target")
+    {
+        let target = arguments.get(2).map(String::as_str).unwrap_or("app");
+        return match memoized_dom_desktop::window::run(target) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("desktop window failed: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if arguments != ["--headless"] {
+        eprintln!("Host mode: --headless or --window (requires the window build feature)");
         return ExitCode::FAILURE;
     }
     match run_headless() {

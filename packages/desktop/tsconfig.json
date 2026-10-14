@@ -4,6 +4,7 @@
     "lib": ["ES2022", "DOM"],
     "module": "Preserve",
     "moduleResolution": "bundler",
+    "jsx": "preserve",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
@@ -12,5 +13,12 @@
     "skipLibCheck": true,
     "types": ["bun", "node"]
   },
-  "include": ["src", "tests", "../compiler/src/ast/tsrx/tsrx-core.d.ts"]
+  "include": [
+    "src",
+    "tests",
+    "examples",
+    "../compiler/src/jsx-types.ts",
+    "../compiler/src/ast/tsrx/tsrx-core.d.ts",
+    "../../globals.d.ts"
+  ]
 }

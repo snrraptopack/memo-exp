@@ -2,13 +2,8 @@
 import { createHash } from 'node:crypto';
 import type { InitialRenderPlan } from '../planning/initial-content';
 
-export interface InitialDelivery {
-  readonly key: string;
-  /** Absent when the same server factory must evaluate request data. */
-  readonly html?: string;
-  readonly target: string;
-  readonly browser: 'none' | 'bindings';
-}
+import type { InitialDelivery } from '../planning/initial-delivery';
+export type { InitialDelivery } from '../planning/initial-delivery';
 
 export function planInitialDelivery(
   plan: InitialRenderPlan,

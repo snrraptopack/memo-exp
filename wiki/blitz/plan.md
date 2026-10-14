@@ -92,7 +92,7 @@ packages/runtime/src/
 packages/desktop/
   src/host/                           template, packet, transport and acceptance types
   src/runtime/                        core-to-native preparation/publication adapter
-  src/dev/                            entry resolution, Bun build/watch and host launch
+  src/dev/                            Vite build/watch, runtime selection and host launch
   examples/                           ordinary TSX entry and CSS fixtures
   tests/                              JS host/compiler/lifecycle contracts
   rust/Cargo.toml                      one native host crate, library and window binary
@@ -182,7 +182,10 @@ declare their command, module format and host adapter through build configuratio
 The portable publication client depends on that adapter's send/observe/deadline/
 dispose capabilities, not Bun/Node APIs. Engine-specific APIs remain in the
 selected adapter; unused adapters do not enter the application bundle. Bun remains
-the development bundler/test tool regardless of the selected execution engine.
+the JavaScript test/check runner. Vite owns application graph compilation, CSS
+processing, plugins and watched builds independently of the execution engine.
+Application and CSS builds must not depend on Bun.build. The existing Bun
+transport fixture bundler remains a private ABI test helper only.
 Runtime selection does not promise Node API compatibility for a custom engine.
 The interface does not define application authoring. Keep mutation batches small and do not
 rebuild/send the entire document on each update.

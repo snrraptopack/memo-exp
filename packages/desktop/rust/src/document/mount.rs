@@ -53,6 +53,10 @@ impl NativeDocument {
 
             host.generations.insert(owner.id.clone(), owner.generation);
             host.owner_boundaries.insert(start, owner.clone());
+            #[cfg(feature = "window")]
+            for (source, node) in nodes.iter().enumerate() {
+                host.source_nodes.insert(*node, owner.node(source as u32));
+            }
             host.instances.insert(
                 owner,
                 Instance {
@@ -86,7 +90,7 @@ impl NativeDocument {
         target: &MountTarget,
     ) -> Result<(NodeId, Option<NodeId>), DocumentError> {
         match target {
-            MountTarget::Body => Ok((self.body, None)),
+            MountTarget::Body => Ok((self.mount_parent(), None)),
             MountTarget::Element(source) => {
                 let id = self.node_id(source)?;
                 let node = self

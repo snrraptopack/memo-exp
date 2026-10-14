@@ -6,6 +6,7 @@ import type { CompiledGraph } from './graph/collector';
 import type { InitialPage } from './initial-html';
 
 export class AdapterState {
+  mountTarget?: string;
   hydrationCapabilities: CompiledGraph['hydrationCapabilities'] = { list: true, markup: true };
   initialDelivery?: InitialDelivery;
   initialPage?: InitialPage;
@@ -29,6 +30,7 @@ export class AdapterState {
   compiling: Promise<CompiledGraph> | undefined;
   hotUpdateFailed = false;
   replace(graph: CompiledGraph): void {
+    this.mountTarget = graph.mountTarget;
     this.hydrationCapabilities = graph.hydrationCapabilities;
     this.initialDelivery = graph.initialDelivery;
     this.initialPage = graph.initialPage;

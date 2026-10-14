@@ -15,8 +15,8 @@ export interface ExecutionBundleOptions {
 }
 
 /**
- * Bun is the build tool, independent of the engine that runs the result. Resolve
- * one selected host module while bundling; unused backends are not imported.
+ * Legacy transport-contract fixture bundler. Application builds use Vite in
+ * dev/vite.ts; this helper tests the existing engine adapter ABI independently.
  */
 export async function bundleExecutionEntry(options: ExecutionBundleOptions) {
   const backend = resolveExecutionBackend(options.runtime);

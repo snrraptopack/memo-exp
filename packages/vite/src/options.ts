@@ -7,6 +7,8 @@ export interface MemoizedDomViteOptions
   extends Omit<CompileModulesOptions, 'aliases' | 'resolveImport' | 'hot'> {
   /** Browser bootstrap and connected compiler-graph entry. */
   clientEntry: string;
+  /** Selects emission only; application authoring and CSS processing stay in Vite. */
+  target?: 'web' | 'desktop';
   /** Server composition root. Omit for browser-only applications. */
   serverEntry?: string;
   /** Production host target. Bun/Node dev uses the launching runtime; Cloudflare dev uses workerd. */
@@ -36,6 +38,9 @@ export function resolveAdapterOptions(
 ): ResolvedAdapterOptions {
   if (options.clientEntry.trim() === '') {
     throw new Error('memoized-dom: clientEntry must not be empty');
+  }
+  if (options.target === 'desktop' && options.serverEntry !== undefined) {
+    throw new Error('memoized-dom: the desktop build does not implement server delivery');
   }
   return { ...options, entries: [options.clientEntry] };
 }

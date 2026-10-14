@@ -3,9 +3,9 @@ import type { AstComment, BaseNode, EstreeFrontend } from '../ast';
 import type { ComponentGraphNode } from '../component-linker';
 import type { PlainListReturn } from '../analysis/plain-list-return';
 import type { ComponentExportInfo } from '../components/manifest';
-import type { CompilerRoutedPreparation } from '../routed';
+import type { CompilerRoutedPreparation } from '../planning/route-preparation';
 import type { InitialRenderPlan } from '../planning/initial-content';
-import type { InitialDelivery } from '../dom/delivery-plan';
+import type { InitialDelivery } from '../planning/initial-delivery';
 import type { ComponentPropUsage } from '../components/render-usage';
 import type {
   ParameterWrite,

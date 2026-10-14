@@ -15,16 +15,8 @@ const SERVER_CONTEXT_FIELDS = new Set([
   'platform',
 ]);
 
-export interface CompilerRoutedPreparation {
-  readonly id: string;
-  readonly moduleId: string;
-  readonly component: string;
-  readonly binding: string;
-  readonly contextFields: readonly string[];
-  readonly server: boolean;
-  readonly line?: number;
-  readonly column?: number;
-}
+import type { CompilerRoutedPreparation } from './planning/route-preparation';
+export type { CompilerRoutedPreparation } from './planning/route-preparation';
 
 function importedName(specifier: t.ImportSpecifier): string {
   return astFactory.isIdentifier(specifier.imported)

@@ -1,6 +1,8 @@
 //! Document ownership and publication are separate from style/layout resolution.
 
 mod error;
+#[cfg(feature = "window")]
+mod events;
 mod identity;
 mod instance;
 mod lifetime;
@@ -14,6 +16,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId, QualName, ns};
+#[cfg(feature = "window")]
+use blitz_traits::shell::ShellProvider;
 
 pub use error::DocumentError;
 pub use identity::{MountTarget, NodeRef, Owner};
@@ -31,15 +35,23 @@ pub struct NativeDocument {
     instances: HashMap<Owner, Instance>,
     /// Reverse boundary lookup avoids scanning unrelated instance records.
     owner_boundaries: HashMap<NodeId, Owner>,
+    #[cfg(feature = "window")]
+    source_nodes: HashMap<NodeId, NodeRef>,
     generations: HashMap<String, u64>,
     failed: bool,
     providers: Arc<PublicationProviders>,
+    #[cfg(feature = "window")]
+    controlled_shell: Arc<dyn ShellProvider>,
+    #[cfg(feature = "window")]
+    mount_container: Option<NodeId>,
 }
 
 impl NativeDocument {
     pub fn new(mut config: DocumentConfig) -> Self {
         let providers = PublicationProviders::install(&mut config);
         let mut document = BaseDocument::new(config);
+        #[cfg(feature = "window")]
+        let controlled_shell = document.shell_provider.clone();
         let root = document.root_node().id;
         let body;
         {
@@ -55,9 +67,15 @@ impl NativeDocument {
             body,
             instances: HashMap::new(),
             owner_boundaries: HashMap::new(),
+            #[cfg(feature = "window")]
+            source_nodes: HashMap::new(),
             generations: HashMap::new(),
             failed: false,
             providers,
+            #[cfg(feature = "window")]
+            controlled_shell,
+            #[cfg(feature = "window")]
+            mount_container: None,
         }
     }
 
@@ -67,6 +85,48 @@ impl NativeDocument {
 
     pub fn body(&self) -> NodeId {
         self.body
+    }
+
+    #[cfg(feature = "window")]
+    pub(crate) fn configure_mount(&mut self, target: &str) {
+        // The generated shell has one actual HTML mount container. It is not
+        // part of an application owner; accepted root retirement leaves it live.
+        let mut mutation = self.document.mutate();
+        let node = mutation.create_element(
+            html_name("div"),
+            vec![blitz_dom::Attribute {
+                name: QualName::new(None, ns!(), "id".into()),
+                value: target.to_string(),
+            }],
+        );
+        mutation.append_children(self.body, &[node]);
+        self.mount_container = Some(node);
+    }
+
+    fn mount_parent(&self) -> NodeId {
+        #[cfg(feature = "window")]
+        if let Some(container) = self.mount_container {
+            return container;
+        }
+        self.body
+    }
+
+    /// Engine access is restricted to the owning shell adapter. Publications
+    /// still go through validation; native layout/input use Blitz's own APIs.
+    #[cfg(feature = "window")]
+    pub(crate) fn engine_mut(&mut self) -> &mut BaseDocument {
+        self.attach_shell_provider();
+        &mut self.document
+    }
+
+    #[cfg(feature = "window")]
+    pub(crate) fn attach_shell_provider(&mut self) {
+        if !Arc::ptr_eq(&self.document.shell_provider, &self.controlled_shell) {
+            self.providers
+                .bind_shell(self.document.shell_provider.clone());
+            self.document
+                .set_shell_provider(self.controlled_shell.clone());
+        }
     }
 
     pub fn owner_count(&self) -> usize {

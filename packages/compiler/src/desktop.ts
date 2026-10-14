@@ -5,6 +5,7 @@
  */
 export { lowerNativeTemplate } from './desktop/template';
 export { compileDesktop, type DesktopCompileOptions } from './desktop/compile';
+export { compileDesktopProject } from './desktop/project';
 export type {
   HostAttributeStep,
   HostEvaluationStep,

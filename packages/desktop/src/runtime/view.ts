@@ -19,6 +19,9 @@ import {
   type Publication,
   type Template
 } from '../host/protocol';
+import type { SourceReference } from '../host/protocol';
+import { withStylesheets } from './stylesheets';
+export { registerStylesheet } from './stylesheets';
 
 import type { NativeApplication } from './application';
 
@@ -74,6 +77,7 @@ export class NativeView {
     readonly template: Template,
     private readonly evaluate: () => readonly EvaluatedStep[]
   ) {
+    this.template = withStylesheets(template);
     registerEntity({
       id: frame.owner.id,
       parent: frame.parent,
@@ -133,6 +137,36 @@ export class NativeView {
     const handler = this.accepted?.handlers.get(source)?.get(name);
 
     return this.frame.application.run(() => handler?.(event));
+  }
+
+  matchesSource(source: SourceReference): boolean {
+    return this.phase === 'active' && source.owner.id === this.frame.owner.id &&
+      source.owner.generation === this.frame.owner.generation && this.template.nodes[source.source] !== undefined;
+  }
+
+  eventTarget(source: number): object {
+    const node = this.template.nodes[source]?.node;
+    if (!node) throw new HostError('unknownEventSource', 'Native event source is unknown');
+    const attributes = this.accepted?.attributes.get(source);
+    const properties: Record<PropertyKey, unknown> = {
+      nodeType: node.kind === 'element' ? 1 : node.kind === 'text' ? 3 : 8,
+      nodeName: node.kind === 'element' ? node.name.local.toUpperCase() : node.kind === 'text' ? '#text' : '#comment',
+      id: attributes?.get('id') ?? '',
+      className: attributes?.get('class') ?? '',
+      isConnected: this.phase === 'active',
+      getAttribute: (name: string) => attributes?.get(name.toLowerCase()) ?? null,
+      [Symbol.toStringTag]: 'NativeEventTarget'
+    };
+    if (node.kind === 'element') properties.tagName = properties.nodeName;
+    return new Proxy(properties, {
+      get(target, name) {
+        if (name in target || typeof name === 'symbol') return target[name];
+        throw new HostError('unsupportedEventTarget', `Native event target capability '${String(name)}' is not implemented`);
+      },
+      set() {
+        throw new HostError('unsupportedEventTarget', 'Native event target writes require native ref capabilities');
+      }
+    });
   }
 
   publication(): Promise<Acceptance | undefined> {
@@ -247,6 +281,9 @@ export class NativeView {
         }
 
         if ((/^on[A-Z]/).test(name)) {
+          if (value != null && name !== 'onClick' && name !== 'onClickCapture') {
+            throw new HostError('unsupportedEvent', `Native event '${name}' requires its platform/default integration`);
+          }
           if (typeof value === 'function') {
             handlers.set(name, value as (event: unknown) => unknown);
           }

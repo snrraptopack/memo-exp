@@ -1287,3 +1287,115 @@ Pushed to `origin/codex/blitz-renderer` on 2026-10-14; `git ls-remote --heads`
 returned that exact SHA, matching local HEAD. The working tree and staged
 whitespace checks were clean. This receipt records delivery; M3's visible
 window, CSS example and native input/default gates remain open.
+
+## M3.5 — Vite application build, graphical counter and accepted reloads
+
+Date: 2026-10-14. M3 remains partial; this batch adds its first graphical example.
+
+### Decisions and implementation
+
+- Followed the user's correction: Vite owns application TSX/CSS/plugin processing
+  and watched rebuilds. Bun remains the default execution engine and test/check
+  runner; Node selection does not alter application authoring. The old Bun
+  bundler is retained only for the existing transport ABI test fixtures.
+- Communicated the shared Vite boundary before editing: `options.ts`, the existing
+  graph collector, plugin and state select a desktop emitter over the same
+  resolved graph. The browser branch remains the default. Compiler project
+  linking and mount-target extraction reuse shared discovery and the fixed-point
+  worklist, not a second graph walker. No web runtime/list code was modified.
+- Added an ordinary `App.tsx`, CSS import and `mount('app', App)` counter. Vite
+  emits processed CSS and a private container/asset manifest. CSS is installed
+  as owned native style/text sources; raw compiler-extracted CSS cannot bypass
+  Vite's CSS pipeline. Stylo interprets the final stylesheet.
+- Pinned one actual core/presentation execution module across app revisions.
+  Accepted whole-root retirement/recreation reuses the native connection and
+  canonical module cells. CSS-only edits remount the last root. Content-hashed
+  JS and a WeakMap of loaded module factories handle cached revision returns;
+  query strings alone were unreliable under this Bun version.
+- Added optional cross-platform Blitz shell/winit/Vello dependencies behind
+  `window`; the same executable retains headless mode. Preserved the existing
+  publication provider gate when Blitz attaches its real window provider.
+- Native click/capture dispatch uses generation-scoped source paths and scene
+  acceptance ordering. Bounded native default records wait for synchronous
+  cancellation decisions, without waiting on a pipe in the UI callback. The
+  portable client serializes scene/control writes through one bounded writer.
+  Editing, pointer payload completeness, refs and other event types remain
+  explicit capability gaps; static unsupported event names are diagnosed.
+- Split native readiness from scene acceptance after the first graphical probe
+  hit the five-second acceptance deadline during window initialization. The
+  startup handshake has a separate 30-second bound; publication deadlines and
+  no-replay behavior were not relaxed.
+- Tightened readiness to follow Blitz's `ResumeReady` processing and explicitly
+  request a redraw after renderer initialization. Constructing a window alone
+  must not be mistaken for an active renderer or a measured first paint.
+
+### Evidence gathered
+
+- Real Windows graphical host accepted the Vite counter in **15,593 ms** from
+  launch, including readiness, and remained connected for a further three
+  seconds. This is not a first-paint measurement or a physical click test.
+- The actual `bun run desktop:dev` command accepted its initial root and four
+  watched replacements. Native PID **2972** and its start time stayed unchanged.
+  CSS rebuilds measured **102–218 ms**, TSX **170 ms**, and return to the original
+  emitted JS **194 ms**. The probe restored all authored example content.
+- The Vite process contract verifies a CSS plugin's transformed output,
+  cross-module scalar state, generated click update, stylesheet removal, cached
+  root reuse and increasing generations. The bundled runner executes under both
+  Bun and Node, accepts reload and exits cleanly when its control stream closes.
+- Existing Vite adapter regressions: **19 passed, 0 failed**, 112 assertions.
+  Existing real-process contracts: **16 passed, 0 failed**, 54 assertions across
+  Bun, Node and a custom CommonJS transport fixture.
+- Native engine contracts verify that a captured click leaves a real Blitz
+  checkbox unchanged, approved default toggles it once, retirement invalidates
+  the source, and the mount container survives. Stylo layout/stylesheet
+  retirement is measured through engine boxes, not inferred from wire output.
+
+### Failures and remaining gates
+
+- A framing test sent a second frame after a correctly rejected first frame and
+  raced the disconnected reader. Both frames now enter one test input write;
+  the no-resynchronization/no-later-mount assertion is unchanged.
+- The first full root run exposed a genuine backend-boundary failure: shared
+  project types imported browser delivery and route emitters. After communicating
+  the exact boundary, moved only `InitialDelivery` and `CompilerRoutedPreparation`
+  into neutral planning modules, with type re-exports preserving existing browser
+  imports. No route/delivery function body or DOM list behavior changed.
+- Native rebuilds hit disk exhaustion. No user files or caches were deleted;
+  automatic review rejected deletion of this worktree's incremental cache.
+  Free space later recovered; single-job non-incremental builds succeeded.
+- A native test link encountered Windows' running-executable lock while the
+  graphical probe was active. The probe was closed before the final native run.
+- The first full root run completed with 2,557 passes and two failures: the
+  genuine compiler boundary error above and a 60-second Chromium timeout.
+  The browser fixture subsequently passed in isolation (one test, ten assertions,
+  7.15 seconds test duration) without changing its timeout or implementation.
+  Resource contention is only a hypothesis. Final root verification runs after
+  native work finishes; publication deadlines are unchanged.
+- Full M3/M4 completion still requires platform click/input ordering, native refs,
+  full event capabilities and broader component structures. M6 browser-layout
+  parity and resource URLs are open. M8 still needs first-paint/startup profiling,
+  long-session ESM cache reclamation and generated revision cleanup. macOS/Linux
+  execution has not been verified on this Windows machine.
+
+### Final verification
+
+- Corrected full root rerun: **2,559 passed, 0 failed**, 28 snapshots and 30,466
+  assertions across 254 files, exit 0 (**343.12 seconds**). No native build/link
+  ran during this rerun. The 17 captured browser/SSR compiler products still
+  match exactly after the neutral type extraction.
+- Desktop suite: **64 passed, 0 failed**, 287 assertions. Process/Vite suite:
+  **17 passed, 0 failed**, 73 assertions. The Vite runner contract exercises Bun
+  and Node; the older custom CommonJS transport contracts are retained.
+- Native final window-feature suite: **82 passed, 0 failed** (13 library and 69
+  document/driver contracts). `cargo +1.96.0 clippy --all-targets --features window`
+  passes with warnings denied; default-feature `check` and final formatting check
+  pass. The window-feature executable is rebuilt by the native test run.
+- Bun checking passes compiler (248 files), desktop including its new example
+  and the shared JSX/CSS declarations (125 files), and Vite (19 files). Compiler
+  and Vite build/declaration emission and focused lint pass. Desktop consumes
+  Vite's published package entry, not its private source path; workspace package
+  dependencies and lockfile are declared accordingly.
+- After the final renderer-ready/redraw change, the actual Node graphical
+  launcher accepted its root with native PID **21336**. The probe was closed
+  before delivery. This confirms graphical startup/acceptance under Node; it
+  does not add a pixel, physical click or latency-parity claim.

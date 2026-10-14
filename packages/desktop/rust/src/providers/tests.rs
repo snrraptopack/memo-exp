@@ -100,6 +100,26 @@ fn nested_boundaries_release_only_when_the_outer_application_finishes() {
 }
 
 #[test]
+fn attaching_a_window_backend_keeps_publication_work_held() {
+    let (providers, config, initial, _) = setup();
+    let window = Arc::new(Shell::default());
+    providers.bind_shell(window.clone());
+    providers.begin();
+    let shell = config.shell_provider.as_ref().unwrap();
+    shell.request_redraw();
+    shell.set_window_title("Accepted title".to_string());
+    assert_eq!(window.redraws.load(Ordering::SeqCst), 0);
+    assert!(window.updates.lock().unwrap().is_empty());
+    providers.finish();
+    assert_eq!(window.redraws.load(Ordering::SeqCst), 1);
+    assert_eq!(*window.updates.lock().unwrap(), ["Accepted title"]);
+    assert_eq!(initial.redraws.load(Ordering::SeqCst), 0);
+    providers.fail();
+    shell.request_redraw();
+    assert_eq!(window.redraws.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn failure_discards_queued_requests_and_suppresses_late_provider_calls() {
     let (providers, config, shell, net) = setup();
     providers.begin();

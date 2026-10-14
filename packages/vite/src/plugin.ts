@@ -187,7 +187,7 @@ export function memoizedDom(
         entries,
         options,
         overrides,
-        graphConfig.command === 'serve' && environmentName !== 'ssr',
+        options.target !== 'desktop' && graphConfig.command === 'serve' && environmentName !== 'ssr',
         true,
         serverFunctionBarrelEntries,
         environmentName === 'ssr' ? 'server' : 'client',
@@ -229,7 +229,7 @@ export function memoizedDom(
         [entry],
         options,
         overrides,
-        config.command === 'serve' && environmentName !== 'ssr',
+        options.target !== 'desktop' && config.command === 'serve' && environmentName !== 'ssr',
         false,
         serverFunctionBarrelEntries,
         environmentName === 'ssr' ? 'server' : 'client',
@@ -513,6 +513,17 @@ export function memoizedDom(
         new Map(),
         this.environment.name,
       );
+    },
+    generateBundle() {
+      if (options.target !== 'desktop') return;
+      this.emitFile({
+        type: 'asset',
+        fileName: 'desktop.json',
+        source: JSON.stringify({
+          version: 1,
+          mountTarget: stateFor(this.environment).mountTarget,
+        }),
+      });
     },
     transformIndexHtml: {
       order: 'pre',

@@ -1,0 +1,47 @@
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: #f5f7fb;
+  color: #14213d;
+  font-family: sans-serif;
+}
+
+.counter {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 32px;
+  background: white;
+  border: 1px solid #d8dfeb;
+  border-radius: 16px;
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 28px;
+}
+
+.panel {
+  margin-top: 24px;
+  padding: 24px;
+  background: #edf2fb;
+  border-radius: 12px;
+}
+
+.value {
+  font-size: 32px;
+  font-weight: bold;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+}
+
+button {
+  padding: 12px 20px;
+  color: white;
+  background: #245fe8;
+  border: 0;
+  border-radius: 8px;
+  font-size: 16px;
+}

@@ -74,6 +74,12 @@
     "packages/desktop": {
       "name": "@memoized-dom/desktop",
       "version": "0.0.1",
+      "dependencies": {
+        "@memoized-dom/compiler": "workspace:*",
+        "@memoized-dom/runtime": "workspace:*",
+        "@memoized-dom/vite": "workspace:*",
+        "vite": "^8.0.0",
+      },
     },
     "packages/language-service": {
       "name": "@memoized-dom/language-service",

@@ -1,6 +1,7 @@
 //! Protocol identities name source ownership, never a raw engine allocation.
+use serde::Serialize;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 pub struct Owner {
     pub id: String,
     pub generation: u64,
@@ -22,7 +23,7 @@ impl Owner {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 pub struct NodeRef {
     pub owner: Owner,
     pub source: u32,

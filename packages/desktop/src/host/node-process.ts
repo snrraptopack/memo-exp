@@ -14,6 +14,8 @@ export function connectNativeHost(options: NativeProcessOptions): PublicationTra
   let terminal: Error | undefined;
   let disposed = false;
   let diagnostics = '';
+  let streamEnded = false;
+  let exitDeadline: ReturnType<typeof setTimeout> | undefined;
   const writes = new Set<(error: Error) => void>();
 
   function terminate(error: Error): void {
@@ -31,6 +33,7 @@ export function connectNativeHost(options: NativeProcessOptions): PublicationTra
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    clearTimeout(exitDeadline);
     child.stdin.destroy();
     child.stdout.destroy();
     child.stderr.destroy();
@@ -56,7 +59,13 @@ export function connectNativeHost(options: NativeProcessOptions): PublicationTra
     if (disposed) return;
     try {
       decoder.end();
-      terminate(new HostError('hostClosed', 'Native host closed its reply stream'));
+      streamEnded = true;
+      // A window close is successful only after the OS confirms process exit.
+      // Bound a child that closes stdout but never exits; pending acceptance
+      // still fails and is never inferred from the process status.
+      exitDeadline = setTimeout(() => {
+        terminate(new HostError('hostClosed', 'Native host closed its reply stream without exiting'));
+      }, 2_000);
     } catch (error) {
       terminate(error instanceof Error ? error : new HostError('invalidFrame', String(error)));
     }
@@ -72,6 +81,10 @@ export function connectNativeHost(options: NativeProcessOptions): PublicationTra
   child.on('error', terminate);
   child.on('close', (code, signal) => {
     if (!disposed) {
+      if (streamEnded && code === 0 && options.args?.includes('--window')) {
+        terminate(new HostError('windowClosed', 'Native window was closed'));
+        return;
+      }
       terminate(new HostError(
         'hostExited',
         'Native host exited (' + String(code ?? signal) + '): ' + diagnostics.trim(),

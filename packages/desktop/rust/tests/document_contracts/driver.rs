@@ -200,8 +200,11 @@ fn lost_acceptance_wakes_and_closes_the_applied_document_without_replay() {
 fn bad_framing_wakes_and_closes_without_guessing_a_new_boundary() {
     let output = Output::default();
     let (mut driver, input, wakes) = start(output.clone());
-    input.send(vec![0, 0, 0, 0]).unwrap();
-    input.send(framed(&mount())).unwrap();
+    // Queue the invalid boundary and later work atomically. The reader may
+    // correctly disconnect immediately after reading the invalid header.
+    let mut frames = vec![0, 0, 0, 0];
+    frames.extend(framed(&mount()));
+    input.send(frames).unwrap();
     drop(input);
     let DriverStatus::Failed(failure) = finish(&mut driver, &wakes) else {
         panic!("invalid frame was not terminal")

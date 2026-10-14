@@ -4,9 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Native presentation host for the shared memoized-dom compiler and runtime",
+  "dependencies": {
+    "@memoized-dom/compiler": "workspace:*",
+    "@memoized-dom/runtime": "workspace:*",
+    "@memoized-dom/vite": "workspace:*",
+    "vite": "^8.0.0"
+  },
   "scripts": {
-    "test": "bun test ./tests/client.test.ts ./tests/framing.test.ts ./tests/execution.test.ts ./tests/lifecycle.test.ts ./tests/compiler-template.test.ts ./tests/compiled-execution.test.ts",
-    "test:process": "bun test ./tests/process.test.ts",
+    "test": "bun test ./tests/client.test.ts ./tests/framing.test.ts ./tests/execution.test.ts ./tests/lifecycle.test.ts ./tests/compiler-template.test.ts ./tests/compiled-execution.test.ts ./tests/events.test.ts",
+    "window": "bun run ./examples/window.ts",
+    "native:window": "cargo +1.96.0 build --manifest-path rust/Cargo.toml --locked --features window --jobs 1",
+    "test:process": "bun test ./tests/process.test.ts ./tests/vite-process.test.ts",
     "typecheck": "bun check -p tsconfig.json",
     "native:check": "cargo +1.96.0 check --manifest-path rust/Cargo.toml --locked --jobs 2",
     "native:test": "cargo +1.96.0 test --manifest-path rust/Cargo.toml --locked --jobs 2 -- --test-threads=1",

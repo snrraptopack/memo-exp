@@ -12,6 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use super::{FrameReader, FrameWriter, PublicationReply, PublicationSession};
+#[cfg(feature = "window")]
+use crate::events::wire::{DispatchDecision, EventPacket};
+use serde::Serialize;
 
 /// At most eight inbound frames and eight pending replies (including the
 /// writer's in-flight reply). The reader may hold one additional bounded frame.
@@ -24,7 +27,7 @@ pub struct ConnectionFailure {
 }
 
 impl ConnectionFailure {
-    fn new(code: &'static str, message: impl ToString) -> Self {
+    pub(crate) fn new(code: &'static str, message: impl ToString) -> Self {
         Self {
             code,
             message: message.to_string().chars().take(512).collect(),
@@ -41,7 +44,61 @@ pub enum DriverStatus {
 
 enum Incoming {
     Packet(Vec<u8>),
+    #[cfg(feature = "window")]
+    Decision(DispatchDecision),
     End,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum OutputMessage {
+    Publication(PublicationReply),
+    #[cfg(feature = "window")]
+    Event(EventPacket),
+    #[cfg(feature = "window")]
+    Ready {
+        kind: &'static str,
+        version: u32,
+    },
+}
+
+#[cfg(feature = "window")]
+pub(crate) struct EventSink {
+    sender: SyncSender<OutputMessage>,
+    state: Arc<WorkerState>,
+}
+
+#[cfg(feature = "window")]
+impl EventSink {
+    pub fn ready(&self) -> Result<(), ConnectionFailure> {
+        self.enqueue(OutputMessage::Ready {
+            kind: "ready",
+            version: 1,
+        })
+    }
+
+    pub fn send(&self, packet: EventPacket) -> Result<(), ConnectionFailure> {
+        self.enqueue(OutputMessage::Event(packet))
+    }
+
+    fn enqueue(&self, packet: OutputMessage) -> Result<(), ConnectionFailure> {
+        // This sink is used only by the document thread. Reserve shared output
+        // capacity before enqueueing; the stream writer releases it on flush.
+        if self.state.pending_replies.load(Ordering::Acquire) >= QUEUE_CAPACITY {
+            let failure =
+                ConnectionFailure::new("eventQueueFull", "Native interaction output is full");
+            self.state.fail(failure.clone());
+            return Err(failure);
+        }
+        self.state.pending_replies.fetch_add(1, Ordering::AcqRel);
+        if self.sender.try_send(packet).is_err() {
+            let failure =
+                ConnectionFailure::new("eventWorkerLost", "Native interaction delivery failed");
+            self.state.fail(failure.clone());
+            return Err(failure);
+        }
+        Ok(())
+    }
 }
 
 struct WorkerState {
@@ -72,7 +129,7 @@ impl WorkerState {
 pub struct ProcessDriver {
     session: PublicationSession,
     incoming: Option<Receiver<Incoming>>,
-    outgoing: Option<SyncSender<PublicationReply>>,
+    outgoing: Option<SyncSender<OutputMessage>>,
     writer: Option<JoinHandle<()>>,
     state: Arc<WorkerState>,
     status: DriverStatus,
@@ -148,9 +205,53 @@ impl ProcessDriver {
         &self.session
     }
 
+    #[cfg(feature = "window")]
+    pub(crate) fn session_mut(&mut self) -> &mut PublicationSession {
+        &mut self.session
+    }
+
     /// Call on a worker wake. A finite budget lets input/layout/paint run between
     /// bursts. Remaining work schedules another wake rather than a polling loop.
     pub fn poll(&mut self) -> DriverStatus {
+        #[cfg(feature = "window")]
+        return self.poll_with_controls(|_, _, _| {
+            Err(ConnectionFailure::new(
+                "unexpectedDecision",
+                "Headless publication mode cannot receive interaction decisions",
+            ))
+        });
+        #[cfg(not(feature = "window"))]
+        return self.poll_core();
+    }
+
+    #[cfg(feature = "window")]
+    pub(crate) fn event_sink(&self) -> EventSink {
+        EventSink {
+            sender: self.outgoing.as_ref().unwrap().clone(),
+            state: self.state.clone(),
+        }
+    }
+
+    #[cfg(feature = "window")]
+    pub(crate) fn poll_with_controls(
+        &mut self,
+        mut control: impl FnMut(
+            &mut crate::document::NativeDocument,
+            DispatchDecision,
+            u64,
+        ) -> Result<(), ConnectionFailure>,
+    ) -> DriverStatus {
+        self.poll_core(&mut control)
+    }
+
+    fn poll_core(
+        &mut self,
+        #[cfg(feature = "window")] control: &mut impl FnMut(
+            &mut crate::document::NativeDocument,
+            DispatchDecision,
+            u64,
+        ) -> Result<(), ConnectionFailure>,
+    ) -> DriverStatus {
         if let Some(failure) = self.state.failure() {
             self.stop(DriverStatus::Failed(failure));
         }
@@ -180,7 +281,12 @@ impl ProcessDriver {
                         Err(error) => PublicationReply::rejected(&error, expected),
                     };
                     let fatal = reply.is_fatal();
-                    if let Err(error) = self.outgoing.as_ref().unwrap().try_send(reply) {
+                    if let Err(error) = self
+                        .outgoing
+                        .as_ref()
+                        .unwrap()
+                        .try_send(OutputMessage::Publication(reply))
+                    {
                         let code = match error {
                             TrySendError::Full(_) => "replyQueueFull",
                             TrySendError::Disconnected(_) => "replyWorkerLost",
@@ -203,6 +309,19 @@ impl ProcessDriver {
                             "publicationFatal",
                             "publication terminated the connection",
                         )));
+                        break;
+                    }
+                }
+                #[cfg(feature = "window")]
+                Ok(Incoming::Decision(decision)) => {
+                    let sequence = self
+                        .session
+                        .expected_sequence()
+                        .unwrap_or(9_007_199_254_740_992)
+                        - 1;
+                    if let Err(failure) = control(self.session.document_mut(), decision, sequence) {
+                        self.state.fail(failure.clone());
+                        self.stop(DriverStatus::Failed(failure));
                         break;
                     }
                 }
@@ -276,7 +395,20 @@ fn read_packets<R: Read>(input: R, incoming: SyncSender<Incoming>, state: Arc<Wo
     let mut reader = FrameReader::new(input);
     while !state.stopping.load(Ordering::Acquire) {
         let message = match reader.read_packet() {
-            Ok(Some(bytes)) => Incoming::Packet(bytes),
+            Ok(Some(bytes)) => {
+                #[cfg(feature = "window")]
+                {
+                    // Strict decision decoding rejects publication's sequence
+                    // field immediately. Ordinary scenes retain their existing
+                    // complete document-thread decoder and refusal semantics.
+                    match serde_json::from_slice::<DispatchDecision>(&bytes) {
+                        Ok(decision) => Incoming::Decision(decision),
+                        Err(_) => Incoming::Packet(bytes),
+                    }
+                }
+                #[cfg(not(feature = "window"))]
+                Incoming::Packet(bytes)
+            }
             Ok(None) => Incoming::End,
             Err(error) => {
                 state.fail(ConnectionFailure::new("readFailed", error));
@@ -296,11 +428,7 @@ fn read_packets<R: Read>(input: R, incoming: SyncSender<Incoming>, state: Arc<Wo
     }
 }
 
-fn write_replies<W: Write>(
-    output: W,
-    replies: Receiver<PublicationReply>,
-    state: Arc<WorkerState>,
-) {
+fn write_replies<W: Write>(output: W, replies: Receiver<OutputMessage>, state: Arc<WorkerState>) {
     let mut writer = FrameWriter::new(output);
     for reply in replies {
         if state.failure().is_some() {

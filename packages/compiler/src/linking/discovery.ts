@@ -38,7 +38,7 @@ import { renderPropReferenceName } from '../analysis/render-prop-reference';
 import { normalizeComponentDeclarations } from '../components/declarations';
 import { compilerError } from '../errors';
 import type { CompilerRouteDefinition } from '../analysis/routes';
-import type { CompilerRoutedPreparation } from '../routed';
+import type { CompilerRoutedPreparation } from '../planning/route-preparation';
 import { compilerOptions } from './options';
 import type {
   CompileModulesOptions,
@@ -357,10 +357,10 @@ function importRefs(program: t.Program): ImportRef[] {
   return refs;
 }
 
-function applicationMounts(
+export function applicationMountRequests(
   program: t.Program,
   runtimePath: string,
-): string[] {
+): { component: string; target: t.Node | undefined }[] {
   // Hydrating clients import `hydrate` from the explicit hydration subpath;
   // it roots the application graph exactly like a base-runtime `mount`.
   const mountEntryPaths = new Set([runtimePath, `${runtimePath}/hydrate`]);
@@ -385,7 +385,7 @@ function applicationMounts(
     }
   }
 
-  const mounted: string[] = [];
+  const mounted: { component: string; target: t.Node | undefined }[] = [];
   const record = (value: t.Expression): void => {
     let expression = unwrapTypeExpression(value);
     if (astFactory.isAwaitExpression(expression)) {
@@ -404,7 +404,7 @@ function applicationMounts(
         'memo-dom: mount() must receive a statically imported component identifier',
       );
     }
-    mounted.push(component.name);
+    mounted.push({ component: component.name, target: expression.arguments[0] });
   };
   for (const statement of program.body) {
     // Capturing the mount handle changes neither the root nor its ownership.
@@ -422,6 +422,10 @@ function applicationMounts(
     }
   }
   return mounted;
+}
+
+function applicationMounts(program: t.Program, runtimePath: string): string[] {
+  return applicationMountRequests(program, runtimePath).map(request => request.component);
 }
 
 export function exportedLocals(program: t.Program): Map<string, string> {

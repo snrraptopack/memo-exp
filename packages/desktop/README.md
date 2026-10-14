@@ -10,10 +10,50 @@ queues and a private headless process for transport contracts. A
 portable JavaScript publication client, selectable execution bundler and internal
 accepted core lifecycle are also implemented. The compiler now lowers analyzed
 JSX to native templates and executes the first fixed-host/module-cell component
-phase. Build-selected ordinary mount now runs against the headless Rust host;
-the visible window command and CSS example remain pending. These scripts check
-the compiler/native foundation, and do
-not change web mounting or select a desktop renderer for an application.
+phase. The Vite counter example now uses ordinary mount and processed CSS in the
+graphical Blitz host. The current executable supports click/capture callbacks;
+editing events, refs, structural component emission and full event targets remain
+unfinished. Web mounting and the optimized DOM list implementation are unchanged.
+
+## Run the counter
+
+```powershell
+# Rebuild native code once after Rust changes. This is separate from app startup.
+bun run desktop:build:native
+
+# TSX/CSS edits rebuild through Vite and reuse the running native process.
+bun run desktop:dev
+
+# Select Node execution; application TSX/CSS and mount remain identical.
+$env:MEMOIZED_DESKTOP_RUNTIME = 'node'
+bun run desktop:dev
+```
+
+Edit `examples/counter/App.tsx`, `main.ts` and `style.css` within this package.
+The launcher builds its execution module once, pins the actual shared core and
+presentation module, then watches Vite application outputs. Bun runs the build
+script and tests; Vite processes application CSS/plugins for either execution
+engine. No Cargo command runs on a JS/CSS edit. The internal Vite build API also
+accepts an ESM custom backend and ordinary Vite configuration; a ready-made
+QuickJS host or Node-compatible APIs for that engine are not included.
+The example runner uses Node-compatible file/module/process APIs, so its ready
+execution choices are Bun and Node. A custom engine must provide its own launcher
+capabilities as well as its transport adapter; the emitted semantic engine does
+not supply Node APIs to QuickJS.
+
+Reloads replace the whole root after accepted retirement. Canonical module cells
+stay in the same application runtime; local native focus/selection is not
+preserved. Content-hashed JS files handle Bun and Node module caches, including
+returning to an already loaded revision. Long-session ESM cache reclamation and
+generated asset cleanup remain M8 work. Resource URLs/fonts/images and full CSS
+module binding integration are not claimed by this first CSS example.
+
+Window readiness has its own bounded startup handshake. The five-second scene
+acceptance deadline starts after readiness; startup never implies publication
+acceptance. A Windows graphical probe accepted this counter after 15.6 seconds
+including native initialization. This does not measure first paint or click
+latency. macOS/Linux use the same cross-platform shell dependencies but have not
+been run on this machine.
 
 ## Native checks
 
@@ -38,8 +78,9 @@ bun run --cwd packages/desktop test:process
 The crate pins Blitz revision `45496d9288b063719ebeae4e0761273f7881b3d7` and keeps
 its dependency graph in `rust/Cargo.lock`. Check and test builds reuse the same
 `rust/target` cache. The initial feature selection enables system fonts for text;
-windowing, painting and resource features will be selected when those integrations
-exist. Cold dependency compilation is not app startup or a TSX refresh measurement.
+the optional `window` feature adds Blitz shell, winit and Vello painting. Resources
+still need the application asset provider integration. Cold dependency compilation
+is not app startup or a TSX refresh measurement.
 
 ## Compiler template lowering
 
@@ -99,20 +140,21 @@ The real process tests compile ordinary TSX, bundle the generated module for Bun
 Node and a custom CommonJS adapter, then mount, dispatch its callback, publish an
 update and retire against the cached Rust host. The bootstrap is a private ABI
 fixture, not an application example or native platform event test. Applications
-will keep existing `mount()` authoring; normal entry wiring and the visible window
-are next, followed by default/input cancellation and revision contracts.
+keep existing `mount()` authoring. The Vite/window example above exercises that
+entry wiring; broader input/default and revision contracts remain M4 work.
 
 ## JavaScript execution backends
 
-Bun is the default execution engine and remains the development bundler/test tool.
+Bun is the default execution engine and JavaScript test/check runner. Vite owns
+application builds, CSS processing and watched rebuilds.
 Node uses the same Node-compatible process adapter. Engine choice does not change
 TSX, CSS, event/ref authoring, compiler semantics or the shared reactive runtime.
 The selected adapter is resolved at build time; other adapters do not enter the
 emitted application.
 
 `src/dev/bundle.ts` exports `bundleExecutionEntry({ entry, outfile, runtime })`.
-This currently bundles an already emitted JavaScript entry; normal TSX compilation
-and mount/window selection are M3 work. Its `runtime` defaults to `'bun'` and
+This is a private transport-test fixture helper, not the application build path.
+Its `runtime` defaults to `'bun'` and
 can be `'node'` or a custom backend record:
 
 ```ts
@@ -168,8 +210,10 @@ it owns no cell store, access resolver, subscription bridge or reactive schedule
 The only shared-source addition is exporting existing preparation/read-scope
 functions from `runtime/core`. The web mount and DOM list implementations are
 unchanged. Process fixtures verify this internal ABI under Bun, Node and a selected
-custom CommonJS adapter against the real cached Rust host. They are not compiled
-TSX examples or visible-window tests; those remain M3 completion gates.
+custom CommonJS adapter against the real cached Rust host. The separate Vite
+process contract adds compiled cross-module TSX, CSS-plugin processing and normal
+root replacement. The graphical launch probe does not prove full platform-event,
+ref or first-paint parity.
 
 ### Transport ownership
 
@@ -321,8 +365,8 @@ sequence accepts once; further publication requires a new connection/document.
 An ambiguous live failure closes the session and returns `AcceptanceUnknown`;
 subsequent packets refuse. The native process driver also closes the session after
 a lost acknowledgment rather than replaying possibly applied work. The JavaScript
-client implements bounded pending-job ownership and failure handling; compiler
-acceptance/lifecycle integration remains a gate.
+client implements bounded pending-job ownership and failure handling with the
+accepted compiler/core lifecycle described above.
 
 ## Process stream framing
 
@@ -347,8 +391,8 @@ described below sends explicit refusal/fatal replies through its outbound queue.
 
 These blocking `Read`/`Write` adapters serve transport workers or a headless host.
 No blocking pipe wait belongs on the UI thread. `ProcessDriver` provides bounded
-queues and worker-failure propagation; native window/event-loop integration and
-accepted compiler/lifecycle integration remain implementation gates.
+queues and worker-failure propagation. The graphical mode uses the same driver
+with nonblocking event-loop wakes and accepted compiler/core lifetimes.
 
 ## Native worker driver
 
@@ -363,7 +407,7 @@ a slot before applying a publication; when all slots are occupied it pauses
 admission. A successful writer flush releases a slot and wakes the document thread.
 This keeps a healthy burst bounded without losing acceptance or busy polling while
 the parent is stalled. The supplied wake callback must schedule the owning thread
-without blocking; the window version will use the native event-loop proxy.
+without blocking; the graphical host uses Blitz's native event-loop proxy.
 
 Refusal replies have `version`, `status: "refused"`, `expectedSequence`, a stable
 machine `code`, and a diagnostic capped at 512 characters. Invalid JSON does not
@@ -380,7 +424,8 @@ interrupt an OS syscall: the process/stream owner must close or terminate an
 unresponsive peer. `finish_headless()` is an explicit blocking writer join for a
 terminating headless process or test, never a UI callback.
 
-There is one host executable, currently with a private `--headless` contract mode.
+There is one host executable, with private `--headless` contract and `--window`
+graphical modes. The optional Cargo feature is cross-platform, not Windows-only.
 Native tests launch that actual executable with process pipes and verify refusal,
 corrected publication, immutable template reuse and reply draining on EOF. This
 mode is not an application API or a mounted TSX demo. A normal desktop launch and
@@ -450,7 +495,8 @@ structural wire publication use bounded framing and reply-capacity admission.
 Shell/resource work is contained across complete application. The portable client
 and selected execution adapter implement process/pending-job teardown. Compiler
 acceptance/lifecycle and ordinary mounting execute against the real headless
-host. Native event-loop wiring, CSS and window painting remain M3 gates;
+host. Vite CSS and graphical launch now work; complete native interaction, refs
+and first-paint verification remain M3/M4 gates;
 platform input ordering/cancellation follows in M4.
 
 The desktop build selects the private runtime entry for ordinary

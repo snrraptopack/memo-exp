@@ -219,7 +219,7 @@ test('queued snapshots remove attributes introduced by a not-yet-accepted update
   view.dispatch(1, 'onClick', new Event('click'));
   application.run(core.commit);
   transport.accept(2);
-  await Promise.resolve();
+  await Bun.sleep(0);
 
   const packet = JSON.parse(transport.sent[2]!);
 
