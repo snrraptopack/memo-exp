@@ -1588,3 +1588,24 @@ Completed implementation/checks: 2026-10-14. M5 remains in progress.
 Next M5 work: conditional component/host regions, then forwarded children and
 render callbacks. Keyed list emission remains after those region foundations and
 must reuse the existing optimized core list implementation.
+
+## M5.3 — Connection-owned template declarations
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Moved immutable template-key tracking from the root mount adapter to
+  `NativeApplication`, the existing connection/publication boundary. Root,
+  component and future structural publishers now share one accepted-key set.
+- Keys in an admitted publication are reserved while pending, preventing queued
+  work from redeclaring them. Acceptance commits the key; refusal releases it so
+  a corrected publication resends the declaration. This adds no document mirror
+  and changes no authored API.
+- A lifecycle contract verifies queued deduplication plus refusal/retry. Desktop
+  Bun checking passes 127 files. The desktop suite passes **68 tests**, zero
+  failed, with 304 assertions. The cached Rust host process suite passes all 16
+  Bun/Node/custom-adapter contracts, and the Vite/real-host contract passes.
+
+Next M5 work remains accepted conditional replacement. Investigation established
+that a component-bearing branch must keep its old shared core ownership live until
+the native retire/mount transaction is accepted; a host-only immediate swap would
+be an incomplete shortcut.

@@ -31,7 +31,6 @@ export function createMountAdapter(
   let generation = 0;
   let currentView: NativeView | undefined;
   let completion: Promise<unknown> = Promise.resolve();
-  const acceptedTemplates = new Set<string>();
 
   function mount(target: string, component: (...args: never[]) => unknown): NativeMountedApplication {
     if (target !== hostId) {
@@ -54,7 +53,6 @@ export function createMountAdapter(
     let retiring = false;
     let connected = false;
     let view!: NativeView;
-    let submittedTemplates: readonly string[] = [];
 
     const release = () => {
       requested = false;
@@ -73,10 +71,6 @@ export function createMountAdapter(
         return view;
       }, {
         accepted() {
-          for (const key of submittedTemplates) {
-            acceptedTemplates.add(key);
-          }
-
           connected = true;
           view.acceptInitial();
         },
@@ -92,16 +86,7 @@ export function createMountAdapter(
 
     currentView = view;
     const publication = view.initialPublication;
-    const templates = publication.templates?.filter(
-      template => !acceptedTemplates.has(template.key),
-    );
-
-    submittedTemplates = templates?.map(template => template.key) ?? [];
-
-    const accepted = candidate.publish({
-      ...(templates && templates.length > 0 ? { templates } : {}),
-      operations: publication.operations,
-    });
+    const accepted = candidate.publish(publication);
     completion = accepted;
     void accepted.catch(reportError);
 

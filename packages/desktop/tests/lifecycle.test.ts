@@ -186,6 +186,59 @@ describe('native publication uses shared core lifetimes', () => {
     application.close();
   });
 
+  test('template declarations are connection-owned and refused keys can be retried', async () => {
+    const { application, transport } = createApplication();
+    const firstTemplate = {
+      key: 'shared-card',
+      nodes: [{
+        parent: null,
+        node: { kind: 'text' as const, value: 'card' },
+      }],
+    };
+    const nextTemplate = {
+      key: 'retry-card',
+      nodes: [{
+        parent: null,
+        node: { kind: 'text' as const, value: 'retry' },
+      }],
+    };
+
+    const first = application.publishUpdates({
+      templates: [firstTemplate],
+      operations: [],
+    });
+    const queued = application.publishUpdates({
+      templates: [firstTemplate],
+      operations: [],
+    });
+
+    expect(JSON.parse(transport.sent[0]!).templates).toEqual([firstTemplate]);
+    transport.accept(1);
+    await first;
+    await Bun.sleep(0);
+    expect(JSON.parse(transport.sent[1]!).templates).toBeUndefined();
+    transport.accept(2);
+    await queued;
+
+    const refused = observe(application.publishUpdates({
+      templates: [nextTemplate],
+      operations: [],
+    }));
+
+    transport.refuse(3);
+    expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+
+    const retried = application.publishUpdates({
+      templates: [nextTemplate],
+      operations: [],
+    });
+
+    expect(JSON.parse(transport.sent[3]!).templates).toEqual([nextTemplate]);
+    transport.accept(3);
+    await retried;
+    application.close();
+  });
+
   test('idle connection loss tears down accepted owners and reports once', async () => {
     const { application, transport, errors } = createApplication();
     const events: string[] = [];

@@ -428,8 +428,12 @@ host-neutral `root-factories.ts`; browser mounting keeps its typed wrapper and
 uses that same store. Native roots register the shared reader/root identity,
 not their template hash or authored function name. The build selects a private
 runtime entry; application source retains `mount('app', App)` and synchronous
-unmount. Accepted template knowledge is connection-local presentation bookkeeping,
-not another document tree. Real process contracts cover mount, callback update,
+unmount. Accepted template knowledge is connection-local presentation bookkeeping
+owned by `NativeApplication`, the one boundary traversed by root, component and
+future structural publications. Pending keys are reserved so queued work does not
+declare them twice; refusal releases the reservation so a corrected batch can
+resend it. This is not another document tree. Real process contracts cover mount,
+callback update,
 retirement and remount under each supported execution selection.
 
 Inspection of the pinned shell confirms `WindowConfig` accepts the engine's

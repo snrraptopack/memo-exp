@@ -244,6 +244,9 @@ render preparation, refs, effects and cleanup. It does not introduce another
 application entry point. Application code keeps the framework's existing
 `mount(target, component, options)` API. The compiler/build supplies the desktop
 host internally; applications do not import `NativeApplication` or candidates.
+This connection owner also remembers accepted and pending immutable template keys
+for every root, component and future structural publication. Refused declarations
+are released for retry; mounting does not maintain a separate cache.
 
 Candidate creation uses shared core preparation and consumed-resource readiness.
 Native acceptance commits host connection flags before activating shared refs;

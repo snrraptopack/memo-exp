@@ -208,6 +208,9 @@ writers run off the UI thread; bounded queues hand complete packets/replies to t
 native event loop. Partial frames and I/O failure close the connection. Immutable
 templates declare once by key, with later instance mounts referring to accepted
 keys. Candidate declarations become accepted only with their complete scene batch.
+The connection-owning `NativeApplication` filters accepted and already-pending
+keys for every publication source. Root mounting does not own a separate cache;
+refusal releases pending keys for an exact retry.
 
 | State | Required behavior |
 | --- | --- |

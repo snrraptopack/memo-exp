@@ -38,6 +38,8 @@ export class NativeApplication {
   private readonly candidates = new Set<NativeCandidate<unknown>>();
   private readonly heldEffects = new Map<string, () => void>();
   private readonly effectCleanupOwners = new Set<string>();
+  private readonly acceptedTemplates = new Set<string>();
+  private readonly pendingTemplates = new Set<string>();
   private pending = 0;
   private effectsRefused = false;
   private terminal?: unknown;
@@ -112,13 +114,33 @@ export class NativeApplication {
   async publish(publication: Publication, accepted: () => void): Promise<Acceptance> {
     this.assertOpen();
 
+    const templates = publication.templates?.filter(
+      (template) =>
+        !this.acceptedTemplates.has(template.key) &&
+        !this.pendingTemplates.has(template.key),
+    );
+    const templateKeys = templates?.map((template) => template.key) ?? [];
+
+    for (const key of templateKeys) {
+      this.pendingTemplates.add(key);
+    }
+
+    const submitted: Publication = {
+      ...(templates !== undefined && templates.length > 0 ? { templates } : {}),
+      operations: publication.operations,
+    };
+
     this.pending++;
     let nativeAccepted = false;
 
     try {
-      const reply = await this.client.publish(publication);
+      const reply = await this.client.publish(submitted);
       nativeAccepted = true;
       this.assertOpen();
+
+      for (const key of templateKeys) {
+        this.acceptedTemplates.add(key);
+      }
 
       this.run(accepted);
       this.effectsRefused = false;
@@ -139,6 +161,10 @@ export class NativeApplication {
 
       throw error;
     } finally {
+      for (const key of templateKeys) {
+        this.pendingTemplates.delete(key);
+      }
+
       this.pending--;
 
       if (!this.stopped && this.pending === 0 && !this.effectsRefused) {
@@ -212,6 +238,8 @@ export class NativeApplication {
     this.terminal = error;
     this.stopListening();
     this.heldEffects.clear();
+    this.acceptedTemplates.clear();
+    this.pendingTemplates.clear();
     this.client.close();
     const errors: unknown[] = error === undefined ? [] : [error];
 
