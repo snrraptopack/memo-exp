@@ -492,7 +492,16 @@ export class NativeView implements NativePresentation {
   private resumeDeferred(): void {
     if (this.needsUpdate && this.phase === 'active' && !this.frame.application.isClosed) {
       this.needsUpdate = false;
-      this.frame.application.run(() => invalidateEntity(this.frame.owner.id));
+      this.frame.application.run(() => {
+        // Synthetic branch/content roots share their controller's semantic
+        // owner. Resume their retained view directly instead of looking up a
+        // wire-only `$content` owner in the core registry.
+        if (this.frame.registerCore === false) {
+          this.render();
+        } else {
+          invalidateEntity(this.ownerId);
+        }
+      });
     }
   }
 
@@ -725,3 +734,4 @@ export function frameId(frame: NativeFrame): string {
 }
 
 export { createConditional } from './conditional';
+export { createSlot } from './slot';

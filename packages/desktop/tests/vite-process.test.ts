@@ -18,8 +18,14 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
     export function increment() { count++; }
   `);
   await writeFile(join(directory, 'Summary.tsx'), `
+    import { Frame } from './Frame';
     export function Summary({ count }) {
-      return <aside>Imported native child: {count}</aside>;
+      return <Frame><aside>Imported native child: {count}</aside></Frame>;
+    }
+  `);
+  await writeFile(join(directory, 'Frame.tsx'), `
+    export function Frame({ children }) {
+      return <section>{children}</section>;
     }
   `);
   await writeFile(join(directory, 'App.tsx'), `

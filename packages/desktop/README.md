@@ -15,8 +15,9 @@ graphical Blitz host. The current executable supports click/capture callbacks;
 ordinary component calls now mount as accepted nested native owners and replay
 reactive props through the shared core prop box. Inline and component-return
 host/component branches use accepted native replacement. Editing events, refs,
-lists, forwarded regions and full
-event targets remain unfinished. Web mounting and the optimized DOM list
+and full event targets remain unfinished. Nested component children and forwarded
+content references mount into native regions; lists and render callbacks remain
+unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
 ## Run the visual dashboard
@@ -193,16 +194,25 @@ a private native generation while nested components keep normal semantic IDs. Wr
 during a pending switch are coalesced after acceptance, so an old component cannot
 queue a stale update behind its retirement.
 
+Ordinary nested content such as `<Panel><p>{count}</p></Panel>` becomes a stable
+caller-closure factory passed through the existing prop box. A callee's `{children}`
+mounts that factory at a native comment boundary. Forwarding it to another component
+and mounting it more than once retain independent ranges, event bindings and
+cleanup. Unused content stays lazy. Slot factory changes use the same accepted
+replacement controller as conditions, so refusal preserves the current content.
+The counter example's `Panel` exercises this through normal mount and CSS.
+
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, component children, list/forwarded
-structural replay, refs and stylesheet/assets integration receive
+callbacks, effects, lists, authored JSX attribute slots/render callbacks,
+refs and stylesheet/assets integration receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are
 current emission limits, not new application syntax or restrictions on the web.
 
 The real process tests compile ordinary TSX, bundle the generated module for Bun,
 Node and a custom CommonJS adapter, then mount, dispatch callbacks, replace inline
-and component-return branches, and retire against the cached Rust host. The bootstrap
+and component-return branches, mount linked/repeated children, and retire against
+the cached Rust host. The bootstrap
 is a private ABI fixture, not an application example or native platform event test.
 Applications keep existing `mount()` authoring. The Vite/window example above
 exercises that entry wiring; broader input/default and revision contracts remain M4

@@ -34,3 +34,17 @@ export function renderPropReferenceName(
   }
   return null;
 }
+
+/** Is this expression one of the component's compiler-owned mount slots? */
+export function isRenderPropReference(
+  ctx: AnalysisContext,
+  componentName: string,
+  expression: BaseNode,
+): boolean {
+  const name = renderPropReferenceName(ctx, componentName, expression);
+
+  return (
+    name !== null &&
+    ctx.componentProps.get(componentName)?.renderProps.includes(name) === true
+  );
+}

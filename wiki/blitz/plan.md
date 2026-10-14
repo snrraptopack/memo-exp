@@ -158,7 +158,12 @@ core `registerProps`/`setProps`
 box for local, nested and linked imported component calls. The neutral compiler
 prop initialization/replay builders are shared; no desktop prop store or dirty
 scheduler exists. Keep normal `mount()` imports and calls; source-plan
-descriptors alone do not close runtime capability gaps.
+descriptors alone do not close runtime capability gaps. M5.4–M5.7 now establish
+staged replacement, shared inline/return conditions and lazy nested/forwarded
+component children over accepted native ranges. Both targets consume the same
+pure render-slot predicates and linked caller-usage mapping. The counter's
+ordinary `Panel` exercises nested children; authored JSX attribute slots, render
+callbacks and keyed lists remain subsequent M5 gates.
 
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts

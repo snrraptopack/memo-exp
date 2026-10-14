@@ -472,7 +472,18 @@ existing `setProps` writer before core child invalidation. Nested propagation
 replays parent props before calculating grandchild props, avoiding a one-update
 lag. Linked imports reconstruct the same object/positional slot count from the
 component manifest. The compiler has no desktop prop registry or subscription
-path. Authored children, lists and conditions remain capability gates.
+path. Shared caller-usage resolution refines untyped exported interpolations
+before emission: scalar props remain scalar in their defining module, while
+JSX-bearing children retain their render-slot contract across imports.
+
+Inline conditions and component return plans now select accepted native ranges
+through the existing shared branch plans. Nested component children become lazy,
+stable caller-closure factories carried in ordinary prop boxes. Shared render-slot
+classification identifies callee interpolation and forwarding sites; the target
+mounts content at native comment boundaries. Repeated content mounts have distinct
+native ranges and event bindings. Slot factory changes use the same conditional
+acceptance controller, preserving current content after a refused replacement.
+Lists, authored JSX attribute slots and render callbacks remain emission gates.
 
 Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses

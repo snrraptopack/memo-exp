@@ -24,6 +24,11 @@ export type NativeBranchFactory = (
   frame: NativeFrame,
 ) => NativePresentation;
 
+/** A slot resolves its current factory without retaining every past factory. */
+type NativeBranchSource =
+  | readonly (NativeBranchFactory | null)[]
+  | ((index: number) => NativeBranchFactory | null | undefined);
+
 /**
  * A stable semantic owner selects one native branch range at a time. The old
  * branch remains both native and core-live until the replacement transaction
@@ -46,7 +51,7 @@ export class NativeConditional implements NativePresentation {
   constructor(
     private readonly frame: NativeFrame,
     private readonly pick: () => number,
-    private readonly branches: readonly (NativeBranchFactory | null)[],
+    private readonly branches: NativeBranchSource,
   ) {
     this.ownerId = frame.entityId ?? frame.owner.id;
     this.generation = frame.owner.generation;
@@ -296,7 +301,9 @@ export class NativeConditional implements NativePresentation {
     generation: number,
     deferCore: boolean,
   ): NativePresentation | null {
-    const factory = this.branches[index];
+    const factory = typeof this.branches === 'function'
+      ? this.branches(index)
+      : this.branches[index];
 
     if (factory === null) {
       return null;
@@ -328,7 +335,11 @@ export class NativeConditional implements NativePresentation {
   private readIndex(): number {
     const index = this.pick();
 
-    if (!Number.isSafeInteger(index) || index < 0 || index >= this.branches.length) {
+    if (
+      !Number.isSafeInteger(index) ||
+      index < 0 ||
+      (typeof this.branches !== 'function' && index >= this.branches.length)
+    ) {
       throw new HostError('invalidBranch', 'Native conditional returned an invalid branch index');
     }
 

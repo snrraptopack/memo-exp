@@ -25,6 +25,8 @@ import { planRegionReplays } from '../planning/region-replay';
 import { planComponentListSites } from '../planning/list-sites';
 import { planComponentCallbacks } from '../planning/component-callbacks';
 import { planComponentRendering } from '../planning/component-render';
+import { isRenderPropReference } from '../analysis/render-prop-reference';
+import type { BaseNode } from '../ast';
 import { liftModuleStateCells, type CellEmissionContext } from '../cells';
 import { emitAccessTable } from '../emission/access-table';
 import {
@@ -42,6 +44,7 @@ import { compilerError } from '../errors';
 import { isIntrinsicLifecycleCall, planCompilerIntrinsics } from '../intrinsics';
 import { planModuleCallbacks } from '../planning/module-callbacks';
 import { memberRootName } from '../context';
+import { desktopAnalysisProfile } from './analyze';
 import { lowerNativeTemplate } from './template';
 import type { NativeTemplatePlan } from './template-plan';
 import {
@@ -97,6 +100,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   );
 
   prepareSemanticAnalysis(ctx, path, {
+    ...desktopAnalysisProfile,
     install() {
       initializeGeneratedIdentifiers(ctx, program);
     }
@@ -249,7 +253,9 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
         key,
         jsx,
         expressionSources: component.expressionSources,
-        isForwarded: () => false,
+        isForwarded: expression => isRenderPropReference(
+          ctx, name, expression as unknown as BaseNode,
+        ),
         fail,
       }));
 
@@ -302,6 +308,8 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       component: renderedComponent,
       nativeId,
       conditionCount: { value: 0 },
+      slotCount: { value: 0 },
+      prelude: [] as t.Statement[],
       fail,
     };
 
@@ -358,6 +366,8 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
         );
 
     const result: t.Statement[] = [];
+
+    result.push(...emission.prelude);
 
     if (propsBox === null) {
       result.push(b.returnStatement(createPresentation));

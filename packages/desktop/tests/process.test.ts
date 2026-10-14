@@ -9,7 +9,7 @@ import { bundleExecutionEntry } from '../src/dev/bundle';
 import { PublicationClient } from '../src/host/client';
 import { connectNativeHost } from '../src/host/node-process';
 import { sourceTemplate } from './fixtures/native-template';
-import { compileDesktop } from '@memoized-dom/compiler/desktop';
+import { compileDesktop, compileDesktopProject } from '@memoized-dom/compiler/desktop';
 
 const nativeHost = process.env.MEMOIZED_DESKTOP_HOST ?? fileURLToPath(new URL(
   '../rust/target/debug/memoized-dom-desktop' + (process.platform === 'win32' ? '.exe' : ''),
@@ -44,6 +44,30 @@ beforeAll(async () => {
     }
   `, { moduleId: './process-conditional.tsx', runtimePath: core });
   await Bun.write(join(directory, 'conditional-app.mjs'), conditional.code);
+  const slots = compileDesktopProject({
+    './main.ts': `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './slots-app';
+      mount('app', App);
+    `,
+    './slots-app.tsx': `
+      import { Frame } from './Frame';
+      let count = 0;
+      export function increment() { count++; }
+      export function App() {
+        return <Frame><button onClick={increment}>Count: {count}</button></Frame>;
+      }
+    `,
+    './Frame.tsx': `
+      export function Frame({ children }) {
+        return <section><article>{children}</article><aside>{children}</aside></section>;
+      }
+    `,
+  }, { runtimePath: '@memoized-dom/runtime' });
+
+  for (const id of ['./slots-app.tsx', './Frame.tsx']) {
+    await Bun.write(join(directory, id.replace(/\.tsx$/, '.mjs')), slots.modules.get(id)!.code);
+  }
   const application = fileURLToPath(new URL('../src/runtime/application.ts', import.meta.url)).replaceAll('\\', '/');
   const client = fileURLToPath(new URL('../src/host/client.ts', import.meta.url)).replaceAll('\\', '/');
   await Bun.write(join(directory, 'compiled-entry.ts'), `
@@ -127,6 +151,50 @@ beforeAll(async () => {
     run().catch(error => { console.error(error); process.exitCode = 1; });
   `);
 
+  await Bun.write(join(directory, 'slots-entry.ts'), `
+    import assert from 'node:assert/strict';
+    import { App } from './slots-app.mjs';
+    import { commit, setScheduler } from ${JSON.stringify(core)};
+    import { NativeApplication } from ${JSON.stringify(application)};
+    import { PublicationClient } from ${JSON.stringify(client)};
+    import { connectNativeHost } from '@memoized-dom/desktop/internal-host';
+
+    async function run() {
+      const errors = [];
+      const app = new NativeApplication(new PublicationClient(connectNativeHost({
+        executable: process.argv[2], args: ['--headless'],
+      })), { scheduleFrame: null, visible: () => true, reportError: error => errors.push(error) });
+      app.run(() => setScheduler(() => {}));
+      let view;
+
+      try {
+        const candidate = app.prepare(() => {
+          view = App({
+            application: app, owner: { id: 'App', generation: 1 }, parent: null,
+            reportError: error => errors.push(error),
+          });
+          return view;
+        }, { accepted() { view.acceptInitial(); }, activated() { view.activateUpdates(); } });
+        const first = await candidate.publish(view.initialPublication);
+        view.dispatch({
+          owner: { id: 'App/Frame/slot/$content', generation: 1 }, source: 0,
+        }, 'onClick', new Event('click'));
+        app.run(commit);
+        const updated = await view.publication();
+        const retired = await candidate.retire(view.retirementPublication());
+        assert.deepEqual(errors, []);
+        assert.equal(app.runtime.state.registry.size, 0);
+        console.log(JSON.stringify({
+          accepted: [first.sequence, updated.sequence, retired.sequence], slots: true,
+        }));
+      } finally {
+        app.close();
+      }
+    }
+
+    run().catch(error => { console.error(error); process.exitCode = 1; });
+  `);
+
   // This entry is the ordinary authoring boundary. Only the launcher knows
   // about the host connection, acceptance observation or generated frames.
   await Bun.write(join(directory, 'mounted-app.ts'), `
@@ -200,11 +268,11 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle', 'compiled', 'conditional', 'mounted']) {
+  for (const fixture of ['application', 'lifecycle', 'compiled', 'conditional', 'slots', 'mounted']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
-        entry: fixture === 'compiled' || fixture === 'conditional' || fixture === 'mounted'
+        entry: fixture === 'compiled' || fixture === 'conditional' || fixture === 'slots' || fixture === 'mounted'
           ? join(directory, fixture + '-entry.ts')
           : fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
         outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
@@ -229,6 +297,8 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual(fixture === 'mounted'
         ? { accepted: [1, 2, 3, 4, 5], mounted: true }
+        : fixture === 'slots'
+        ? { accepted: [1, 3, 4], slots: true }
         : fixture === 'conditional'
         ? { accepted: [1, 2, 3, 4], conditional: true }
         : fixture === 'compiled'

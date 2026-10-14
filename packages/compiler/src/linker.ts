@@ -40,6 +40,7 @@ import type {
 } from './linking/model';
 export type { CompileModulesOptions } from './linking/model';
 import {
+  linkComponentRenderProps,
   linkImports,
   resolveModule,
 } from './linking/resolution';
@@ -638,7 +639,7 @@ function compileLinkedModules(
     > = {};
     const linkedComponentRenderProps: NonNullable<
       MemoDomOptions['linkedComponentRenderProps']
-    > = {};
+    > = linkComponentRenderProps(manifest, renderUsage);
     for (const declaration of manifest.components) {
       linkedComponentPaths[declaration.local] = [
         ...(componentGraph.paths.get(declaration.key) ?? []),
@@ -664,19 +665,6 @@ function compileLinkedModules(
             },
           ]),
         );
-      }
-      const exported = Object.values(manifest.exports).find(
-        (candidate) =>
-          candidate.type === 'component' &&
-          candidate.key === declaration.key,
-      );
-      if (exported?.type === 'component') {
-        const usage = renderUsage.get(declaration.key);
-        linkedComponentRenderProps[declaration.local] =
-          exported.renderProps.filter(
-            (prop) =>
-              usage?.scalar.has(prop) !== true || usage.jsx.has(prop),
-          );
       }
     }
     let compileOptions: InternalMemoDomOptions = {

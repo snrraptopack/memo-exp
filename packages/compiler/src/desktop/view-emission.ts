@@ -5,8 +5,10 @@ import * as b from '../ast/factory';
 import type * as t from '../ast/compiler-types';
 import {
   cloneNode,
+  type BaseNode,
   valueToNode,
 } from '../ast';
+import { isRenderPropReference } from '../analysis/render-prop-reference';
 import type { CellEmissionContext } from '../cells';
 import {
   callPropsFromObject,
@@ -19,6 +21,7 @@ import {
   md,
 } from '../emission/identifiers';
 import { planOrderedAttributes } from '../jsx/attributes';
+import { hasComponentChildren } from '../jsx/children';
 import type { PlannedComponent } from '../planning/component-render';
 
 import { lowerNativeTemplate } from './template';
@@ -65,6 +68,8 @@ export interface NativeViewEmissionInputs {
   readonly component: PlannedComponent;
   readonly nativeId: t.Identifier;
   readonly conditionCount: { value: number };
+  readonly slotCount: { value: number };
+  readonly prelude: t.Statement[];
   readonly fail: (message: string, at: t.Node) => never;
 }
 
@@ -87,6 +92,7 @@ export function emitNativeView(
     fail,
   } = inputs;
   const childCounts = new Map<string, number>();
+  let forwardedSlotCount = 0;
   const children = plan.steps.flatMap((step): t.Expression[] => {
     if (step.kind !== 'region') {
       return [];
@@ -105,7 +111,9 @@ export function emitNativeView(
           key: `${moduleId}#${component.name}/${segment}[${index}]`,
           jsx: branch,
           expressionSources: component.expressionSources,
-          isForwarded: () => false,
+          isForwarded: expression => isRenderPropReference(
+            ctx, component.name, expression as unknown as BaseNode,
+          ),
           fail,
         }));
 
@@ -147,6 +155,33 @@ export function emitNativeView(
       ];
     }
 
+    if (step.content.type === 'slot') {
+      const seen = forwardedSlotCount++;
+      const segment = seen === 0 ? 'slot' : `slot[${seen}]`;
+      const childFrame = generatedIdentifier(ctx, 'slotFrame');
+      const create = b.arrowFunctionExpression(
+        [childFrame],
+        b.callExpression(
+          b.memberExpression(cloneNode(nativeId), b.identifier('createSlot')),
+          [
+            cloneNode(childFrame),
+            b.arrowFunctionExpression([], cloneNode(step.content.expression)),
+          ],
+        ),
+      );
+
+      return [
+        b.callExpression(
+          b.memberExpression(cloneNode(nativeId), b.identifier('child')),
+          [
+            b.stringLiteral(segment),
+            b.numericLiteral(step.source),
+            create,
+          ],
+        ),
+      ];
+    }
+
     if (step.content.type !== 'component') {
       throw new Error('Structural capability must be checked before emission');
     }
@@ -171,31 +206,89 @@ export function emitNativeView(
     childCounts.set(tag, seen + 1);
     const segment = seen === 0 ? tag : `${tag}[${seen}]`;
 
-    if (element.children.some((child) =>
-      !b.isJSXText(child) || child.value.trim().length > 0)) {
-      fail('Component children require forwarded-content region emission', element);
-    }
-
     const attributes = planOrderedAttributes(opening.attributes, {
       skipKey: true,
       fail: message => fail(message, opening),
     });
+    const targetProps = ctx.componentProps.get(tag)!;
+    const authoredChildren = hasComponentChildren(element.children);
+    let childrenFactory: t.Identifier | null = null;
+
+    if (authoredChildren) {
+      if (attributes.entries.some((entry) =>
+        entry.type === 'attribute' && entry.name === 'children')) {
+        fail(`Component <${tag}> cannot use both a children prop and nested JSX children`, element);
+      }
+
+      const slotIndex = inputs.slotCount.value++;
+      const slotPlan = withTemplateRevision(lowerNativeTemplate({
+        key: `${moduleId}#${component.name}/$slot[${slotIndex}]`,
+        jsx: b.jsxFragment(
+          b.jsxOpeningFragment(),
+          b.jsxClosingFragment(),
+          element.children.map(child => cloneNode(child)),
+        ),
+        expressionSources: component.expressionSources,
+        isForwarded: expression => isRenderPropReference(
+          ctx, component.name, expression as unknown as BaseNode,
+        ),
+        fail,
+      }));
+
+      validateNativeTemplatePlan(slotPlan, element, fail);
+
+      childrenFactory = generatedIdentifier(ctx, 'children');
+      const slotFrame = generatedIdentifier(ctx, 'childrenFrame');
+
+      inputs.prelude.push(
+        b.variableDeclaration('const', [
+          b.variableDeclarator(
+            cloneNode(childrenFactory),
+            b.arrowFunctionExpression(
+              [slotFrame],
+              emitNativeView(
+                inputs,
+                slotPlan,
+                slotFrame,
+                b.arrowFunctionExpression([], nativeEvaluation(slotPlan)),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
+
     const spreads = attributes.entries.some(entry => entry.type === 'spread');
+    const orderedAttributes = emitOrderedAttributes(attributes);
+
+    if (childrenFactory !== null) {
+      orderedAttributes.properties.push(
+        b.objectProperty(
+          b.identifier('children'),
+          cloneNode(childrenFactory),
+        ),
+      );
+    }
+
     const arguments_ = spreads
-      ? callPropsFromObject(ctx, tag, emitOrderedAttributes(attributes))
+      ? callPropsFromObject(ctx, tag, orderedAttributes)
       : orderCallProps(
           ctx,
           tag,
-          attributes.entries.map((entry) => {
-            if (entry.type === 'spread') {
-              throw new Error('Spread entries are handled by the object path');
-            }
+          [
+            ...attributes.entries.map((entry) => {
+              if (entry.type === 'spread') {
+                throw new Error('Spread entries are handled by the object path');
+              }
 
-            return { name: entry.name, value: cloneNode(entry.value) };
-          }),
+              return { name: entry.name, value: cloneNode(entry.value) };
+            }),
+            ...(childrenFactory === null
+              ? []
+              : [{ name: 'children', value: cloneNode(childrenFactory) }]),
+          ],
         );
     const childFrame = generatedIdentifier(ctx, 'childFrame');
-    const targetProps = ctx.componentProps.get(tag)!;
     const targetPropSlots = runtimePropSlotCount(targetProps);
     const boxedArguments = b.arrayExpression(
       arguments_.map((argument) => cloneNode(argument)),
@@ -272,9 +365,10 @@ export function validateNativeTemplatePlan(
     if (
       step.kind === 'region' &&
       step.content.type !== 'component' &&
-      step.content.type !== 'condition'
+      step.content.type !== 'condition' &&
+      step.content.type !== 'slot'
     ) {
-      fail('Lists and forwarded children require structural replay emission', jsx);
+      fail('Lists require structural replay emission', jsx);
     }
   }
 }

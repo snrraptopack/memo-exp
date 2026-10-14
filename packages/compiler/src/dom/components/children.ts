@@ -24,7 +24,7 @@ export type EmitChildSlot = (
   parentNode: t.Identifier,
   ownerId: t.Identifier,
 ) => void;
-import type {JsxChild} from '../../jsx/children';
+import type { JsxChild } from '../../jsx/children';
 
 export interface ChildContentEmitters {
   emitText(expression: t.Expression): string;
@@ -39,27 +39,7 @@ export interface ChildContentEmitters {
   fail(message: string): never;
 }
 
-/** Does a component element contain authored, non-whitespace children? */
-export function hasComponentChildren(children: readonly JsxChild[]): boolean {
-  return children.some(
-    (child) => !astFactory.isJSXText(child) || child.value !== '',
-  );
-}
-
-import {renderPropReferenceName} from '../../analysis/render-prop-reference';
-
-/** Is this expression one of the component's compiler-owned mount slots? */
-export function isRenderPropReference(
-  ctx: Ctx,
-  compName: string,
-  expression: t.Expression,
-): boolean {
-  const name = renderPropReferenceName(ctx, compName, expression);
-  return (
-    name !== null &&
-    ctx.componentProps.get(compName)?.renderProps.includes(name) === true
-  );
-}
+export { isRenderPropReference } from '../../analysis/render-prop-reference';
 
 /**
  * Build a stable mount function and link its guarded update to `ownerScope`.

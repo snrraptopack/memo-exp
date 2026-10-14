@@ -639,6 +639,192 @@ test('a root return plan retires its live native branch through ordinary unmount
   application.close();
 });
 
+test('component children remain caller-reactive through forwarded native slots', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+
+    export function increment() {
+      count++;
+    }
+
+    function Inner({ children }) {
+      return <article>{children}</article>;
+    }
+
+    function Frame({ children }) {
+      return <section>
+        <Inner>{children}</Inner>
+        <aside>{children}</aside>
+      </section>;
+    }
+
+    export function App() {
+      return <main>
+        <Frame>
+          <button onClick={increment}>Value {count}</button>
+        </Frame>
+      </main>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } =
+    createCompiledApplication(module);
+  const publication = view.initialPublication;
+  const mounts = publication.operations.filter(operation => operation.op === 'mount');
+
+  expect(mounts.map(operation => operation.owner.id)).toEqual([
+    'App',
+    'App/Frame',
+    'App/Frame/Inner',
+    'App/Frame/Inner/slot/$content',
+    'App/Frame/Inner/slot/$content/slot/$content',
+    'App/Frame/slot/$content',
+  ]);
+  expect(publication.operations.filter(operation =>
+    operation.op === 'text' && operation.value === 'Value 0')).toHaveLength(2);
+
+  const mounted = candidate.publish(publication);
+  transport.accept(1);
+  await mounted;
+
+  const authoredButton = {
+    owner: { id: 'App/Frame/slot/$content', generation: 1 },
+    source: 0,
+  };
+
+  view.dispatch(authoredButton, 'onClick', new Event('click'));
+  application.run(core.commit);
+
+  // Each retained content range publishes independently. The transport admits
+  // one packet at a time, so inspect both accepted updates rather than assuming
+  // two ranges share a transport packet.
+  transport.accept(2);
+  await Bun.sleep(0);
+  expect(transport.sent).toHaveLength(3);
+  transport.accept(3);
+  await view.publication();
+
+  const operations = transport.sent.slice(1).flatMap(packet =>
+    JSON.parse(packet).operations);
+
+  expect(operations.filter((operation: { op: string; value?: string }) =>
+    operation.op === 'text' && operation.value === 'Value 1')).toHaveLength(2);
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test('unused component children remain lazy and competing children are diagnosed', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+
+    function Never() {
+      throw new Error('Unused content must not be created');
+      return <p>Hidden</p>;
+    }
+
+    function Frame({ children }) {
+      return <section>Visible</section>;
+    }
+
+    export function App() {
+      return <Frame><Never /></Frame>;
+    }
+  `);
+  const { application, candidate, view, transport } = createCompiledApplication(module);
+  const publication = view.initialPublication;
+  expect(publication.operations.filter(operation => operation.op === 'mount')
+    .map(operation => operation.owner.id)).toEqual(['App', 'App/Frame']);
+
+  const mounted = candidate.publish(publication);
+  transport.accept(1);
+  await mounted;
+  expect(application.runtime.state.registry.has('App/Frame/Never')).toBe(false);
+  application.close();
+
+  expect(() => compileDesktop(`
+    function Frame({ children }) { return <section>{children}</section>; }
+    export function App() {
+      return <Frame children={<b>First</b>}><i>Second</i></Frame>;
+    }
+  `)).toThrow('cannot use both a children prop and nested JSX children');
+});
+
+test('a component inside forwarded content retains its own shared state readers', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+
+    function Label() {
+      return <button onClick={increment}>{count}</button>;
+    }
+
+    function Frame({ children }) {
+      return <section>{children}</section>;
+    }
+
+    export function App() {
+      return <Frame><Label /></Frame>;
+    }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const mounted = candidate.publish(view.initialPublication);
+  transport.accept(1);
+  await mounted;
+
+  view.dispatch({
+    owner: { id: 'App/Frame/slot/$content/Label', generation: 1 },
+    source: 0,
+  }, 'onClick', new Event('click'));
+  application.run(core.commit);
+
+  expect(transport.sent).toHaveLength(2);
+  expect(JSON.parse(transport.sent[1]!).operations).toContainEqual({
+    op: 'text',
+    target: { owner: { id: 'App/Frame/slot/$content/Label', generation: 1 }, source: 1 },
+    value: '1',
+  });
+  transport.accept(2);
+  await view.publication();
+  expect(errors).toEqual([]);
+  application.close();
+});
+
+test('forwarded content coalesces writes when its synthetic range reaches native pressure', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function Frame({ children }) { return <section>{children}</section>; }
+    export function App() { return <Frame><p>{count}</p></Frame>; }
+  `);
+  const { application, candidate, view, transport, errors } = createCompiledApplication(module);
+  const mounted = candidate.publish(view.initialPublication);
+  transport.accept(1);
+  await mounted;
+
+  for (let index = 0; index < 12; index++) {
+    application.run(() => {
+      module.increment();
+      core.commit();
+    });
+  }
+
+  // Drain the admitted updates. Freed credit replays the retained synthetic
+  // range even though its native owner is absent from the semantic registry.
+  for (let sequence = 2; sequence <= 10; sequence++) {
+    transport.accept(sequence);
+    await Bun.sleep(0);
+    application.run(core.commit);
+  }
+
+  await view.publication();
+  expect(JSON.parse(transport.sent.at(-1)!).operations).toContainEqual({
+    op: 'text',
+    target: { owner: { id: 'App/Frame/slot/$content', generation: 1 }, source: 1 },
+    value: '12',
+  });
+  expect(errors).toEqual([]);
+  application.close();
+});
+
 test('repeated and nested components keep shared owner paths and deduplicate templates', async () => {
   const module = moduleFactory(`
     export function increment() {}
@@ -812,5 +998,4 @@ test('unsupported lifetimes/structures/reactivity fail instead of silently losin
   expect(() => compileDesktop('export function App(){return <div ref={node}/>}')).toThrow('Refs');
   expect(() => compileDesktop('let items=[];export function App(){return <button onClick={()=>items.push(1)}>Add</button>}')).toThrow('guarded-publication');
   expect(() => compileDesktop('let count=0;export function App(){setTimeout(()=>{count++;},0);return <p>{count}</p>}')).toThrow('Retained callbacks');
-  expect(() => compileDesktop('function Child(){return <section/>}export function App(){return <Child><p>Content</p></Child>}')).toThrow('Component children');
 });

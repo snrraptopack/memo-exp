@@ -16,7 +16,7 @@ Update the status table when the corresponding completion gates pass.
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
 | M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static/imported components, reactive props, inline conditions and shared component return plans use accepted native ownership; children, lists and render callbacks remain |
+| M5 — Modules and structural parity | In progress | Static/imported components, reactive props, inline/return conditions and nested/forwarded children use accepted native ownership; lists, JSX attribute slots and render callbacks remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -1690,3 +1690,52 @@ Completed implementation/checks: 2026-10-14. M5 remains in progress.
 Next M5 work: forwarded component children and render callbacks. Their content
 factories should reuse the same presentation view emission and accepted ownership;
 keyed list work remains on the existing optimized core list implementation.
+
+## M5.7 — Accepted component children and forwarding
+
+Completed implementation/checks: 2026-10-14. M5 remains in progress.
+
+- Before changing the shared boundary, communicated the exact extraction:
+  `hasComponentChildren` moves from DOM helpers to `jsx/children.ts`, and the pure
+  `isRenderPropReference` predicate moves to shared analysis. Their logic is
+  unchanged; DOM consumers retain the existing classification and emission.
+  Desktop selects the existing `scanRenderProps` pass through one profile used
+  by both project discovery and final emission.
+- Vite integration exposed a missing project contract: desktop had not passed
+  resolved scalar/JSX caller usage back to defining modules. Communicated and
+  extracted the web linker's pure `linkComponentRenderProps` mapping into shared
+  linking, preserving its filter. Both targets use it; desktop also supplies
+  shared caller usage to `linkImports`. The imported scalar prop regression now
+  passes with nested content, normal mount, CSS plugins and accepted reloads.
+- Nested component content compiles to stable lazy factories in the caller's
+  closure, passed through the existing core prop box. Forwarded references use
+  the shared render-slot classification, native comment placement and existing
+  view emission. Repeated mounts retain independent native ranges and handlers.
+  No new source syntax, mounting API, dependency resolver or reactive engine was
+  introduced.
+- Slot presentation reuses accepted conditional replacement. Factory changes
+  receive monotonically increasing selection indices; refusing B while A is
+  accepted does not cause a later C selection to be mistaken for A. Empty slots
+  retire their native content while retaining the semantic controller.
+- Synthetic content resumes coalesced updates through its retained view. Its
+  wire-only `$content` owner is never used as a core-registry lookup. A pressure
+  contract verifies the latest value after twelve writes and freed native credit.
+- The counter now uses an ordinary `Panel` with nested JSX. The process fixture
+  compiles imported component children through the real project linker and
+  verifies repeated content updates and subtree retirement against Rust with
+  Bun, Node and the custom adapter. Vite's ordinary mount/CSS fixture also uses
+  imported component content.
+- The desktop suite passes **77 tests**, zero failed, with 386 assertions; Bun
+  checking passes all 129 files. Compiler build and focused lint pass. The DOM
+  children/render-prop contracts, all 20 emission golden snapshots, child plans
+  and shared compiler boundary/project/pipeline gates pass. One earlier boundary
+  run exceeded Bun's default five-second test timeout under concurrent work; an
+  isolated rerun and the final run with an explicit 60-second timeout pass.
+- The final real Rust process/Vite run passes **23 tests**, zero failed, with 93
+  assertions. Shared/DOM checks pass **56 tests**, zero failed, with 21 unchanged
+  snapshots and 181 assertions. No Rust source changed or native relink was
+  required. These process gates do not claim new physical window input behavior.
+
+Next M5 work: authored JSX-valued attribute slots and render callbacks, using the
+same presentation factories and accepted controller. List source/key planning
+and the optimized web list implementation remain unchanged.

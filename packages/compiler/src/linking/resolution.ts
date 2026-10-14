@@ -240,3 +240,26 @@ export function linkImports(
   }
   return linked;
 }
+
+/** Caller evidence refines exported interpolation slots in the defining module. */
+export function linkComponentRenderProps(
+  manifest: ModuleManifest,
+  renderUsage: ReadonlyMap<string, RenderUsage>,
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+
+  for (const declaration of manifest.components) {
+    const exported = Object.values(manifest.exports).find(candidate =>
+      candidate.type === 'component' && candidate.key === declaration.key);
+
+    if (exported?.type !== 'component') {
+      continue;
+    }
+
+    const usage = renderUsage.get(declaration.key);
+    result[declaration.local] = exported.renderProps.filter(prop =>
+      usage?.scalar.has(prop) !== true || usage.jsx.has(prop));
+  }
+
+  return result;
+}

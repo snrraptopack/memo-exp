@@ -11,8 +11,10 @@ import { PublicationClient } from '../src/host/client';
 import {
   bindViewProps,
   child,
+  createSlot,
   NativeView,
   type NativeFrame,
+  type NativePresentation,
 } from '../src/runtime/view';
 import { ManualTransport } from './fixtures/manual-transport';
 
@@ -67,6 +69,80 @@ function observe(promise: Promise<unknown>) {
 }
 
 describe('native publication uses shared core lifetimes', () => {
+  test('refused slot factories retain accepted content and later changes still replace it', async () => {
+    const { application, transport, errors } = createApplication();
+    const clicked: string[] = [];
+    const factory = (label: string) => (frame: NativeFrame) => new NativeView(
+      frame,
+      {
+        key: 'slot-' + label,
+        nodes: [
+          { parent: null, node: {
+            kind: 'element',
+            name: { namespace: 'http://www.w3.org/1999/xhtml', local: 'button' },
+            attributes: [],
+          } },
+          { parent: 0, node: { kind: 'text', value: label } },
+        ],
+      },
+      () => [{
+        kind: 'attributes', source: 0,
+        value: { onClick: () => clicked.push(label) },
+      }],
+    );
+    let selected: ReturnType<typeof factory> | null = factory('A');
+    let slot!: NativePresentation;
+    const candidate = application.prepare(() => {
+      slot = createSlot({
+        application,
+        owner: { id: 'App', generation: 1 },
+        parent: null,
+        reportError: error => errors.push(error),
+      }, () => selected);
+
+      return slot;
+    }, {
+      accepted() { slot.acceptInitial(); },
+      activated() { slot.activateUpdates(); },
+    });
+    const initial = candidate.publish(slot.initialPublication);
+    transport.accept(1);
+    await initial;
+
+    const original = { owner: { id: 'App/$content', generation: 1 }, source: 0 };
+    selected = factory('B');
+    application.run(() => slot.updateFromOwner());
+    const refused = observe(slot.publication());
+    transport.refuse(2);
+    expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+    expect(slot.matchesSource(original)).toBe(true);
+    slot.dispatch(original, 'onClick', new Event('click'));
+    expect(clicked).toEqual(['A']);
+
+    selected = factory('C');
+    application.run(() => slot.updateFromOwner());
+    expect(JSON.parse(transport.sent[2]!).operations).toContainEqual({
+      op: 'mount', owner: { id: 'App/$content', generation: 2 },
+      template: 'slot-C', target: { kind: 'body' },
+    });
+    transport.accept(2);
+    await slot.publication();
+    expect(slot.matchesSource(original)).toBe(false);
+    slot.dispatch({ owner: { id: 'App/$content', generation: 2 }, source: 0 },
+      'onClick', new Event('click'));
+    expect(clicked).toEqual(['A', 'C']);
+
+    selected = null;
+    application.run(() => slot.updateFromOwner());
+    transport.accept(3);
+    await slot.publication();
+    expect(slot.retirementPublication().operations).toEqual([]);
+    expect(application.runtime.state.registry.has('App')).toBe(true);
+    expect(errors).toHaveLength(1);
+    application.close();
+    expect(application.runtime.state.registry.size).toBe(0);
+  });
+
   test('refs and effects activate only after acceptance, in core order', async () => {
     const { application, transport, errors } = createApplication();
     const events: string[] = [];

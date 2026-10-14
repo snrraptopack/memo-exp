@@ -11,14 +11,17 @@ import {
   linkManifestWorklist,
   resolveApplicationRoot
 } from '../linking/project';
-import { linkImports } from '../linking/resolution';
+import { linkComponentRenderProps, linkImports } from '../linking/resolution';
+import { resolveRenderUsage } from '../components/render-usage';
 import { compilerOptions } from '../linking/options';
+import { desktopAnalysisProfile } from './analyze';
 import { compileDesktop } from './compile';
 
 const sourceAnalysis: ManifestAnalysisAdapter<Ctx> = {
   createContext: createAnalysisCtx,
   prepare(context, path) {
     prepareSemanticAnalysis(context, path, {
+      ...desktopAnalysisProfile,
       install() {
         refreshAstAnalysis(context, path.node);
       }
@@ -70,10 +73,14 @@ export function compileDesktopProject(
     sourceAnalysis
   );
   const products = new Map<string, ReturnType<typeof compileDesktop>>();
+  const renderUsage = resolveRenderUsage(
+    [...linked.values()].flatMap(manifest => manifest.componentUsages),
+  );
 
   for (const entry of entries.values()) {
+    const manifest = linked.get(entry.id)!;
     const linkedImports = linkImports(
-      entry, linked.get(entry.id)!, linked, entries, options
+      entry, manifest, linked, entries, options, renderUsage,
     );
     products.set(entry.id, compileDesktop(entry.source, {
       ...compilerOptions(options, root.rootId),
@@ -81,6 +88,7 @@ export function compileDesktopProject(
       stylesheetImports: options.stylesheetImports,
       moduleId: entry.id,
       linkedImports,
+      linkedComponentRenderProps: linkComponentRenderProps(manifest, renderUsage),
       ...(entry.id === root.moduleId ? { rootComponent: root.local } : {})
     }));
   }

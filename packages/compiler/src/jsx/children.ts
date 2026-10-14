@@ -34,6 +34,13 @@ export interface DirectChildClassifier {
   fail(message: string): never;
 }
 
+/** Does a component element contain authored, non-whitespace children? */
+export function hasComponentChildren(children: readonly JsxChild[]): boolean {
+  return children.some(
+    (child) => !astFactory.isJSXText(child) || child.value !== '',
+  );
+}
+
 /** Plan child semantics without allocating nodes or emitting backend code. */
 export function planDirectChildren(
   children: readonly t.JSXElement['children'][number][],
