@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { mkdtemp, rm, access, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, access, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,6 +111,54 @@ beforeAll(async () => {
   for (const id of ['./row-state.ts', './rows-app.tsx', './Rows.tsx']) {
     await Bun.write(join(directory, id.replace(/\.tsx?$/, '.mjs')), rows.modules.get(id)!.code);
   }
+
+  const callbacks = compileDesktopProject({
+    './main.ts': `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './rows-app';
+      mount('app', App);
+    `,
+    './row-state.ts': `
+      export let count = 0;
+      export let reversed = false;
+      export let shown = true;
+      export function increment() { count++; }
+      export function reverse() { reversed = !reversed; }
+      export function toggle() { shown = !shown; }
+    `,
+    './rows-app.tsx': `
+      import { count, reversed, shown, reverse, toggle, increment } from './row-state';
+      import { Rows } from './Rows';
+      function Detail({item}) { return <strong>Item {item}</strong>; }
+      export function App() {
+        return <main>
+          <button onClick={reverse}>Reverse</button>
+          <button onClick={toggle}>Toggle second</button>
+          <p>{count}</p>
+          <Rows items={shown ? (reversed ? [2, 1] : [1, 2]) : [1]}
+            draw={(item, index) => <li key={item}>
+              <button onClick={increment}>{item}:{index}:{count}</button><Detail item={item} />
+            </li>}
+          />
+        </main>;
+      }
+    `,
+    './Rows.tsx': `
+      function List(props) {
+        return <ul>{props.items.map((item, index) => props.renderItem(item, index))}</ul>;
+      }
+      export function Rows({items, draw}) {
+        return <List {...{items, renderItem: draw}} />;
+      }
+    `,
+  }, { runtimePath: '@memoized-dom/runtime' });
+  const callbackDirectory = join(directory, 'callbacks');
+  await mkdir(callbackDirectory);
+
+  for (const id of ['./row-state.ts', './rows-app.tsx', './Rows.tsx']) {
+    await Bun.write(join(callbackDirectory, id.replace(/\.tsx?$/, '.mjs')), callbacks.modules.get(id)!.code);
+  }
+
   const application = fileURLToPath(new URL('../src/runtime/application.ts', import.meta.url)).replaceAll('\\', '/');
   const client = fileURLToPath(new URL('../src/host/client.ts', import.meta.url)).replaceAll('\\', '/');
   const mount = fileURLToPath(new URL('../src/runtime/mount.ts', import.meta.url)).replaceAll('\\', '/');
@@ -138,28 +186,32 @@ beforeAll(async () => {
         const view = adapter.view();
         const first = { owner: { id: 'App/Rows/items/Row[n:1]', generation: 2 }, source: 1 };
         const second = { owner: { id: 'App/Rows/items/Row[n:2]', generation: 3 }, source: 1 };
+        // Synthetic callback/conditional ranges add a wire-only content owner.
+        const semanticId = source => source.owner.id.replace('/$content', '');
 
         view.dispatch(first, 'onClick', new Event('click'));
         app.run(commit);
         await view.publication();
+        assert.equal(app.run(() => view.evaluate()).some(step => step.kind === 'text' && step.value === 1), true);
         app.run(() => { reverse(); commit(); });
         await view.publication();
         app.run(commit);
         await view.publication();
         assert.equal(view.matchesSource(first), true);
         assert.equal(view.matchesSource(second), true);
-        assert.equal(app.runtime.state.registry.has(first.owner.id + '/Detail'), true);
+        assert.equal(app.runtime.state.registry.has(semanticId(first) + '/Detail'), true);
 
         app.run(() => { toggle(); commit(); });
         await view.publication();
         app.run(commit);
         await view.publication();
         assert.equal(view.matchesSource(second), false);
-        assert.equal(app.runtime.state.registry.has(second.owner.id + '/Detail'), false);
+        assert.equal(app.runtime.state.registry.has(semanticId(second) + '/Detail'), false);
 
         view.dispatch(first, 'onClick', new Event('click'));
         app.run(commit);
         await view.publication();
+        assert.equal(app.run(() => view.evaluate()).some(step => step.kind === 'text' && step.value === 2), true);
         mounted.unmount();
         await adapter.settled();
         assert.equal(app.runtime.state.registry.size, 0);
@@ -172,6 +224,12 @@ beforeAll(async () => {
 
     run().catch(error => { console.error(error); process.exitCode = 1; });
   `);
+  // The same process contract exercises direct and caller-owned row factories.
+  const rowEntry = await readFile(join(directory, 'rows-entry.ts'), 'utf8');
+  await Bun.write(join(directory, 'callbacks-entry.ts'), rowEntry
+    .replace("'./rows-app.mjs'", "'./callbacks/rows-app.mjs'")
+    .replace("'./row-state.mjs'", "'./callbacks/row-state.mjs'")
+    .replaceAll('App/Rows/items/Row[', 'App/Rows/List/items/$content/rows/Row['));
   await Bun.write(join(directory, 'compiled-entry.ts'), `
     import assert from 'node:assert/strict';
     import {App} from './compiled-app.mjs';
@@ -370,11 +428,11 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle', 'list', 'rows', 'compiled', 'conditional', 'slots', 'mounted']) {
+  for (const fixture of ['application', 'lifecycle', 'list', 'rows', 'callbacks', 'compiled', 'conditional', 'slots', 'mounted']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
-        entry: fixture === 'compiled' || fixture === 'conditional' || fixture === 'slots' || fixture === 'mounted' || fixture === 'rows'
+        entry: ['compiled', 'conditional', 'slots', 'mounted', 'rows', 'callbacks'].includes(fixture)
           ? join(directory, fixture + '-entry.ts')
           : fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
         outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
@@ -401,7 +459,7 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
         ? { accepted: [1, 2, 3, 4, 5], mounted: true }
         : fixture === 'list'
         ? { accepted: [1, 2, 3, 4, 5], refused: 'documentRefused', list: true }
-        : fixture === 'rows'
+        : fixture === 'rows' || fixture === 'callbacks'
         ? { rows: true, events: true, retired: true }
         : fixture === 'slots'
         ? { accepted: [1, 3, 4], slots: true }

@@ -14,6 +14,36 @@ function observed(promise: Promise<unknown>): Promise<unknown> {
 async function turn(): Promise<void> { await Promise.resolve(); }
 
 describe('engine-independent publication client', () => {
+  test('capacity notifications follow settlement and honor unsubscribe and terminal close', async () => {
+    const transport = new TestTransport();
+    const client = new PublicationClient(transport, { maxPending: 2 });
+    const events: string[] = [];
+    const removed = client.onCapacity(() => events.push('removed'));
+    removed();
+    client.onCapacity(() => events.push('capacity'));
+    expect(client.hasCapacity).toBe(true);
+    const first = client.publish(empty).then(() => { events.push('accepted'); });
+    const second = observed(client.publish(empty));
+    expect(client.hasCapacity).toBe(false);
+    transport.accept(1);
+    await first;
+    await Bun.sleep(0);
+    expect(events).toEqual(['accepted', 'capacity']);
+    expect(client.hasCapacity).toBe(true);
+    transport.refuse(2);
+    expect(await second).toMatchObject({ name: 'PublicationRefusedError' });
+    await Bun.sleep(0);
+    expect(events).toEqual(['accepted', 'capacity', 'capacity']);
+
+    const third = observed(client.publish(empty));
+    transport.accept(2);
+    client.close();
+    await third;
+    await Bun.sleep(0);
+    expect(client.hasCapacity).toBe(false);
+    expect(events).toHaveLength(3);
+  });
+
   test('idle close notifies current and late owners once, honoring unsubscribe', () => {
     const transport = new TestTransport();
     const client = new PublicationClient(transport);

@@ -210,6 +210,7 @@ export class NativeConditional implements NativePresentation {
     }
 
     this.phase = 'disposed';
+    this.frame.application.releaseDeferredPresentation(this);
     this.current?.dispose();
     this.current = null;
     this.currentOwner = null;
@@ -226,6 +227,11 @@ export class NativeConditional implements NativePresentation {
       this.phase !== 'active' ||
       this.pending !== undefined
     ) {
+      this.needsUpdate = true;
+      return;
+    }
+
+    if (this.frame.application.deferPresentation(this, () => this.resumeDeferred())) {
       this.needsUpdate = true;
       return;
     }

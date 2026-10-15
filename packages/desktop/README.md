@@ -17,9 +17,9 @@ reactive props through the shared core prop box. Inline and component-return
 host/component branches use accepted native replacement. Editing events, refs,
 and full event targets remain unfinished. Nested component children and forwarded
 content references and direct JSX-valued props mount into native regions. Mapped
-host/component rows now consume shared list plans and retained native ranges;
-delegated render callbacks remain unfinished. Web mounting and the optimized DOM list
-implementation are unchanged.
+host/component rows and delegated render callbacks now consume shared list plans
+and retained native ranges. Web mounting and the optimized DOM list implementation
+retain their existing contracts.
 
 ## Run the visual dashboard
 
@@ -60,8 +60,9 @@ $env:MEMOIZED_DESKTOP_RUNTIME = 'node'
 bun run desktop:dev
 ```
 
-The counter includes keyed rows with ordinary click handlers, reverse-order and
-remove/restore controls. Each row adds its value to shared module state. This is
+The counter includes a generic list component receiving an ordinary `renderItem`
+callback, keyed rows with click handlers, and reverse-order and remove/restore
+controls. Each row adds its value to shared module state. This is
 an event/structure example, not a complete Todo store: row-item writes and store
 methods still require shared guarded-publication emission.
 
@@ -146,8 +147,8 @@ Dynamic/member component calls remain source plans, rather than invented tags.
 Immutable wire templates contain the element/text/comment backbone. Attributes,
 spreads, refs, events and dynamic text retain ordered AST steps. The component
 emitter executes fixed-host attributes/events/text, static component regions and
-inline conditional regions, forwarded content and mapped host/component rows.
-Delegated render callbacks and ref steps remain capability gates. Even literal
+inline conditional regions, forwarded content, mapped host/component rows and
+delegated render callbacks. Ref steps remain a capability gate. Even literal
 attributes retain their positions around spreads;
 event/ref addresses point into that same ordered program. Event metadata lives
 in `packages/compiler/src/desktop/events.ts`. No callback executes at compile time,
@@ -176,7 +177,26 @@ a desktop state channel.
 Shared cell
 operations publish only writes that execute. Templates
 carry a structural SHA-256 revision so changed backbones do not reuse an immutable
-native template key. The browser compiler's existing output remains unchanged.
+native template key. Existing browser compiler snapshots remain unchanged; shared
+callback forwarding and missing caller-reader attribution are corrected for both
+targets.
+
+Structural callback props use the existing shared callback contract: a callee
+maps its items to an ordinary captured prop invocation, and the caller supplies
+a synchronous inline function returning one JSX element. Wrappers can forward
+that prop, including through proven static object spreads. The private native
+descriptor holds a row factory and key reader; applications never construct it.
+Its row factory is the same one used for direct maps. A stable descriptor retains
+keyed rows and rebinds item/index after acceptance. A changed descriptor replaces
+its comment-anchored content through the existing slot controller. Refusal keeps
+accepted rows, descendant owners and event addresses active.
+
+Caller-owned access tables include the callback's render reads, helper summaries
+and nested component reads. Lexical shadowing and event/ref callbacks do not add
+render-reader routes. An empty list does not evaluate callback row content. Keys,
+callback parameters and body shapes retain the shared compiler's restrictions;
+unsupported guarded row/prop writes remain diagnostic. This is structural/event
+evidence, not physical focus/selection retention or a complete Todo store.
 
 The compiler-private `src/runtime/view.ts` registers parent-before-child core
 entities and owns native addresses, accepted attribute/text snapshots and callback
@@ -348,6 +368,18 @@ at a time. At most eight publications are admitted by default, with an explicit
 local pressure error. Byte/operation bounds are checked before I/O. Acceptance
 requires the matching native reply and completion of that packet's stream write.
 Only acceptance advances sequence order; it still does not mean layout/paint.
+
+Compiled view/list/conditional controllers share those connection credits. When
+full, the application holds one retry callback per live presentation, without
+storing value snapshots. Settlement resumes that presentation through existing
+core invalidation so it reads current source state. Disposed presentations release
+their retry; connection close clears all retries. Direct client callers still
+receive the bounded local pressure error. No new reactive scheduler or publication
+capacity increase is involved.
+
+Refusal clears dependent pending snapshots before a dirty view retries. This
+also applies to forwarded synthetic views, whose current text and attributes
+must be compared against the accepted baseline after rejection.
 
 Refusal leaves the sequence correctable and rejects queued dependent work, which
 may reference the refused mount/template. The semantic adapter must recompute

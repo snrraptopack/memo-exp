@@ -66,6 +66,22 @@ const NESTED_SOURCE = `
     </main>;
   }
 `;
+const FORWARDED_SOURCE = `
+  let shared = 0;
+  function current() { return shared; }
+  function List(props) {
+    return <ul>{props.items.map((item, index) => props.renderItem(item, index))}</ul>;
+  }
+  function Forward({items, draw}) {
+    return <List {...{items, renderItem: draw}} />;
+  }
+  export function App() {
+    return <main>
+      <button id="callback-count" onClick={() => shared++}>Count</button>
+      <Forward items={[1, 2]} draw={(item, index) => <li key={item}>{item}:{index}:{current()}:{shared}</li>} />
+    </main>;
+  }
+`;
 
 function importFixture(specifier: string): Promise<any> {
   return import(specifier);
@@ -81,6 +97,10 @@ describe('R41 - cross-component render callbacks', () => {
     writeFileSync(
       join(outDir, 'r41-render-callbacks-nested.compiled.ts'),
       compile(NESTED_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
+    );
+    writeFileSync(
+      join(outDir, 'r41-render-callbacks-forwarded.compiled.ts'),
+      compile(FORWARDED_SOURCE, { runtimePath: '@memoized-dom/runtime' }),
     );
   });
 
@@ -101,6 +121,16 @@ describe('R41 - cross-component render callbacks', () => {
     expect(code).toContain('key:');
     expect(code).toContain('.createListRegion(');
     expect(code).not.toContain('insert(');
+  });
+
+  it('forwards a stable descriptor through spreads and routes direct/helper module reads', async () => {
+    const { App } = await importFixture('./fixtures/out/r41-render-callbacks-forwarded.compiled.ts');
+    document.body.appendChild(App('App', null));
+    const rows = [...document.querySelectorAll('li')];
+    expect(rows.map(row => row.textContent)).toEqual(['1:0:0:0', '2:1:0:0']);
+    document.querySelector<HTMLButtonElement>('#callback-count')!.click();
+    expect([...document.querySelectorAll('li')]).toEqual(rows);
+    expect(rows.map(row => row.textContent)).toEqual(['1:0:1:1', '2:1:1:1']);
   });
 
   it('serializes the callback contract across a module boundary', () => {

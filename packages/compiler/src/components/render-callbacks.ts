@@ -13,7 +13,8 @@ import type { Ctx } from '../context';
 import type { MapCallExpression } from '../context';
 import { attrExpr, keyPathOf } from '../context/ast';
 import { cloneRuntimeBindingPattern } from '../analysis/runtime-pattern';
-import {matchMapCall} from '../lists/source-shapes';
+import { matchMapCall } from '../lists/source-shapes';
+import { sourceAttributeValues } from '../jsx/attributes';
 import {
   localBindingForProp,
   objectBindingName,
@@ -143,19 +144,40 @@ export interface RenderCallbackProps {
 }
 export function captureRenderCallbackProps(plan: ComponentPropsPlan | undefined): RenderCallbackProps {
   const bindingProps = new Map<string, string>();
-  if (plan !== undefined) for (const binding of new Set([...plan.bindings, ...plan.names])) {
-    const name = propNameForBinding(plan, binding) ??
-      (localBindingForProp(plan, binding) !== null ? binding : null);
-    if (name !== null) bindingProps.set(binding, name);
+
+  if (plan !== undefined) {
+    for (const binding of new Set([...plan.bindings, ...plan.names])) {
+      const name =
+        propNameForBinding(plan, binding) ??
+        (localBindingForProp(plan, binding) !== null ? binding : null);
+
+      if (name !== null) bindingProps.set(binding, name);
+    }
   }
-  return {objectBinding: plan === undefined ? null : objectBindingName(plan), bindingProps};
+
+  return {
+    objectBinding: plan === undefined ? null : objectBindingName(plan),
+    bindingProps,
+  };
 }
-function propReferenceName(props: RenderCallbackProps, expression: t.Expression): string | null {
-  if (props.objectBinding !== null && astFactory.isMemberExpression(expression) && !expression.computed &&
-    astFactory.isIdentifier(expression.object, {name: props.objectBinding}) && astFactory.isIdentifier(expression.property)) {
+
+/** A descriptor can cross a wrapper as an ordinary captured prop reference. */
+export function renderCallbackPropName(
+  props: RenderCallbackProps,
+  expression: t.Expression,
+): string | null {
+  if (
+    props.objectBinding !== null &&
+    astFactory.isMemberExpression(expression) && !expression.computed &&
+    astFactory.isIdentifier(expression.object, { name: props.objectBinding }) &&
+    astFactory.isIdentifier(expression.property)
+  ) {
     return expression.property.name;
   }
-  return astFactory.isIdentifier(expression) ? props.bindingProps.get(expression.name) ?? null : null;
+
+  return astFactory.isIdentifier(expression)
+    ? props.bindingProps.get(expression.name) ?? null
+    : null;
 }
 
 function returnedExpression(
@@ -197,7 +219,7 @@ export function planRenderCallbackMap(
   ) {
     return null;
   }
-  const propName = propReferenceName(props, returned.callee);
+  const propName = renderCallbackPropName(props, returned.callee);
   if (propName === null) return null;
   return {
     propName,
@@ -224,18 +246,51 @@ export function scanRenderCallbacks(ctx: Ctx): void {
         ) {
           return;
         }
-      const invocation = matchRenderCallbackMap(
-        ctx,
-        componentName,
+        const invocation = matchRenderCallbackMap(
+          ctx,
+          componentName,
           node as unknown as MapCallExpression,
-      );
-      if (
-        invocation !== null &&
-        !plan.renderCallbacks.includes(invocation.propName)
-      ) {
-        plan.renderCallbacks.push(invocation.propName);
-      }
+        );
+
+        if (
+          invocation !== null &&
+          !plan.renderCallbacks.includes(invocation.propName)
+        ) {
+          plan.renderCallbacks.push(invocation.propName);
+        }
       },
     });
+  }
+
+  // A wrapper forwards the same compiled descriptor. Propagate the callee's
+  // structural contract without requiring the wrapper to own a map itself.
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const [name, component] of ctx.compPaths) {
+      const props = ctx.componentProps.get(name)!;
+      const captured = captureRenderCallbackProps(props);
+
+      walkAst<t.Node>(component.node, {
+        enter(node) {
+          if (node.type !== 'JSXOpeningElement') return;
+          const opening = node as t.JSXOpeningElement;
+          if (!astFactory.isJSXIdentifier(opening.name)) return;
+          const target = ctx.componentProps.get(opening.name.name);
+
+          for (const attribute of sourceAttributeValues(opening.attributes)) {
+            if (!target?.renderCallbacks.includes(attribute.name)) continue;
+            const forwarded = renderCallbackPropName(captured, attribute.value);
+
+            if (forwarded !== null && !props.renderCallbacks.includes(forwarded)) {
+              props.renderCallbacks.push(forwarded);
+              changed = true;
+            }
+          }
+        },
+      });
+    }
   }
 }

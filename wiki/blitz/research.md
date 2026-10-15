@@ -493,8 +493,7 @@ collection selections use the same normalizer as the web target. Local and linke
 prop-contract discovery share one source-attribute projection; static object
 spreads contribute proven named JSX values and forwarding evidence. Both emitters
 map these values with one pure property mapper that preserves spread, accessor
-and scalar evaluation shape. Opaque JSX prop bags and delegated render callbacks
-remain emission gates.
+and scalar evaluation shape. Opaque JSX prop bags remain an emission gate.
 
 The native list prerequisite now retains keyed presentation ranges through the
 existing core ownership graph and Rust range operations. Primitive identity uses
@@ -509,8 +508,27 @@ normalization plans for direct mapped host/component rows, including nested list
 keys and retained binding updates. Row events use the existing native dispatcher;
 module-cell writes retain shared access-table routing. Shared callback write facts
 diagnose row/prop mutation forms whose guarded publication is not yet emitted.
-Delegated render callbacks still need their adapter emission. This does not
-establish physical focus/selection retention or large-list performance.
+Delegated callback props now use the same row emission and existing slot/list
+acceptance controllers. Shared discovery propagates structural callback contracts
+through wrappers, and shared reader attribution includes direct render reads,
+helper summaries and nested components in the caller's access table. Neither
+shadowed parameters nor explicit event/ref callbacks create render-reader routes.
+The native descriptor stays private and stable in the caller closure; its content
+is lazy for empty collections. Descriptor replacement is accepted atomically,
+preserving old rows/events on refusal. This does not establish physical
+focus/selection retention or large-list performance.
+
+A richer real Vite fixture exposed connection pressure across sibling row and
+conditional publications. Native presentation now checks the existing bounded
+client credits before preparing updates. One retry per live presentation resumes
+through core invalidation after settlement and reads current source values; no
+snapshot queue or parallel dirty-state system is added. Acceptance/refusal
+continuations run before credit notifications. Disposal/connection close releases
+waiters. The direct client still rejects excess admissions.
+Refused dependent snapshots also clear before a dirty native view retries, so
+coalescing cannot strand its latest source value or compare against refused
+attributes. Closing while rows await credits retires core ownership without late
+publication.
 
 Vite replacement contracts exposed generation reuse across list/controller
 recreation. New native roots and rows now allocate from one connection-owned

@@ -1,5 +1,6 @@
 /** Desktop selection of host-neutral semantic analysis phases. */
 import { scanRenderProps } from '../analysis/render-props';
+import { scanRenderCallbacks } from '../components/render-callbacks';
 import type { SemanticAnalysisProfile } from '../analysis/pipeline';
 import type { Ctx } from '../context/model';
 
@@ -13,6 +14,7 @@ export const desktopAnalysisProfile: Pick<
   'normalizeComponents'
 > = {
   normalizeComponents(context) {
+    scanRenderCallbacks(context);
     scanRenderProps(context);
   },
 };

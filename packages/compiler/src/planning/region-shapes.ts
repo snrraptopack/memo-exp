@@ -7,9 +7,14 @@ import { planListCallback, type ListCallbackPlan } from '../lists/callback-plan'
 import { matchCond } from '../conds';
 import { planConditionalBranches, type ConditionalBranchPlan } from '../jsx/conditional-plan';
 import * as astFactory from '../ast/factory';
-import { attrExpr } from '../context/ast';
-import { planRenderCallback, type RenderCallbackPlan } from '../components/render-callbacks';
-import { jsxAttributeName } from '../jsx/attributes';
+import {
+  captureRenderCallbackProps,
+  planRenderCallback,
+  renderCallbackPropName,
+  type RenderCallbackPlan,
+} from '../components/render-callbacks';
+import { analyzeComponentProps } from '../components/props';
+import { sourceAttributeValues } from '../jsx/attributes';
 
 export interface ComponentRegionShapes {
   readonly listCallbackFor: (call: MapCallExpression) => ListCallbackPlan;
@@ -26,6 +31,7 @@ export function planComponentRegionShapes(path: ComponentPath,
   const lists = new WeakMap<MapCallExpression, ListCallbackPlan>();
   const conditions = new WeakMap<t.Node, ConditionalBranchPlan>();
   const callbacks = new WeakMap<t.Expression, RenderCallbackPlan>();
+  const forwardedCallbacks = captureRenderCallbackProps(analyzeComponentProps(path.node.params));
   const fail = (message: string, at?: t.Node): never => { throw path.buildCodeFrameError(message, at); };
   const renderCallbackFor = (expression: t.Expression): RenderCallbackPlan => {
     let plan = callbacks.get(expression);
@@ -61,16 +67,11 @@ export function planComponentRegionShapes(path: ComponentPath,
       if (node.type === 'JSXOpeningElement' && astFactory.isJSXIdentifier((node as t.JSXOpeningElement).name)) {
         const opening = node as t.JSXOpeningElement;
         const names = callbackProps.get((opening.name as t.JSXIdentifier).name);
-        if (names?.length) for (const attribute of opening.attributes) {
-          if (astFactory.isJSXSpreadAttribute(attribute)) {
-            if (astFactory.isObjectExpression(attribute.argument)) for (const property of attribute.argument.properties) {
-              if (!astFactory.isObjectProperty(property) || property.computed || !astFactory.isExpression(property.value)) continue;
-              const name = astFactory.isIdentifier(property.key) ? property.key.name : astFactory.isStringLiteral(property.key) ? property.key.value : null;
-              if (name !== null && names.includes(name)) renderCallbackFor(property.value);
+        if (names?.length) {
+          for (const { name, value } of sourceAttributeValues(opening.attributes)) {
+            if (names.includes(name) && renderCallbackPropName(forwardedCallbacks, value) === null) {
+              renderCallbackFor(value);
             }
-          } else if (names.includes(jsxAttributeName(attribute.name))) {
-            const value = attrExpr(attribute.value);
-            if (value !== null) renderCallbackFor(value);
           }
         }
       }

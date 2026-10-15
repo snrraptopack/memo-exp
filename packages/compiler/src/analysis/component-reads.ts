@@ -5,16 +5,12 @@ import {
   walkAst,
   type BaseNode,
 } from '../ast';
-import type { Ctx } from '../context';
-
-function jsxAttributeName(value: unknown): string | null {
-  const name = node(value);
-  if (name?.type === 'JSXIdentifier') return jsxIdentifierName(name);
-  if (name?.type !== 'JSXNamespacedName') return null;
-  const namespace = jsxIdentifierName(fields(name).namespace);
-  const local = jsxIdentifierName(fields(name).name);
-  return namespace === null || local === null ? null : `${namespace}:${local}`;
-}
+import { astBindingAt, type Ctx } from '../context';
+import * as b from '../ast/factory';
+import type * as t from '../ast/compiler-types';
+import { sourceAttributeValues } from '../jsx/attributes';
+import { storeReadKey } from './read-collection';
+import { summarizeHelper } from '../helper-summaries';
 
 /** Module dependencies read anywhere in an already-analyzed component tree. */
 export function componentSubtreeReads(
@@ -62,42 +58,78 @@ export function foldRenderCallbackSubtreeReads(ctx: Ctx): void {
     const callerReads = ctx.compReads.get(caller);
     if (callerReads === undefined) continue;
     walkAst<BaseNode>(callerPath.node, {
-      enter(current, parent) {
-        if (
-          current.type !== 'JSXAttribute' ||
-          parent?.type !== 'JSXOpeningElement'
-        ) {
-          return;
+      enter(current) {
+        if (current.type !== 'JSXOpeningElement') return;
+        const opening = current as t.JSXOpeningElement;
+        if (!b.isJSXIdentifier(opening.name)) return;
+        const target = ctx.componentProps.get(opening.name.name);
+
+        for (const attribute of sourceAttributeValues(opening.attributes)) {
+          if (!target?.renderCallbacks.includes(attribute.name)) continue;
+          walkAst<t.Node>(attribute.value, {
+            enter(descendant, parent) {
+              // Event/ref callbacks are not render reads. Ordinary nested map
+              // calculations still participate, with lexical binding checks.
+              if (
+                b.isJSXAttribute(descendant) &&
+                b.isJSXIdentifier(descendant.name) &&
+                (descendant.name.name === 'ref' || /^on[A-Z]/.test(descendant.name.name))
+              ) {
+                return false;
+              }
+
+              if (
+                b.isIdentifier(descendant) &&
+                ctx.state.has(descendant.name) &&
+                astBindingAt(ctx, descendant, descendant.name)?.scope.isProgramScope === true
+              ) {
+                const memberProperty =
+                  (b.isMemberExpression(parent) || b.isOptionalMemberExpression(parent)) &&
+                  parent.property === descendant && !parent.computed;
+                const objectKey =
+                  b.isObjectProperty(parent) && parent.key === descendant &&
+                  !parent.computed && !parent.shorthand;
+                const writeTarget =
+                  b.isAssignmentExpression(parent) && parent.operator === '=' &&
+                  parent.left === descendant;
+
+                if (!memberProperty && !objectKey && !writeTarget) {
+                  callerReads.add(descendant.name);
+                }
+              }
+
+              if (b.isMemberExpression(descendant)) {
+                const key = storeReadKey(ctx, descendant);
+                if (key !== null) callerReads.add(key);
+              }
+
+              if (
+                (b.isCallExpression(descendant) || b.isOptionalCallExpression(descendant)) &&
+                b.isIdentifier(descendant.callee) &&
+                astBindingAt(ctx, descendant, descendant.callee.name)?.scope.isProgramScope === true
+              ) {
+                const name = descendant.callee.name;
+                const summary =
+                  ctx.importedFunctions.get(name) ??
+                  (ctx.helpers.has(name) ? summarizeHelper(ctx, name) : undefined);
+
+                for (const read of summary?.reads ?? []) {
+                  callerReads.add(read);
+                }
+              }
+
+              if (descendant.type === 'JSXOpeningElement') {
+                const child = descendant as t.JSXOpeningElement;
+
+                if (b.isJSXIdentifier(child.name) && /^[A-Z]/.test(child.name.name)) {
+                  for (const read of componentSubtreeReads(ctx, child.name.name)) {
+                    callerReads.add(read);
+                  }
+                }
+              }
+            },
+          });
         }
-        const targetName = jsxIdentifierName(fields(parent).name);
-        if (targetName === null) return;
-        const propName = jsxAttributeName(fields(current).name);
-        if (propName === null) return;
-        if (
-          ctx.componentProps
-            .get(targetName)
-            ?.renderCallbacks.includes(propName) !== true
-        ) {
-          return;
-        }
-        const value = node(fields(current).value);
-        if (value?.type !== 'JSXExpressionContainer') return;
-        const expression = node(fields(value).expression);
-        if (expression === null || expression.type === 'JSXEmptyExpression') return;
-        walkAst<BaseNode>(expression, {
-          enter(descendant) {
-            if (descendant.type !== 'JSXOpeningElement') return;
-            const name = jsxIdentifierName(fields(descendant).name);
-            if (name !== null && /^[A-Z]/.test(name)) {
-            for (const read of componentSubtreeReads(
-              ctx,
-                name,
-            )) {
-              callerReads.add(read);
-            }
-          }
-          },
-        });
       },
     });
   }

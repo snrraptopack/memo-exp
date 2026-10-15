@@ -12,11 +12,13 @@ import {
   bindViewProps,
   child,
   createSlot,
+  createCallbackList,
   NativeView,
   type NativeFrame,
   type NativePresentation,
 } from '../src/runtime/view';
 import { ManualTransport } from './fixtures/manual-transport';
+import type { NativeRenderCallback } from '../src/runtime/render-callback';
 
 function createApplication(transport = new ManualTransport()) {
   const errors: unknown[] = [];
@@ -69,6 +71,90 @@ function observe(promise: Promise<unknown>) {
 }
 
 describe('native publication uses shared core lifetimes', () => {
+  test('callback descriptor replacement preserves accepted rows on refusal and replaces them after correction', async () => {
+    const { application, transport, errors } = createApplication();
+    const clicked: string[] = [];
+    const created: Array<{ frame: NativeFrame; view: NativeView }> = [];
+    const descriptor = (label: string): NativeRenderCallback<string> => ({
+      key: item => item,
+      create(frame, firstItem, firstIndex) {
+        let item = firstItem;
+        let index = firstIndex;
+        const view = new NativeView(frame, {
+          key: 'callback-descriptor-row',
+          nodes: [
+            { parent: null, node: {
+              kind: 'element',
+              name: { namespace: 'http://www.w3.org/1999/xhtml', local: 'button' },
+              attributes: [],
+            } },
+            { parent: 0, node: { kind: 'text', value: '' } },
+          ],
+        }, () => [
+          { kind: 'text', source: 1, value: `${label}:${item}:${index}` },
+          { kind: 'attributes', source: 0, value: { onClick: () => clicked.push(label) } },
+        ]);
+        created.push({ frame, view });
+
+        return {
+          view,
+          update(nextItem, nextIndex) {
+            item = nextItem;
+            index = nextIndex;
+          },
+        };
+      },
+    });
+    let selected = descriptor('A');
+    let view!: NativePresentation;
+    const candidate = application.prepare(() => {
+      view = createCallbackList({
+        application,
+        owner: { id: 'Callback', generation: 1 },
+        parent: null,
+        reportError: error => errors.push(error),
+      }, () => ['row'], () => selected);
+      return view;
+    }, {
+      accepted() { view.acceptInitial(); },
+      activated() { view.activateUpdates(); },
+    });
+
+    try {
+      const initial = candidate.publish(view.initialPublication);
+      transport.accept(1);
+      await initial;
+      const original = { owner: created[0]!.frame.owner, source: 0 };
+      const registry = [...application.runtime.state.registry.keys()];
+      selected = descriptor('B');
+      application.run(() => view.updateFromOwner());
+      const refused = observe(view.publication());
+      expect([...application.runtime.state.registry.keys()]).toEqual(registry);
+      expect(view.matchesSource({ owner: created[1]!.frame.owner, source: 0 })).toBe(false);
+      transport.refuse(2);
+      expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+      expect(() => created[1]!.view.attachCore()).toThrow('disposed');
+      view.dispatch(original, 'onClick', new Event('click'));
+      expect(clicked).toEqual(['A']);
+      expect([...application.runtime.state.registry.keys()]).toEqual(registry);
+
+      selected = descriptor('C');
+      application.run(() => view.updateFromOwner());
+      const corrected = view.publication();
+      transport.accept(2);
+      await corrected;
+      expect(view.matchesSource(original)).toBe(false);
+      view.dispatch({ owner: created[2]!.frame.owner, source: 0 }, 'onClick', new Event('click'));
+      expect(clicked).toEqual(['A', 'C']);
+      expect(created[2]!.frame.owner.generation).toBeGreaterThan(original.owner.generation);
+      expect(errors).toHaveLength(1);
+    } finally {
+      application.close();
+    }
+
+    expect(application.runtime.state.registry.size).toBe(0);
+  });
+
   test('refused slot factories retain accepted content and later changes still replace it', async () => {
     const { application, transport, errors } = createApplication();
     const clicked: string[] = [];

@@ -382,6 +382,7 @@ export class NativeView implements NativePresentation {
 
   dispose(): void {
     this.phase = 'disposed';
+    this.frame.application.releaseDeferredPresentation(this);
     this.accepted = undefined;
     this.pending.clear();
   }
@@ -435,7 +436,10 @@ export class NativeView implements NativePresentation {
       return;
     }
 
-    if (this.pending.size >= 8) {
+    if (
+      this.pending.size >= 8 ||
+      this.frame.application.deferPresentation(this, () => this.resumeDeferred())
+    ) {
       // Coalesce source changes through the existing core when a credit frees.
       // Do not discard a final user value merely because native work is busy.
       this.needsUpdate = true;
@@ -485,6 +489,11 @@ export class NativeView implements NativePresentation {
         if (!this.frame.application.isClosed) {
           this.frame.reportError(error);
         }
+
+        // A refusal also rejects queued dependent snapshots. Let all of their
+        // handlers clear those snapshots before retrying the latest dirty value,
+        // especially for synthetic views that render without a core commit.
+        return Promise.resolve().then(() => this.resumeDeferred());
       }
     ).catch(() => {});
   }
@@ -736,3 +745,4 @@ export function frameId(frame: NativeFrame): string {
 export { createConditional } from './conditional';
 export { createSlot } from './slot';
 export { createList } from './list';
+export { createCallbackList } from './render-callback';

@@ -6,6 +6,7 @@ import {astBindingAt,nodeHasJsx,type Ctx,type ProgramPath} from '../context';
 import {isIntrinsicLifecycleCall} from '../intrinsics';
 import {planHandlerWrites} from '../handlers/analyze';
 import type {HandlerWritePlan} from '../handlers/plan';
+import { matchRenderCallbackMap } from '../components/render-callbacks';
 
 type Callback=t.ArrowFunctionExpression|t.FunctionExpression|t.FunctionDeclaration;
 export interface ModuleCallbackSite {
@@ -52,13 +53,22 @@ export function planModuleCallbacks(
       for(const element of value.elements)if(element!==null)argument(element,executionAware);
     }else if(astFactory.isIdentifier(value))identifier(value,executionAware);
   };
-  const setup=(root:BaseNode,callTargets:boolean)=>{
+  const setup=(root:BaseNode,callTargets:boolean,componentName?:string)=>{
     let depth=0;
     walkAst<BaseNode>(root,{enter(node){
       if(FUNCTION_NODE_TYPES.has(node.type)){depth++;return;}
       if(depth!==0)return;
       if(node.type==='CallExpression'){
         const call=node as unknown as t.CallExpression;
+        // Component structural maps consume their callback through the shared
+        // render contract; they are not timers/subscriptions retaining source.
+        // Browser planning does not select this component-setup scan.
+        if (
+          componentName !== undefined &&
+          matchRenderCallbackMap(ctx, componentName, call) !== null
+        ) {
+          return;
+        }
         const effect=callTargets&&isIntrinsicLifecycleCall(ctx,node,'effect');
         if(callTargets&&astFactory.isIdentifier(call.callee))identifier(call.callee,effect);
         for(const value of call.arguments)argument(value,effect);
@@ -76,8 +86,8 @@ export function planModuleCallbacks(
     // Native capability validation must also see callbacks retained by root
     // setup (timers/subscriptions). Browser emission keeps its existing
     // component-owned lifecycle planner and does not opt into this scan.
-    for (const component of ctx.compPaths.values()) {
-      setup(component.node.body, false);
+    for (const [name, component] of ctx.compPaths) {
+      setup(component.node.body, false, name);
     }
   }
   return {retained,writesFor:(target,executionAware=false)=>{

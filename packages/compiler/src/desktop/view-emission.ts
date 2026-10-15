@@ -29,7 +29,8 @@ import type { PlannedComponent } from '../planning/component-render';
 import type { MapSite } from '../lists/map-site';
 
 import { lowerNativeTemplate } from './template';
-import { emitNativeList } from './list-emission';
+import { emitNativeList, type NativeRowEmission } from './list-emission';
+import { emitNativeRenderCallback } from './render-callback';
 import { validateNativeEventWrites } from './events';
 import type { NativeTemplatePlan } from './template-plan';
 
@@ -177,6 +178,25 @@ export function emitNativeView(
 
   validateNativeEventWrites(plan, component.callbacks, inputs.parentRow, fail);
 
+  const rowEmission: NativeRowEmission = {
+    evaluate: nativeEvaluation,
+    create: emitNativeView,
+    lower(jsx, key, inSvg) {
+      const rowPlan = withTemplateRevision(lowerNativeTemplate({
+        key,
+        jsx,
+        inSvg,
+        expressionSources: component.expressionSources,
+        isForwarded: expression => isRenderPropReference(
+          ctx, component.name, expression as unknown as BaseNode,
+        ),
+        fail,
+      }));
+      validateNativeTemplatePlan(rowPlan, jsx, fail);
+      return rowPlan;
+    },
+  };
+
   const childCounts = new Map<string, number>();
   let forwardedSlotCount = 0;
   const children = plan.steps.flatMap((step): t.Expression[] => {
@@ -185,24 +205,7 @@ export function emitNativeView(
     }
 
     if (step.content.type === 'list') {
-      return [emitNativeList(inputs, { ...step, content: step.content }, {
-        evaluate: nativeEvaluation,
-        create: emitNativeView,
-        lower(jsx, key, inSvg) {
-          const rowPlan = withTemplateRevision(lowerNativeTemplate({
-            key,
-            jsx,
-            inSvg,
-            expressionSources: component.expressionSources,
-            isForwarded: expression => isRenderPropReference(
-              ctx, component.name, expression as unknown as BaseNode,
-            ),
-            fail,
-          }));
-          validateNativeTemplatePlan(rowPlan, jsx, fail);
-          return rowPlan;
-        },
-      })];
+      return [emitNativeList(inputs, { ...step, content: step.content }, rowEmission)];
     }
 
     if (step.content.type === 'condition') {
@@ -338,7 +341,7 @@ export function emitNativeView(
       }
 
       if (targetProps.renderCallbacks.includes(name)) {
-        fail('Render callbacks require shared callback presentation emission', value);
+        return emitNativeRenderCallback(inputs, value, step.inSvg, rowEmission);
       }
 
       if (!targetProps.renderProps.includes(name)) {

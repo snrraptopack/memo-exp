@@ -40,12 +40,14 @@ export class NativeApplication {
   private readonly effectCleanupOwners = new Set<string>();
   private readonly acceptedTemplates = new Set<string>();
   private readonly pendingTemplates = new Set<string>();
+  private readonly deferredPresentations = new Map<object, () => void>();
   private pending = 0;
   private nativeGeneration = 0;
   private effectsRefused = false;
   private terminal?: unknown;
   private stopped = false;
   private stopListening: () => void = () => {};
+  private stopCapacityListening: () => void = () => {};
 
   constructor(
     private readonly client: PublicationClient,
@@ -59,15 +61,47 @@ export class NativeApplication {
       effectBoundary: (id, execute) => this.holdEffect(id, execute),
     });
     this.stopListening = client.onClose(error => this.stop(error));
+    this.stopCapacityListening = client.onCapacity(() => this.resumePresentations());
 
     // An already closed client notifies synchronously during subscription.
     if (this.stopped) {
       this.stopListening();
+      this.stopCapacityListening();
     }
   }
 
   get isClosed(): boolean {
     return this.stopped;
+  }
+
+  /** Keep only one retry per live presentation; never queue stale snapshots. */
+  deferPresentation(owner: object, retry: () => void): boolean {
+    if (this.client.hasCapacity) {
+      this.deferredPresentations.delete(owner);
+      return false;
+    }
+    this.deferredPresentations.set(owner, retry);
+    return true;
+  }
+
+  releaseDeferredPresentation(owner: object): void {
+    this.deferredPresentations.delete(owner);
+  }
+
+  private resumePresentations(): void {
+    if (this.stopped) return;
+
+    try {
+      this.run(() => {
+        for (const [owner, retry] of this.deferredPresentations) {
+          if (!this.client.hasCapacity) break;
+          this.deferredPresentations.delete(owner);
+          retry();
+        }
+      });
+    } catch (error) {
+      this.stop(error);
+    }
   }
 
   /**
@@ -261,6 +295,8 @@ export class NativeApplication {
     }
 
     this.stopped = true;
+    this.stopCapacityListening();
+    this.deferredPresentations.clear();
     this.terminal = error;
     this.stopListening();
     this.heldEffects.clear();

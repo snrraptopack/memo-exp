@@ -17,6 +17,7 @@ import { buildSpreadComponentPropUpdate, callPropsFromObject, orderCallProps } f
 import { isInlineScalarCallback, stabilizeInlineCallbackProp } from './components/callback-props';
 import { emitComponentCallback } from './component-callback';
 import { buildRenderCallbackAdapter } from './render-callback';
+import { captureRenderCallbackProps, renderCallbackPropName } from '../components/render-callbacks';
 import { compileRefValue } from './refs';
 import { transparentExpressionSources } from '../planning/async-reads';
 import { isImplicitPolicyProp } from './data-sites';
@@ -105,6 +106,11 @@ export function emitComponentCall(
     });
     orderedPropObject = mapStaticAttributeValues(ordered, (propName, value) => {
       if (targetPlan?.renderCallbacks.includes(propName) === true) {
+        const captured = captureRenderCallbackProps(ctx.componentProps.get(componentName));
+
+        if (renderCallbackPropName(captured, value) !== null) {
+          return cloneEstreeNode(value);
+        }
         return buildRenderCallbackAdapter(
           ctx,
           scope,
@@ -173,6 +179,12 @@ export function emitComponentCall(
       );
     }
     if (targetPlan?.renderCallbacks.includes(propName) === true) {
+      const captured = captureRenderCallbackProps(ctx.componentProps.get(componentName));
+
+      if (renderCallbackPropName(captured, v) !== null) {
+        propEntries.push({ name: propName, value: cloneEstreeNode(v) });
+        continue;
+      }
       propEntries.push({
         name: propName,
         value: buildRenderCallbackAdapter(

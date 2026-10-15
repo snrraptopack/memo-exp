@@ -35,7 +35,7 @@ function isMemberCallCallee(ctx: Ctx, member: BaseNode): boolean {
  * The dotted read key of a store member expression ('store.items.length'),
  * or null when it is not a read (write target, method callee, non-store).
  */
-function storeReadKey(ctx: Ctx, member: BaseNode): string | null {
+export function storeReadKey(ctx: Ctx, member: BaseNode): string | null {
   const expression = member as unknown as t.MemberExpression;
   const key = memberKey(expression);
   if (!key || !key.includes('.')) return null;

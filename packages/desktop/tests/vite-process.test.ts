@@ -39,13 +39,29 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
       </li>)}</ul>;
     }
   `);
+  await writeFile(join(directory, 'CallbackRows.tsx'), `
+    function List(props) {
+      return <ul>{props.items.map((item, index) => props.renderItem(item, index))}</ul>;
+    }
+    export function CallbackRows({items, draw}) {
+      return <List {...{items, renderItem: draw}} />;
+    }
+  `);
   await writeFile(join(directory, 'App.tsx'), `
     import './style.css';
     import { count, increment } from './state';
     import { Summary } from './Summary';
     import { Rows } from './Rows';
+    import { CallbackRows } from './CallbackRows';
     export function App() {
-      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p><Summary count={count} /><Rows items={count === 0 ? [1, 2] : [2, 1]} /></main>;
+      return <main class="counter">
+        <button onClick={increment}>Increment</button><p>{count}</p><Summary count={count} />
+        <Rows items={count === 0 ? [1, 2] : [2, 1]} />
+        <CallbackRows items={count === 0 ? [1, 2] : [2, 1]} draw={(item, index) => <li key={item}>
+          <button onClick={increment}>{item}:{index}:{count}</button>
+          {count % 2 === 0 ? <small>Even callback</small> : <small>Odd callback</small>}
+        </li>} />
+      </main>;
     }
   `);
   await writeFile(join(directory, 'main.ts'), `
@@ -98,13 +114,24 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
     await first.publication();
     const firstValues = first.frame.application.run(() => first.evaluate());
     expect(firstValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 2)).toBe(true);
+    const callbackRow = {
+      owner: { id: 'App/CallbackRows/List/items/$content/rows/Row[n:1]', generation: 4 }, source: 1,
+    };
+    expect(first.matchesSource(callbackRow)).toBe(true);
+    first.dispatch(callbackRow, 'onClick', new Event('click'));
+    await Bun.sleep(0);
+    await first.publication();
+    expect(first.frame.application.run(() => first.evaluate()).some(
+      (step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 3,
+    )).toBe(true);
     await host.replace([]);
     const next = host.adapter.view();
     expect(next.frame.owner.generation).toBeGreaterThan(first.frame.owner.generation);
     expect(next.matchesSource(row)).toBe(false);
+    expect(next.matchesSource(callbackRow)).toBe(false);
     expect(next.template.nodes.some((source: { node: { name?: { local: string } } }) => source.node.name?.local === 'style')).toBe(false);
     const nextValues = next.frame.application.run(() => next.evaluate());
-    expect(nextValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 2)).toBe(true);
+    expect(nextValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 3)).toBe(true);
     await host.replace([], load);
     expect(host.adapter.view().frame.owner.generation).toBeGreaterThan(next.frame.owner.generation);
   } finally {

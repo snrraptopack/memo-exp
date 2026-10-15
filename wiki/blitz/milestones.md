@@ -1927,3 +1927,77 @@ Next M5 work: delegated render callback emission using existing callback/region
 plans and these same row factories. Guarded row/prop/store publication remains a
 separate shared-emission gate before a full Todo; native input/focus contracts and
 large-list performance must still be verified before declaring M5 complete.
+
+## M5.12 — Delegated callback rows and shared transport admission
+
+Completed implementation/checks: 2026-10-15. M5 remains in progress.
+
+- Communicated the desktop callback-emission/presentation boundary before editing.
+  Selected the existing structural callback analysis and `planRenderCallback`, and
+  extracted one native row factory builder used by direct maps and delegated
+  callbacks. Caller descriptors hold that factory and the shared key expression;
+  they stay private and stable in the compiled caller closure. No application API,
+  event type, second reactive engine or Rust source was added.
+- Generic object props, aliased callback props and forwarded descriptors work
+  through ordinary component calls and proven static spreads. An empty collection
+  does not evaluate row content. Descriptor replacement reuses the existing slot
+  acceptance controller and a comment-only envelope around the existing native
+  list. Stable descriptors retain keyed row state, events and accepted item/index
+  rebinding. Refused replacement keeps accepted rows and descendant core owners;
+  accepted removal retires those owners and event addresses.
+- Three existing shared gaps surfaced during integration. Communicated those
+  boundaries before fixing them: native component setup classified a structural
+  callback map as an escaping retained callback; callback discovery did not
+  propagate through wrappers; caller-reader folding covered nested components
+  but missed direct callback render reads. The fixes reuse shared callback matching,
+  source-attribute facts, lexical bindings, store paths and helper summaries.
+  Both targets now forward captured descriptors and retain caller access-table
+  dependencies. Explicit event/ref attributes and shadowed parameters do not
+  create render-reader routes. Existing browser golden output stays unchanged;
+  the new browser fixture verifies previously missing forwarding/read behavior.
+- The richer real Vite fixture then reported `queueFull` across sibling row and
+  conditional updates. Communicated the connection-admission boundary before
+  correcting it: view/list/conditional presentations now share existing bounded
+  client credits. The application stores one retry per live presentation, resumes
+  through existing core invalidation after owner settlement, and reads current
+  source values. Disposal/connection close clears retries. No stale snapshot queue,
+  capacity increase, independent dirty graph or polling timer was introduced.
+  Direct client overflow remains an explicit error.
+- A final refusal-pressure fixture reproduced an older failure path: a view with
+  eight queued snapshots could lose its ninth dirty value when refusal rejected
+  every pending update. Native view refusal now resumes deferred work after the
+  rejected snapshots have cleared. Root and forwarded synthetic-view tests verify
+  both final text and attributes against the accepted baseline. A separate close
+  test fills callback-row credits, then confirms complete core retirement and no
+  late publication after a stale reply.
+- Deterministic contracts cover callback caller reads, keyed moves/rebinding,
+  row clicks, empty-list laziness, shadowing/event-only read exclusion, rejected
+  replacements, accepted descendant cleanup and descriptor replacement after
+  correction. A 20-row fixture with nested conditions dispatches nine clicks
+  before host acceptance; every live row eventually publishes its final value
+  without a pressure error. Client checks cover notification ordering,
+  unsubscribe, refusal and terminal-close behavior.
+- Real cached Rust process contracts execute imported generic/forwarded callback
+  lists under Bun, Node and the custom adapter. The Vite fixture combines direct
+  rows, delegated rows, module events and nested conditions, verifies clicked
+  shared values, and rejects old direct/delegated event addresses after two
+  normal root replacements. No native link was needed. These are headless native
+  event-routing contracts, not physical platform-click or text-input evidence.
+- The actual counter's ordinary TSX/mount graph compiles with its generic
+  `CounterRows` render callback. Applications still import only normal framework
+  APIs and CSS. README, research and plan now describe the supported callback
+  path and bounded presentation admission.
+- `bun run --cwd packages/desktop test`: **120 pass**, zero failed, 627 assertions.
+  `bun run --cwd packages/desktop test:process`: **32 pass**, zero failed,
+  128 assertions. `bun run test:root`: **2,562 pass**, zero failed, 30,490
+  assertions across 254 files, including existing optimized web-list and compiler
+  snapshot contracts. The focused R41/golden checks also passed 25 tests with
+  21 unchanged snapshots. Compiler build and focused lint pass; Bun checking passes
+  254 compiler files and 133 desktop files. The initial compiler-check command
+  used a nonexistent `tsconfig.json`; rerunning against its actual
+  `tsconfig.build.json` passed.
+
+Next M5 work: reuse existing guarded write-publication emission for row/prop/store
+mutations so ordinary Todo authoring is supported. These writes remain diagnostic
+today. Native input, ref focus/selection and large-list performance remain explicit
+gates; this batch does not complete M4, M5 or M7.

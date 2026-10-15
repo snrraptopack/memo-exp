@@ -48,6 +48,7 @@ export class PublicationClient {
   private nextSequence = 1;
   private terminal?: Error;
   private readonly closeListeners = new Set<(error: Error) => void>();
+  private readonly capacityListeners = new Set<() => void>();
   private unsubscribe: () => void = () => {};
   private readonly writer: PacketWriter;
   private readonly dispatch?: (event: NativeEventPacket) => boolean;
@@ -118,6 +119,18 @@ export class PublicationClient {
 
   get isClosed(): boolean {
     return this.terminal !== undefined;
+  }
+
+  /** Admission only; accepted presentation/state still belong to the adapter. */
+  get hasCapacity(): boolean {
+    return this.terminal === undefined &&
+      this.queue.length + Number(this.active !== undefined) < this.maxPending;
+  }
+
+  onCapacity(listener: () => void): () => void {
+    if (this.terminal !== undefined) return () => {};
+    this.capacityListeners.add(listener);
+    return () => { this.capacityListeners.delete(listener); };
   }
 
   /** Connection lifetime, including idle process loss. Not a state subscription. */
@@ -279,6 +292,17 @@ export class PublicationClient {
       // blindly; let the semantic adapter recompute a corrected candidate batch.
       this.rejectQueued(new HostError('predecessorRefused', 'Earlier publication was refused'));
     }
+
+    // Owner acceptance/refusal continuations run first. Retried presentation
+    // must observe their attached or discarded subtrees, not a half-settled job.
+    void Promise.resolve().then(() => {
+      if (!this.hasCapacity) return;
+      const listeners = [...this.capacityListeners];
+
+      for (const listener of listeners) {
+        if (this.capacityListeners.has(listener)) runCleanup(listener);
+      }
+    });
   }
 
   private fail(error: Error): void {
@@ -294,6 +318,7 @@ export class PublicationClient {
     this.rejectQueued(error);
     const listeners = [...this.closeListeners];
     this.closeListeners.clear();
+    this.capacityListeners.clear();
     // Pending jobs settle even if a custom adapter's cleanup throws. The first
     // terminal failure remains authoritative; teardown must never strand jobs.
     for (const cleanup of [

@@ -167,7 +167,8 @@ the same content factories and shared condition plans; target-side access-table
 destinations replay their callers where native placement differs from lexical
 region identity. M5.9 selects the existing JSX alias/collection normalizer and
 shares static spread contract discovery/property mapping between targets. Opaque
-JSX prop bags, render callbacks and keyed lists remain subsequent M5 gates.
+JSX prop bags remain diagnostic; the following M5 batches cover keyed lists and
+structural render callbacks.
 
 M5.10 establishes the native keyed range lifetime prerequisite. One core list
 entity retains row presentations; source resolution and callback contracts remain
@@ -194,9 +195,27 @@ publication is emitted. Project dependencies must not infer/register extra roots
 Root/row generation allocation is connection-owned and observes accepted mounts,
 including descendant conditional ranges, to preserve stale-source rejection across
 reloads. The counter supplies visible keyed row/event controls through normal mount
-and CSS. Delegated render callbacks are next: select the existing semantic pass and
-consume `planRenderCallback` with these same native row factories. Do not introduce
-a callback reactive engine or change the DOM list implementation.
+and CSS.
+
+M5.12 consumes `planRenderCallback` with these same native row factories. Shared
+contract discovery propagates callback props through wrappers and proven static
+spreads. Shared reader attribution folds direct callback render reads, helper
+summaries and component subtrees into caller access tables while respecting lexical
+bindings and event/ref exclusion. Both targets forward captured descriptors; only
+target presentation is different. Stable descriptors retain rows, while descriptor
+replacement uses the existing accepted slot lifetime with a comment-only envelope.
+Do not introduce a callback reactive engine or change the DOM list implementation.
+
+Native views, lists and conditional ranges must share the existing connection's
+bounded admission credits. If full, retain one retry per live presentation and
+resume through core invalidation after owner settlement; recompute from current
+source values rather than queueing stale snapshots. Release retries on disposal
+and connection close. Direct client overflow remains an explicit error. Verify
+rapid row events, nested conditions and Vite replacement against the real host
+before declaring this presentation batch complete.
+On refusal, clear all rejected dependent view snapshots before resuming a dirty
+view, including synthetic forwarded content. Check that final text/attributes
+recompute against accepted state and that close cannot revive deferred owners.
 
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts

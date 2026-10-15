@@ -1507,6 +1507,331 @@ test('repeated static map sites retain unique ranges and inherited SVG namespace
   } finally { f.application.close(); }
 });
 
+test('delegated callback rows reuse shared caller reads, native events and keyed binding updates', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function List({items, renderItem: draw}) {
+      return <ul>{items.map((item, index) => draw(item, index))}</ul>;
+    }
+    function Detail({label}) { return <strong>{label}</strong>; }
+    export function App({items, prefix}: {items: unknown[]; prefix: string}) {
+      return <List items={items} renderItem={(item, index) =>
+        <li key={item.id}>
+          <button onClick={() => { count += item.amount; }}>{prefix}:{item.label}:{index}:{count}</button>
+          <Detail label={item.label} />
+        </li>
+      } />;
+    }
+  `);
+  const alpha = { id: 'a', label: 'Alpha', amount: 1 };
+  const beta = { id: 'b', label: 'Beta', amount: 2 };
+  const f = createCompiledApplication(module, [{ items: [alpha, beta], prefix: 'First' }]);
+  try {
+    const initial = f.view.initialPublication;
+    const owner = initial.operations.find(operation =>
+      operation.op === 'mount' && operation.owner.id.endsWith('/Row[s:a]'),
+    );
+    if (owner?.op !== 'mount') throw new Error('Callback Alpha row was not emitted');
+    const source = { owner: owner.owner, source: 1 };
+    const mount = f.candidate.publish(initial);
+    f.transport.accept(1);
+    await mount;
+    f.view.dispatch(source, 'onClick', new Event('click'));
+    f.application.run(core.commit);
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1)).toContainEqual({
+      op: 'text', target: { owner: source.owner, source: 2 }, value: 'First:Alpha:0:1',
+    });
+
+    const before = f.transport.sent.length;
+    f.application.run(() => {
+      core.setProps('App', [{ items: [beta, { ...alpha, amount: 3 }], prefix: 'Next' }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    await drainCompiled(f, before);
+    expect(compiledOperations(f, before).some(operation => operation.op === 'mount')).toBe(false);
+    expect(compiledOperations(f, before)).toContainEqual({ op: 'moveToEnd', owner: source.owner });
+    expect(compiledOperations(f, before)).toContainEqual({
+      op: 'text', target: { owner: source.owner, source: 2 }, value: 'Next:Alpha:1:1',
+    });
+    expect(f.view.matchesSource(source)).toBe(true);
+
+    const clicked = f.transport.sent.length;
+    f.view.dispatch(source, 'onClick', new Event('click'));
+    f.application.run(core.commit);
+    await drainCompiled(f, clicked);
+    expect(compiledOperations(f, clicked)).toContainEqual({
+      op: 'text', target: { owner: source.owner, source: 2 }, value: 'Next:Alpha:1:4',
+    });
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test('generic and forwarded callback props preserve one stable descriptor per caller', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function List(props) {
+      return <section>{props.items.map(item => props.renderItem(item))}</section>;
+    }
+    function Forward({items, renderItem}) {
+      return <List {...{items, renderItem}} />;
+    }
+    export function App({items}) {
+      return <main>
+        <Forward items={items} renderItem={item => <button key={item} onClick={increment}>{item}:{count}</button>} />
+      </main>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: [1] }]);
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    f.application.run(() => { f.module.increment(); core.commit(); });
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1).some(operation => operation.op === 'text' && operation.value === '1:1')).toBe(true);
+    expect(compiledOperations(f, 1).some(operation => operation.op === 'mount')).toBe(false);
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test('unused callback props stay lazy and unsupported row writes retain diagnostics', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+    function List({items, renderItem}) { return <ul>{items.map(item => renderItem(item))}</ul>; }
+    export function App() {
+      return <List items={[]} renderItem={item => <li key={item.id}>{item.missing.label}</li>} />;
+    }
+  `);
+  const f = createCompiledApplication(module);
+  try {
+    const initial = f.view.initialPublication;
+    expect(initial.operations.some(operation => operation.op === 'mount' && operation.owner.id.includes('/Row['))).toBe(false);
+    const mount = f.candidate.publish(initial);
+    f.transport.accept(1);
+    await mount;
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+
+  expect(() => compileDesktop(`
+    function Idle({renderItem}) { return <p>Idle</p>; }
+    export function App() { return <Idle renderItem={item => <li key={item}>{item}</li>} />; }
+  `)).toThrow('not rendered');
+  expect(() => compileDesktop(`
+    function List({items, renderItem}) { return <ul>{items.map(item => renderItem(item))}</ul>; }
+    export function App({items}) {
+      return <List items={items} renderItem={item => <li key={item.id} onClick={() => { item.done = true; }}>{item.done}</li>} />;
+    }
+  `)).toThrow('guarded-publication');
+});
+
+test('callback row refusal preserves accepted events and removal retires nested owners', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function List({items, renderItem}) { return <ul>{items.map(item => renderItem(item))}</ul>; }
+    function Label({item}) { return <span>{item.label}</span>; }
+    export function App({items}) {
+      return <List items={items} renderItem={item =>
+        <li key={item.id}><button onClick={increment}>{item.label}:{count}</button><Label item={item} /></li>
+      } />;
+    }
+  `);
+  const alpha = { id: 'a', label: 'Alpha' };
+  const f = createCompiledApplication(module, [{ items: [alpha] }]);
+  try {
+    const initial = f.view.initialPublication;
+    const mountRow = initial.operations.find(operation => operation.op === 'mount' && operation.owner.id.endsWith('/Row[s:a]'));
+    if (mountRow?.op !== 'mount') throw new Error('Callback row is missing');
+    const source = { owner: mountRow.owner, source: 1 };
+    const mount = f.candidate.publish(initial);
+    f.transport.accept(1);
+    await mount;
+    const original = [...f.application.runtime.state.registry.keys()];
+    f.application.run(() => {
+      core.setProps('App', [{ items: [{ id: 'b', label: 'Beta' }] }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    const refused = f.view.publication().then(value => value, error => error);
+    f.transport.refuse(2);
+    expect(await refused).toMatchObject({ name: 'PublicationRefusedError' });
+    expect([...f.application.runtime.state.registry.keys()]).toEqual(original);
+    expect(f.view.matchesSource(source)).toBe(true);
+
+    f.application.run(() => core.setProps('App', [{ items: [alpha] }]));
+    const clicked = f.transport.sent.length;
+    f.view.dispatch(source, 'onClick', new Event('click'));
+    f.application.run(core.commit);
+    await drainCompiled(f, clicked);
+    expect(compiledOperations(f, clicked)).toContainEqual({
+      op: 'text', target: { owner: source.owner, source: 2 }, value: 'Alpha:1',
+    });
+
+    const removed = f.transport.sent.length;
+    f.application.run(() => {
+      core.setProps('App', [{ items: [] }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    await drainCompiled(f, removed);
+    expect(f.view.matchesSource(source)).toBe(false);
+    expect(f.application.runtime.state.registry.size).toBeLessThan(original.length);
+    expect([...f.application.runtime.state.registry.keys()].some(id => id.endsWith('/Label'))).toBe(false);
+    expect(f.errors).toHaveLength(1);
+  } finally { f.application.close(); }
+});
+
+test('callback parameter shadowing and event-only reads do not create module reader routes', () => {
+  const code = compileDesktop(`
+    let count = 0;
+    function List({items, renderItem}) { return <ul>{items.map(item => renderItem(item))}</ul>; }
+    export function App({items}) {
+      return <List items={items} renderItem={count => <li key={count}>{count}</li>} />;
+    }
+  `).code;
+  expect(code).not.toContain('installAccessTable');
+  const eventOnly = compileDesktop(`
+    let count = 0;
+    function List({items, renderItem}) { return <ul>{items.map(item => renderItem(item))}</ul>; }
+    export function App({items}) {
+      return <List items={items} renderItem={item => <li key={item} onClick={() => { count++; }}>{item}</li>} />;
+    }
+  `).code;
+  expect(eventOnly).not.toContain('installAccessTable');
+});
+
+test('many callback rows share bounded transport credits and eventually publish the latest event value', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function List({items, renderItem}) {
+      return <ul>{items.map(item => renderItem(item))}</ul>;
+    }
+    export function App({items}) {
+      return <main><p>{count}</p><List items={items} renderItem={item => <li key={item}>
+        <button onClick={increment}>{item}:{count}</button>
+        {count % 2 === 0 ? <small>Even</small> : <small>Odd</small>}
+      </li>} /></main>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: Array.from({ length: 20 }, (_, index) => index) }]);
+  try {
+    const initial = f.view.initialPublication;
+    const rowMounts = initial.operations.filter(operation =>
+      operation.op === 'mount' && operation.owner.id.includes('/Row[') && !operation.owner.id.includes('/when'),
+    );
+    const mount = f.candidate.publish(initial);
+    f.transport.accept(1);
+    await mount;
+    const first = rowMounts[0];
+    if (first?.op !== 'mount') throw new Error('First callback row was not emitted');
+
+    for (let index = 0; index < 9; index++) {
+      f.view.dispatch({ owner: first.owner, source: 1 }, 'onClick', new Event('click'));
+      f.application.run(core.commit);
+    }
+
+    // Only the active wire job is written; other credits remain bounded in the
+    // client, and each deferred presentation retains its latest source state.
+    expect(f.transport.sent).toHaveLength(2);
+    expect(f.errors).toEqual([]);
+    await drainCompiled(f, 1);
+    const latest = new Map<string, string>();
+
+    for (const operation of compiledOperations(f, 1)) {
+      if (operation.op === 'text' && operation.target.source === 2) {
+        latest.set(operation.target.owner.id, operation.value);
+      }
+    }
+
+    for (let index = 0; index < rowMounts.length; index++) {
+      const row = rowMounts[index];
+      if (row?.op !== 'mount') throw new Error('Callback row was not emitted');
+      expect(latest.get(row.owner.id)).toBe(`${index}:9`);
+      expect(f.view.matchesSource({ owner: row.owner, source: 1 })).toBe(true);
+    }
+
+    expect(f.errors).toEqual([]);
+  } finally {
+    f.application.close();
+  }
+});
+
+test.each([false, true])('refusal releases a full view queue without losing its deferred latest value (forwarded=%s)', async forwarded => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function Frame({children}) { return <section>{children}</section>; }
+    export function App() {
+      return (${forwarded ? '<Frame>' : ''}
+        <button title={count === 0 ? 'Initial' : 'Changed'} onClick={increment}>Value {count}</button>
+      ${forwarded ? '</Frame>' : ''});
+    }
+  `);
+  const f = createCompiledApplication(module);
+
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+
+    for (let index = 0; index < 9; index++) {
+      f.application.run(() => { f.module.increment(); core.commit(); });
+    }
+
+    const refused = f.view.publication().then(value => value, error => error);
+    f.transport.refuse(2);
+    expect(await refused).toMatchObject({ name: 'HostError' });
+    await Bun.sleep(0);
+    f.application.run(core.commit);
+    expect(f.transport.sent).toHaveLength(3);
+    const operations = JSON.parse(f.transport.sent[2]!).operations as Operation[];
+    expect(operations.some(operation => operation.op === 'text' && operation.value === 'Value 9')).toBe(true);
+    expect(operations.some(operation => operation.op === 'setAttribute' && operation.name.local === 'title' && operation.value === 'Changed')).toBe(true);
+
+    const corrected = f.view.publication();
+    f.transport.accept(2);
+    await corrected;
+    expect(f.application.isClosed).toBe(false);
+  } finally {
+    f.application.close();
+  }
+});
+
+test('closing while callback rows await transport credits retires owners without late work', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function List({items, renderItem}) {
+      return <ul>{items.map(item => renderItem(item))}</ul>;
+    }
+    export function App({items}) {
+      return <List items={items} renderItem={item =>
+        <button key={item} onClick={increment}>{item}:{count}</button>
+      } />;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: Array.from({ length: 20 }, (_, index) => index) }]);
+  const mount = f.candidate.publish(f.view.initialPublication);
+  f.transport.accept(1);
+  await mount;
+  f.application.run(() => { f.module.increment(); core.commit(); });
+  const pending = f.view.publication().then(value => value, error => error);
+  expect(f.transport.sent).toHaveLength(2);
+
+  f.application.close();
+  await pending;
+  f.transport.accept(2);
+  await Bun.sleep(0);
+  expect(f.application.runtime.state.registry.size).toBe(0);
+  expect(f.transport.sent).toHaveLength(2);
+  expect(f.transport.disposed).toBe(true);
+});
+
 test('unsupported lifetimes/structures/reactivity fail instead of silently losing semantics', () => {
   expect(() => compileDesktop('export function App(){let count=0;return <button onClick={()=>{count++;}}>{count}</button>}')).toThrow('Instance writes');
   expect(() => compileDesktop('export function App(){$cleanup(()=>{});return <div/>}')).toThrow('Cleanup');

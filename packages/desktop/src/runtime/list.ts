@@ -221,6 +221,7 @@ export class NativeList<T> implements NativePresentation {
     }
 
     this.phase = 'disposed';
+    this.frame.application.releaseDeferredPresentation(this);
 
     for (const row of this.rows.values()) {
       row.entry.view.dispose();
@@ -238,6 +239,11 @@ export class NativeList<T> implements NativePresentation {
     }
 
     if (this.updatesSuspended || this.phase !== 'active' || this.pending !== undefined) {
+      this.needsUpdate = true;
+      return;
+    }
+
+    if (this.frame.application.deferPresentation(this, () => this.resumeDeferred())) {
       this.needsUpdate = true;
       return;
     }

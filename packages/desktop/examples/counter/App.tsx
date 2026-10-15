@@ -20,17 +20,16 @@ function toggleThirdRow() {
   thirdRowVisible = !thirdRowVisible;
 }
 
-/** Keys retain each native row while its current index and content replay. */
-function CounterRows({ items }: { items: readonly number[] }) {
+interface CounterRowsProps {
+  items: readonly number[];
+  renderItem: (value: number, index: number) => unknown;
+}
+
+/** Ordinary render callbacks keep each row's authoring in its caller. */
+function CounterRows({ items, renderItem }: CounterRowsProps) {
   return (
     <ul class="keyed-rows">
-      {items.map((value, index) => (
-        <li key={value}>
-          <span class="row-position">Position {index + 1}</span>
-          <button onClick={() => { count += value; }}>Add {value}</button>
-          <span class="row-count">Shared count: {count}</span>
-        </li>
-      ))}
+      {items.map((value, index) => renderItem(value, index))}
     </ul>
   );
 }
@@ -67,11 +66,24 @@ export function App() {
           <button onClick={reverseRows}>Reverse rows</button>
           <button onClick={toggleThirdRow}>Toggle row 3</button>
         </div>
-        <CounterRows items={
-          thirdRowVisible
-            ? (reversed ? [3, 2, 1] : [1, 2, 3])
-            : (reversed ? [2, 1] : [1, 2])
-        } />
+        <CounterRows
+          items={
+            thirdRowVisible
+              ? (reversed ? [3, 2, 1] : [1, 2, 3])
+              : (reversed ? [2, 1] : [1, 2])
+          }
+          renderItem={(value, index) => (
+            <li key={value}>
+              <span class="row-position">Position {index + 1}</span>
+              <button onClick={() => {
+                count += value;
+              }}>
+                Add {value}
+              </button>
+              <span class="row-count">Shared count: {count}</span>
+            </li>
+          )}
+        />
       </section>
     </main>
   );
