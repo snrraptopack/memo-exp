@@ -92,6 +92,43 @@ h1 {
   background: #1f50b2;
 }
 
+.primary-button:disabled {
+  opacity: 0.5;
+}
+
+.todo-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 36px 24px;
+}
+
+.todo-entry label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.todo-entry-controls {
+  display: flex;
+  gap: 12px;
+}
+
+.todo-entry input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #b8c6d9;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1b2c43;
+  font: inherit;
+}
+
+.todo-entry input:focus {
+  border-color: #2864d8;
+  outline: 2px solid #d8e5ff;
+}
+
 .todo-filters {
   display: flex;
   gap: 8px;
@@ -247,6 +284,15 @@ h1 {
   .todo-filters {
     padding-right: 24px;
     padding-left: 24px;
+  }
+
+  .todo-entry {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+
+  .todo-entry-controls {
+    flex-direction: column;
   }
 
   .todo-row {

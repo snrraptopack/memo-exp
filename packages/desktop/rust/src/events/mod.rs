@@ -2,3 +2,5 @@
 mod defaults;
 pub(crate) mod wire;
 pub(crate) use defaults::PendingDefaults;
+#[cfg(test)]
+mod tests;

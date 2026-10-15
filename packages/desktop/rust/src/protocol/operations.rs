@@ -15,6 +15,12 @@ pub(super) enum WireOperation {
         target: WireReference,
         value: String,
     },
+    SetValue {
+        target: WireReference,
+        value: String,
+        revision: u64,
+        version: u64,
+    },
     SetAttribute {
         target: WireReference,
         name: WireName,
@@ -48,6 +54,17 @@ impl WireOperation {
         candidates: &'template TemplateRegistry,
     ) -> Result<Operation<'template>, ProtocolError> {
         match self {
+            Self::SetValue {
+                target,
+                value,
+                revision,
+                version,
+            } => Ok(Operation::Write(Mutation::Value {
+                target: target.into_reference()?,
+                value,
+                revision,
+                version,
+            })),
             Self::Text { target, value } => Ok(Operation::Write(Mutation::Text {
                 target: target.into_reference()?,
                 value,

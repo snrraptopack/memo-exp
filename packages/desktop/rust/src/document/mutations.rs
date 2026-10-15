@@ -1,4 +1,4 @@
-use blitz_dom::{NodeData, NodeId, QualName};
+use blitz_dom::{NodeData, NodeId, QualName, ns};
 
 use super::template::valid_name;
 use super::{DocumentError, NativeDocument, NodeRef, SourceNode};
@@ -10,6 +10,12 @@ pub enum Mutation {
         target: NodeRef,
         value: String,
     },
+    Value {
+        target: NodeRef,
+        value: String,
+        revision: u64,
+        version: u64,
+    },
     Attribute {
         target: NodeRef,
         name: QualName,
@@ -20,6 +26,7 @@ pub enum Mutation {
 enum PreparedMutation<'value> {
     Text(NodeId, &'value str),
     Attribute(NodeId, &'value QualName, Option<&'value str>),
+    Value(NodeId, &'value str, u64, u64),
 }
 
 /// Source node kinds are shared by live and candidate validation. They contain
@@ -56,11 +63,27 @@ impl From<&NodeData> for SourceKind {
 impl Mutation {
     pub(super) fn target(&self) -> &NodeRef {
         match self {
-            Self::Text { target, .. } | Self::Attribute { target, .. } => target,
+            Self::Text { target, .. }
+            | Self::Attribute { target, .. }
+            | Self::Value { target, .. } => target,
         }
     }
 
     pub(super) fn validate_name(&self) -> Result<(), DocumentError> {
+        if let Self::Value {
+            revision, version, ..
+        } = self
+        {
+            if *revision > 9_007_199_254_740_991
+                || *version == 0
+                || *version > 9_007_199_254_740_991
+            {
+                return Err(DocumentError::InvalidTemplate {
+                    source: None,
+                    reason: "input revision/version is not a safe integer",
+                });
+            }
+        }
         if let Self::Attribute { target, name, .. } = self
             && !valid_name(&name.local)
         {
@@ -75,7 +98,7 @@ impl Mutation {
     pub(super) fn validate_kind(&self, kind: SourceKind) -> Result<(), DocumentError> {
         let required = match self {
             Self::Text { .. } => SourceKind::Text,
-            Self::Attribute { .. } => SourceKind::Element,
+            Self::Attribute { .. } | Self::Value { .. } => SourceKind::Element,
         };
         if kind != required {
             return Err(DocumentError::WrongNodeKind);
@@ -116,6 +139,23 @@ impl NativeDocument {
                     PreparedMutation::Attribute(node, name, None) => {
                         mutation.clear_attribute(node, name.clone());
                     }
+                    PreparedMutation::Value(node, value, revision, version) => {
+                        let state = host.editor_revisions.entry(node).or_default();
+                        // An early dispatch correction supersedes older queued
+                        // renders even when they share the same edit revision.
+                        if state.is_composing
+                            || state.revision != revision
+                            || version < state.controlled_version
+                        {
+                            continue;
+                        }
+                        state.controlled_version = version;
+                        mutation.set_attribute(
+                            node,
+                            QualName::new(None, ns!(), "value".into()),
+                            value,
+                        );
+                    }
                 }
             }
         })
@@ -134,6 +174,12 @@ impl NativeDocument {
         write.validate_kind(SourceKind::from(&node.data))?;
         match write {
             Mutation::Text { value, .. } => Ok(PreparedMutation::Text(id, value)),
+            Mutation::Value {
+                value,
+                revision,
+                version,
+                ..
+            } => Ok(PreparedMutation::Value(id, value, *revision, *version)),
             Mutation::Attribute { name, value, .. } => {
                 Ok(PreparedMutation::Attribute(id, name, value.as_deref()))
             }

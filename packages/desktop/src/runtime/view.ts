@@ -23,6 +23,7 @@ import {
   type Template
 } from '../host/protocol';
 import type { SourceReference } from '../host/protocol';
+import { supportsNativeEvent, type ControlledValue, type NativeControlState } from '../host/events';
 import { withStylesheets } from './stylesheets';
 export { registerStylesheet } from './stylesheets';
 
@@ -65,7 +66,8 @@ export interface NativePresentation {
   resumeUpdates(): void;
   dispatch(source: number | SourceReference, name: string, event: unknown): unknown;
   matchesSource(source: SourceReference): boolean;
-  eventTarget(source: number | SourceReference): object;
+  eventTarget(source: number | SourceReference, control?: NativeControlState): object;
+  controlledValues(): ControlledValue[];
   publication(): Promise<Acceptance | undefined>;
   attachCore(): void;
   discardStaged(): void;
@@ -110,6 +112,7 @@ export function child(
 }
 
 interface Snapshot {
+  readonly controlVersion: number;
   readonly operations: Operation[];
   readonly texts: Map<number, string>;
   readonly attributes: Map<number, Map<string, string>>;
@@ -120,6 +123,7 @@ interface Snapshot {
 export class NativeView implements NativePresentation {
   private phase: 'prepared' | 'publishing' | 'active' | 'disposed' = 'prepared';
   private accepted?: Snapshot;
+  private evaluated?: Snapshot;
   private initial: Snapshot;
   private needsUpdate = false;
   private updatesSuspended = false;
@@ -129,6 +133,8 @@ export class NativeView implements NativePresentation {
   private readonly childUpdates: Array<(() => void) | undefined>;
   private coreAttached = false;
   private deferredProps?: unknown[];
+  private readonly controls = new Map<number, NativeControlState>();
+  private controlVersion = 0;
 
   readonly ownerId: string;
 
@@ -275,7 +281,7 @@ export class NativeView implements NativePresentation {
       throw new HostError('invalidView', 'Native view is not publishing');
     }
 
-    this.accepted = this.initial;
+    this.acceptSnapshot(this.initial);
     this.phase = 'active';
 
     for (const childView of this.children) {
@@ -326,11 +332,11 @@ export class NativeView implements NativePresentation {
     return this.children.some(childView => childView.matchesSource(source));
   }
 
-  eventTarget(source: number | SourceReference): object {
+  eventTarget(source: number | SourceReference, control?: NativeControlState): object {
     if (typeof source !== 'number' && !this.ownsSource(source)) {
       for (const childView of this.children) {
         if (childView.matchesSource(source)) {
-          return childView.eventTarget(source);
+          return childView.eventTarget(source, control);
         }
       }
 
@@ -338,6 +344,13 @@ export class NativeView implements NativePresentation {
     }
 
     const address = typeof source === 'number' ? source : source.source;
+    if (control !== undefined) {
+      const previous = this.controls.get(address);
+      if (previous !== undefined && control.revision < previous.revision) {
+        throw new HostError('staleInput', 'Native editor revisions cannot move backwards');
+      }
+      this.controls.set(address, control);
+    }
     const node = this.template.nodes[address]?.node;
 
     if (!node) throw new HostError('unknownEventSource', 'Native event source is unknown');
@@ -352,6 +365,9 @@ export class NativeView implements NativePresentation {
       [Symbol.toStringTag]: 'NativeEventTarget'
     };
     if (node.kind === 'element') properties.tagName = properties.nodeName;
+    const observed = this.controls.get(address);
+    if (observed !== undefined) properties.value = observed.value;
+    if (observed?.checked !== undefined) properties.checked = observed.checked;
     return new Proxy(properties, {
       get(target, name) {
         if (name in target || typeof name === 'symbol') return target[name];
@@ -380,11 +396,34 @@ export class NativeView implements NativePresentation {
     }, undefined);
   }
 
+  controlledValues(): ControlledValue[] {
+    if (this.phase !== 'active') return [];
+    const snapshot = this.evaluated ?? this.accepted;
+    if (!snapshot) return [];
+
+    const writes: ControlledValue[] = [];
+    for (const [source, control] of this.controls) {
+      const value = snapshot.attributes.get(source)?.get('value');
+      if (value !== undefined && value !== control.value && !control.isComposing) {
+        writes.push({
+          op: 'setValue',
+          target: { owner: this.frame.owner, source },
+          value,
+          revision: control.revision,
+          version: snapshot.controlVersion,
+        });
+      }
+    }
+    return writes.concat(this.children.flatMap(child => child.controlledValues()));
+  }
+
   dispose(): void {
     this.phase = 'disposed';
     this.frame.application.releaseDeferredPresentation(this);
     this.accepted = undefined;
+    this.evaluated = undefined;
     this.pending.clear();
+    this.controls.clear();
   }
 
   updateFromOwner(): void {
@@ -436,18 +475,11 @@ export class NativeView implements NativePresentation {
       return;
     }
 
-    if (
-      this.pending.size >= 8 ||
-      this.frame.application.deferPresentation(this, () => this.resumeDeferred())
-    ) {
-      // Coalesce source changes through the existing core when a credit frees.
-      // Do not discard a final user value merely because native work is busy.
-      this.needsUpdate = true;
-
-      return;
-    }
-
+    // Evaluate current semantic values and prop boxes even when scene credits
+    // are exhausted. Dispatch decisions must see controlled corrections now;
+    // deferred publications still recompute from source when admitted later.
     const next = this.snapshot();
+    this.evaluated = next;
 
     // Snapshot first so this component replays its own props before expressions
     // feeding a nested child are evaluated. Shared access plans can also target
@@ -469,9 +501,20 @@ export class NativeView implements NativePresentation {
       return;
     }
 
+    if (
+      this.pending.size >= 8 ||
+      this.frame.application.deferPresentation(this, () => this.resumeDeferred())
+    ) {
+      // Coalesce source changes through the existing core when a credit frees.
+      // Do not discard a final user value merely because native work is busy.
+      this.needsUpdate = true;
+
+      return;
+    }
+
     const publication = this.frame.application.publish({ operations: next.operations }, () => {
       if (this.phase === 'active') {
-        this.accepted = next;
+        this.acceptSnapshot(next);
       }
     });
 
@@ -511,6 +554,18 @@ export class NativeView implements NativePresentation {
           invalidateEntity(this.ownerId);
         }
       });
+    }
+  }
+
+  private acceptSnapshot(snapshot: Snapshot): void {
+    this.accepted = snapshot;
+    this.evaluated ??= snapshot;
+    for (const operation of snapshot.operations) {
+      if (operation.op !== 'setValue') continue;
+      const observed = this.controls.get(operation.target.source);
+      if (observed?.revision === operation.revision && !observed.isComposing) {
+        this.controls.set(operation.target.source, { ...observed, value: operation.value });
+      }
     }
   }
 
@@ -572,6 +627,7 @@ export class NativeView implements NativePresentation {
 
   private snapshot(): Snapshot {
     const result: Snapshot = {
+      controlVersion: ++this.controlVersion,
       operations: [], texts: new Map(), attributes: new Map(), handlers: new Map(),
     };
 
@@ -617,7 +673,7 @@ export class NativeView implements NativePresentation {
         }
 
         if ((/^on[A-Z]/).test(name)) {
-          if (value != null && name !== 'onClick' && name !== 'onClickCapture') {
+          if (value != null && !supportsNativeEvent(name)) {
             throw new HostError('unsupportedEvent', `Native event '${name}' requires its platform/default integration`);
           }
           if (typeof value === 'function') {
@@ -651,9 +707,15 @@ export class NativeView implements NativePresentation {
       }
 
       const known = new Set(previous.flatMap((snapshot) => [...(snapshot!).attributes.get(step.source)?.keys() ?? []]));
+      const textControl = html && (node.name.local === 'input' || node.name.local === 'textarea');
+      const control = this.controls.get(step.source);
 
       for (const name of known) {
         if (!attributes.has(name)) {
+          if (textControl && name === 'value') {
+            result.operations.push({ op: 'setValue', target, value: '', revision: control?.revision ?? 0, version: result.controlVersion });
+            continue;
+          }
           result.operations.push({
             op: 'removeAttribute',
             target,
@@ -663,6 +725,13 @@ export class NativeView implements NativePresentation {
       }
 
       for (const [name, value] of attributes) {
+        if (textControl && name === 'value') {
+          if (baseline?.attributes.get(step.source)?.get(name) !== value ||
+              control !== undefined && control.value !== value) {
+            result.operations.push({ op: 'setValue', target, value, revision: control?.revision ?? 0, version: result.controlVersion });
+          }
+          continue;
+        }
         if (baseline?.attributes.get(step.source)?.get(name) === value) {
           continue;
         }

@@ -60,6 +60,7 @@ impl NativeDocument {
             // A parent range can contain descendant component ranges, including
             // empty fragments. Engine destruction reports their boundaries too.
             for node in dropped {
+                host.editor_revisions.remove(&node);
                 #[cfg(feature = "window")]
                 host.source_nodes.remove(&node);
                 if let Some(owner) = host.owner_boundaries.remove(&node) {

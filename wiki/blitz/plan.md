@@ -2,8 +2,8 @@
 
 Updated: 2026-10-15. Branch: `codex/blitz-renderer`.
 
-Current user-directed order: complete row/store mutation publication and an
-ordinary keyed Todo using existing shared semantics. Keep automated contracts
+Current user-directed order: extend the ordinary keyed Todo with native text
+entry and custom task creation using existing shared semantics. Keep automated contracts
 independent of editable examples. The earlier dashboard establishes measured
 native layouts; M4 platform input and M6 browser parity remain separate gates.
 Reuse the existing launcher and normal mount/CSS authoring.
@@ -228,8 +228,8 @@ TypeScript expression wrappers as executable reads. Module read helpers remain
 non-publishers; direct helper assignments publish at completion, while method-only
 effects publish at the compiled callback boundary.
 
-The ordinary Todo example uses normal mount and CSS, with numbered task creation
-until native text editing is verified. Automated tests must own source/CSS
+The ordinary Todo example uses normal mount and CSS, controlled text input,
+an ordinary Enter handler and an Add button. Automated tests must own source/CSS
 fixtures independently of editable examples, including the real Vite/native Todo
 contract and native layout baselines. Example deletion must not break contracts.
 M5 still requires physical focus/selection and broader callback/lifecycle gates.
@@ -335,6 +335,26 @@ revisions; skip stale controlled-value writes while a newer edit/composition exi
 IME preedit stays local, and committed edits notify JS without waiting for a full
 scene repaint. Reuse the previous input reconciliation contracts where applicable;
 Blitz owns the actual editor instead of creating another editor beside it.
+
+M4.1 extends the existing click bridge to input/keyboard capture and bubble.
+The existing default controller serializes a key with its generated input report
+before later keys and focus-changing pointer actions. Passive hover, wheel,
+painting and scene work remain serviceable. Keep bounded admission, generation
+checks and explicit overflow/timeout failure.
+
+After synchronous dispatch, the launcher settles the shared core and includes
+changed controlled values in the same decision. Apply them before the next held
+interaction. Native closure/prop evaluation precedes scene-credit admission;
+accepted state only advances on acknowledgment and deferred scene work still
+recomputes current source values. Use editor revision to protect newer edits/
+preedit and per-view control-write version to reject older queued renders after
+an early correction. Reuse Blitz's editor/matching-value check and remove native
+metadata on retirement. Introduce no new reactive engine or application event type.
+
+Verify this with test-owned TSX and real Blitz editor events. Upstream's pinned
+keyboard implementation explicitly lacks a script-visible submit event; keep
+`onSubmit` diagnosed until its real default/routing bridge exists. Physical
+platform IME, live/default values and broader selection remain M4 gates.
 
 ### Core runtime, lifecycle and refs
 

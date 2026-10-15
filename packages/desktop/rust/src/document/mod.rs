@@ -4,6 +4,7 @@ mod error;
 #[cfg(feature = "window")]
 mod events;
 mod identity;
+mod input;
 mod instance;
 mod lifetime;
 mod mount;
@@ -21,6 +22,9 @@ use blitz_traits::shell::ShellProvider;
 
 pub use error::DocumentError;
 pub use identity::{MountTarget, NodeRef, Owner};
+#[cfg(feature = "window")]
+pub(crate) use input::ControlState;
+pub(crate) use input::EditorRevision;
 pub use mutations::Mutation;
 pub use template::{SourceNode, Template, TemplateNode, ValidatedTemplate};
 pub use transaction::Operation;
@@ -38,6 +42,7 @@ pub struct NativeDocument {
     #[cfg(feature = "window")]
     source_nodes: HashMap<NodeId, NodeRef>,
     generations: HashMap<String, u64>,
+    editor_revisions: HashMap<NodeId, EditorRevision>,
     failed: bool,
     providers: Arc<PublicationProviders>,
     #[cfg(feature = "window")]
@@ -70,6 +75,7 @@ impl NativeDocument {
             #[cfg(feature = "window")]
             source_nodes: HashMap::new(),
             generations: HashMap::new(),
+            editor_revisions: HashMap::new(),
             failed: false,
             providers,
             #[cfg(feature = "window")]

@@ -76,10 +76,7 @@ impl Document for WindowDocument {
             - 1;
         let defaults = &mut self.defaults;
         let sink = &self.sink;
-        self.driver
-            .session_mut()
-            .document_mut()
-            .capture_clicks(event, |path, event| defaults.record(path, event, sink));
+        defaults.handle_ui_event(self.driver.session_mut().document_mut(), event, sink);
         if let Err(failure) = self.defaults.check_failure() {
             eprintln!("desktop interaction {}: {}", failure.code, failure.message);
             self.driver.close();

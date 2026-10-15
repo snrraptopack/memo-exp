@@ -1,6 +1,6 @@
 # Blitz milestone and decision record
 
-Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-15. Branch: `codex/blitz-renderer`.
 
 Follow [plan.md](plan.md) for implementation order and [research.md](research.md)
 for inspected architecture. This log is append-only for completed work: correct
@@ -15,8 +15,8 @@ Update the status table when the corresponding completion gates pass.
 | M1 — Shared semantic/compiler boundary | Completed | Runtime/core, shared pass order and project/manifest adaptation; unchanged fixture products, source-only contracts, builds/checks and 2,558 root tests pass |
 | M2 — Native document/transactions | Completed | M2.2a–g implement mixed validation, immutable templates, framing, provider containment, bounded workers and JS ownership; 79 native contracts and real process gates pass; window/paint integration belongs to M3 |
 | M3 — Ordinary native counter | In progress | M3.1–3.3 execute compiled fixed-host/module-cell closures; M3.4 runs ordinary mount and accepted remount against Rust; visible CSS/window and platform-click gates remain |
-| M4 — Events and input | Not started | Upstream API inspected; process integration not tested |
-| M5 — Modules and structural parity | In progress | Static/imported components, props, conditions, children, JSX aliases/collections and static spread slots use shared plans and accepted ownership; lists, opaque JSX prop bags and render callbacks remain |
+| M4 — Events and input | In progress | M4.1 connects native editor/input/keyboard decisions and controlled Todo entry; physical platform input, live/default values and broader selection remain |
+| M5 — Modules and structural parity | In progress | Shared plans drive modules, props, branches, forwarded content, keyed rows, render callbacks and guarded store mutations; physical focus/selection and broader callback/lifecycle gates remain |
 | M6 — CSS/browser parity | Not started | Native headless CSS smoke contract passes; browser box/fragment parity is not measured |
 | M7 — Refs/libraries/lifecycle | Not started | Acceptance lifecycle foundation exists in M3.1; ordinary native ref methods and real library contracts remain |
 | M8 — Dev workflow and evidence | Not started | Initial native check/test compilation recorded; application refresh/startup/input traces absent |
@@ -2069,3 +2069,72 @@ Next M5/M4 work: native input/default ordering and ordinary ref capabilities,
 including physical focus/selection retention through keyed changes. Retained
 callback/lifecycle emission and broader parity/performance gates remain open;
 this batch does not complete M4, M5 or M7.
+
+## M4.1 — Native text entry and controlled Todo creation
+
+Completed implementation/checks: 2026-10-15. M4 remains in progress.
+
+- Communicated the desktop event/default, value-write and compiler capability
+  boundary before editing. Reused Blitz's existing `EventDriver`, text editor,
+  caret/IME handling and matching-value check. Extended the existing event bridge
+  to `input`, `keydown`, `keyup` and capture variants. Ordinary target snapshots
+  expose native `value`, available checkbox `checked`, and keyboard fields.
+  Source applications use normal DOM event types and existing mount/CSS.
+  Shared compiler analysis, semantic runtime and DOM list algorithms are unchanged.
+- Extended the existing bounded default controller instead of adding an editor
+  or reactive engine. One held key's default and generated noncancelable input
+  report complete before later keys or focus-changing pointer actions. This
+  prevents Enter or an Add click overtaking the last character. Passive hover,
+  wheel, redraw and publication processing continue without blocking the UI
+  thread on JavaScript. Held source generations are checked, acknowledgments
+  cannot replay notifications, and overflow/timeout remain explicit failures.
+- Communicated two additional synchronization findings before fixing them.
+  Clearing through a scene packet alone races the next queued key, so the
+  launcher settles the existing core after synchronous dispatch and includes
+  controlled corrections in that decision. Native views evaluate existing
+  closures/prop boxes before credit admission and retain only the latest evaluated
+  result for decisions. Deferred scene work still recomputes source; accepted
+  snapshots and lifecycle retain their existing acceptance boundary.
+- Editor revisions protect newer native edits/preedit. A separate increasing
+  control-write version prevents an older scene packet at the same edit revision
+  from undoing an early controlled clear. Both counters are native synchronization
+  metadata; values stay in Blitz and application state stays in shared core cells.
+  This private `setValue` record and dispatch correction have strict decoding,
+  safe-integer/batch limits and complete validation before mutation. Retirement
+  clears metadata; a reused engine node cannot inherit an old control's epoch.
+- The Todo now accepts authored titles through its ordinary controlled input,
+  an Enter handler or Add button. Successful additions clear the field; blank
+  titles are ignored. Existing completion/filter/reverse/remove/clear and retained
+  row-local state remain. CSS stays readable and includes a narrow entry layout.
+  The independently owned test Todo also covers typing observations, blank input,
+  button creation, Enter creation and accepted native updates under Bun and Node.
+  Its headless probe supplies observations; real editing/default behavior is
+  separately driven through actual Blitz UI events and framed output.
+- Native contracts verify per-character input before Enter, typing before an
+  Add click changes focus, synchronous cancellation, post-Enter queued typing,
+  stale edit writes, older queued renders, matching-value caret retention,
+  retirement and explicit overflow. IME tests use Winit's documented empty-preedit
+  notification before commit, verify preedit remains local and protect it from
+  stale writes. Existing checkbox default tests now verify the newly forwarded
+  input notification instead of incorrectly treating it as a replayed click.
+- `bun run --cwd packages/desktop test`: **142 pass**, zero failed, 738 assertions.
+  Real process/Vite contracts pass **34 tests**, zero failed, 134 assertions.
+  The focused web/compiler golden, boundary and callback-plan checks pass
+  **34 tests**, 21 unchanged snapshots, 86 assertions. Compiler build, focused
+  lint and Bun checks pass: 260 compiler and 145 desktop files. The full root
+  suite was not repeated for this desktop-only batch; M5.13 records its latest run.
+- `cargo +1.96.0 test --locked --features window --lib`: **22 pass**;
+  the native document/wire/layout integration executable passes **72 tests**.
+  The graphical host builds with `--locked --features window --jobs 1`, and
+  Rust formatting and headless/window checks pass. Window-only observation
+  helpers are feature-gated so headless checks add no unused-code warnings.
+  A separate manual Vite build of the editable Todo
+  passes. Automated tests continue to own all source/CSS independently of examples.
+
+Remaining M4 gates: physical platform keyboard/IME testing, full live/default
+value semantics, broader input/selection behavior and script-visible submit
+defaults. The pinned Blitz keyboard code explicitly lacks script-visible submit
+generation, so `onSubmit` stays diagnosed; the example uses ordinary keyboard and
+button handlers. Native refs/focus methods and physical keyed focus/selection
+retention remain M7/M5 work. No full browser element/event surface or latency
+claim is made by these engine/process contracts.

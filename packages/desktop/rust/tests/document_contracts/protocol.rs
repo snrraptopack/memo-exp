@@ -34,6 +34,45 @@ fn packet(sequence: u64, writes: Vec<Value>) -> Vec<u8> {
 }
 
 #[test]
+fn controlled_value_wire_versions_reject_stale_renders_and_validate_before_mutating() {
+    let (mut session, _, owner) = publication_host();
+    let value = |version, text: &str| {
+        json!({
+            "op":"setValue", "target":wire_target(&owner, 0),
+            "value":text, "revision":0, "version":version,
+        })
+    };
+    session
+        .publish(&packet(1, vec![value(3_u64, "new")]))
+        .unwrap();
+    session
+        .publish(&packet(2, vec![value(2_u64, "older")]))
+        .unwrap();
+    let element = session
+        .document()
+        .engine()
+        .get_node(session.document().node_id(&owner.node(0)).unwrap())
+        .unwrap();
+    assert_eq!(element.data.attr(local_name!("value")), Some("new"));
+
+    for version in [0, 9_007_199_254_740_992_u64] {
+        assert!(
+            session
+                .publish(&packet(
+                    3,
+                    vec![
+                        text_write(&owner, 1, "must not apply"),
+                        value(version, "invalid"),
+                    ]
+                ))
+                .is_err()
+        );
+        assert_eq!(text_at(session.document(), &owner, 1), "before");
+        assert_eq!(session.expected_sequence(), Some(3));
+    }
+}
+
+#[test]
 fn wire_acceptance_follows_complete_native_application_and_preserves_ids() {
     let (mut session, shell, owner) = publication_host();
     let node = session.document().node_id(&owner.node(1)).unwrap();

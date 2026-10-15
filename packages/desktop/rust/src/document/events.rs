@@ -1,30 +1,32 @@
-//! Engine dispatch captures script-visible clicks before their native defaults.
+//! Forward script-visible events while Blitz retains editing, focus and selection.
 use std::collections::HashMap;
 
 use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
 use blitz_traits::events::{DomEvent, EventState, UiEvent};
 
-use super::{NativeDocument, NodeRef};
+use super::{ControlState, EditorRevision, NativeDocument, NodeRef};
+use blitz_traits::events::{BlitzImeEvent, DomEventData};
 
-struct ClickRouter<'a, F> {
+struct ScriptRouter<'a, F> {
     sources: &'a HashMap<NodeId, NodeRef>,
     capture: F,
+    revisions: &'a mut HashMap<NodeId, EditorRevision>,
     skip_first: bool,
 }
 
-impl<F: FnMut(Vec<NodeRef>, DomEvent)> EventHandler for ClickRouter<'_, F> {
+impl<F: FnMut(Vec<NodeRef>, DomEvent, Option<ControlState>)> EventHandler for ScriptRouter<'_, F> {
     fn handle_event(
         &mut self,
         chain: &[NodeId],
         event: &mut DomEvent,
-        _: &mut dyn Document,
+        doc: &mut dyn Document,
         state: &mut EventState,
     ) {
         if self.skip_first {
             self.skip_first = false;
             return;
         }
-        if event.name() != "click" {
+        if !matches!(event.name(), "click" | "input" | "keydown" | "keyup") {
             return;
         }
         let path: Vec<_> = chain
@@ -34,39 +36,81 @@ impl<F: FnMut(Vec<NodeRef>, DomEvent)> EventHandler for ClickRouter<'_, F> {
         if path.is_empty() {
             return;
         }
-        state.prevent_default();
-        (self.capture)(path, event.clone());
+        if matches!(event.data, DomEventData::Input(_)) {
+            let revision = self.revisions.entry(event.target).or_default();
+            revision.revision += 1;
+            revision.is_composing = false;
+        } else {
+            // Native defaults resume only after synchronous JS cancellation.
+            state.prevent_default();
+        }
+        let control = super::input::control_state(&doc.inner(), self.revisions, event.target)
+            .or_else(|| match &event.data {
+                DomEventData::Input(input) => Some(ControlState {
+                    value: input.value.clone(),
+                    checked: None,
+                    revision: self
+                        .revisions
+                        .get(&event.target)
+                        .map_or(0, |state| state.revision),
+                    is_composing: false,
+                }),
+                _ => None,
+            });
+        (self.capture)(path, event.clone(), control);
     }
 }
 
 impl NativeDocument {
-    pub(crate) fn capture_clicks(
+    pub(crate) fn focused_source(&self) -> Option<NodeRef> {
+        self.source_nodes
+            .get(&self.document.get_focussed_node_id()?)
+            .cloned()
+    }
+    pub(crate) fn capture_events(
         &mut self,
         event: UiEvent,
-        capture: impl FnMut(Vec<NodeRef>, DomEvent),
+        capture: impl FnMut(Vec<NodeRef>, DomEvent, Option<ControlState>),
     ) {
         self.attach_shell_provider();
-        let handler = ClickRouter {
+        // Preedit stays local in Blitz. Bump the editor epoch before it runs so
+        // any already queued JS value write is stale throughout composition.
+        if let UiEvent::Ime(ime) = &event {
+            if let Some(node) = self.document.get_focussed_node_id() {
+                let composing = match ime {
+                    BlitzImeEvent::Preedit(text, _) => !text.is_empty(),
+                    BlitzImeEvent::Commit(_) | BlitzImeEvent::Disabled => false,
+                    _ => self
+                        .editor_revisions
+                        .get(&node)
+                        .is_some_and(|state| state.is_composing),
+                };
+                self.advance_editor(node, composing);
+            }
+        }
+        let handler = ScriptRouter {
             sources: &self.source_nodes,
+            revisions: &mut self.editor_revisions,
             capture,
             skip_first: false,
         };
         EventDriver::new(&mut self.document, handler).handle_ui_event(event);
     }
 
-    pub(crate) fn resume_click(
+    pub(crate) fn resume_event(
         &mut self,
         target: &NodeRef,
         event: DomEvent,
-        capture: impl FnMut(Vec<NodeRef>, DomEvent),
+        capture: impl FnMut(Vec<NodeRef>, DomEvent, Option<ControlState>),
     ) {
         // A retired generation or recycled engine node cannot receive a held
         // default. A valid stale decision simply releases its pending record.
         if self.node_id(target).ok() != Some(event.target) {
             return;
         }
-        let handler = ClickRouter {
+        let handler = ScriptRouter {
             sources: &self.source_nodes,
+            revisions: &mut self.editor_revisions,
             capture,
             skip_first: true,
         };
@@ -141,9 +185,10 @@ mod tests {
             Some(container)
         );
         let mut captured = Vec::new();
-        let handler = ClickRouter {
+        let handler = ScriptRouter {
             sources: &document.source_nodes,
-            capture: |path, event| captured.push((path, event)),
+            revisions: &mut document.editor_revisions,
+            capture: |path, event, _| captured.push((path, event)),
             skip_first: false,
         };
         EventDriver::new(&mut document.document, handler).handle_dom_event(click(id));
@@ -159,9 +204,13 @@ mod tests {
                 .checkbox_input_checked(),
             Some(false)
         );
-        document.resume_click(&source, captured[0].1.clone(), |_, _| {
-            panic!("original click recaptured")
+        let mut notifications = Vec::new();
+        document.resume_event(&source, captured[0].1.clone(), |_, event, control| {
+            assert_eq!(event.name(), "input");
+            assert_eq!(control.unwrap().checked, Some(true));
+            notifications.push(event);
         });
+        assert_eq!(notifications.len(), 1);
         assert_eq!(
             document
                 .document
@@ -174,7 +223,7 @@ mod tests {
         );
         document.retire(&owner).unwrap();
         assert!(!document.source_nodes.contains_key(&id));
-        document.resume_click(&source, captured[0].1.clone(), |_, _| {
+        document.resume_event(&source, captured[0].1.clone(), |_, _, _| {
             panic!("retired default recaptured")
         });
         assert!(document.document.get_node(container).is_some());

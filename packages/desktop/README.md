@@ -11,11 +11,12 @@ portable JavaScript publication client, selectable execution bundler and interna
 accepted core lifecycle are also implemented. The compiler now lowers analyzed
 JSX to native templates and executes the first fixed-host/module-cell component
 phase. The Vite counter example now uses ordinary mount and processed CSS in the
-graphical Blitz host. The current executable supports click/capture callbacks;
+graphical Blitz host. The current executable supports click, input and keyboard
+callbacks, including capture;
 ordinary component calls now mount as accepted nested native owners and replay
 reactive props through the shared core prop box. Inline and component-return
-host/component branches use accepted native replacement. Editing events, refs,
-and full event targets remain unfinished. Nested component children and forwarded
+host/component branches use accepted native replacement. Native refs, full event
+targets and complete browser input parity remain unfinished. Nested component children and forwarded
 content references and direct JSX-valued props mount into native regions. Mapped
 host/component rows and delegated render callbacks now consume shared list plans
 and retained native ranges. Web mounting and the optimized DOM list implementation
@@ -65,10 +66,11 @@ callback, keyed rows with click handlers, and reverse-order and remove/restore
 controls. Each row adds its value to shared module state.
 
 Run `bun run desktop:todo` for a separate ordinary TSX/CSS example. It supports
-adding numbered tasks, editing their labels, toggling completion, filtering,
+typing your own tasks, editing their labels, toggling completion, filtering,
 reversing, removing and clearing completed tasks. Each row has a local click count
-that follows its key across moves. The entry still uses `mount('app', App)`;
-free-text entry awaits the native input/default contract.
+that follows its key across moves. Type a title and press Enter or click Add task;
+blank titles are ignored and successful additions clear the field. The entry
+still uses `mount('app', App)`, ordinary `onInput`/`onKeyDown` and controlled `value`.
 
 Edit `examples/counter/App.tsx`, `main.ts` and `style.css` within this package.
 The launcher builds its execution module once, pins the actual shared core and
@@ -298,7 +300,44 @@ Automated contracts own their source and CSS under `tests/fixtures` and
 The test-owned Todo is compiled by Vite and executed against the real headless
 Rust host under Bun and Node, including cross-module mutations, keyed state,
 filter attributes, empty content and repeated root replacement. It verifies
-accepted routing/publication, not physical platform clicks or editing.
+accepted routing/publication. Its headless probe supplies input observations;
+separate Rust tests drive the real Blitz editor and framed event sink.
+
+## Native input and event decisions
+
+Supported callback names are `onClick`, `onInput`, `onKeyDown`, `onKeyUp` and their
+capture variants. Targets expose native-observed `value` and checkbox `checked`
+when available. Keyboard callbacks receive ordinary key/code/modifier/repeat and
+composition fields. Applications use the normal DOM event types; private wire
+records are not application imports. Input reports are noncancelable and follow
+the native edit. Cancellation freezes after synchronous capture/bubble dispatch;
+promise completion cannot change it.
+
+Blitz retains editing, caret movement and IME preedit. The existing default
+controller orders each key, its generated input notification, and subsequent
+keys or focus-changing pointer actions. This keeps the last character ahead of
+Enter or an Add click. Passive hover, wheel, redraw and scene processing continue
+without a blocking pipe wait. The eight-interaction bound and five-second timeout
+fail explicitly on overflow/loss; characters are not coalesced.
+
+The launcher settles the existing shared core after synchronous dispatch.
+Controlled corrections accompany the cancellation decision, so clearing after
+Enter takes effect before a queued key even when scene credits are occupied.
+Native views evaluate ordinary closures/prop boxes before admission and retain
+one latest evaluated result for that decision. Deferred scene work still
+recomputes current source values; accepted snapshots advance only on acceptance.
+
+Each controlled write carries an observed editor revision and an increasing
+control-write version. Rust ignores writes based on older edits, writes during
+preedit, and older renders superseded by a dispatch correction. Matching text
+uses Blitz's existing equality check to retain the caret. Retirement clears this
+bookkeeping and invalidates held addresses.
+
+This establishes controlled text entry for the Todo. Physical platform keyboard/
+IME testing, live/default-value separation, native refs and broader selection
+parity remain gates. The pinned Blitz keyboard code lacks a script-visible submit
+event; `onSubmit` remains diagnosed. The Todo uses an ordinary Enter handler and
+Add button rather than claiming a completed form-submission bridge.
 
 ## JavaScript execution backends
 
@@ -688,9 +727,10 @@ the authored mount entry against Rust; these are not platform-click tests.
 
 Blitz creates a text input's editor during layout construction. Tests verify both
 pre-layout value initialization and later editor updates through the engine.
-Attribute writes alone are not a proof of browser input parity: live/default value
-distinctions, user edits, composition and stale controlled writes need the M4
-contracts before the JavaScript control adapter is claimed compatible.
+The controlled text path above now verifies edit notifications, composition
+protection and stale controlled writes through the real engine. Live/default
+value distinctions and physical platform input remain M4 gates; attribute writes
+alone do not establish full browser input parity.
 
 Read the canonical [research](../../wiki/blitz/research.md),
 [plan](../../wiki/blitz/plan.md), and [completed milestones](../../wiki/blitz/milestones.md).

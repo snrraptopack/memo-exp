@@ -19,6 +19,7 @@ import type {
   NativeFrame,
   NativePresentation,
 } from './view';
+import type { ControlledValue, NativeControlState } from '../host/events';
 
 export type NativeBranchFactory = (
   frame: NativeFrame,
@@ -150,12 +151,16 @@ export class NativeConditional implements NativePresentation {
     return this.phase === 'active' && this.current?.matchesSource(source) === true;
   }
 
-  eventTarget(source: number | SourceReference): object {
+  eventTarget(source: number | SourceReference, control?: NativeControlState): object {
     if (typeof source === 'number' || !this.current?.matchesSource(source)) {
       throw new HostError('unknownEventSource', 'Native conditional source is unknown');
     }
 
-    return this.current.eventTarget(source);
+    return this.current.eventTarget(source, control);
+  }
+
+  controlledValues(): ControlledValue[] {
+    return this.phase === 'active' ? this.current?.controlledValues() ?? [] : [];
   }
 
   async publication(): Promise<Acceptance | undefined> {

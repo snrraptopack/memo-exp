@@ -99,6 +99,21 @@ test('malformed source addresses fail before dispatch', () => {
   expect(() => parseNativeEvent({ ...packet, sceneSequence: 0 })).toThrow();
 });
 
+test('synchronous controlled corrections accompany the decision without waiting for scene acceptance', async () => {
+  const transport = new ManualTransport();
+  const controls = [{ op: 'setValue' as const, target: packet.path[0]!, value: '', revision: 3, version: 1 }];
+  const client = new PublicationClient(transport, { dispatch: () => ({ cancelled: true, controls }) });
+  const mounted = client.publish({ operations: [] });
+  transport.accept(1);
+  await mounted;
+  transport.observer!.reply(packet);
+  await Bun.sleep(0);
+  expect(JSON.parse(transport.sent[1]!)).toEqual({
+    kind: 'dispatchResult', version: 1, dispatchId: 1, cancelled: true, controls,
+  });
+  client.close();
+});
+
 test('graphical startup is separate from publication and duplicate readiness is terminal', async () => {
   const transport = new ManualTransport();
   const client = new PublicationClient(transport, { requireReady: true });

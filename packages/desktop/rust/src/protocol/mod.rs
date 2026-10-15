@@ -12,6 +12,8 @@ mod session;
 mod templates;
 mod types;
 mod wire;
+#[cfg(feature = "window")]
+pub(crate) use types::WireReference;
 
 #[cfg(feature = "window")]
 pub(crate) use driver::EventSink;

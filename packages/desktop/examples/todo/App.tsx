@@ -3,6 +3,16 @@ import { TodoRow } from './TodoRow';
 import { addTask, clearCompleted, remainingTasks, reverseTasks, todoStore } from './state';
 
 export function App() {
+  let draft = '';
+
+  function addTodo() {
+    const title = draft.trim();
+    if (!title) return;
+
+    addTask(title);
+    draft = '';
+  }
+
   return (
     <main class="todo-page">
       <section class="todo-card">
@@ -17,7 +27,32 @@ export function App() {
             <strong class="remaining-count">{remainingTasks()} tasks left</strong>
             <p class="toolbar-hint">{todoStore.tasks.length} tasks in your list</p>
           </div>
-          <button class="primary-button" data-action="add" onClick={addTask}>+ Add task</button>
+        </div>
+
+        <div class="todo-entry">
+          <label for="new-todo">What needs doing?</label>
+          <div class="todo-entry-controls">
+            <input
+              id="new-todo"
+              type="text"
+              data-action="draft"
+              autoComplete="off"
+              placeholder="Type a task, then press Enter"
+              value={draft}
+              onInput={(event: InputEvent & { currentTarget: HTMLInputElement }) => {
+                draft = event.currentTarget.value;
+              }}
+              onKeyDown={(event: KeyboardEvent) => {
+                if (event.key === 'Enter' && !event.isComposing) {
+                  event.preventDefault();
+                  addTodo();
+                }
+              }}
+            />
+            <button class="primary-button" data-action="add" disabled={!draft} onClick={addTodo}>
+              + Add task
+            </button>
+          </div>
         </div>
 
         <nav class="todo-filters" aria-label="Filter tasks">
@@ -55,7 +90,7 @@ export function App() {
             <button data-action="reverse" onClick={reverseTasks}>Reverse order</button>
             <button data-action="clear" onClick={clearCompleted}>Clear completed</button>
           </div>
-          <p>New tasks receive numbered titles. Click a title to toggle its edited label.</p>
+          <p>Type your own tasks and press Enter or click Add task. Blank titles are ignored.</p>
           <p>Increase a task’s click count, then reverse the list. The count follows that task.</p>
         </footer>
       </section>

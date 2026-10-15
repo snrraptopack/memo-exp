@@ -38,6 +38,7 @@ export interface Template {
 
 export type Operation =
   | { readonly op: 'text'; readonly target: SourceReference; readonly value: string }
+  | { readonly op: 'setValue'; readonly target: SourceReference; readonly value: string; readonly revision: number; readonly version: number }
   | {
       readonly op: 'setAttribute';
       readonly target: SourceReference;

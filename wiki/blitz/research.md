@@ -248,6 +248,28 @@ a global wait on unrelated pointer, scroll and paint work. These requirements
 need real integration tests; upstream browser-like event names alone do not
 establish browser timing across a process boundary.
 
+M4.1 now extends the existing default controller for `input`, `keydown` and
+`keyup`. It orders each key's generated input report before later keys and
+focus-changing pointer actions; passive hover, wheel, painting and publication
+continue. The launcher settles the existing core after synchronous dispatch and
+includes controlled-value corrections in the decision. Views evaluate closures/
+prop boxes before admission, while accepted snapshots and deferred recomputation
+retain their existing publication contract.
+
+Native controlled writes carry both editor revision and control-write version.
+The former protects newer edits and preedit; the latter stops an older queued
+render restoring text cleared by an early decision at the same edit revision.
+Blitz's matching-text check preserves the caret. Rust owns only this bounded
+control metadata; application state stays in the existing JS core. Real editor
+tests cover typing/cancellation, Enter/click ordering, stale writes, preedit/
+commit, caret echoes, retirement and overflow. Physical platform verification
+and live/default-value separation remain open.
+
+The pinned `events/keyboard.rs` explicitly marks script-visible submit generation
+as TODO before calling native form submission. The Todo therefore uses ordinary
+`onInput`, controlled `value`, an Enter handler and an Add button. `onSubmit`
+remains diagnosed; no replacement form API or custom editor is introduced.
+
 ## Publication is our responsibility
 
 Mutator flush is not rollback. A mutator changes its document and can perform

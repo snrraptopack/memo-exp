@@ -1,5 +1,5 @@
 /** Synchronous event routing over accepted source addresses, using core scopes. */
-import type { NativeEventPacket } from '../host/events';
+import { nativeEventNames, type NativeEventPacket } from '../host/events';
 import type { NativePresentation } from './view';
 
 export function dispatchNativeEvent(
@@ -19,7 +19,7 @@ export function dispatchNativeEvent(
     let target = targets.get(key);
 
     if (!target) {
-      target = view!.eventTarget(source);
+      target = view!.eventTarget(source, source === packet.path[0] ? packet.control : undefined);
       targets.set(key, target);
     }
 
@@ -39,6 +39,8 @@ export function dispatchNativeEvent(
     timeStamp: packet.timestamp,
     isTrusted: true,
     target,
+    ...packet.keyboard,
+    isComposing: packet.control?.isComposing === true || packet.keyboard?.isComposing === true,
     get currentTarget() {
       return currentTarget;
     },
@@ -88,14 +90,15 @@ export function dispatchNativeEvent(
   }
 
   try {
+    const name = nativeEventNames[packet.eventType];
     for (let index = packet.path.length - 1; index >= 0; index--) {
-      invoke(index, 'onClickCapture', index === 0 ? 2 : 1);
+      invoke(index, name + 'Capture', index === 0 ? 2 : 1);
       if (stopped && index !== 0) return cancelled;
       if (immediate) return cancelled;
     }
     for (let index = 0; index < packet.path.length; index++) {
       if (index > 0 && (!packet.bubbles || stopped)) break;
-      invoke(index, 'onClick', index === 0 ? 2 : 3);
+      invoke(index, name, index === 0 ? 2 : 3);
       if (immediate) break;
     }
     return cancelled;

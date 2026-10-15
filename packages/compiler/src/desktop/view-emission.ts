@@ -490,7 +490,7 @@ export function validateNativeTemplatePlan(
   }
 
   for (const event of plan.events) {
-    if (event.name !== 'onClick' && event.name !== 'onClickCapture') {
+    if (!/^(onClick|onInput|onKeyDown|onKeyUp)(Capture)?$/.test(event.name)) {
       fail(`Event ${event.name} requires native platform dispatch integration`, jsx);
     }
   }

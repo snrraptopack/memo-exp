@@ -12,7 +12,7 @@ const MAX_OWNER_BYTES: usize = 256;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct WireReference {
+pub(crate) struct WireReference {
     owner: WireOwner,
     source: u32,
 }

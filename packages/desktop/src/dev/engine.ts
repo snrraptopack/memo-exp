@@ -10,6 +10,7 @@ import { dispatchNativeEvent } from '../runtime/dispatch';
 import { replaceStylesheets, type StylesheetSource } from '../runtime/stylesheets';
 import { connectNativeHost } from '@memoized-dom/desktop/internal-host';
 import { HostError } from '../host/protocol';
+import { commit } from '@memoized-dom/runtime/core';
 
 /** Transport, dispatch and acceptance are launcher concerns, not authored APIs. */
 export function openApplication(executable: string, target: string, headless = false, trace = false) {
@@ -24,7 +25,15 @@ export function openApplication(executable: string, target: string, headless = f
     diagnostics: trace ? text => console.error(text.trimEnd()) : undefined,
   }), {
     requireReady: !headless,
-    dispatch: event => dispatchNativeEvent(adapter.view(), event, reportError),
+    dispatch: event => {
+      const view = adapter.view();
+      const cancelled = dispatchNativeEvent(view, event, reportError);
+      // Settle the existing semantic work once, after capture/bubble dispatch.
+      // Controlled values travel with the decision so the next native key does
+      // not race a scene packet still waiting for publication credits.
+      application.run(commit);
+      return { cancelled, controls: view?.controlledValues() };
+    },
   });
   const application = new NativeApplication(client, {
     scheduleFrame: null,

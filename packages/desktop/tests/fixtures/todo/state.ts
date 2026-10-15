@@ -17,9 +17,9 @@ export const todoStore = {
   ] as Todo[],
 };
 
-export function addTask(): void {
+export function addTask(title: string): void {
   const id = todoStore.nextId++;
-  todoStore.tasks.push({ id, title: `Task ${id}`, done: false });
+  todoStore.tasks.push({ id, title, done: false });
 }
 
 export function reverseTasks(): void {

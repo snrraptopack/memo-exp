@@ -51,6 +51,16 @@ async function click(action, owner = '') {
   return operations(before);
 }
 
+async function typeDraft(value) {
+  const view = host.adapter.view();
+  const source = sourceFor('draft');
+  // This headless publication probe supplies an editor observation. Real edit,
+  // cancellation and revision ordering are exercised by the Rust editor tests.
+  const target = view.eventTarget(source, { value, revision: 0, isComposing: false });
+  view.dispatch(source, 'onInput', { currentTarget: target, target });
+  await settle();
+}
+
 function hasText(changes, value) {
   return changes.some(operation => operation.op === 'text' && operation.value === value);
 }
@@ -80,9 +90,14 @@ try {
   assert.equal(host.adapter.view().matchesSource(retained), true);
   assert.ok(hasText(await click('local', 'Row[n:1]'), 'Clicks 3'));
 
+  await typeDraft('   ');
+  assert.equal((await click('add')).some(operation => operation.op === 'mount'), false);
+  await typeDraft('Buy milk');
   const added = await click('add');
   assert.ok(added.some(operation => operation.op === 'mount' && operation.owner.id.includes('Row[n:4]')));
   assert.ok(hasText(added, '3 tasks left'));
+  assert.ok(hasText(added, 'Buy milk'));
+  assert.ok(added.some(operation => operation.op === 'setValue' && operation.value === ''));
   assert.ok(hasText(await click('toggle', 'Row[n:1]'), '2 tasks left'));
   assert.ok(hasText(await click('rename', 'Row[n:1]'), 'Try the native Todo (edited)'));
 
@@ -101,7 +116,14 @@ try {
   const emptied = await click('remove', 'Row[n:4]');
   assert.ok(hasText(emptied, '0 tasks left'));
   assert.ok(mountsText(emptied, 'A clear list. Add your next small step.'));
-  await click('add');
+  await typeDraft('Write a note');
+  const source = sourceFor('draft');
+  let cancelled = false;
+  host.adapter.view().dispatch(source, 'onKeyDown', {
+    key: 'Enter', isComposing: false, preventDefault() { cancelled = true; },
+  });
+  await settle();
+  assert.equal(cancelled, true);
   const beforeReload = sourceFor('toggle', 'Row[n:5]');
   const start = records.length;
   await host.replace([]);

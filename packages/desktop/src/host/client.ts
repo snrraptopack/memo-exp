@@ -10,7 +10,7 @@ import {
 import type { PublicationTransport } from './transport';
 import { snapshotPublication } from './serialization';
 import { PacketWriter } from './writer';
-import { parseNativeEvent, type NativeEventPacket, type DispatchDecision } from './events';
+import { parseNativeEvent, type NativeEventPacket, type DispatchDecision, type NativeDispatchResult } from './events';
 
 interface Job {
   readonly body: string;
@@ -33,7 +33,7 @@ export interface ClientOptions {
   readonly maxPending?: number;
   readonly acknowledgmentTimeoutMs?: number;
   /** Launcher-owned synchronous dispatch, independent of scene acceptance. */
-  readonly dispatch?: (event: NativeEventPacket) => boolean;
+  readonly dispatch?: (event: NativeEventPacket) => boolean | NativeDispatchResult;
 }
 
 /**
@@ -51,7 +51,7 @@ export class PublicationClient {
   private readonly capacityListeners = new Set<() => void>();
   private unsubscribe: () => void = () => {};
   private readonly writer: PacketWriter;
-  private readonly dispatch?: (event: NativeEventPacket) => boolean;
+  private readonly dispatch?: ClientOptions['dispatch'];
   private lastDispatch = 0;
   private readonly events: NativeEventPacket[] = [];
   private eventsScheduled = false;
@@ -347,11 +347,16 @@ export class PublicationClient {
           const event = this.events[0]!;
           if (event.sceneSequence >= this.nextSequence) return;
           this.events.shift();
-          const cancelled = this.dispatch!(event);
+          const result = this.dispatch!(event);
+          const cancelled = typeof result === 'boolean' ? result : result?.cancelled;
           if (typeof cancelled !== 'boolean') {
             throw new HostError('invalidDecision', 'Native dispatch must return its synchronous cancellation decision');
           }
-          const decision: DispatchDecision = { kind: 'dispatchResult', version: 1, dispatchId: event.dispatchId, cancelled };
+          const controls = typeof result === 'boolean' ? undefined : result.controls;
+          const decision: DispatchDecision = {
+            kind: 'dispatchResult', version: 1, dispatchId: event.dispatchId, cancelled,
+            ...(controls?.length ? { controls } : {}),
+          };
           void this.writer.send(JSON.stringify(decision)).catch(error => this.fail(error));
         }
       } catch (error) {

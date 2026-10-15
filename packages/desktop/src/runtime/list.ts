@@ -18,6 +18,7 @@ import {
   type Template,
 } from '../host/protocol';
 import type { NativeFrame, NativePresentation } from './view';
+import type { ControlledValue, NativeControlState } from '../host/events';
 
 /** A generated row closes over item/index bindings instead of copying state. */
 export interface NativeListEntry<T> {
@@ -160,8 +161,12 @@ export class NativeList<T> implements NativePresentation {
     return this.sourceView(source).dispatch(source, name, event);
   }
 
-  eventTarget(source: number | SourceReference): object {
-    return this.sourceView(source).eventTarget(source);
+  eventTarget(source: number | SourceReference, control?: NativeControlState): object {
+    return this.sourceView(source).eventTarget(source, control);
+  }
+
+  controlledValues(): ControlledValue[] {
+    return this.phase === 'active' ? [...this.rows.values()].flatMap(row => row.entry.view.controlledValues()) : [];
   }
 
   matchesSource(source: SourceReference): boolean {
