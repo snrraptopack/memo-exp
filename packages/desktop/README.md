@@ -16,9 +16,9 @@ ordinary component calls now mount as accepted nested native owners and replay
 reactive props through the shared core prop box. Inline and component-return
 host/component branches use accepted native replacement. Editing events, refs,
 and full event targets remain unfinished. Nested component children and forwarded
-content references and direct JSX-valued props mount into native regions. Internal
-keyed native range retention is implemented; authored list and render-callback
-emission remain unfinished. Web mounting and the optimized DOM list
+content references and direct JSX-valued props mount into native regions. Mapped
+host/component rows now consume shared list plans and retained native ranges;
+delegated render callbacks remain unfinished. Web mounting and the optimized DOM list
 implementation are unchanged.
 
 ## Run the visual dashboard
@@ -42,8 +42,9 @@ paths survive native parsing and an attribute-driven rebuild with stable documen
 identity; painted appearance still needs visual inspection.
 
 Navigation and project rows are visual fixtures, not an interaction demo. Static
-component regions are exercised there; list/conditional/forwarded regions,
-external image loading and browser layout parity remain explicit gates.
+component regions are exercised there. Conditional/forwarded content and mapped
+rows are exercised by separate contracts and the counter. External image loading
+and browser layout parity remain explicit gates.
 
 ## Run the counter
 
@@ -58,6 +59,11 @@ bun run desktop:dev
 $env:MEMOIZED_DESKTOP_RUNTIME = 'node'
 bun run desktop:dev
 ```
+
+The counter includes keyed rows with ordinary click handlers, reverse-order and
+remove/restore controls. Each row adds its value to shared module state. This is
+an event/structure example, not a complete Todo store: row-item writes and store
+methods still require shared guarded-publication emission.
 
 Edit `examples/counter/App.tsx`, `main.ts` and `style.css` within this package.
 The launcher builds its execution module once, pins the actual shared core and
@@ -140,8 +146,8 @@ Dynamic/member component calls remain source plans, rather than invented tags.
 Immutable wire templates contain the element/text/comment backbone. Attributes,
 spreads, refs, events and dynamic text retain ordered AST steps. The component
 emitter executes fixed-host attributes/events/text, static component regions and
-inline conditional regions; list/forwarded regions and ref steps remain capability
-gates. Even literal
+inline conditional regions, forwarded content and mapped host/component rows.
+Delegated render callbacks and ref steps remain capability gates. Even literal
 attributes retain their positions around spreads;
 event/ref addresses point into that same ordered program. Event metadata lives
 in `packages/compiler/src/desktop/events.ts`. No callback executes at compile time,
@@ -225,19 +231,35 @@ resolver or reactive engine is added. The placement planner uses temporary neigh
 links; it does not change or claim the web reconciler's LIS/mutation optimizations.
 Private process fixtures verify atomic refusal, correction, range moves, descendant
 retirement and keyed state on the real Rust host with Bun, Node and the custom
-adapter. Compiler list/callback emission, physical focus/selection parity and
-large-list throughput remain unverified. Applications do not import this controller.
+adapter. The compiler consumes `ComponentListSites`, shared callback normalization
+and occurrence allocation to emit row factories and item/index binding updates.
+Props and proven static sources work, including optional maps, nested member
+lists, destructuring, const row derivations, ordered spread keys, repeated sites,
+inherited SVG namespaces and nested components/slots/conditions. No parallel list
+source analysis is added. Row click/capture events use the ordinary accepted-source
+dispatcher, including synchronous cancellation and propagation controls. Module
+cell writes use existing access tables; shared handler facts diagnose unsupported
+row/prop writes, including proven static event spreads.
+
+One connection-owned generation high-water mark observes all accepted mounts.
+New roots and rows allocate above it, so repeated Vite root replacements and
+conditions inside rows cannot reuse a retired native address. The project graph
+selects the only registered root; imported modules can define multiple ordinary
+components without being treated as another application root. Delegated callback
+emission, physical focus/selection parity and large-list throughput remain gates.
+Applications do not import these controllers or supply native frames.
 
 Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, lists, opaque JSX prop bags, render callbacks,
-refs and stylesheet/assets integration receive
+callbacks, effects, row/prop mutation publication, opaque JSX prop bags, render
+callbacks, refs and external assets receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are
 current emission limits, not new application syntax or restrictions on the web.
 
 The real process tests compile ordinary TSX, bundle the generated module for Bun,
 Node and a custom CommonJS adapter, then mount, dispatch callbacks, replace inline
-and component-return branches, mount linked/repeated children, and retire against
+and component-return branches, mount linked/repeated children, move/remove compiled
+rows with their event addresses, and retire against
 the cached Rust host. The bootstrap
 is a private ABI fixture, not an application example or native platform event test.
 Applications keep existing `mount()` authoring. The Vite/window example above

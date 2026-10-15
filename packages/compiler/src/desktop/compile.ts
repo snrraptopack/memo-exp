@@ -60,6 +60,8 @@ export interface DesktopCompileOptions extends AnalysisOptions {
   /** Compiler-private presentation adapter selected by the desktop build. */
   readonly presentationPath?: string
   readonly stylesheetImports?: 'preserve';
+  /** Whole-project compilation registers only the graph's mounted root. */
+  readonly registerRoot?: boolean;
 }
 
 export function compileDesktop(source: string, options: DesktopCompileOptions = {}) {
@@ -129,7 +131,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     }
   });
 
-  if (ctx.rootComponent === null) {
+  if (ctx.rootComponent === null && options.registerRoot !== false) {
     if (ctx.compPaths.has('App')) {
       ctx.rootComponent = 'App';
     } else if (ctx.compPaths.size === 1) {
@@ -325,6 +327,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       nativeId,
       conditionCount: { value: 0 },
       slotCount: { value: 0 },
+      listPrefixes: new Map<string, number>(),
       prelude: [] as t.Statement[],
       slotReplayReaders,
       fail,
@@ -453,7 +456,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
   // Root metadata joins the existing realm registry. The authored component
   // reference remains what mount receives; callers never supply a native frame.
   for (const component of prepared) {
-    if (component.name !== ctx.rootComponent) {
+    if (options.registerRoot === false || component.name !== ctx.rootComponent) {
       continue;
     }
 

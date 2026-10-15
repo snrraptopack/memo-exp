@@ -28,7 +28,6 @@ export function createMountAdapter(
   reportError: (error: unknown) => void
 ) {
   let occupied = false;
-  let generation = 0;
   let currentView: NativePresentation | undefined;
   let completion: Promise<unknown> = Promise.resolve();
 
@@ -47,8 +46,8 @@ export function createMountAdapter(
       throw new HostError('occupiedMountTarget', 'Mount target already owns an application');
     }
 
+    const owner = { id: definition.id, generation: application.allocateNativeGeneration() };
     occupied = true;
-    const owner = { id: definition.id, generation: ++generation };
     let requested = true;
     let retiring = false;
     let connected = false;

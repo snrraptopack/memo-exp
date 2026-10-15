@@ -34,7 +34,37 @@ h1 {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.keyed-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keyed-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: white;
+  border: 1px solid #d8dfeb;
+  border-radius: 8px;
+}
+
+.row-position {
+  min-width: 80px;
+  color: #526078;
+}
+
+.row-count {
+  font-weight: bold;
 }
 
 button {

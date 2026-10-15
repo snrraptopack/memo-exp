@@ -50,7 +50,6 @@ export class NativeList<T> implements NativePresentation {
   private coreAttached = false;
   private rows = new Map<unknown, Row<T>>();
   private staged: Row<T>[] = [];
-  private generation: number;
   private syntheticKey = 0;
   private pending?: Promise<Acceptance>;
   private needsUpdate = false;
@@ -66,7 +65,6 @@ export class NativeList<T> implements NativePresentation {
     private readonly key: (item: T, index: number) => unknown = item => item,
   ) {
     this.ownerId = frame.entityId ?? frame.owner.id;
-    this.generation = frame.owner.generation;
 
     if (!frame.deferCore) {
       this.attachOwnCore();
@@ -406,14 +404,13 @@ export class NativeList<T> implements NativePresentation {
     const encoded = encodeListKey(selected.key) ?? `#${++this.syntheticKey}`;
     const segment = `Row[${encoded}]`;
 
-    if (this.generation === Number.MAX_SAFE_INTEGER) {
-      throw new HostError('generationExhausted', 'Native list row generation is exhausted');
-    }
-
     // A reinserted primitive key reuses its semantic id with a fresh native
     // generation. Refused candidates consume no native lifetime, but JavaScript
     // still allocates a new generation rather than retaining a tombstone map.
-    const owner = { id: `${this.frame.owner.id}/${segment}`, generation: ++this.generation };
+    const owner = {
+      id: `${this.frame.owner.id}/${segment}`,
+      generation: this.frame.application.allocateNativeGeneration(this.frame.owner.generation),
+    };
     const entry = this.create({
       application: this.frame.application,
       owner,

@@ -493,7 +493,7 @@ collection selections use the same normalizer as the web target. Local and linke
 prop-contract discovery share one source-attribute projection; static object
 spreads contribute proven named JSX values and forwarding evidence. Both emitters
 map these values with one pure property mapper that preserves spread, accessor
-and scalar evaluation shape. Lists, opaque JSX prop bags and render callbacks
+and scalar evaluation shape. Opaque JSX prop bags and delegated render callbacks
 remain emission gates.
 
 The native list prerequisite now retains keyed presentation ranges through the
@@ -504,8 +504,20 @@ rows freeze updates, and retained item/index bindings advance only after native
 acceptance. Refusal preserves the accepted rows. A reinserted key receives a fresh
 native generation. Temporary neighbor links plan range placement; the optimized
 DOM reconciliation path is unchanged. The internal controller is verified against
-the real headless host, but shared list/callback plans still need compiler emission.
-It does not establish physical focus/selection retention or large-list performance.
+the real headless host. Desktop emission now consumes shared list-site and callback
+normalization plans for direct mapped host/component rows, including nested lists,
+keys and retained binding updates. Row events use the existing native dispatcher;
+module-cell writes retain shared access-table routing. Shared callback write facts
+diagnose row/prop mutation forms whose guarded publication is not yet emitted.
+Delegated render callbacks still need their adapter emission. This does not
+establish physical focus/selection retention or large-list performance.
+
+Vite replacement contracts exposed generation reuse across list/controller
+recreation. New native roots and rows now allocate from one connection-owned
+high-water mark that also observes accepted descendant mounts. It retains one
+number rather than a JavaScript tombstone per removed owner. The shared project
+graph identifies the sole mounted root; dependency modules compile multiple
+components without independent root inference or metadata registration.
 
 Inline SVG is a
 separate verified capability: the compiler retains SVG namespaces, Blitz parses

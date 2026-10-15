@@ -89,6 +89,7 @@ export function compileDesktopProject(
       moduleId: entry.id,
       linkedImports,
       linkedComponentRenderProps: linkComponentRenderProps(manifest, renderUsage),
+      registerRoot: entry.id === root.moduleId,
       ...(entry.id === root.moduleId ? { rootComponent: root.local } : {})
     }));
   }

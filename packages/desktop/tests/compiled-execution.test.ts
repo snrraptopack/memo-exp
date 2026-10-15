@@ -14,6 +14,8 @@ import { NativeApplication } from '../src/runtime/application';
 import { PublicationClient } from '../src/host/client';
 import { ManualTransport } from './fixtures/manual-transport';
 import { createMountAdapter } from '../src/runtime/mount';
+import type { Operation, Publication } from '../src/host/protocol';
+import { dispatchNativeEvent } from '../src/runtime/dispatch';
 
 const source = `
   let count = 0;
@@ -52,12 +54,12 @@ function moduleFactory(text = source, rootName = 'App', rootId?: string) {
   });
 
   return new Function(...parameters, printEstree(program).code + '\nreturn {App:' + rootName + ',increment};')(core, presentation) as {
-    App(frame: presentation.NativeFrame): presentation.NativeView;
+    App(frame: presentation.NativeFrame, props?: unknown[]): presentation.NativeView;
     increment(): unknown
    };
 }
 
-function createCompiledApplication(module = moduleFactory()) {
+function createCompiledApplication(module = moduleFactory(), props?: unknown[]) {
   const transport = new ManualTransport();
   const errors: unknown[] = [];
 
@@ -78,7 +80,7 @@ function createCompiledApplication(module = moduleFactory()) {
         owner: { id: 'App', generation: 1 },
         parent: null,
         reportError: (error) => errors.push(error)
-      });
+      }, props);
 
       return view;
     },
@@ -1226,6 +1228,283 @@ test('shared cell lowering respects shadowed bindings and executed writes', () =
   expect(code).toContain('updateCell');
   expect(code).toContain('installAccessTable');
   expect(code).toContain('shadow = (count) => count + 1');
+});
+
+/** Drain serialized row publications, including new frames admitted by a reply. */
+async function drainCompiled(fixture: ReturnType<typeof createCompiledApplication>, from: number) {
+  for (let index = from; index < fixture.transport.sent.length; index++) {
+    const frame = JSON.parse(fixture.transport.sent[index]!) as { sequence: number };
+    fixture.transport.accept(frame.sequence);
+    await Bun.sleep(0);
+    fixture.application.run(core.commit);
+  }
+
+  await fixture.view.publication();
+}
+
+function compiledOperations(fixture: ReturnType<typeof createCompiledApplication>, from = 0): Operation[] {
+  return fixture.transport.sent.slice(from).flatMap(text => (JSON.parse(text) as Publication).operations);
+}
+
+test('compiled keyed rows keep native event addresses and rebind item/index through accepted moves', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function Detail({label}) { return <strong>{label}</strong>; }
+    export function App({items}) {
+      return <ul>{items.map((item, index) =>
+        <li key={item.id}>
+          <button onClick={() => { count += item.amount; }}>{item.label}:{index}:{count}</button>
+          <Detail label={item.label} />
+        </li>
+      )}</ul>;
+    }
+  `);
+  const alpha = { id: 'a', label: 'Alpha', amount: 1 };
+  const beta = { id: 'b', label: 'Beta', amount: 2 };
+  const f = createCompiledApplication(module, [{ items: [alpha, beta] }]);
+
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    const row = { owner: { id: 'App/items/Row[s:a]', generation: 2 }, source: 1 };
+    expect(f.view.matchesSource(row)).toBe(true);
+    f.view.dispatch(row, 'onClick', new Event('click'));
+    f.application.run(core.commit);
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1)).toContainEqual({
+      op: 'text', target: { owner: row.owner, source: 2 }, value: 'Alpha:0:1',
+    });
+
+    const beforeMove = f.transport.sent.length;
+    f.application.run(() => {
+      core.setProps('App', [{ items: [beta, { ...alpha, label: 'Moved', amount: 3 }] }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    expect(compiledOperations(f, beforeMove)).toContainEqual({ op: 'moveToEnd', owner: row.owner });
+    expect(compiledOperations(f, beforeMove).some(operation => operation.op === 'mount')).toBe(false);
+    await drainCompiled(f, beforeMove);
+    expect(compiledOperations(f, beforeMove)).toContainEqual({
+      op: 'text', target: { owner: row.owner, source: 2 }, value: 'Moved:1:1',
+    });
+    expect(f.application.runtime.state.registry.has(row.owner.id + '/Detail')).toBe(true);
+
+    const beforeClick = f.transport.sent.length;
+    f.view.dispatch(row, 'onClick', new Event('click'));
+    f.application.run(core.commit);
+    await drainCompiled(f, beforeClick);
+    expect(compiledOperations(f, beforeClick)).toContainEqual({
+      op: 'text', target: { owner: row.owner, source: 2 }, value: 'Moved:1:4',
+    });
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test('compiled rows preserve accepted event bindings on refusal and discard staged components', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    function Row({item, index}) {
+      return <button onClick={() => { count += item.amount; }}>{item.label}:{index}:{count}</button>;
+    }
+    export function App({items}) {
+      return <section>{items.map((item, index) => <Row key={item.id} item={item} index={index} />)}</section>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: [{ id: 'a', label: 'Alpha', amount: 1 }] }]);
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    const source = { owner: { id: 'App/items/Row[s:a]/Row', generation: 2 }, source: 0 };
+    const registry = [...f.application.runtime.state.registry.keys()];
+    f.application.run(() => {
+      core.setProps('App', [{ items: [{ id: 'b', label: 'Beta', amount: 3 }] }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    const pending = f.view.publication().then(value => value, error => error);
+    f.transport.refuse(2);
+    expect(await pending).toMatchObject({ name: 'PublicationRefusedError' });
+    expect([...f.application.runtime.state.registry.keys()]).toEqual(registry);
+    expect(f.view.matchesSource(source)).toBe(true);
+    // Source state is not rolled back on refusal. Restore the accepted source
+    // before another write triggers the compiler's conservative caller replay.
+    f.application.run(() => core.setProps('App', [{ items: [{ id: 'a', label: 'Alpha', amount: 1 }] }]));
+    const beforeClick = f.transport.sent.length;
+    f.view.dispatch(source, 'onClick', new Event('click'));
+    f.application.run(core.commit);
+    await drainCompiled(f, beforeClick);
+    expect(compiledOperations(f, beforeClick)).toContainEqual({
+      op: 'text', target: { owner: source.owner, source: 1 }, value: 'Alpha:0:1',
+    });
+    expect(f.errors).toHaveLength(1);
+  } finally { f.application.close(); }
+});
+
+test('shared row derivations, destructuring, optional sources and nested lists lower to native ranges', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+    export function App({items}) {
+      return <main>{items?.map((item, index) => {
+        const title = item.label + ':' + index;
+        return <section key={item.id}><h2>{title}</h2>{item.children.map(child => <p key={child}>{child}</p>)}</section>;
+      })}</main>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: undefined }]);
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    f.application.run(() => {
+      core.setProps('App', [{ items: [{ id: 'a', label: 'Alpha', children: ['one', 'two'] }] }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1).filter(operation => operation.op === 'text').map(operation => operation.value))
+      .toEqual(['Alpha:0', 'one', 'two']);
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test('compiled row events keep ordinary capture/bubble cancellation across native addresses', async () => {
+  const module = moduleFactory(`
+    let count = 0;
+    export function increment() { count++; }
+    export function App({items}) {
+      return <ul onClickCapture={() => { count++; }} onClick={() => { count += 100; }}>
+        {items.map(item => <li key={item}>
+          <button onClick={event => { count += item; event.preventDefault(); event.stopPropagation(); }}>{count}</button>
+        </li>)}
+      </ul>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: [2] }]);
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    const source = { owner: { id: 'App/items/Row[n:2]', generation: 2 }, source: 1 };
+    const packet = {
+      kind: 'event' as const, version: 1 as const, dispatchId: 1, sceneSequence: 1,
+      eventType: 'click' as const, timestamp: 1, bubbles: true, cancelable: true,
+      path: [source, { ...source, source: 0 }, { owner: { id: 'App', generation: 1 }, source: 0 }],
+    };
+    expect(dispatchNativeEvent(f.view, packet, error => f.errors.push(error))).toBe(true);
+    f.application.run(core.commit);
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1)).toContainEqual({
+      op: 'text', target: { owner: source.owner, source: 2 }, value: '3',
+    });
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test('spread keys and destructured rows retain typed identities and final attribute order', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+    export function App({items}) {
+      return <ul>{items.map(({id, label}, index) => <li {...{key: id, title: 'first'}} title={label}>{label}:{index}</li>)}</ul>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: [{ id: 1, label: 'Number' }, { id: '1', label: 'String' }] }]);
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    expect(compiledOperations(f).filter(operation => operation.op === 'mount').map(operation => operation.owner.id))
+      .toEqual(['App', 'App/items/Row[n:1]', 'App/items/Row[s:1]']);
+    expect(compiledOperations(f).flatMap(operation =>
+      operation.op === 'setAttribute' && operation.name.local === 'title' ? [operation.value] : [],
+    )).toEqual(['Number', 'String']);
+    f.application.run(() => {
+      core.setProps('App', [{ items: [{ id: '1', label: 'String' }, { id: 1, label: 'Number' }] }]);
+      core.invalidateEntity('App');
+      core.commit();
+    });
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1).some(operation => operation.op === 'mount')).toBe(false);
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test.each([false, true])('conditions inside retained rows replay shared module reads with slot=%s', async withSlot => {
+  const module = moduleFactory(`
+    let shown = true;
+    export function increment() { shown = !shown; }
+    function Panel({children}) { return <article>{children}</article>; }
+    export function App({items}) {
+      return <ul>{items.map(item => <li key={item}>
+        {shown ? <p>Visible {item}</p> : <p>Hidden {item}</p>}
+        ${withSlot ? '<Panel><button onClick={increment}>{item}:{shown}</button></Panel>' : ''}
+      </li>)}</ul>;
+    }
+  `);
+  const f = createCompiledApplication(module, [{ items: [1] }]);
+  try {
+    const mount = f.candidate.publish(f.view.initialPublication);
+    f.transport.accept(1);
+    await mount;
+    f.application.run(() => { f.module.increment(); core.commit(); });
+    await drainCompiled(f, 1);
+    expect(compiledOperations(f, 1).some(operation => operation.op === 'text' && operation.value === 'Hidden 1')).toBe(true);
+    if (withSlot) {
+      expect(compiledOperations(f, 1).some(operation => operation.op === 'text' && operation.value === '1:false')).toBe(true);
+    }
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
+});
+
+test('row/prop mutations remain diagnostic until shared guarded publication is emitted', () => {
+  expect(() => compileDesktop(`
+    export function App({items}) { return <ul>{items.map(item =>
+      <li key={item.id}><button onClick={() => { item.done = !item.done; }}>{item.done}</button></li>
+    )}</ul>; }
+  `)).toThrow('guarded-publication');
+  expect(() => compileDesktop(`
+    export function App({items}) { return <ul>{items.map(item =>
+      <li key={item.id}><button {...{onClick: () => { item.done = !item.done; }}}>{item.done}</button></li>
+    )}</ul>; }
+  `)).toThrow('guarded-publication');
+  expect(() => compileDesktop(`
+    function Row({item}) { return <button onClick={() => { item.done = !item.done; }}>{item.done}</button>; }
+    export function App({items}) { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }
+  `)).toThrow('guarded-publication');
+});
+
+test('repeated static map sites retain unique ranges and inherited SVG namespaces', async () => {
+  const module = moduleFactory(`
+    export function increment() {}
+    export function App() {
+      return <main>
+        <ul>{[1, 2].map(value => <li key={value}>First {value}</li>)}</ul>
+        <ol>{[1, 2].map(value => <li key={value}>Second {value}</li>)}</ol>
+        <svg>{[1].map(value => <circle key={value} cx={value} cy={2} r={3} />)}</svg>
+      </main>;
+    }
+  `);
+  const f = createCompiledApplication(module);
+  try {
+    const initial = f.view.initialPublication;
+    const rowOwners = initial.operations.flatMap(operation =>
+      operation.op === 'mount' && operation.owner.id.includes('/Row[') ? [operation.owner.id] : [],
+    );
+    expect(new Set(rowOwners).size).toBe(5);
+    const circle = initial.templates!.flatMap(template => template.nodes).find(source =>
+      source.node.kind === 'element' && source.node.name.local === 'circle',
+    );
+    expect(circle?.node).toMatchObject({
+      name: { namespace: 'http://www.w3.org/2000/svg', local: 'circle' },
+    });
+    const mount = f.candidate.publish(initial);
+    f.transport.accept(1);
+    await mount;
+    expect(f.errors).toEqual([]);
+  } finally { f.application.close(); }
 });
 
 test('unsupported lifetimes/structures/reactivity fail instead of silently losing semantics', () => {

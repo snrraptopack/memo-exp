@@ -26,8 +26,11 @@ import {
 import { planOrderedAttributes } from '../jsx/attributes';
 import { hasComponentChildren, type JsxChild } from '../jsx/children';
 import type { PlannedComponent } from '../planning/component-render';
+import type { MapSite } from '../lists/map-site';
 
 import { lowerNativeTemplate } from './template';
+import { emitNativeList } from './list-emission';
+import { validateNativeEventWrites } from './events';
 import type { NativeTemplatePlan } from './template-plan';
 
 export function nativeEvaluation(plan: NativeTemplatePlan): t.Expression {
@@ -72,6 +75,8 @@ export interface NativeViewEmissionInputs {
   readonly nativeId: t.Identifier;
   readonly conditionCount: { value: number };
   readonly slotCount: { value: number };
+  readonly listPrefixes: Map<string, number>;
+  readonly parentRow?: Pick<MapSite, 'itemParam' | 'sourceKey' | 'sourceLocal' | 'keyExpr'>;
   readonly prelude: t.Statement[];
   readonly slotReplayReaders: Map<string, Set<string>>;
   readonly fail: (message: string, at: t.Node) => never;
@@ -169,11 +174,35 @@ export function emitNativeView(
     conditionCount,
     fail,
   } = inputs;
+
+  validateNativeEventWrites(plan, component.callbacks, inputs.parentRow, fail);
+
   const childCounts = new Map<string, number>();
   let forwardedSlotCount = 0;
   const children = plan.steps.flatMap((step): t.Expression[] => {
     if (step.kind !== 'region') {
       return [];
+    }
+
+    if (step.content.type === 'list') {
+      return [emitNativeList(inputs, { ...step, content: step.content }, {
+        evaluate: nativeEvaluation,
+        create: emitNativeView,
+        lower(jsx, key, inSvg) {
+          const rowPlan = withTemplateRevision(lowerNativeTemplate({
+            key,
+            jsx,
+            inSvg,
+            expressionSources: component.expressionSources,
+            isForwarded: expression => isRenderPropReference(
+              ctx, component.name, expression as unknown as BaseNode,
+            ),
+            fail,
+          }));
+          validateNativeTemplatePlan(rowPlan, jsx, fail);
+          return rowPlan;
+        },
+      })];
     }
 
     if (step.content.type === 'condition') {
@@ -448,14 +477,4 @@ export function validateNativeTemplatePlan(
     }
   }
 
-  for (const step of plan.steps) {
-    if (
-      step.kind === 'region' &&
-      step.content.type !== 'component' &&
-      step.content.type !== 'condition' &&
-      step.content.type !== 'slot'
-    ) {
-      fail('Lists require structural replay emission', jsx);
-    }
-  }
 }

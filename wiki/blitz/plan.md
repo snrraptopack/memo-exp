@@ -184,6 +184,20 @@ is wired; runtime range support alone does not close the authored-list gate.
 Complete M5 only after ordinary keyed Todo authoring and native focus/selection
 checks also pass.
 
+M5.11 connects direct mapped host/component rows to these lifetimes using the
+existing list-site, callback-normalization, key and occurrence plans. Row factories
+retain authored item/index bindings, own row-local slot factories, and replay
+through existing core entities. Ordinary click/capture handlers use accepted native
+source routing; module-cell writes retain shared publication. Use shared handler
+write facts to keep unsupported row/prop mutations diagnostic until their guarded
+publication is emitted. Project dependencies must not infer/register extra roots.
+Root/row generation allocation is connection-owned and observes accepted mounts,
+including descendant conditional ranges, to preserve stale-source rejection across
+reloads. The counter supplies visible keyed row/event controls through normal mount
+and CSS. Delegated render callbacks are next: select the existing semantic pass and
+consume `planRenderCallback` with these same native row factories. Do not introduce
+a callback reactive engine or change the DOM list implementation.
+
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts
 where they meet this plan. Its GPUI-specific tag catalogue, cascade, paragraph

@@ -70,8 +70,108 @@ beforeAll(async () => {
   for (const id of ['./slots-app.tsx', './Frame.tsx']) {
     await Bun.write(join(directory, id.replace(/\.tsx$/, '.mjs')), slots.modules.get(id)!.code);
   }
+
+  const rows = compileDesktopProject({
+    './main.ts': `
+      import { mount } from '@memoized-dom/runtime';
+      import { App } from './rows-app';
+      mount('app', App);
+    `,
+    './row-state.ts': `
+      export let count = 0;
+      export let reversed = false;
+      export let shown = true;
+      export function increment() { count++; }
+      export function reverse() { reversed = !reversed; }
+      export function toggle() { shown = !shown; }
+    `,
+    './rows-app.tsx': `
+      import { count, reversed, shown, reverse, toggle } from './row-state';
+      import { Rows } from './Rows';
+      export function App() {
+        return <main>
+          <button onClick={reverse}>Reverse</button>
+          <button onClick={toggle}>Toggle second</button>
+          <p>{count}</p>
+          <Rows items={shown ? (reversed ? [2, 1] : [1, 2]) : [1]} />
+        </main>;
+      }
+    `,
+    './Rows.tsx': `
+      import { count, increment } from './row-state';
+      function Detail({item}) { return <strong>Item {item}</strong>; }
+      export function Rows({items}) {
+        return <ul>{items.map((item, index) => <li key={item}>
+          <button onClick={increment}>{item}:{index}:{count}</button><Detail item={item} />
+        </li>)}</ul>;
+      }
+    `,
+  }, { runtimePath: '@memoized-dom/runtime' });
+
+  for (const id of ['./row-state.ts', './rows-app.tsx', './Rows.tsx']) {
+    await Bun.write(join(directory, id.replace(/\.tsx?$/, '.mjs')), rows.modules.get(id)!.code);
+  }
   const application = fileURLToPath(new URL('../src/runtime/application.ts', import.meta.url)).replaceAll('\\', '/');
   const client = fileURLToPath(new URL('../src/host/client.ts', import.meta.url)).replaceAll('\\', '/');
+  const mount = fileURLToPath(new URL('../src/runtime/mount.ts', import.meta.url)).replaceAll('\\', '/');
+  await Bun.write(join(directory, 'rows-entry.ts'), `
+    import assert from 'node:assert/strict';
+    import { App } from './rows-app.mjs';
+    import { reverse, toggle } from './row-state.mjs';
+    import { commit, setScheduler } from ${JSON.stringify(core)};
+    import { NativeApplication } from ${JSON.stringify(application)};
+    import { createMountAdapter } from ${JSON.stringify(mount)};
+    import { PublicationClient } from ${JSON.stringify(client)};
+    import { connectNativeHost } from '@memoized-dom/desktop/internal-host';
+
+    async function run() {
+      const errors = [];
+      const app = new NativeApplication(new PublicationClient(connectNativeHost({
+        executable: process.argv[2], args: ['--headless'],
+      })), { scheduleFrame: null, visible: () => true, reportError: error => errors.push(error) });
+      app.run(() => setScheduler(() => {}));
+      const adapter = createMountAdapter(app, 'app', error => errors.push(error));
+
+      try {
+        const mounted = adapter.mount('app', App);
+        await adapter.settled();
+        const view = adapter.view();
+        const first = { owner: { id: 'App/Rows/items/Row[n:1]', generation: 2 }, source: 1 };
+        const second = { owner: { id: 'App/Rows/items/Row[n:2]', generation: 3 }, source: 1 };
+
+        view.dispatch(first, 'onClick', new Event('click'));
+        app.run(commit);
+        await view.publication();
+        app.run(() => { reverse(); commit(); });
+        await view.publication();
+        app.run(commit);
+        await view.publication();
+        assert.equal(view.matchesSource(first), true);
+        assert.equal(view.matchesSource(second), true);
+        assert.equal(app.runtime.state.registry.has(first.owner.id + '/Detail'), true);
+
+        app.run(() => { toggle(); commit(); });
+        await view.publication();
+        app.run(commit);
+        await view.publication();
+        assert.equal(view.matchesSource(second), false);
+        assert.equal(app.runtime.state.registry.has(second.owner.id + '/Detail'), false);
+
+        view.dispatch(first, 'onClick', new Event('click'));
+        app.run(commit);
+        await view.publication();
+        mounted.unmount();
+        await adapter.settled();
+        assert.equal(app.runtime.state.registry.size, 0);
+        assert.deepEqual(errors, []);
+        console.log(JSON.stringify({ rows: true, events: true, retired: true }));
+      } finally {
+        app.close();
+      }
+    }
+
+    run().catch(error => { console.error(error); process.exitCode = 1; });
+  `);
   await Bun.write(join(directory, 'compiled-entry.ts'), `
     import assert from 'node:assert/strict';
     import {App} from './compiled-app.mjs';
@@ -270,11 +370,11 @@ const customBackend = {
 
 for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[]) {
   const name = typeof runtime === 'string' ? runtime : runtime.name;
-  for (const fixture of ['application', 'lifecycle', 'list', 'compiled', 'conditional', 'slots', 'mounted']) {
+  for (const fixture of ['application', 'lifecycle', 'list', 'rows', 'compiled', 'conditional', 'slots', 'mounted']) {
     test(name + ' runs ' + fixture + ' against the real native host', async () => {
       const probe = join(directory, name + '-' + fixture + '.probe');
       const { entry } = await bundleExecutionEntry({
-        entry: fixture === 'compiled' || fixture === 'conditional' || fixture === 'slots' || fixture === 'mounted'
+        entry: fixture === 'compiled' || fixture === 'conditional' || fixture === 'slots' || fixture === 'mounted' || fixture === 'rows'
           ? join(directory, fixture + '-entry.ts')
           : fileURLToPath(new URL('./fixtures/' + fixture + '.ts', import.meta.url)),
         outfile: join(directory, name + '-' + fixture + (typeof runtime === 'string' ? '.mjs' : '.cjs')),
@@ -301,6 +401,8 @@ for (const runtime of ['bun', 'node', customBackend] satisfies RuntimeSelection[
         ? { accepted: [1, 2, 3, 4, 5], mounted: true }
         : fixture === 'list'
         ? { accepted: [1, 2, 3, 4, 5], refused: 'documentRefused', list: true }
+        : fixture === 'rows'
+        ? { rows: true, events: true, retired: true }
         : fixture === 'slots'
         ? { accepted: [1, 3, 4], slots: true }
         : fixture === 'conditional'

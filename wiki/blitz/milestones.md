@@ -1874,3 +1874,56 @@ Completed implementation/checks: 2026-10-14. M5 remains in progress.
 Next M5 work: consume shared list-site and callback plans to emit ordinary native
 row factories. Authored list/callback emission remains diagnostic until that batch;
 physical focus/selection retention and native large-list performance remain gates.
+
+## M5.11 — Compiled native mapped rows and event routing
+
+Completed implementation/checks: 2026-10-15. M5 remains in progress.
+
+- Communicated desktop compiler/list-adapter boundaries before editing. Added
+  readable target-specific list emission that consumes `ComponentListSites`,
+  shared callback normalization and `allocateMapSite`. Key extraction, source
+  ownership, optionality and nested row provenance remain shared plans. Generated
+  factories close over ordinary item/index bindings and retain row-local content
+  factories in the row closure. No DOM or shared semantic runtime implementation
+  changed, and no Rust rebuild was needed.
+- Direct mapped host/component rows now mount and replay props/static sources.
+  Contracts cover accepted reorders, replacement objects, nested components,
+  optional sources, nested member lists, const derivations, destructured patterns,
+  static spread keys, repeated static map sites and inherited SVG namespaces.
+  The compiler-private list factory is now selected by native presentation.
+- Row events use the existing native dispatcher and shared module-cell writes.
+  Compiled capture/bubble tests verify cancellation and propagation through row
+  and ancestor addresses. Reorders keep addresses; accepted rebinding changes
+  item/index values; refusal preserves accepted handlers and staged components
+  remain outside core. Source state itself is not rolled back on refusal.
+- Event write validation stays in desktop `events.ts` and consumes existing
+  `ComponentCallbacks`/`HandlerWritePlan` facts, including reachable helpers and
+  proven literal event spreads. Row/prop mutations without guarded publication
+  remain diagnostic instead of silently stale. Native editing/keyboard defaults,
+  full event targets, physical focus/selection and store methods are not claimed.
+- The linked process fixture exposed the old assumption that any multi-component
+  module needs an application root. Communicated the fix before editing project
+  emission: the existing shared graph selects the only root; dependency modules
+  suppress root inference/registration and can contain ordinary `Rows`/`Detail`
+  definitions. Standalone desktop root checks remain intact.
+- Vite reload contracts exposed generation reuse after recreating lists, then
+  reproduced it with conditions inside rows. Communicated both native lifetime
+  boundaries before fixing them. One application/connection ordinal observes
+  accepted mount generations, and new roots/rows allocate above it. This survives
+  nested conditional changes and reloads with no per-key tombstone map. Existing
+  conditional replacement semantics remain unchanged.
+- The normal counter now includes row click, reverse and remove/restore controls
+  with readable CSS; its actual TSX/CSS/mount graph compiles. Real Rust contracts
+  execute imported list components and event handlers under Bun, Node and the
+  custom adapter. Vite checks ordinary mount/CSS, nested row conditions, clicked
+  shared state, stale-address rejection and repeated root replacements.
+- Desktop checks pass **109 tests**, zero failed, with 527 assertions. Real process
+  and Vite checks pass **29 tests**, zero failed, with 115 assertions. Shared/web
+  list/key/callback/project/boundary checks pass **176 tests**, zero failed, with
+  21 unchanged snapshots and 11,499 assertions. Compiler build, focused lint and
+  Bun checking pass: 253 compiler files and 132 desktop files.
+
+Next M5 work: delegated render callback emission using existing callback/region
+plans and these same row factories. Guarded row/prop/store publication remains a
+separate shared-emission gate before a full Todo; native input/focus contracts and
+large-list performance must still be verified before declaring M5 complete.

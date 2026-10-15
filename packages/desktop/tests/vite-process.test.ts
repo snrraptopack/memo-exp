@@ -29,12 +29,23 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
       return <section>{content}</section>;
     }
   `);
+  await writeFile(join(directory, 'Rows.tsx'), `
+    import { count, increment } from './state';
+    function Detail({item}) { return <strong>{item}</strong>; }
+    export function Rows({items}) {
+      return <ul>{items.map((item, index) => <li key={item}>
+        <button onClick={increment}>{item}:{index}:{count}</button><Detail item={item} />
+        {count % 2 === 0 ? <small>Even</small> : <small>Odd</small>}
+      </li>)}</ul>;
+    }
+  `);
   await writeFile(join(directory, 'App.tsx'), `
     import './style.css';
     import { count, increment } from './state';
     import { Summary } from './Summary';
+    import { Rows } from './Rows';
     export function App() {
-      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p><Summary count={count} /></main>;
+      return <main class="counter"><button onClick={increment}>Increment</button><p>{count}</p><Summary count={count} /><Rows items={count === 0 ? [1, 2] : [2, 1]} /></main>;
     }
   `);
   await writeFile(join(directory, 'main.ts'), `
@@ -76,18 +87,26 @@ test('Vite CSS plugins, imported cells, normal mount and root replacement share 
       source.node.kind === 'element' && source.node.name?.local === 'button');
     first.dispatch(button, 'onClick', new Event('click'));
     await Bun.sleep(0);
-    // The root text and imported child are separate accepted view updates.
-    expect((await first.publication()).sequence).toBe(3);
+    // Root text, linked content and list structure are separate publications.
+    expect((await first.publication()).sequence).toBeGreaterThan(3);
+    await Bun.sleep(0);
+    await first.publication();
+    const row = { owner: { id: 'App/Rows/items/Row[n:1]', generation: 2 }, source: 1 };
+    expect(first.matchesSource(row)).toBe(true);
+    first.dispatch(row, 'onClick', new Event('click'));
+    await Bun.sleep(0);
+    await first.publication();
     const firstValues = first.frame.application.run(() => first.evaluate());
-    expect(firstValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 1)).toBe(true);
+    expect(firstValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 2)).toBe(true);
     await host.replace([]);
     const next = host.adapter.view();
-    expect(next.frame.owner.generation).toBe(2);
+    expect(next.frame.owner.generation).toBeGreaterThan(first.frame.owner.generation);
+    expect(next.matchesSource(row)).toBe(false);
     expect(next.template.nodes.some((source: { node: { name?: { local: string } } }) => source.node.name?.local === 'style')).toBe(false);
     const nextValues = next.frame.application.run(() => next.evaluate());
-    expect(nextValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 1)).toBe(true);
+    expect(nextValues.some((step: { kind: string; value: unknown }) => step.kind === 'text' && step.value === 2)).toBe(true);
     await host.replace([], load);
-    expect(host.adapter.view().frame.owner.generation).toBe(3);
+    expect(host.adapter.view().frame.owner.generation).toBeGreaterThan(next.frame.owner.generation);
   } finally {
     host.close();
   }

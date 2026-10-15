@@ -41,6 +41,7 @@ export class NativeApplication {
   private readonly acceptedTemplates = new Set<string>();
   private readonly pendingTemplates = new Set<string>();
   private pending = 0;
+  private nativeGeneration = 0;
   private effectsRefused = false;
   private terminal?: unknown;
   private stopped = false;
@@ -67,6 +68,23 @@ export class NativeApplication {
 
   get isClosed(): boolean {
     return this.stopped;
+  }
+
+  /**
+   * Ranges outlive individual controllers in the native connection's generation
+   * ledger. One ordinal survives root reloads and observes accepted descendant
+   * mounts without retaining a JavaScript tombstone for each retired owner.
+   */
+  allocateNativeGeneration(parentGeneration = 0): number {
+    this.assertOpen();
+    const previous = Math.max(this.nativeGeneration, parentGeneration);
+
+    if (previous >= Number.MAX_SAFE_INTEGER) {
+      throw new HostError('generationExhausted', 'Native owner generation is exhausted');
+    }
+
+    this.nativeGeneration = previous + 1;
+    return this.nativeGeneration;
   }
 
   run<T>(work: () => T): T {
@@ -137,6 +155,14 @@ export class NativeApplication {
       const reply = await this.client.publish(submitted);
       nativeAccepted = true;
       this.assertOpen();
+
+      // Conditional/slot controllers can advance generations themselves.
+      // Future roots and rows must start above those accepted descendants too.
+      for (const operation of submitted.operations) {
+        if (operation.op === 'mount') {
+          this.nativeGeneration = Math.max(this.nativeGeneration, operation.owner.generation);
+        }
+      }
 
       for (const key of templateKeys) {
         this.acceptedTemplates.add(key);
