@@ -62,9 +62,13 @@ bun run desktop:dev
 
 The counter includes a generic list component receiving an ordinary `renderItem`
 callback, keyed rows with click handlers, and reverse-order and remove/restore
-controls. Each row adds its value to shared module state. This is
-an event/structure example, not a complete Todo store: row-item writes and store
-methods still require shared guarded-publication emission.
+controls. Each row adds its value to shared module state.
+
+Run `bun run desktop:todo` for a separate ordinary TSX/CSS example. It supports
+adding numbered tasks, editing their labels, toggling completion, filtering,
+reversing, removing and clearing completed tasks. Each row has a local click count
+that follows its key across moves. The entry still uses `mount('app', App)`;
+free-text entry awaits the native input/default contract.
 
 Edit `examples/counter/App.tsx`, `main.ts` and `style.css` within this package.
 The launcher builds its execution module once, pins the actual shared core and
@@ -195,8 +199,8 @@ Caller-owned access tables include the callback's render reads, helper summaries
 and nested component reads. Lexical shadowing and event/ref callbacks do not add
 render-reader routes. An empty list does not evaluate callback row content. Keys,
 callback parameters and body shapes retain the shared compiler's restrictions;
-unsupported guarded row/prop writes remain diagnostic. This is structural/event
-evidence, not physical focus/selection retention or a complete Todo store.
+unsupported retained/async callback forms remain diagnostic. These contracts do
+not establish physical focus/selection retention.
 
 The compiler-private `src/runtime/view.ts` registers parent-before-child core
 entities and owns native addresses, accepted attribute/text snapshots and callback
@@ -258,20 +262,23 @@ lists, destructuring, const row derivations, ordered spread keys, repeated sites
 inherited SVG namespaces and nested components/slots/conditions. No parallel list
 source analysis is added. Row click/capture events use the ordinary accepted-source
 dispatcher, including synchronous cancellation and propagation controls. Module
-cell writes use existing access tables; shared handler facts diagnose unsupported
-row/prop writes, including proven static event spreads.
+cell writes use existing access tables. Row/prop/store writes, including proven
+static event spreads and scalar callback props, now use the shared handler
+execution guards and completion publication. Literal object/array module state
+belongs to the existing per-application cells; component-local mutable state
+invalidates its existing core owner. Indexed reads inside TypeScript expression
+wrappers use that same cell. Read-only helpers do not become render-time publishers.
 
 One connection-owned generation high-water mark observes all accepted mounts.
 New roots and rows allocate above it, so repeated Vite root replacements and
 conditions inside rows cannot reuse a retired native address. The project graph
 selects the only registered root; imported modules can define multiple ordinary
-components without being treated as another application root. Delegated callback
-emission, physical focus/selection parity and large-list throughput remain gates.
+components without being treated as another application root. Physical
+focus/selection parity and large-list throughput remain gates.
 Applications do not import these controllers or supply native frames.
 
-Instance state, stores/reactive receiver methods, derived replay, retained/async
-callbacks, effects, row/prop mutation publication, opaque JSX prop bags, render
-callbacks, refs and external assets receive
+Derived replay, retained/async callbacks, effects, nonliteral owned module
+initializers, opaque JSX prop bags, refs and external assets receive
 capability diagnostics rather than stale behavior. Dynamic spread refs,
 innerHTML and style objects currently produce explicit adapter errors. These are
 current emission limits, not new application syntax or restrictions on the web.
@@ -285,6 +292,13 @@ is a private ABI fixture, not an application example or native platform event te
 Applications keep existing `mount()` authoring. The Vite/window example above
 exercises that entry wiring; broader input/default and revision contracts remain M4
 work.
+
+Automated contracts own their source and CSS under `tests/fixtures` and
+`rust/tests/document_contracts/fixtures`. They do not load the editable examples.
+The test-owned Todo is compiled by Vite and executed against the real headless
+Rust host under Bun and Node, including cross-module mutations, keyed state,
+filter attributes, empty content and repeated root replacement. It verifies
+accepted routing/publication, not physical platform clicks or editing.
 
 ## JavaScript execution backends
 

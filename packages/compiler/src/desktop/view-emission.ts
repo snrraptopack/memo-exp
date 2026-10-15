@@ -12,7 +12,8 @@ import { isRenderPropReference } from '../analysis/render-prop-reference';
 import { componentPatterns } from '../analysis/component-graph';
 import { canonicalStateKey } from '../context';
 import { nodeHasJsx } from '../context/ast';
-import type { CellEmissionContext } from '../cells';
+import type { HandlerRowTarget } from '../emission/publication-context';
+import type { NativePublicationContext } from './publication';
 import {
   callPropsFromObject,
   orderCallProps,
@@ -31,10 +32,14 @@ import type { MapSite } from '../lists/map-site';
 import { lowerNativeTemplate } from './template';
 import { emitNativeList, type NativeRowEmission } from './list-emission';
 import { emitNativeRenderCallback } from './render-callback';
-import { validateNativeEventWrites } from './events';
+import { emitNativeCallbackValue, emitNativeEventValue } from './events';
 import type { NativeTemplatePlan } from './template-plan';
 
-export function nativeEvaluation(plan: NativeTemplatePlan): t.Expression {
+export function nativeEvaluation(
+  inputs: NativeViewEmissionInputs,
+  plan: NativeTemplatePlan,
+  viewFrame: t.Identifier,
+): t.Expression {
   return b.arrayExpression(plan.steps.flatMap((step) => {
     if (step.kind === 'region') {
       return [];
@@ -42,7 +47,16 @@ export function nativeEvaluation(plan: NativeTemplatePlan): t.Expression {
 
     const value = step.kind === 'text'
       ? cloneNode(step.expression)
-      : emitOrderedAttributes(step.plan);
+      : emitOrderedAttributes({
+          ...step.plan,
+          entries: step.plan.entries.map(entry => entry.type === 'spread'
+            ? {
+                ...entry,
+                value: mapStaticAttributeValues(entry.value, (name, value) =>
+                  /^on[A-Z]/.test(name) ? emitNativeEventValue(inputs, viewFrame, value) : value),
+              }
+            : entry),
+        }, { eventValue: (_name, value) => emitNativeEventValue(inputs, viewFrame, value) });
 
     return [b.objectExpression([
       b.objectProperty(b.identifier('kind'), b.stringLiteral(step.kind)),
@@ -70,7 +84,7 @@ export function withTemplateRevision(
 }
 
 export interface NativeViewEmissionInputs {
-  readonly ctx: CellEmissionContext;
+  readonly ctx: NativePublicationContext;
   readonly moduleId: string;
   readonly component: PlannedComponent;
   readonly nativeId: t.Identifier;
@@ -78,6 +92,7 @@ export interface NativeViewEmissionInputs {
   readonly slotCount: { value: number };
   readonly listPrefixes: Map<string, number>;
   readonly parentRow?: Pick<MapSite, 'itemParam' | 'sourceKey' | 'sourceLocal' | 'keyExpr'>;
+  readonly rowTarget?: HandlerRowTarget;
   readonly prelude: t.Statement[];
   readonly slotReplayReaders: Map<string, Set<string>>;
   readonly fail: (message: string, at: t.Node) => never;
@@ -144,7 +159,7 @@ function emitContentFactory(
     inputs,
     slotPlan,
     slotFrame,
-    b.arrowFunctionExpression([], nativeEvaluation(slotPlan)),
+    b.arrowFunctionExpression([], nativeEvaluation(inputs, slotPlan, slotFrame)),
   );
 
   inputs.prelude.push(b.variableDeclaration('const', [
@@ -175,8 +190,6 @@ export function emitNativeView(
     conditionCount,
     fail,
   } = inputs;
-
-  validateNativeEventWrites(plan, component.callbacks, inputs.parentRow, fail);
 
   const rowEmission: NativeRowEmission = {
     evaluate: nativeEvaluation,
@@ -237,7 +250,7 @@ export function emitNativeView(
             inputs,
             branchPlan,
             branchFrame,
-            b.arrowFunctionExpression([], nativeEvaluation(branchPlan)),
+            b.arrowFunctionExpression([], nativeEvaluation(inputs, branchPlan, branchFrame)),
           ),
         );
       });
@@ -337,7 +350,9 @@ export function emitNativeView(
 
     const prepareValue = (name: string, value: t.Expression): t.Expression => {
       if (!nodeHasJsx(value)) {
-        return value;
+        return targetProps.renderCallbacks.includes(name)
+          ? value
+          : emitNativeCallbackValue(inputs, value);
       }
 
       if (targetProps.renderCallbacks.includes(name)) {

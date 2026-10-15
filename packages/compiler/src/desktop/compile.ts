@@ -15,7 +15,7 @@ import {
 } from '../ast';
 
 import { createAnalysisCtx, type AnalysisOptions, type ProgramPath } from '../context/model';
-import { astBindingAt, variableDeclaratorFor, unwrapTypeExpression } from '../context';
+import { astBindingAt, unwrapTypeExpression, variableDeclaratorFor } from '../context';
 import { prepareSemanticAnalysis } from '../analysis/pipeline';
 import { planAccessReaders } from '../analysis/access-table';
 import { planExpressionSources } from '../planning/expression-sources';
@@ -27,7 +27,7 @@ import { planComponentCallbacks } from '../planning/component-callbacks';
 import { planComponentRendering } from '../planning/component-render';
 import { isRenderPropReference } from '../analysis/render-prop-reference';
 import type { BaseNode } from '../ast';
-import { liftModuleStateCells, type CellEmissionContext } from '../cells';
+import { liftModuleStateCells } from '../cells';
 import { emitAccessTable } from '../emission/access-table';
 import {
   buildPropDeclaration,
@@ -43,7 +43,7 @@ import {
 import { compilerError } from '../errors';
 import { isIntrinsicLifecycleCall, planCompilerIntrinsics } from '../intrinsics';
 import { planModuleCallbacks } from '../planning/module-callbacks';
-import { memberRootName } from '../context';
+import { emitNativePublication, type NativePublicationContext } from './publication';
 import { desktopAnalysisProfile } from './analyze';
 import { normalizeComponentJsxValues } from '../components/jsx-values';
 import { lowerNativeTemplate } from './template';
@@ -92,14 +92,28 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     buildCodeFrameError: (message, at = program) => compilerError(message, moduleId, at)
   };
 
-  const ctx: CellEmissionContext = Object.assign(
+  const ctx: NativePublicationContext = Object.assign(
     createAnalysisCtx({
       ...options,
       moduleId,
       moduleStateCells: true,
       runtimePath: options.runtimePath ?? '@memoized-dom/runtime/core'
     }),
-    { emission: { identifiers: null, header: [] } }
+    {
+      emission: {
+        identifiers: null,
+        header: [] as t.Statement[],
+        writeConstCounter: 0,
+        writeConsts: new Map<string, string>(),
+        reasonConstCounter: 0,
+        reasonConsts: new Map<string, string>(),
+      },
+      instanceReasonIds: new Map<string, Map<string, number>>(),
+      analyzedFunctions: new WeakSet<t.Node>(),
+      callbackPublications: new Set<BaseNode>(),
+      handlerHasRootCommit: new WeakMap<t.Node, boolean>(),
+      moduleCallbacks: null,
+    },
   );
 
   prepareSemanticAnalysis(ctx, path, {
@@ -153,43 +167,22 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     fail('Module effects require shared lifecycle emission');
   }
 
-  if ([...ctx.state.values()].includes('store')) {
-    fail('Store methods require shared guarded-publication emission');
-  }
-
-  if (planModuleCallbacks(ctx, path, { includeComponentSetup: true }).retained.length) {
-    fail('Retained callbacks require shared execution-scope emission');
-  }
-
-  for (const local of ctx.state.keys()) {
-    const binding = astBindingAt(ctx, program, local);
+  for (const [name, kind] of ctx.state) {
+    if (kind !== 'const' || ctx.importedState.has(name)) continue;
+    const binding = astBindingAt(ctx, program, name);
     const declaration = binding === undefined ? null : variableDeclaratorFor(ctx, binding);
     const initial = declaration?.init == null ? null : unwrapTypeExpression(declaration.init);
 
-    if (initial && (b.isObjectExpression(initial) || b.isArrayExpression(initial))) {
-      fail('Store methods require shared guarded-publication emission', initial);
+    if (!b.isArrayExpression(initial)) {
+      fail('Nonliteral module state requires shared owned initialization', initial ?? program);
     }
   }
 
-  walkAst<t.Node>(program, {
-    enter(node) {
-      if (!b.isCallExpression(node) || !b.isMemberExpression(node.callee)) {
-        return;
-      }
-
-      const receiver = memberRootName(node.callee);
-
-      if (receiver === null || !ctx.state.has(receiver)) {
-        return;
-      }
-
-      const binding = astBindingAt(ctx, node, receiver);
-
-      if (binding?.scope.isProgramScope) {
-        fail('Calls on reactive receivers require shared guarded-publication emission', node);
-      }
-    }
-  });
+  const moduleCallbacks = planModuleCallbacks(ctx, path, { includeComponentSetup: true });
+  ctx.moduleCallbacks = moduleCallbacks;
+  if (moduleCallbacks.retained.length) {
+    fail('Retained callbacks require shared execution-scope emission');
+  }
 
   const nativeId = generatedIdentifier(ctx, 'native');
   const facts = planExpressionSources(ctx);
@@ -217,6 +210,18 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     renderPlan.components.map(component => [component.name, component]),
   );
 
+  for (const helper of ctx.helpers.values()) {
+    const writes = moduleCallbacks.writesFor(helper.node, true);
+    const hasDirectMutation = [...writes.executionSites.values()].some(site =>
+      ['AssignmentExpression', 'UpdateExpression', 'UnaryExpression'].includes(site.path.node.type));
+
+    // Direct mutations need completion publication even when called through an
+    // import. Method-only effects belong to their compiled callback call site;
+    // instrumenting every read helper would make queries such as slice() dirty
+    // the document while rendering.
+    if (hasDirectMutation) emitNativePublication(ctx, writes, fail);
+  }
+
   const prepared: {
     name: string;
     plans: readonly (NativeTemplatePlan | null)[];
@@ -233,10 +238,6 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
 
     if (component.source.node.async) {
       fail('This emission phase requires synchronous components', component.source.node);
-    }
-
-    if (ctx.instanceState.get(name)?.size) {
-      fail('Instance writes require shared guarded-publication emission', component.source.node);
     }
 
     if (ctx.instanceDerivations.get(name)?.length || ctx.instanceControlFlow.get(name)?.length) {
@@ -288,6 +289,8 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
     const renderedComponent = renderedByName.get(component.name)!;
     const node = (ctx.compPaths.get(component.name)!).node;
     const frame = generatedIdentifier(ctx, 'frame');
+    const ownerId = generatedIdentifier(ctx, 'id');
+    requireIdentifiers(ctx).registerComponentId(component.name, ownerId.name);
     const props = ctx.componentProps.get(component.name)!;
     const propsBox = props.params.length > 0
       ? generatedIdentifier(ctx, 'props')
@@ -299,6 +302,13 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
         ? []
         : [b.assignmentPattern(cloneNode(propsBox), b.arrayExpression([]))]),
     ];
+
+    node.body.body.unshift(b.variableDeclaration('const', [
+      b.variableDeclarator(cloneNode(ownerId), b.callExpression(
+        b.memberExpression(cloneNode(nativeId), b.identifier('frameId')),
+        [cloneNode(frame)],
+      )),
+    ]));
 
     const propSources = props.params.map((_, index) =>
       b.memberExpression(
@@ -333,14 +343,14 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       fail,
     };
 
-    const evaluate = (plan: NativeTemplatePlan): t.ArrowFunctionExpression =>
+    const evaluate = (plan: NativeTemplatePlan, targetFrame = frame): t.ArrowFunctionExpression =>
       propsBox === null
-        ? b.arrowFunctionExpression([], nativeEvaluation(plan))
+        ? b.arrowFunctionExpression([], nativeEvaluation(emission, plan, targetFrame))
         : b.arrowFunctionExpression(
             [],
             b.blockStatement([
               ...buildPropReplay(props, propSources),
-              b.returnStatement(nativeEvaluation(plan)),
+              b.returnStatement(nativeEvaluation(emission, plan, targetFrame)),
             ]),
           );
     const createPresentation = 'jsx' in component.returns
@@ -378,7 +388,7 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
                   emission,
                   plan,
                   branchFrame,
-                  evaluate(plan),
+                  evaluate(plan, branchFrame),
                 ),
               );
             })),
@@ -451,7 +461,10 @@ export function compileDesktop(source: string, options: DesktopCompileOptions = 
       statement === marker ? (table === null ? [] : [table]) : [statement]);
   }
 
-  liftModuleStateCells(ctx, path);
+  liftModuleStateCells(ctx, path, {
+    publication: 'handler',
+    handlers: ctx.callbackPublications,
+  });
 
   // Root metadata joins the existing realm registry. The authored component
   // reference remains what mount receives; callers never supply a native frame.

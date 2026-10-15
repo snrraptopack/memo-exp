@@ -28,7 +28,7 @@ export type { RenderEnvironment } from './environment';
 export { installAccessTable, resolveStaticWrites } from './access';
 export type { AccessTable } from './access';
 export { commitWrites, commitStructuralWrites, commitListItemWrites } from './events';
-export { defineStateCell, readCell, setCell, updateCell } from './state-cells';
+export { defineStateCell, readCell, setCell, updateCell, stateCellSlot } from './state-cells';
 export { setStorageFactory } from './async-storage';
 export { computedChanged, effectAssignmentChanged } from './comparison';
 export { registerEffect, registerConditionalEffect } from './effect';

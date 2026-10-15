@@ -7,6 +7,7 @@ import {
   childNode,
   childNodes,
   cloneNode as cloneAstNode,
+  FUNCTION_NODE_TYPES,
   identifierName,
   nodeFields as fields,
   walkAst,
@@ -216,6 +217,10 @@ function replaceAt(
 export function liftModuleStateCells(
   ctx: Ctx,
   programPath: ProgramContainer,
+  options: { readonly publication?: 'cell' } | {
+    readonly publication: 'handler';
+    readonly handlers: ReadonlySet<BaseNode>;
+  } = {},
 ): void {
   if (ctx.moduleStateCells !== true) return;
   const program = programPath.node as unknown as BaseNode;
@@ -223,12 +228,20 @@ export function liftModuleStateCells(
   const lifts = new Map<string, CellLift>();
 
   for (const [local, kind] of ctx.state) {
-    if (kind !== 'let' && kind !== 'store') continue;
+    if (kind !== 'let' && kind !== 'store' &&
+        !(options.publication === 'handler' && kind === 'const')) continue;
     const key = ctx.stateKeys.get(local);
     if (key === undefined) continue;
     const binding = astBindingAt(ctx, program, local);
     if (binding === undefined) continue;
     const owned = binding.kind !== 'import';
+    // Native guarded publication also owns plain const arrays. Their semantic
+    // kind remains const (no rebinding); their storage is a per-application
+    // literal factory, just like an object store.
+    const declaration = owned ? variableDeclaratorFor(ctx, binding) : null;
+    const initial = declaration?.init == null ? null : unwrapTypeExpression(declaration.init);
+    if (kind === 'const' && owned && !astFactory.isArrayExpression(initial)) continue;
+    const cellKind: ReactiveKind = kind === 'let' ? 'let' : 'store';
     if (owned) {
       const declarator = variableDeclaratorFor(ctx, binding);
       if (declarator === null) continue;
@@ -236,7 +249,7 @@ export function liftModuleStateCells(
       const initializer = rawInitializer === null
         ? null
         : unwrapTypeExpression(rawInitializer);
-      if (kind === 'store') {
+      if (cellKind === 'store') {
         if (initializer === null || !isDeepLiteral(initializer)) {
           throw programPath.buildCodeFrameError(
             `memo-dom: mutated store '${local}' must be initialized from a plain object/array literal to lower into request-owned state cells`,
@@ -260,7 +273,7 @@ export function liftModuleStateCells(
     lifts.set(local, {
       local,
       key,
-      kind,
+      kind: cellKind,
       cellId: generatedIdentifier(ctx, `cell_${local}`).name,
       binding,
       owned,
@@ -291,8 +304,13 @@ export function liftModuleStateCells(
         declarator === null ? null : childNode(declarator, 'init');
       if (initializer !== null) {
         const cloned = cloneNode(initializer as unknown as t.Expression);
+        const literal = unwrapTypeExpression(initializer);
+        const ownsMutableInitial =
+          lift.kind === 'store' ||
+          (options.publication === 'handler' &&
+            (astFactory.isArrayExpression(literal) || astFactory.isObjectExpression(literal)));
         arguments_.push(
-          lift.kind === 'store'
+          ownsMutableInitial
             ? astFactory.arrowFunctionExpression(
                 [],
                 astFactory.blockStatement([returnStatement(cloned)]),
@@ -328,11 +346,43 @@ export function liftModuleStateCells(
   };
   const readCall = (lift: CellLift): t.CallExpression =>
     callExpression(md(ctx, 'readCell'), [astFactory.identifier(lift.cellId)]);
+  const storageReference = (lift: CellLift): t.MemberExpression =>
+    astFactory.memberExpression(
+      callExpression(md(ctx, 'stateCellSlot'), [astFactory.identifier(lift.cellId)]),
+      astFactory.identifier('value'),
+    );
+  const ownsPublication = (value: BaseNode): boolean => {
+    if (options.publication !== 'handler') return false;
+    let current: BaseNode | null = value;
+
+    while (current !== null) {
+      if (FUNCTION_NODE_TYPES.has(current.type)) return options.handlers.has(current);
+      current = ctx.astAnalysis?.parentByNode.get(current) ?? null;
+    }
+
+    return false;
+  };
+
+  // These wrappers contain executable expressions. Native cell reads inside
+  // `items[index]!.done` must follow the same application slot as the mutation.
+  // Type annotation children still enter typeDepth normally. Keep the existing
+  // server lowering unchanged until its output contract is migrated separately.
+  const isTypeOnly = (current: BaseNode): boolean => {
+    if (!current.type.startsWith('TS')) return false;
+    if (options.publication !== 'handler') return true;
+    return ![
+      'TSAsExpression',
+      'TSTypeAssertion',
+      'TSNonNullExpression',
+      'TSSatisfiesExpression',
+      'TSInstantiationExpression',
+    ].includes(current.type);
+  };
 
   let typeDepth = 0;
   walkAst<BaseNode>(program, {
     enter(current, parent, key, index) {
-      if (current.type.startsWith('TS')) {
+      if (isTypeOnly(current)) {
         typeDepth++;
         return;
       }
@@ -343,7 +393,9 @@ export function liftModuleStateCells(
       if (lift === undefined || typeDepth > 0) return;
       if (insidePatternWriteTarget(ctx, current, parent, key)) {
         throw programPath.buildCodeFrameError(
-          `memo-dom: destructuring writes to module state '${lift.local}' are not supported in server builds; assign '${lift.local}' directly`,
+          ownsPublication(current)
+            ? `memo-dom: destructuring writes to module state '${lift.local}' require shared write-plan support`
+            : `memo-dom: destructuring writes to module state '${lift.local}' are not supported in server builds; assign '${lift.local}' directly`,
         );
       }
       if (
@@ -355,16 +407,23 @@ export function liftModuleStateCells(
         (key === 'key' && fields(parent).computed !== true) ||
         parent.type === 'ExportSpecifier' ||
         parent.type.startsWith('Import') ||
-        ((parent.type === 'AssignmentExpression' && key === 'left') ||
-          (parent.type === 'UpdateExpression' && key === 'argument')) ||
-        ((parent.type === 'ForOfStatement' ||
-          parent.type === 'ForInStatement') &&
-          key === 'left') ||
         ((parent.type === 'LabeledStatement' ||
           parent.type === 'BreakStatement' ||
           parent.type === 'ContinueStatement') &&
           key === 'label')
       ) {
+        return;
+      }
+
+      const directWrite =
+        (parent.type === 'AssignmentExpression' && key === 'left') ||
+        (parent.type === 'UpdateExpression' && key === 'argument') ||
+        ((parent.type === 'ForOfStatement' || parent.type === 'ForInStatement') && key === 'left');
+
+      if (directWrite) {
+        if (ownsPublication(current)) {
+          replaceAt(parent, key, index, storageReference(lift) as unknown as BaseNode);
+        }
         return;
       }
       if (
@@ -379,7 +438,7 @@ export function liftModuleStateCells(
       replaceAt(parent, key, index, readCall(lift) as unknown as BaseNode);
     },
     leave(current) {
-      if (current.type.startsWith('TS')) typeDepth--;
+      if (isTypeOnly(current)) typeDepth--;
     },
   });
 
@@ -502,6 +561,10 @@ export function liftModuleStateCells(
   walkAst<BaseNode>(program, {
     enter(current, parent, key, index) {
       if (parent === null || key === undefined) return;
+      // A guarded callback owns publication for its complete body. Other
+      // functions retain the existing eager cell path; a render query must not
+      // become a publisher merely because it invokes an opaque receiver method.
+      if (options.publication === 'handler' && options.handlers.has(current)) return false;
 
       // `for (x of …)` / `for (x in …)` with a module-state loop target: the
       // binding itself is rewritten, so lower the loop to assign through the

@@ -7,8 +7,8 @@ import { buildDesktopEngine, buildDesktopRunner, desktopApplicationConfig } from
 import { executionCommand } from '../src/dev/execution';
 
 const example = process.argv[2] ?? 'counter';
-if (example !== 'counter' && example !== 'dashboard') {
-  throw new Error('Choose the counter or dashboard example');
+if (example !== 'counter' && example !== 'dashboard' && example !== 'todo') {
+  throw new Error('Choose the counter, dashboard or todo example');
 }
 const root = fileURLToPath(new URL(`./${example}`, import.meta.url));
 const outDir = resolve(root, `../../../../.cache/blitz-${example}`);

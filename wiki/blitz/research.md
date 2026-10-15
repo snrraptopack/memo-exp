@@ -1,6 +1,6 @@
 # Blitz architecture research
 
-Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-15. Branch: `codex/blitz-renderer`.
 
 This is the canonical research for the Blitz implementation. [plan.md](plan.md)
 defines the implementation architecture and order. [milestones.md](milestones.md)
@@ -379,8 +379,9 @@ modules; the same cell lowering now accepts a neutral context. Pure text/class
 normalizers and attribute-name maps are shared with DOM, without importing DOM
 setters into core. Real compiled TSX runs under Bun, Node and a custom adapter
 against Rust. Presentation snapshots and accepted callback binding are host
-bookkeeping, not another reactive engine. Instance/store guards, scopes, replay,
-refs and structural execution remain diagnosed emission gates. M3.4 now wires
+bookkeeping, not another reactive engine. M5.13 adds shared instance/store guards
+and structural execution as detailed below; retained scopes, replay and refs
+remain diagnosed emission gates. M3.4 wires
 ordinary mount into the headless host. Visible window wiring and native platform
 events are not yet claimed complete.
 
@@ -507,7 +508,15 @@ the real headless host. Desktop emission now consumes shared list-site and callb
 normalization plans for direct mapped host/component rows, including nested lists,
 keys and retained binding updates. Row events use the existing native dispatcher;
 module-cell writes retain shared access-table routing. Shared callback write facts
-diagnose row/prop mutation forms whose guarded publication is not yet emitted.
+now drive the same guarded execution/completion emitter used by the web target.
+The canonical implementation lives under `emission/`; browser imports re-export
+it. Native row and component IDs supply the existing core publication destinations.
+Literal object/array defaults use existing per-application cells, and guarded
+scalar writes use a reference to that same storage to preserve expression values.
+Module helpers with direct assignments publish on completion; method-only effects
+publish at the compiled callback boundary so read helpers cannot dirty rendering.
+Component-local writes, scalar callback props and row-item changes reuse these
+plans. No native reactive engine, resolver or source bridge is introduced.
 Delegated callback props now use the same row emission and existing slot/list
 acceptance controllers. Shared discovery propagates structural callback contracts
 through wrappers, and shared reader attribution includes direct render reads,
@@ -517,6 +526,15 @@ The native descriptor stays private and stable in the caller closure; its conten
 is lazy for empty collections. Descriptor replacement is accepted atomically,
 preserving old rows/events on refusal. This does not establish physical
 focus/selection retention or large-list performance.
+
+The Todo verification uses its own TSX/CSS fixtures and the normal Vite/mount
+path against the real headless Rust host under Bun and Node. Editable examples
+are not test inputs; native layout CSS is also test-owned. This integration
+exposed indexed reads inside TypeScript non-null/assertion wrappers escaping
+owned state-cell rewriting. Desktop lowering now traverses their executable
+expressions; the existing default server lowering is unchanged in this batch.
+These tests establish publication and retained keyed state, not native text
+editing, physical clicks or focus/selection fidelity.
 
 A richer real Vite fixture exposed connection pressure across sibling row and
 conditional publications. Native presentation now checks the existing bounded

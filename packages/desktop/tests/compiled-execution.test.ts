@@ -1,102 +1,14 @@
 import { expect, test } from 'bun:test';
 import { compileDesktop } from '@memoized-dom/compiler/desktop';
 
-import {
-  parseWithEstreeFrontendOrThrow,
-  memoizedEstreeFrontend,
-  printEstree
-} from '../../compiler/src/ast';
 
-import type * as t from '../../compiler/src/ast/compiler-types';
 import * as core from '@memoized-dom/runtime/core';
 import * as presentation from '../src/runtime/view';
-import { NativeApplication } from '../src/runtime/application';
-import { PublicationClient } from '../src/host/client';
-import { ManualTransport } from './fixtures/manual-transport';
 import { createMountAdapter } from '../src/runtime/mount';
-import type { Operation, Publication } from '../src/host/protocol';
+import type { Operation } from '../src/host/protocol';
 import { dispatchNativeEvent } from '../src/runtime/dispatch';
 
-const source = `
-  let count = 0;
-  export function increment(){ count++; }
-  export function App(){
-    return <main className={['counter', {odd: count % 2}]} {...(count === 1 ? {title:'One'} : {})}>
-      <button onClick={increment}>Increment</button><p>{count}</p>
-    </main>;
-  }
-`;
-
-function moduleFactory(text = source, rootName = 'App', rootId?: string) {
-  const compiled = compileDesktop(text, {
-    moduleId: './compiled-test.tsx',
-    rootId,
-    runtimePath: 'core',
-    presentationPath: 'presentation'
-  });
-
-  const parsed = parseWithEstreeFrontendOrThrow(memoizedEstreeFrontend, compiled.code, { filename: './compiled.js' });
-  const program = parsed.program as t.Program;
-  const parameters: string[] = [];
-
-  program.body = program.body.flatMap((statement) => {
-    if (statement.type === 'ImportDeclaration') {
-      parameters.push((statement.specifiers[0]!).local.name);
-
-      return [];
-    }
-
-    if (statement.type === 'ExportNamedDeclaration') {
-      return statement.declaration ? [statement.declaration as t.Statement] : [];
-    }
-
-    return [statement];
-  });
-
-  return new Function(...parameters, printEstree(program).code + '\nreturn {App:' + rootName + ',increment};')(core, presentation) as {
-    App(frame: presentation.NativeFrame, props?: unknown[]): presentation.NativeView;
-    increment(): unknown
-   };
-}
-
-function createCompiledApplication(module = moduleFactory(), props?: unknown[]) {
-  const transport = new ManualTransport();
-  const errors: unknown[] = [];
-
-  const application = new NativeApplication(new PublicationClient(transport), {
-    scheduleFrame: null,
-    visible: () => true,
-    reportError: (error) => errors.push(error)
-  });
-
-  application.run(() => core.setScheduler(() => {}));
-
-  let view!: presentation.NativeView;
-
-  const candidate = application.prepare(
-    () => {
-      view = module.App({
-        application,
-        owner: { id: 'App', generation: 1 },
-        parent: null,
-        reportError: (error) => errors.push(error)
-      }, props);
-
-      return view;
-    },
-    {
-      accepted() {
-        view.acceptInitial();
-      },
-
-      activated() {
-        view.activateUpdates();
-      }
-    }
-  );
-
-  return { application, candidate, view, transport, errors, module };
-}
+import { source, moduleFactory, createCompiledApplication, drainCompiled, compiledOperations } from './fixtures/compiled-application';
 
 test('compiled metadata mounts a root without an authored native frame', async () => {
   const { application, transport, errors, module, candidate } = createCompiledApplication();
@@ -1225,26 +1137,10 @@ test('shared cell lowering respects shadowed bindings and executed writes', () =
     export function App(){const shadow=(count)=>count+1;return <p onClick={()=>increment(true)}>{count}{shadow(3)}</p>}`).code;
 
   expect(code).toContain('defineStateCell');
-  expect(code).toContain('updateCell');
+  expect(code).toContain('commitWrites');
   expect(code).toContain('installAccessTable');
   expect(code).toContain('shadow = (count) => count + 1');
 });
-
-/** Drain serialized row publications, including new frames admitted by a reply. */
-async function drainCompiled(fixture: ReturnType<typeof createCompiledApplication>, from: number) {
-  for (let index = from; index < fixture.transport.sent.length; index++) {
-    const frame = JSON.parse(fixture.transport.sent[index]!) as { sequence: number };
-    fixture.transport.accept(frame.sequence);
-    await Bun.sleep(0);
-    fixture.application.run(core.commit);
-  }
-
-  await fixture.view.publication();
-}
-
-function compiledOperations(fixture: ReturnType<typeof createCompiledApplication>, from = 0): Operation[] {
-  return fixture.transport.sent.slice(from).flatMap(text => (JSON.parse(text) as Publication).operations);
-}
 
 test('compiled keyed rows keep native event addresses and rebind item/index through accepted moves', async () => {
   const module = moduleFactory(`
@@ -1459,21 +1355,21 @@ test.each([false, true])('conditions inside retained rows replay shared module r
   } finally { f.application.close(); }
 });
 
-test('row/prop mutations remain diagnostic until shared guarded publication is emitted', () => {
+test('row/prop mutations select shared guarded publication for direct, spread and component events', () => {
   expect(() => compileDesktop(`
     export function App({items}) { return <ul>{items.map(item =>
       <li key={item.id}><button onClick={() => { item.done = !item.done; }}>{item.done}</button></li>
     )}</ul>; }
-  `)).toThrow('guarded-publication');
+  `)).not.toThrow();
   expect(() => compileDesktop(`
     export function App({items}) { return <ul>{items.map(item =>
       <li key={item.id}><button {...{onClick: () => { item.done = !item.done; }}}>{item.done}</button></li>
     )}</ul>; }
-  `)).toThrow('guarded-publication');
+  `)).not.toThrow();
   expect(() => compileDesktop(`
     function Row({item}) { return <button onClick={() => { item.done = !item.done; }}>{item.done}</button>; }
     export function App({items}) { return <ul>{items.map(item => <Row key={item.id} item={item} />)}</ul>; }
-  `)).toThrow('guarded-publication');
+  `)).not.toThrow();
 });
 
 test('repeated static map sites retain unique ranges and inherited SVG namespaces', async () => {
@@ -1598,7 +1494,7 @@ test('generic and forwarded callback props preserve one stable descriptor per ca
   } finally { f.application.close(); }
 });
 
-test('unused callback props stay lazy and unsupported row writes retain diagnostics', async () => {
+test('unused callback props stay lazy and delegated rows support guarded mutations', async () => {
   const module = moduleFactory(`
     export function increment() {}
     function List({items, renderItem}) { return <ul>{items.map(item => renderItem(item))}</ul>; }
@@ -1625,7 +1521,7 @@ test('unused callback props stay lazy and unsupported row writes retain diagnost
     export function App({items}) {
       return <List items={items} renderItem={item => <li key={item.id} onClick={() => { item.done = true; }}>{item.done}</li>} />;
     }
-  `)).toThrow('guarded-publication');
+  `)).not.toThrow();
 });
 
 test('callback row refusal preserves accepted events and removal retires nested owners', async () => {
@@ -1833,9 +1729,8 @@ test('closing while callback rows await transport credits retires owners without
 });
 
 test('unsupported lifetimes/structures/reactivity fail instead of silently losing semantics', () => {
-  expect(() => compileDesktop('export function App(){let count=0;return <button onClick={()=>{count++;}}>{count}</button>}')).toThrow('Instance writes');
   expect(() => compileDesktop('export function App(){$cleanup(()=>{});return <div/>}')).toThrow('Cleanup');
   expect(() => compileDesktop('export function App(){return <div ref={node}/>}')).toThrow('Refs');
-  expect(() => compileDesktop('let items=[];export function App(){return <button onClick={()=>items.push(1)}>Add</button>}')).toThrow('guarded-publication');
+  expect(() => compileDesktop('let items=[];export function App(){return <button onClick={()=>items.push(1)}>Add</button>}')).not.toThrow();
   expect(() => compileDesktop('let count=0;export function App(){setTimeout(()=>{count++;},0);return <p>{count}</p>}')).toThrow('Retained callbacks');
 });

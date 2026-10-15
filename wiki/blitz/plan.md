@@ -1,12 +1,12 @@
 # Blitz implementation plan
 
-Updated: 2026-10-14. Branch: `codex/blitz-renderer`.
+Updated: 2026-10-15. Branch: `codex/blitz-renderer`.
 
-Current user-directed order: establish a richer fixed-content visual example and
-measure its native layouts before expanding M4 events. The dashboard is the first
-M6 visual fixture. It does not complete M6 browser parity or waive M3's component
-and structural emission gates. Reuse the existing launcher and normal mount/CSS
-authoring; do not introduce a drawing or styling API for this fixture.
+Current user-directed order: complete row/store mutation publication and an
+ordinary keyed Todo using existing shared semantics. Keep automated contracts
+independent of editable examples. The earlier dashboard establishes measured
+native layouts; M4 platform input and M6 browser parity remain separate gates.
+Reuse the existing launcher and normal mount/CSS authoring.
 
 This is the implementation plan for the architecture described in
 [research.md](research.md). Completed batches and decisions belong in
@@ -216,6 +216,23 @@ before declaring this presentation batch complete.
 On refusal, clear all rejected dependent view snapshots before resuming a dirty
 view, including synthetic forwarded content. Check that final text/attributes
 recompute against accepted state and that close cannot revive deferred owners.
+
+M5.13 reuses shared handler execution/completion emission for row, prop and store
+mutations. Its canonical implementation lives under compiler `emission/`; DOM
+entry files re-export it so browser callers and list lowering retain their
+existing behavior. Desktop supplies existing semantic owner IDs and callback
+plans, then lets accepted native list controllers replay source values. Cell
+storage remains in the shared runtime. The desktop lowering keeps guarded write
+expression results, creates literal mutable defaults per application, and treats
+TypeScript expression wrappers as executable reads. Module read helpers remain
+non-publishers; direct helper assignments publish at completion, while method-only
+effects publish at the compiled callback boundary.
+
+The ordinary Todo example uses normal mount and CSS, with numbered task creation
+until native text editing is verified. Automated tests must own source/CSS
+fixtures independently of editable examples, including the real Vite/native Todo
+contract and native layout baselines. Example deletion must not break contracts.
+M5 still requires physical focus/selection and broader callback/lifecycle gates.
 
 Reuse the previous desktop branch's shared extraction work only after comparing
 it against current main and its web output. Reuse its template/lifecycle concepts

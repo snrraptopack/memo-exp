@@ -2001,3 +2001,71 @@ Next M5 work: reuse existing guarded write-publication emission for row/prop/sto
 mutations so ordinary Todo authoring is supported. These writes remain diagnostic
 today. Native input, ref focus/selection and large-list performance remain explicit
 gates; this batch does not complete M4, M5 or M7.
+
+## M5.13 — Shared guarded mutations and an independent Todo contract
+
+Completed implementation/checks: 2026-10-15. M5 remains in progress.
+
+- Communicated the shared compiler/runtime boundary before editing. Moved the
+  existing handler completion, execution guards, event origin and publication
+  constants into compiler `emission/`. The old DOM modules re-export the shared
+  implementation. The three extracted handler function bodies are unchanged;
+  browser list algorithms and their mutation journals are untouched. Desktop
+  consumes existing module/component callback plans and supplies native frame/row
+  identities to the same core invalidation calls.
+- Added an opt-in guarded-publication mode to existing cell lowering. It uses
+  the shared runtime's existing cell slot reference for scalar writes, preserving
+  postfix/assignment results and skipped logical assignments. Literal array/object
+  defaults instantiate per application, including mutable `let` defaults and
+  plain const arrays. Uninstrumented functions retain existing cell publication.
+  The default web/server lowering path is unchanged. This exports one existing
+  storage accessor from the internal core entry; it adds no new storage engine.
+- Native row/prop mutations, component-local mutable state, named/inline scalar
+  callback props and proven event spreads now publish through shared execution
+  guards. Module helpers with direct tracked assignments publish on completion;
+  method-only effects publish at compiled callback boundaries. Instrumenting every
+  receiver call would incorrectly make read helpers such as `slice()` publish
+  during rendering, so a regression contract verifies they stay non-publishers.
+  Retained/async execution scopes, effects and external-source publication remain
+  explicit emission gates.
+- Added `desktop:todo` using ordinary TSX, CSS imports and `mount('app', App)`.
+  Cross-module controls add numbered tasks, edit labels, toggle completion,
+  filter, reverse, remove and clear completed tasks. Row-local click state follows
+  the key. Numbered titles make the mutation path testable before native text
+  editing is verified; no application-side native event/mount API is introduced.
+- The real Todo integration caught a wrong-store read in a backwards removal
+  loop: TypeScript non-null/assertion wrappers hid indexed executable reads from
+  cell lowering. Communicated that boundary before correcting the desktop mode;
+  separate non-null, `as` and `satisfies` fixtures verify retained application state
+  after reordering. The default server lowering remains unchanged in this batch.
+- Followed the user's requirement that tests survive example changes/deletion.
+  The Vite/native Todo contract owns independent TSX/CSS under `tests/fixtures`.
+  Native visual layout tests now include their own fixed CSS baseline rather than
+  the dashboard example. A root data-runtime test that imported example helpers
+  now owns its request descriptors and is named `data-request-contracts.test.ts`.
+  A source audit found no remaining example imports/file dependencies in the
+  test suites. Editable examples have no synchronization requirement with fixtures.
+- Reused the existing compiled application/transport fixture rather than copying
+  another executor. Deterministic checks verify sibling store readers, keyed
+  moves/local state, changed keys/stale events, skipped/throwing completion,
+  returned values, scalar callbacks and per-application object/array isolation.
+  Real headless Rust acceptance under Bun and Node verifies cross-module Todo
+  mutations, filters, removal, empty content and fresh generations after reload.
+  Static empty content is checked through its mounted template, not an assumed
+  dynamic text operation. These are accepted publication/routing contracts;
+  physical clicks, editing and focus/selection parity are not established.
+- `bun run --cwd packages/desktop test`: **137 pass**, zero failed, 699 assertions.
+  `bun run --cwd packages/desktop test:process`: **34 pass**, zero failed,
+  134 assertions. `bun run test:root`: **2,562 pass**, zero failed, 30,504
+  assertions across 254 files. The focused golden/boundary/planner check passed
+  34 tests with 21 unchanged snapshots. Compiler/runtime builds and focused lint
+  pass. Bun checking passes 260 compiler, 144 desktop and 60 runtime files.
+- Native layout/SVG contracts pass **2 tests** using the test-owned CSS, and
+  `cargo +1.96.0 fmt --check` passes. The initial native test rebuild took 8m 52s;
+  it ran separately from the full JS suite. The actual editable Todo also passes
+  a separate manual Vite build; automated tests do not read that example.
+
+Next M5/M4 work: native input/default ordering and ordinary ref capabilities,
+including physical focus/selection retention through keyed changes. Retained
+callback/lifecycle emission and broader parity/performance gates remain open;
+this batch does not complete M4, M5 or M7.

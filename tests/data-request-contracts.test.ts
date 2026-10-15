@@ -1,12 +1,8 @@
 import { waitFor, type FetchStub } from '../test-support/helpers';
 import { describe, expect, it, vi } from 'bun:test';
-import {
-  createHackerNewsData,
-  loadFeedPage,
-  loadStory,
-} from '../examples/hacker-news/api';
+import { createDataRuntime } from '@memoized-dom/data';
 
-describe('Hacker News router and data example', () => {
+describe('public data request contracts', () => {
   it('loads typed feed pages with the public data runtime', async () => {
     const requests: URL[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -23,9 +19,13 @@ describe('Hacker News router and data example', () => {
         headers: { 'content-type': 'application/json' },
       });
     }) as unknown as FetchStub;
-    const data = createHackerNewsData(fetcher);
+    const data = createDataRuntime({ baseURL: 'https://fixture.test/', fetch: fetcher });
 
-    const feed = loadFeedPage(data, 'ask', 2);
+    const feed = data.$fetch<{ hits: { title: string }[] }>('/api/v1/search_by_date', {
+      query: { tags: 'ask_hn', page: 2, hitsPerPage: 25 },
+      key: ['feed', 'ask', 2],
+      cache: { scope: 'app' },
+    });
     await waitFor(() => expect(feed.status).toBe('success'));
 
     expect(requests).toHaveLength(1);
@@ -53,9 +53,12 @@ describe('Hacker News router and data example', () => {
         headers: { 'content-type': 'application/json' },
       });
     }) as unknown as FetchStub;
-    const data = createHackerNewsData(fetcher);
+    const data = createDataRuntime({ baseURL: 'https://fixture.test/', fetch: fetcher });
 
-    const story = loadStory(data, '123');
+    const story = data.$fetch<{ title: string }>('/api/v1/items/123', {
+      key: ['story', '123'],
+      cache: { scope: 'app' },
+    });
     await waitFor(() => expect(story.status).toBe('success'));
 
     expect(requests).toHaveLength(1);

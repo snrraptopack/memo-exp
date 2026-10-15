@@ -76,6 +76,9 @@ function slot<T>(cell: StateCell): { value: T } {
   return holder;
 }
 
+/** Internal storage reference for compilers that own guarded publication. */
+export { slot as stateCellSlot };
+
 /** Read this request's value of the cell. Initializes from the default once. */
 export function readCell<T>(cell: StateCell): T {
   return slot<T>(cell).value;

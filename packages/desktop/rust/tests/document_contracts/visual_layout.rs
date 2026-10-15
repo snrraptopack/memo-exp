@@ -1,5 +1,5 @@
-//! Measure the dashboard's real CSS in Blitz. This isolates responsive layout
-//! contracts from GPU pixels, font rasterization and platform input.
+//! Measure a fixed dashboard stylesheet in Blitz. Test-owned input keeps these
+//! contracts independent from editable demos, GPU pixels and platform input.
 use super::{attribute, element, template, text};
 use blitz_dom::{DocumentConfig, QualName, StyleThreading, ns};
 use blitz_traits::shell::Viewport;
@@ -7,7 +7,7 @@ use memoized_dom_desktop::document::{
     MountTarget, Mutation, NativeDocument, Owner, SourceNode, TemplateNode,
 };
 
-const DASHBOARD_CSS: &str = include_str!("../../../examples/dashboard/style.css");
+const DASHBOARD_CSS: &str = include_str!("fixtures/dashboard.css");
 
 #[test]
 fn inline_svg_resolves_into_a_native_vector_tree_and_rebuilds_after_writes() {

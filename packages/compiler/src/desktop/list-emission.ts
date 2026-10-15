@@ -2,7 +2,7 @@
 import * as b from '../ast/factory';
 import type * as t from '../ast/compiler-types';
 import { cloneNode } from '../ast';
-import { generatedIdentifier } from '../emission/identifiers';
+import { componentId, generatedIdentifier } from '../emission/identifiers';
 import { allocateMapSite } from '../lists/map-site';
 import type { MapSite } from '../lists/map-site';
 import type { HostRegionStep, NativeTemplatePlan } from './template-plan';
@@ -10,7 +10,7 @@ import type { NativeViewEmissionInputs } from './view-emission';
 
 export interface NativeRowEmission {
   readonly lower: (jsx: t.JSXElement, key: string, inSvg: boolean) => NativeTemplatePlan;
-  readonly evaluate: (plan: NativeTemplatePlan) => t.Expression;
+  readonly evaluate: (inputs: NativeViewEmissionInputs, plan: NativeTemplatePlan, frame: t.Identifier) => t.Expression;
   readonly create: (
     inputs: NativeViewEmissionInputs,
     plan: NativeTemplatePlan,
@@ -29,21 +29,31 @@ export function emitNativeRow(
   emission: NativeRowEmission,
 ): t.ArrowFunctionExpression {
   const { ctx } = inputs;
+  const rowFrame = generatedIdentifier(ctx, 'rowFrame');
+  const rowId = generatedIdentifier(ctx, 'rowId');
   const rowInputs: NativeViewEmissionInputs = {
     ...inputs,
     parentRow: shape,
+    rowTarget: {
+      itemParam: shape.itemParam,
+      itemPath: [],
+      keyPath: null,
+      sourceKey: shape.sourceKey,
+      sourceLocal: shape.sourceLocal,
+      rowIdVar: rowId.name,
+      ownerIdVar: componentId(ctx, inputs.component.name).name,
+    },
     listPrefixes: new Map(),
     // Row-owned slots must close over row bindings, never escape to the caller.
     prelude: [],
   };
   const rowPlan = emission.lower(jsx, templateKey, inSvg);
-  const rowFrame = generatedIdentifier(ctx, 'rowFrame');
   const rowView = generatedIdentifier(ctx, 'rowView');
   const nextItem = generatedIdentifier(ctx, 'nextItem');
   const nextIndex = generatedIdentifier(ctx, 'nextIndex');
   const evaluation = b.arrowFunctionExpression([], b.blockStatement([
     ...shape.prelude.map(statement => cloneNode(statement)),
-    b.returnStatement(emission.evaluate(rowPlan)),
+    b.returnStatement(emission.evaluate(rowInputs, rowPlan, rowFrame)),
   ]));
   const view = emission.create(rowInputs, rowPlan, rowFrame, evaluation);
   const bindings: t.Statement[] = [b.expressionStatement(
@@ -61,6 +71,10 @@ export function emitNativeRow(
     cloneNode(shape.itemPattern),
     ...(shape.indexParam === null ? [] : [b.identifier(shape.indexParam)]),
   ], b.blockStatement([
+    b.variableDeclaration('const', [b.variableDeclarator(cloneNode(rowId), b.callExpression(
+      b.memberExpression(cloneNode(inputs.nativeId), b.identifier('frameId')),
+      [cloneNode(rowFrame)],
+    ))]),
     ...rowInputs.prelude,
     b.variableDeclaration('const', [b.variableDeclarator(cloneNode(rowView), view)]),
     b.returnStatement(b.objectExpression([

@@ -27,6 +27,7 @@
     "desktop:build:native": "bun run --cwd packages/desktop native:window",
     "desktop:dev": "bun run packages/desktop/examples/window.ts",
     "desktop:dashboard": "bun run packages/desktop/examples/window.ts dashboard",
+    "desktop:todo": "bun run packages/desktop/examples/window.ts todo",
     "dev": "bun run build && bun test --isolate --watch ./tests",
     "example:dev": "vite --config examples/vite.config.ts",
     "example:common-ground": "vite --config examples/common-ground/vite.config.ts",

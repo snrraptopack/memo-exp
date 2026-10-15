@@ -1,8 +1,2 @@
-import type { RowWriteFacts } from '../handlers/write-facts';
-
-/** DOM row ABI allocated after shared source/write analysis. */
-export interface RowCtx extends Omit<RowWriteFacts, 'localRefresh'> {
-  rowIdVar: string;
-  refreshVar?: string;
-  ownerIdVar?: string;
-}
+/** The browser supplies its generated bindings to shared publication emission. */
+export type { HandlerRowTarget as RowCtx } from '../emission/publication-context';

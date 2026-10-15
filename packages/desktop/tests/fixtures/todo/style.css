@@ -1,0 +1,30 @@
+/* Deliberately small, test-owned input for ordinary Vite CSS and native layout. */
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+}
+
+.todo-page {
+  padding: 24px;
+}
+
+.todo-card {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.todo-row {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+}
+
+.todo-row[hidden] {
+  display: none;
+}
+
+.todo-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
